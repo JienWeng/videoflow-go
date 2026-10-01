@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"os"
@@ -39,7 +40,7 @@ func (s *Server) handleAssetTypes(w http.ResponseWriter, r *http.Request) {
 		"voice",
 		"output_video",
 	}
-	writeJSON(w, http.StatusOK, types)
+	writeJSON(w, http.StatusOK, map[string]interface{}{"types": types})
 }
 
 func (s *Server) handleGetAsset(w http.ResponseWriter, r *http.Request) {
@@ -110,6 +111,27 @@ func (s *Server) handleUploadAsset(w http.ResponseWriter, r *http.Request) {
 	if err := s.database.CreateAsset(asset); err != nil {
 		http.Error(w, "failed to save asset to db", http.StatusInternalServerError)
 		return
+	}
+
+	writeJSON(w, http.StatusOK, asset)
+}
+
+func (s *Server) handleRecogniseAsset(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	asset, err := s.database.GetAsset(id)
+	if err != nil {
+		http.Error(w, "asset not found", http.StatusNotFound)
+		return
+	}
+
+	var body struct {
+		Description string `json:"description"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	if body.Description != "" {
+		asset.Description = body.Description
+		_ = s.database.UpdateAsset(asset)
 	}
 
 	writeJSON(w, http.StatusOK, asset)

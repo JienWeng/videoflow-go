@@ -98,3 +98,24 @@ func (s *Server) handleCharacterRefSheets(w http.ResponseWriter, r *http.Request
 		"message":      "Generating character reference sheet",
 	})
 }
+
+func (s *Server) handleCharacterBible(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	c, err := s.database.GetCharacter(id)
+	if err != nil {
+		http.Error(w, "character not found", http.StatusNotFound)
+		return
+	}
+
+	var body struct {
+		Notes string `json:"notes"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	if body.Notes != "" {
+		c.Description = c.Description + " " + body.Notes
+		_ = s.database.UpdateCharacter(c)
+	}
+
+	writeJSON(w, http.StatusOK, c)
+}

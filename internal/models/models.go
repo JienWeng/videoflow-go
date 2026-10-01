@@ -168,6 +168,43 @@ type AgentSetting struct {
 	PromptTemplate string  `json:"prompt_template"`
 }
 
+// ProviderSecret table
+type ProviderSecret struct {
+	Provider  string    `json:"provider"`
+	APIKey    string    `json:"api_key"`
+	BaseURL   *string   `json:"base_url"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Connection table
+type Connection struct {
+	Name      string    `json:"name"`
+	Label     string    `json:"label"`
+	Preset    string    `json:"preset"`
+	Protocol  string    `json:"protocol"`
+	BaseURL   *string   `json:"base_url"`
+	Model     string    `json:"model"`
+	Mode      string    `json:"mode"`
+	Vision    bool      `json:"vision"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Revision table
+type Revision struct {
+	ID           string          `json:"id"`
+	EntityType   string          `json:"entity_type"`
+	EntityID     string          `json:"entity_id"`
+	SnapshotJSON json.RawMessage `json:"snapshot_json"`
+	CreatedAt    time.Time       `json:"created_at"`
+}
+
+// CaptionSegment
+type CaptionSegment struct {
+	Start float64 `json:"start"`
+	End   float64 `json:"end"`
+	Text  string  `json:"text"`
+}
+
 // Graph Response
 type GraphNode struct {
 	ID    string                 `json:"id"`

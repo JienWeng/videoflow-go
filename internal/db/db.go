@@ -210,6 +210,33 @@ func (d *DB) migrate() error {
 		prompt_template TEXT DEFAULT '',
 		PRIMARY KEY (agent, project_id)
 	);
+
+	CREATE TABLE IF NOT EXISTS provider_secrets (
+		provider TEXT PRIMARY KEY,
+		api_key TEXT DEFAULT '',
+		base_url TEXT,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS connections (
+		name TEXT PRIMARY KEY,
+		label TEXT NOT NULL,
+		preset TEXT NOT NULL,
+		protocol TEXT NOT NULL,
+		base_url TEXT,
+		model TEXT DEFAULT '',
+		mode TEXT DEFAULT 'auto',
+		vision BOOLEAN DEFAULT 1,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS revisions (
+		id TEXT PRIMARY KEY,
+		entity_type TEXT NOT NULL,
+		entity_id TEXT NOT NULL,
+		snapshot_json TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
 	`
 	_, err := d.conn.Exec(schema)
 	return err
@@ -753,6 +780,25 @@ func (d *DB) CreateAsset(a *models.Asset) error {
 	return err
 }
 
+func (d *DB) UpdateAsset(a *models.Asset) error {
+	now := time.Now().UTC()
+	a.UpdatedAt = now
+	tags := string(a.TagsJSON)
+	if tags == "" {
+		tags = "[]"
+	}
+	meta := string(a.MetadataJSON)
+	if meta == "" {
+		meta = "{}"
+	}
+	_, err := d.conn.Exec(`
+		UPDATE assets
+		SET type = ?, name = ?, tags_json = ?, description = ?, character_id = ?, metadata_json = ?, updated_at = ?
+		WHERE id = ?
+	`, a.Type, a.Name, tags, a.Description, a.CharacterID, meta, now, a.ID)
+	return err
+}
+
 func (d *DB) DeleteAsset(id string) error {
 	_, err := d.conn.Exec("DELETE FROM assets WHERE id = ?", id)
 	return err
@@ -1178,4 +1224,333 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 		Nodes: nodes,
 		Edges: validEdges,
 	}, nil
+}
+
+// --- Provider Secrets & Agent Settings ---
+
+func (d *DB) GetProviderSecret(provider string) (apiKey string, baseURL *string, fromDB bool, err error) {
+	var key, url sql.NullString
+	err = d.conn.QueryRow("SELECT api_key, base_url FROM provider_secrets WHERE provider = ?", provider).Scan(&key, &url)
+	if err == sql.ErrNoRows {
+		return "", nil, false, nil
+	}
+	if err != nil {
+		return "", nil, false, err
+	}
+	if url.Valid {
+		b := url.String
+		baseURL = &b
+	}
+	return key.String, baseURL, true, nil
+}
+
+func (d *DB) SetProviderSecret(provider, apiKey string, baseURL *string) error {
+	now := time.Now().UTC()
+	var urlVal interface{}
+	if baseURL != nil && *baseURL != "" {
+		urlVal = *baseURL
+	}
+	_, err := d.conn.Exec(`
+		INSERT INTO provider_secrets (provider, api_key, base_url, updated_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(provider) DO UPDATE SET
+			api_key = CASE WHEN ? = '' AND excluded.api_key = '' THEN '' WHEN ? != '' THEN excluded.api_key ELSE provider_secrets.api_key END,
+			base_url = CASE WHEN ? IS NOT NULL THEN excluded.base_url ELSE provider_secrets.base_url END,
+			updated_at = excluded.updated_at
+	`, provider, apiKey, urlVal, now, apiKey, apiKey, urlVal)
+	return err
+}
+
+func (d *DB) ListProviderSecrets() (map[string]models.ProviderSecret, error) {
+	rows, err := d.conn.Query("SELECT provider, api_key, base_url, updated_at FROM provider_secrets")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	res := make(map[string]models.ProviderSecret)
+	for rows.Next() {
+		var ps models.ProviderSecret
+		var bUrl sql.NullString
+		if err := rows.Scan(&ps.Provider, &ps.APIKey, &bUrl, &ps.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if bUrl.Valid {
+			u := bUrl.String
+			ps.BaseURL = &u
+		}
+		res[ps.Provider] = ps
+	}
+	return res, nil
+}
+
+func (d *DB) GetAgentSettings() (map[string]models.AgentSetting, error) {
+	rows, err := d.conn.Query("SELECT agent, provider, model FROM agent_settings")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	res := make(map[string]models.AgentSetting)
+	for rows.Next() {
+		var a models.AgentSetting
+		if err := rows.Scan(&a.Agent, &a.Provider, &a.Model); err != nil {
+			return nil, err
+		}
+		res[a.Agent] = a
+	}
+	return res, nil
+}
+
+func (d *DB) SetAgentSetting(agent, provider, model string) error {
+	_, err := d.conn.Exec(`
+		INSERT INTO agent_settings (agent, provider, model)
+		VALUES (?, ?, ?)
+		ON CONFLICT(agent, project_id) DO UPDATE SET
+			provider = excluded.provider,
+			model = excluded.model
+	`, agent, provider, model)
+	return err
+}
+
+func (d *DB) ResetAgentSetting(agent string) error {
+	_, err := d.conn.Exec("DELETE FROM agent_settings WHERE agent = ?", agent)
+	return err
+}
+
+// --- Connections ---
+
+func (d *DB) CreateConnection(c *models.Connection) error {
+	now := time.Now().UTC()
+	c.CreatedAt = now
+	_, err := d.conn.Exec(`
+		INSERT INTO connections (name, label, preset, protocol, base_url, model, mode, vision, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, c.Name, c.Label, c.Preset, c.Protocol, c.BaseURL, c.Model, c.Mode, c.Vision, c.CreatedAt)
+	return err
+}
+
+func (d *DB) ListConnections() ([]models.Connection, error) {
+	rows, err := d.conn.Query("SELECT name, label, preset, protocol, base_url, model, mode, vision, created_at FROM connections ORDER BY created_at ASC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []models.Connection
+	for rows.Next() {
+		var c models.Connection
+		var bUrl sql.NullString
+		if err := rows.Scan(&c.Name, &c.Label, &c.Preset, &c.Protocol, &bUrl, &c.Model, &c.Mode, &c.Vision, &c.CreatedAt); err != nil {
+			return nil, err
+		}
+		if bUrl.Valid {
+			u := bUrl.String
+			c.BaseURL = &u
+		}
+		list = append(list, c)
+	}
+	return list, nil
+}
+
+// --- Outputs ---
+
+func (d *DB) GetRenderOutput(id string) (*models.RenderOutput, error) {
+	row := d.conn.QueryRow(`
+		SELECT id, render_job_id, video_path, thumbnail_path, captioned_path, captions_json, score, qa_json, selected, notes, created_at, updated_at
+		FROM render_outputs
+		WHERE id = ?
+	`, id)
+
+	var o models.RenderOutput
+	var caps, qa string
+	var sel int
+	if err := row.Scan(&o.ID, &o.RenderJobID, &o.VideoPath, &o.ThumbnailPath, &o.CaptionedPath, &caps, &o.Score, &qa, &sel, &o.Notes, &o.CreatedAt, &o.UpdatedAt); err != nil {
+		return nil, err
+	}
+	o.CaptionsJSON = []byte(caps)
+	o.QAJSON = []byte(qa)
+	o.Selected = sel == 1
+	return &o, nil
+}
+
+func (d *DB) UpdateRenderOutput(o *models.RenderOutput) error {
+	now := time.Now().UTC()
+	o.UpdatedAt = now
+	sel := 0
+	if o.Selected {
+		sel = 1
+	}
+	_, err := d.conn.Exec(`
+		UPDATE render_outputs
+		SET video_path = ?, thumbnail_path = ?, captioned_path = ?, captions_json = ?, score = ?, qa_json = ?, selected = ?, notes = ?, updated_at = ?
+		WHERE id = ?
+	`, o.VideoPath, o.ThumbnailPath, o.CaptionedPath, string(o.CaptionsJSON), o.Score, string(o.QAJSON), sel, o.Notes, now, o.ID)
+	return err
+}
+
+func (d *DB) SelectRenderOutput(id string, selected bool) error {
+	o, err := d.GetRenderOutput(id)
+	if err != nil {
+		return err
+	}
+	// Deselect others in the same render job
+	if selected {
+		_, _ = d.conn.Exec("UPDATE render_outputs SET selected = 0 WHERE render_job_id = ?", o.RenderJobID)
+	}
+	sel := 0
+	if selected {
+		sel = 1
+	}
+	_, err = d.conn.Exec("UPDATE render_outputs SET selected = ? WHERE id = ?", sel, id)
+	return err
+}
+
+// --- Shots Reorder & Scene/Shot Associations ---
+
+func (d *DB) ReorderShots(sceneID string, orderedIDs []string) error {
+	tx, err := d.conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for i, id := range orderedIDs {
+		_, err := tx.Exec("UPDATE shots SET shot_order = ? WHERE id = ? AND scene_id = ?", i, id, sceneID)
+		if err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (d *DB) AddSceneCast(sceneID, characterID string) error {
+	scene, err := d.GetScene(sceneID)
+	if err != nil {
+		return err
+	}
+	var charIDs []string
+	_ = json.Unmarshal(scene.CharacterIDsJSON, &charIDs)
+	for _, cid := range charIDs {
+		if cid == characterID {
+			return nil
+		}
+	}
+	charIDs = append(charIDs, characterID)
+	bytes, _ := json.Marshal(charIDs)
+	scene.CharacterIDsJSON = bytes
+	return d.UpdateScene(scene)
+}
+
+func (d *DB) RemoveSceneCast(sceneID, characterID string) error {
+	scene, err := d.GetScene(sceneID)
+	if err != nil {
+		return err
+	}
+	var charIDs []string
+	_ = json.Unmarshal(scene.CharacterIDsJSON, &charIDs)
+	filtered := make([]string, 0, len(charIDs))
+	for _, cid := range charIDs {
+		if cid != characterID {
+			filtered = append(filtered, cid)
+		}
+	}
+	bytes, _ := json.Marshal(filtered)
+	scene.CharacterIDsJSON = bytes
+	return d.UpdateScene(scene)
+}
+
+func (d *DB) AttachShotAsset(shotID, assetID string) error {
+	shot, err := d.GetShot(shotID)
+	if err != nil {
+		return err
+	}
+	var assetIDs []string
+	_ = json.Unmarshal(shot.AssetIDsJSON, &assetIDs)
+	for _, aid := range assetIDs {
+		if aid == assetID {
+			return nil
+		}
+	}
+	assetIDs = append(assetIDs, assetID)
+	bytes, _ := json.Marshal(assetIDs)
+	shot.AssetIDsJSON = bytes
+	return d.UpdateShot(shot)
+}
+
+func (d *DB) DetachShotAsset(shotID, assetID string) error {
+	shot, err := d.GetShot(shotID)
+	if err != nil {
+		return err
+	}
+	var assetIDs []string
+	_ = json.Unmarshal(shot.AssetIDsJSON, &assetIDs)
+	filtered := make([]string, 0, len(assetIDs))
+	for _, aid := range assetIDs {
+		if aid != assetID {
+			filtered = append(filtered, aid)
+		}
+	}
+	bytes, _ := json.Marshal(filtered)
+	shot.AssetIDsJSON = bytes
+	return d.UpdateShot(shot)
+}
+
+// --- Revisions ---
+
+func (d *DB) CreateRevision(entityType, entityID string, snapshot []byte) (*models.Revision, error) {
+	id := "rev_" + uuid.New().String()[:8]
+	now := time.Now().UTC()
+	rev := &models.Revision{
+		ID:           id,
+		EntityType:   entityType,
+		EntityID:     entityID,
+		SnapshotJSON: snapshot,
+		CreatedAt:    now,
+	}
+	_, err := d.conn.Exec(`
+		INSERT INTO revisions (id, entity_type, entity_id, snapshot_json, created_at)
+		VALUES (?, ?, ?, ?, ?)
+	`, rev.ID, rev.EntityType, rev.EntityID, string(rev.SnapshotJSON), rev.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return rev, nil
+}
+
+func (d *DB) ListRevisions(entityType, entityID string) ([]models.Revision, error) {
+	rows, err := d.conn.Query(`
+		SELECT id, entity_type, entity_id, snapshot_json, created_at
+		FROM revisions
+		WHERE entity_type = ? AND entity_id = ?
+		ORDER BY created_at DESC
+		LIMIT 20
+	`, entityType, entityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []models.Revision
+	for rows.Next() {
+		var r models.Revision
+		var snap string
+		if err := rows.Scan(&r.ID, &r.EntityType, &r.EntityID, &snap, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		r.SnapshotJSON = []byte(snap)
+		list = append(list, r)
+	}
+	return list, nil
+}
+
+func (d *DB) GetRevision(id string) (*models.Revision, error) {
+	row := d.conn.QueryRow("SELECT id, entity_type, entity_id, snapshot_json, created_at FROM revisions WHERE id = ?", id)
+	var r models.Revision
+	var snap string
+	if err := row.Scan(&r.ID, &r.EntityType, &r.EntityID, &snap, &r.CreatedAt); err != nil {
+		return nil, err
+	}
+	r.SnapshotJSON = []byte(snap)
+	return &r, nil
 }
