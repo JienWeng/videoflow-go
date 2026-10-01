@@ -90,3 +90,25 @@ Set environment variables in `.env` or in your shell:
 | `DATABASE_PATH` | `db.sqlite` | SQLite database file |
 | `OPENROUTER_API_KEY` | `""` | OpenRouter API Key for LLMs and video generation |
 | `ATLASCLOUD_API_KEY` | `""` | AtlasCloud API Key for video rendering |
+
+---
+
+## User Handbook
+
+Explore the complete guide to using VideoFlow Go in the [`handbook/`](handbook/README.md) directory:
+
+| Part | Description |
+|---|---|
+| [1. How VideoFlow works](handbook/01-how-it-works.md) | Core concepts, workflow philosophy, and automated steps |
+| [2. Install from zero](handbook/02-installation.md) | Prerequisites, launch, health checks, and shutdown |
+| [3. Configure providers](handbook/03-providers.md) | API keys, model setup, agents, and media engine selection |
+| [4. Projects](handbook/04-projects.md) | Creating, switching, exporting, importing, and backing up projects |
+| [5. First video](handbook/05-first-video.md) | Step-by-step workflow starting from an initial text concept |
+| [6. Characters and assets](handbook/06-characters-assets.md) | Setting up character identities, reference images, and styles |
+| [7. Scenes and shots](handbook/07-scenes-shots.md) | Writing scripts, building scenes, and managing shot breakdowns |
+| [8. Studio](handbook/08-studio.md) | Working with the interactive canvas and chat assistant |
+| [9. Renders and outputs](handbook/09-renders.md) | Handling render jobs, quality checks, retries, and downloads |
+| [10. Captions and editor](handbook/10-captions-editor.md) | Speech transcription, timing adjustments, and burnt-in captions |
+| [11. Troubleshooting](handbook/11-troubleshooting.md) | Diagnostics and resolution for common setup & render issues |
+| [12. Reference](handbook/12-reference.md) | Technical reference, route map, environment variables, and CLI commands |
+
