@@ -246,7 +246,10 @@ func (s *Server) handleGenerateShots(w http.ResponseWriter, r *http.Request) {
 				createdShots = append(createdShots, shot)
 			}
 
-			resBytes, _ := json.Marshal(createdShots)
+			resBytes, _ := json.Marshal(map[string]interface{}{
+				"scene_id": sc.ID,
+				"shots":    createdShots,
+			})
 			_ = s.database.UpdateOp(opID, "succeeded", resBytes, nil)
 			s.broker.Publish(map[string]interface{}{
 				"type":     "op_done",
@@ -325,7 +328,10 @@ func (s *Server) handleRefineScene(w http.ResponseWriter, r *http.Request) {
 		scene.Summary = scene.Summary + " (Refined: " + body.Instruction + ")"
 		_ = s.database.UpdateScene(scene)
 	}
-	writeJSON(w, http.StatusOK, scene)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"scene": scene,
+		"note":  "Refined scene fields based on instruction",
+	})
 }
 
 func (s *Server) handleRefineShot(w http.ResponseWriter, r *http.Request) {
@@ -345,7 +351,10 @@ func (s *Server) handleRefineShot(w http.ResponseWriter, r *http.Request) {
 		shot.Prompt = shot.Prompt + ", " + body.Instruction
 		_ = s.database.UpdateShot(shot)
 	}
-	writeJSON(w, http.StatusOK, shot)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"shot": shot,
+		"note": "Refined shot prompt based on instruction",
+	})
 }
 
 func (s *Server) handleRenderScene(w http.ResponseWriter, r *http.Request) {
@@ -392,10 +401,23 @@ func (s *Server) handleStoryboard(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = s.database.CreateOp(op)
 
-		go func(opID, scID string) {
+		go func(opID, scID, pid string) {
 			time.Sleep(1 * time.Second)
-			resBytes, _ := json.Marshal(map[string]string{
+			assetID := "asset_storyboard_" + scID
+			storyboardAsset := &models.Asset{
+				ID:           assetID,
+				ProjectID:    &pid,
+				Type:         "location",
+				Name:         "Scene Storyboard",
+				FilePath:     "storage/storyboards/sample.png",
+				TagsJSON:     []byte(`["storyboard"]`),
+				MetadataJSON: []byte(fmt.Sprintf(`{"scene_id":"%s"}`, scID)),
+			}
+			_ = s.database.CreateAsset(storyboardAsset)
+
+			resBytes, _ := json.Marshal(map[string]interface{}{
 				"scene_id":       scID,
+				"asset_id":       assetID,
 				"storyboard_url": "/storage/storyboards/sample.png",
 			})
 			_ = s.database.UpdateOp(opID, "succeeded", resBytes, nil)
@@ -406,7 +428,7 @@ func (s *Server) handleStoryboard(w http.ResponseWriter, r *http.Request) {
 				"status":   "succeeded",
 				"scene_id": scID,
 			})
-		}(op.ID, sceneID)
+		}(op.ID, sceneID, projectID)
 
 		writeJSON(w, http.StatusAccepted, map[string]interface{}{
 			"op_id":  op.ID,
@@ -477,7 +499,11 @@ func (s *Server) handleGenerateSceneAssets(w http.ResponseWriter, r *http.Reques
 			}
 			_ = s.database.CreateAsset(newAsset)
 
-			resBytes, _ := json.Marshal([]models.Asset{*newAsset})
+			resBytes, _ := json.Marshal(map[string]interface{}{
+				"scene_id":  scID,
+				"asset_ids": []string{assetID},
+				"assets":    []models.Asset{*newAsset},
+			})
 			_ = s.database.UpdateOp(opID, "succeeded", resBytes, nil)
 			s.broker.Publish(map[string]interface{}{
 				"type":     "op_done",

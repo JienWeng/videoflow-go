@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"videoflow-go/internal/models"
@@ -1102,6 +1104,42 @@ func (d *DB) ListOps(projectID string, limit int) ([]models.Op, error) {
 	return ops, nil
 }
 
+func (d *DB) ListOpsFiltered(projectID, kind string, limit int) ([]models.Op, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	query := "SELECT id, kind, status, scene_id, output_id, project_id, error, result_json, created_at, updated_at FROM ops WHERE 1=1"
+	args := []interface{}{}
+	if projectID != "" {
+		query += " AND (project_id = ? OR project_id IS NULL)"
+		args = append(args, projectID)
+	}
+	if kind != "" {
+		query += " AND kind = ?"
+		args = append(args, kind)
+	}
+	query += " ORDER BY created_at DESC LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := d.conn.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ops := []models.Op{}
+	for rows.Next() {
+		var op models.Op
+		var res string
+		if err := rows.Scan(&op.ID, &op.Kind, &op.Status, &op.SceneID, &op.OutputID, &op.ProjectID, &op.Error, &res, &op.CreatedAt, &op.UpdatedAt); err != nil {
+			return nil, err
+		}
+		op.ResultJSON = []byte(res)
+		ops = append(ops, op)
+	}
+	return ops, nil
+}
+
 // --- App Settings ---
 
 func (d *DB) GetAppSetting(key string) (string, error) {
@@ -1156,6 +1194,18 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 					Label:  "reference",
 				})
 			}
+			if len(a.MetadataJSON) > 0 {
+				var meta struct {
+					SceneID *string `json:"scene_id"`
+				}
+				if err := json.Unmarshal(a.MetadataJSON, &meta); err == nil && meta.SceneID != nil && *meta.SceneID != "" {
+					edges = append(edges, models.GraphEdge{
+						Source: *meta.SceneID,
+						Target: a.ID,
+						Label:  a.Type,
+					})
+				}
+			}
 		}
 	}
 
@@ -1184,6 +1234,15 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 					Label:  "casts",
 				})
 			}
+			var assetIDs []string
+			_ = json.Unmarshal(s.AssetIDsJSON, &assetIDs)
+			for _, aid := range assetIDs {
+				edges = append(edges, models.GraphEdge{
+					Source: s.ID,
+					Target: aid,
+					Label:  "uses",
+				})
+			}
 
 			// Shots for scene
 			shots, _ := d.ListShots(s.ID)
@@ -1197,12 +1256,97 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 						"shot_order": sh.ShotOrder,
 						"duration":   sh.Duration,
 						"prompt":     sh.Prompt,
+						"camera":     sh.Camera,
+						"movement":   sh.Movement,
 					},
 				})
 				edges = append(edges, models.GraphEdge{
 					Source: s.ID,
 					Target: sh.ID,
 					Label:  "shot",
+				})
+
+				var shotAssetIDs []string
+				_ = json.Unmarshal(sh.AssetIDsJSON, &shotAssetIDs)
+				for _, aid := range shotAssetIDs {
+					edges = append(edges, models.GraphEdge{
+						Source: sh.ID,
+						Target: aid,
+						Label:  "uses",
+					})
+				}
+			}
+		}
+	}
+
+	// RenderJobs & RenderOutputs
+	jobs, err := d.ListRenderJobs(projectID)
+	if err == nil {
+		for _, j := range jobs {
+			modelName := j.Model
+			if idx := strings.LastIndex(modelName, "/"); idx >= 0 {
+				modelName = modelName[idx+1:]
+			}
+			nodes = append(nodes, models.GraphNode{
+				ID:    j.ID,
+				Type:  "render_job",
+				Label: fmt.Sprintf("%s (%s)", j.Status, modelName),
+				Data: map[string]interface{}{
+					"status": j.Status,
+				},
+			})
+			parentID := ""
+			if j.ShotID != nil && *j.ShotID != "" {
+				parentID = *j.ShotID
+			} else if j.SceneID != nil && *j.SceneID != "" {
+				parentID = *j.SceneID
+			}
+			if parentID != "" {
+				edges = append(edges, models.GraphEdge{
+					Source: parentID,
+					Target: j.ID,
+					Label:  "render",
+				})
+			}
+
+			// Outputs for this job
+			outputs, _ := d.ListOutputsForJob(j.ID)
+			for _, o := range outputs {
+				qaIssues := []string{}
+				if len(o.QAJSON) > 0 {
+					var qaData struct {
+						Issues   []string `json:"issues"`
+						QAIssues []string `json:"qa_issues"`
+					}
+					if err := json.Unmarshal(o.QAJSON, &qaData); err == nil {
+						if len(qaData.Issues) > 0 {
+							qaIssues = qaData.Issues
+						} else if len(qaData.QAIssues) > 0 {
+							qaIssues = qaData.QAIssues
+						}
+					}
+				}
+				label := o.ID
+				if o.VideoPath != "" {
+					label = filepath.Base(o.VideoPath)
+				}
+				nodes = append(nodes, models.GraphNode{
+					ID:    o.ID,
+					Type:  "output",
+					Label: label,
+					Data: map[string]interface{}{
+						"video_path":     o.VideoPath,
+						"thumbnail_path": o.ThumbnailPath,
+						"captioned_path": o.CaptionedPath,
+						"score":          o.Score,
+						"qa_issues":      qaIssues,
+						"render_job_id":  o.RenderJobID,
+					},
+				})
+				edges = append(edges, models.GraphEdge{
+					Source: j.ID,
+					Target: o.ID,
+					Label:  "output",
 				})
 			}
 		}
@@ -1354,6 +1498,37 @@ func (d *DB) ListConnections() ([]models.Connection, error) {
 }
 
 // --- Outputs ---
+
+func (d *DB) CreateRenderOutput(o *models.RenderOutput) error {
+	if o.ID == "" {
+		o.ID = "output_" + uuid.New().String()[:8]
+	}
+	now := time.Now().UTC()
+	o.CreatedAt = now
+	o.UpdatedAt = now
+
+	caps := string(o.CaptionsJSON)
+	if caps == "" {
+		caps = "[]"
+	}
+	qa := string(o.QAJSON)
+	if qa == "" {
+		qa = "{}"
+	}
+	sel := 0
+	if o.Selected {
+		sel = 1
+	}
+
+	_, err := d.conn.Exec(`
+		INSERT INTO render_outputs (
+			id, render_job_id, video_path, thumbnail_path, captioned_path,
+			captions_json, score, qa_json, selected, notes, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, o.ID, o.RenderJobID, o.VideoPath, o.ThumbnailPath, o.CaptionedPath,
+		caps, o.Score, qa, sel, o.Notes, now, now)
+	return err
+}
 
 func (d *DB) GetRenderOutput(id string) (*models.RenderOutput, error) {
 	row := d.conn.QueryRow(`

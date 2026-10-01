@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"videoflow-go/internal/models"
+
 	"github.com/go-chi/chi/v5"
 )
 
@@ -18,7 +20,11 @@ func (s *Server) handleGetOp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListOps(w http.ResponseWriter, r *http.Request) {
-	projectID, _ := s.database.GetActiveProjectID()
+	projectID := r.URL.Query().Get("project_id")
+	if projectID == "" {
+		projectID, _ = s.database.GetActiveProjectID()
+	}
+	kind := r.URL.Query().Get("kind")
 	limit := 20
 	if l := r.URL.Query().Get("limit"); l != "" {
 		if val, err := strconv.Atoi(l); err == nil {
@@ -26,10 +32,13 @@ func (s *Server) handleListOps(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ops, err := s.database.ListOps(projectID, limit)
+	ops, err := s.database.ListOpsFiltered(projectID, kind, limit)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if ops == nil {
+		ops = []models.Op{}
 	}
 	writeJSON(w, http.StatusOK, ops)
 }

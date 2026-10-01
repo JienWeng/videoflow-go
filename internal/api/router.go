@@ -60,6 +60,10 @@ func (s *Server) Router() http.Handler {
 	return s.router
 }
 
+func (s *Server) Database() *db.DB {
+	return s.database
+}
+
 func (s *Server) setupRoutes() {
 	s.router.Use(middleware.RequestID)
 	s.router.Use(middleware.RealIP)
@@ -180,6 +184,7 @@ func (s *Server) setupRoutes() {
 	// Style Guide
 	s.router.Get("/style", s.handleGetStyle)
 	s.router.Patch("/style", s.handleUpdateStyle)
+	s.router.Put("/style", s.handleUpdateStyle)
 	s.router.Post("/style/ingest", s.handleIngestStyle)
 
 	// Settings
