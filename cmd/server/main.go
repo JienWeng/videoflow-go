@@ -10,12 +10,14 @@ import (
 	"syscall"
 	"time"
 
+	"videoflow-go/internal/agents"
 	"videoflow-go/internal/api"
 	"videoflow-go/internal/config"
 	"videoflow-go/internal/db"
 	"videoflow-go/internal/events"
 	"videoflow-go/internal/jobs"
 	"videoflow-go/internal/media"
+	"videoflow-go/internal/providers"
 )
 
 func main() {
@@ -37,12 +39,16 @@ func main() {
 		log.Println("Warning: FFmpeg not detected in PATH; thumbnails and clipping disabled")
 	}
 
+	openrouter := providers.NewOpenRouterClient(cfg.OpenRouterAPIKey)
+	atlascloud := providers.NewAtlasCloudClient(cfg.AtlasCloudAPIKey)
+	agentsEngine := agents.NewAgentEngine(openrouter, "openai/gpt-4o-mini")
+
 	workers := jobs.NewWorkerPool(cfg, database, broker, mediaEngine)
 	workers.Start()
 	workers.ReconcilePending()
 	defer workers.Stop()
 
-	server := api.NewServer(cfg, database, broker, workers)
+	server := api.NewServer(cfg, database, broker, workers, agentsEngine, openrouter, atlascloud, mediaEngine)
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	httpServer := &http.Server{
 		Addr:         addr,

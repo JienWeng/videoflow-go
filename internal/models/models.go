@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// Project table
 type Project struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
@@ -14,6 +15,7 @@ type Project struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// Character table
 type Character struct {
 	ID                    string          `json:"id"`
 	ProjectID             *string         `json:"project_id"`
@@ -29,6 +31,7 @@ type Character struct {
 	UpdatedAt             time.Time       `json:"updated_at"`
 }
 
+// Asset table
 type Asset struct {
 	ID           string          `json:"id"`
 	ProjectID    *string         `json:"project_id"`
@@ -43,11 +46,24 @@ type Asset struct {
 	UpdatedAt    time.Time       `json:"updated_at"`
 }
 
+// Script table
+type Script struct {
+	ID        string          `json:"id"`
+	ProjectID *string         `json:"project_id"`
+	Idea      string          `json:"idea"`
+	Title     string          `json:"title"`
+	Summary   string          `json:"summary"`
+	DraftJSON json.RawMessage `json:"draft_json"`
+	CreatedAt time.Time       `json:"created_at"`
+	UpdatedAt time.Time       `json:"updated_at"`
+}
+
+// Scene table
 type Scene struct {
 	ID               string          `json:"id"`
 	ProjectID        *string         `json:"project_id"`
 	ScriptID         *string         `json:"script_id"`
-	SceneOrder       *int            `json:"scene_order"`
+	SceneOrder       int             `json:"scene_order"`
 	Title            string          `json:"title"`
 	Summary          string          `json:"summary"`
 	Duration         int             `json:"duration"`
@@ -59,6 +75,7 @@ type Scene struct {
 	UpdatedAt        time.Time       `json:"updated_at"`
 }
 
+// Shot table
 type Shot struct {
 	ID           string          `json:"id"`
 	SceneID      string          `json:"scene_id"`
@@ -73,6 +90,7 @@ type Shot struct {
 	UpdatedAt    time.Time       `json:"updated_at"`
 }
 
+// RenderJob table
 type RenderJob struct {
 	ID            string          `json:"id"`
 	ProjectID     *string         `json:"project_id"`
@@ -91,6 +109,7 @@ type RenderJob struct {
 	UpdatedAt     time.Time       `json:"updated_at"`
 }
 
+// RenderOutput table
 type RenderOutput struct {
 	ID            string          `json:"id"`
 	RenderJobID   string          `json:"render_job_id"`
@@ -99,12 +118,14 @@ type RenderOutput struct {
 	CaptionedPath *string         `json:"captioned_path"`
 	CaptionsJSON  json.RawMessage `json:"captions_json"`
 	Score         *float64        `json:"score"`
+	QAJSON        json.RawMessage `json:"qa_json"`
 	Selected      bool            `json:"selected"`
 	Notes         string          `json:"notes"`
 	CreatedAt     time.Time       `json:"created_at"`
 	UpdatedAt     time.Time       `json:"updated_at"`
 }
 
+// StyleGuide table
 type StyleGuide struct {
 	ID          string    `json:"id"`
 	ProjectID   *string   `json:"project_id"`
@@ -118,7 +139,50 @@ type StyleGuide struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// Op table (for long-running operations)
+type Op struct {
+	ID         string          `json:"id"`
+	Kind       string          `json:"kind"`   // video_generation, conversation, qa, etc.
+	Status     string          `json:"status"` // running, succeeded, failed
+	SceneID    *string         `json:"scene_id"`
+	OutputID   *string         `json:"output_id"`
+	ProjectID  *string         `json:"project_id"`
+	Error      *string         `json:"error"`
+	ResultJSON json.RawMessage `json:"result_json"`
+	CreatedAt  time.Time       `json:"created_at"`
+	UpdatedAt  time.Time       `json:"updated_at"`
+}
+
+// AppSetting table
 type AppSetting struct {
 	Key   string          `json:"key"`
 	Value json.RawMessage `json:"value"`
+}
+
+// AgentSetting table
+type AgentSetting struct {
+	Agent          string  `json:"agent"`
+	ProjectID      *string `json:"project_id"`
+	Provider       string  `json:"provider"`
+	Model          string  `json:"model"`
+	PromptTemplate string  `json:"prompt_template"`
+}
+
+// Graph Response
+type GraphNode struct {
+	ID    string                 `json:"id"`
+	Type  string                 `json:"type"`
+	Label string                 `json:"label"`
+	Data  map[string]interface{} `json:"data,omitempty"`
+}
+
+type GraphEdge struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
+	Label  string `json:"label,omitempty"`
+}
+
+type GraphResponse struct {
+	Nodes []GraphNode `json:"nodes"`
+	Edges []GraphEdge `json:"edges"`
 }

@@ -2,40 +2,55 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"time"
 
+	"videoflow-go/internal/agents"
 	"videoflow-go/internal/config"
 	"videoflow-go/internal/db"
 	"videoflow-go/internal/events"
 	"videoflow-go/internal/jobs"
-	"videoflow-go/internal/models"
+	"videoflow-go/internal/media"
+	"videoflow-go/internal/providers"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"github.com/google/uuid"
 )
 
 type Server struct {
-	cfg      *config.Config
-	database *db.DB
-	broker   *events.Broker
-	workers  *jobs.WorkerPool
-	router   *chi.Mux
+	cfg        *config.Config
+	database   *db.DB
+	broker     *events.Broker
+	workers    *jobs.WorkerPool
+	agents     *agents.AgentEngine
+	openrouter *providers.OpenRouterClient
+	atlascloud *providers.AtlasCloudClient
+	media      *media.MediaEngine
+	router     *chi.Mux
 }
 
-func NewServer(cfg *config.Config, database *db.DB, broker *events.Broker, workers *jobs.WorkerPool) *Server {
+func NewServer(
+	cfg *config.Config,
+	database *db.DB,
+	broker *events.Broker,
+	workers *jobs.WorkerPool,
+	agentsEngine *agents.AgentEngine,
+	openrouter *providers.OpenRouterClient,
+	atlascloud *providers.AtlasCloudClient,
+	mediaEngine *media.MediaEngine,
+) *Server {
 	s := &Server{
-		cfg:      cfg,
-		database: database,
-		broker:   broker,
-		workers:  workers,
-		router:   chi.NewRouter(),
+		cfg:        cfg,
+		database:   database,
+		broker:     broker,
+		workers:    workers,
+		agents:     agentsEngine,
+		openrouter: openrouter,
+		atlascloud: atlascloud,
+		media:      mediaEngine,
+		router:     chi.NewRouter(),
 	}
 	s.setupRoutes()
 	return s
@@ -50,9 +65,9 @@ func (s *Server) setupRoutes() {
 	s.router.Use(middleware.RealIP)
 	s.router.Use(middleware.Logger)
 	s.router.Use(middleware.Recoverer)
-	s.router.Use(middleware.Timeout(60 * time.Second))
+	s.router.Use(middleware.Timeout(120 * time.Second))
 
-	// CORS matching FastAPI frontend origins
+	// CORS matching SvelteKit frontend origins
 	s.router.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:4173", "http://127.0.0.1:4173"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
@@ -66,7 +81,7 @@ func (s *Server) setupRoutes() {
 	fileServer := http.FileServer(http.Dir(s.cfg.StorageRoot))
 	s.router.Handle("/storage/*", http.StripPrefix("/storage/", fileServer))
 
-	// Health endpoint
+	// Health
 	s.router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		resp := map[string]interface{}{
 			"status":       "ok",
@@ -79,213 +94,84 @@ func (s *Server) setupRoutes() {
 		writeJSON(w, http.StatusOK, resp)
 	})
 
-	// Server-Sent Events (SSE) endpoint
+	// Server-Sent Events (SSE)
 	s.router.Get("/events", s.handleEvents)
 
 	// Projects
 	s.router.Get("/projects", s.handleListProjects)
 	s.router.Post("/projects", s.handleCreateProject)
+	s.router.Get("/projects/active", s.handleGetActiveProject)
 	s.router.Post("/projects/{id}/activate", s.handleActivateProject)
+	s.router.Patch("/projects/{id}", s.handleUpdateProject)
+	s.router.Delete("/projects/{id}", s.handleDeleteProject)
+	s.router.Post("/projects/{id}/export", s.handleExportProject)
+	s.router.Post("/projects/import", s.handleImportProject)
 
 	// Characters
 	s.router.Get("/characters", s.handleListCharacters)
+	s.router.Post("/characters", s.handleCreateCharacter)
+	s.router.Get("/characters/{id}", s.handleGetCharacter)
+	s.router.Patch("/characters/{id}", s.handleUpdateCharacter)
+	s.router.Delete("/characters/{id}", s.handleDeleteCharacter)
+	s.router.Post("/characters/{id}/reference-sheets", s.handleCharacterRefSheets)
 
-	// Scenes
+	// Scenes, Shots, Scripts & Ideas
 	s.router.Get("/scenes", s.handleListScenes)
+	s.router.Post("/scenes", s.handleCreateScene)
+	s.router.Get("/scenes/{id}", s.handleGetScene)
+	s.router.Patch("/scenes/{id}", s.handleUpdateScene)
+	s.router.Delete("/scenes/{id}", s.handleDeleteScene)
+	s.router.Get("/scenes/{id}/shots", s.handleListShots)
+	s.router.Post("/scenes/{id}/shots", s.handleCreateShot)
+	s.router.Patch("/shots/{id}", s.handleUpdateShot)
+	s.router.Delete("/shots/{id}", s.handleDeleteShot)
+	s.router.Post("/scenes/{id}/generate", s.handleExpandScene)
+	s.router.Post("/scenes/{id}/refine", s.handleRefineScene)
+	s.router.Post("/ideas/develop", s.handleDevelopIdea)
+	s.router.Post("/scripts/generate", s.handleGenerateScript)
+	s.router.Get("/scripts", s.handleListScripts)
 
 	// Assets
 	s.router.Get("/assets", s.handleListAssets)
+	s.router.Get("/assets/types", s.handleAssetTypes)
 	s.router.Post("/assets/upload", s.handleUploadAsset)
+	s.router.Get("/assets/{id}", s.handleGetAsset)
+	s.router.Delete("/assets/{id}", s.handleDeleteAsset)
 
-	// Render
-	s.router.Get("/render/{id}", s.handleGetRenderJob)
-}
+	// Render & Outputs
+	s.router.Post("/render", s.handleStartRender)
+	s.router.Post("/render/from-shot", s.handleRenderFromShot)
+	s.router.Get("/render-jobs", s.handleListRenderJobs)
+	s.router.Get("/render-jobs/{id}", s.handleGetRenderJob)
+	s.router.Get("/outputs/{id}/editor", s.handleGetEditorData)
+	s.router.Post("/outputs/{id}/retry", s.handleRetryOutput)
+	s.router.Get("/caption-config", s.handleCaptionConfig)
 
-func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
-		return
-	}
+	// Style Guide
+	s.router.Get("/style", s.handleGetStyle)
+	s.router.Patch("/style", s.handleUpdateStyle)
+	s.router.Post("/style/ingest", s.handleIngestStyle)
 
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
+	// Settings
+	s.router.Get("/settings/app", s.handleGetAppSettings)
+	s.router.Put("/settings/app", s.handlePutAppSettings)
+	s.router.Get("/settings/agents", s.handleListAgents)
+	s.router.Get("/settings/providers", s.handleListProviders)
+	s.router.Get("/settings/connection-presets", s.handleConnectionPresets)
 
-	ch := s.broker.Subscribe()
-	defer s.broker.Unsubscribe(ch)
+	// Chat Assistant
+	s.router.Post("/chat", s.handleChat)
 
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
+	// Videos (Guided Pipeline)
+	s.router.Get("/videos/preflight", s.handleVideoPreflight)
+	s.router.Post("/videos/generate", s.handleGenerateVideo)
 
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case msg := <-ch:
-			fmt.Fprint(w, msg)
-			flusher.Flush()
-		case <-ticker.C:
-			fmt.Fprint(w, ": heartbeat\n\n")
-			flusher.Flush()
-		}
-	}
-}
+	// Ops
+	s.router.Get("/ops/{id}", s.handleGetOp)
+	s.router.Get("/ops", s.handleListOps)
 
-func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
-	projects, err := s.database.ListProjects()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if projects == nil {
-		projects = []models.Project{}
-	}
-	writeJSON(w, http.StatusOK, projects)
-}
-
-func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-	if body.Name == "" {
-		body.Name = "Untitled Project"
-	}
-	proj, err := s.database.CreateProject(body.Name, body.Description)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, http.StatusOK, proj)
-}
-
-func (s *Server) handleActivateProject(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if err := s.database.ActivateProject(id); err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "active_project_id": id})
-}
-
-func (s *Server) handleListCharacters(w http.ResponseWriter, r *http.Request) {
-	projectID, err := s.database.GetActiveProjectID()
-	if err != nil {
-		http.Error(w, "no active project", http.StatusInternalServerError)
-		return
-	}
-	chars, err := s.database.ListCharacters(projectID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if chars == nil {
-		chars = []models.Character{}
-	}
-	writeJSON(w, http.StatusOK, chars)
-}
-
-func (s *Server) handleListScenes(w http.ResponseWriter, r *http.Request) {
-	projectID, err := s.database.GetActiveProjectID()
-	if err != nil {
-		http.Error(w, "no active project", http.StatusInternalServerError)
-		return
-	}
-	scenes, err := s.database.ListScenes(projectID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if scenes == nil {
-		scenes = []models.Scene{}
-	}
-	writeJSON(w, http.StatusOK, scenes)
-}
-
-func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
-	projectID, err := s.database.GetActiveProjectID()
-	if err != nil {
-		http.Error(w, "no active project", http.StatusInternalServerError)
-		return
-	}
-	assets, err := s.database.ListAssets(projectID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if assets == nil {
-		assets = []models.Asset{}
-	}
-	writeJSON(w, http.StatusOK, assets)
-}
-
-func (s *Server) handleUploadAsset(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(50 << 20); err != nil { // 50 MB
-		http.Error(w, "file too large", http.StatusBadRequest)
-		return
-	}
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		http.Error(w, "missing file parameter", http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
-	assetType := r.FormValue("type")
-	if assetType == "" {
-		assetType = "character_reference"
-	}
-
-	projectID, _ := s.database.GetActiveProjectID()
-	destDir := filepath.Join(s.cfg.StorageRoot, "assets")
-	_ = os.MkdirAll(destDir, 0755)
-
-	assetID := "asset_" + uuid.New().String()[:8]
-	ext := filepath.Ext(header.Filename)
-	destPath := filepath.Join(destDir, assetID+ext)
-
-	out, err := os.Create(destPath)
-	if err != nil {
-		http.Error(w, "failed to save file", http.StatusInternalServerError)
-		return
-	}
-	defer out.Close()
-
-	if _, err := io.Copy(out, file); err != nil {
-		http.Error(w, "failed to write file", http.StatusInternalServerError)
-		return
-	}
-
-	asset := &models.Asset{
-		ID:           assetID,
-		ProjectID:    &projectID,
-		Type:         assetType,
-		Name:         header.Filename,
-		FilePath:     destPath,
-		TagsJSON:     []byte("[]"),
-		MetadataJSON: []byte("{}"),
-	}
-	if err := s.database.CreateAsset(asset); err != nil {
-		http.Error(w, "failed to save asset to db", http.StatusInternalServerError)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, asset)
-}
-
-func (s *Server) handleGetRenderJob(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	job, err := s.database.GetRenderJob(id)
-	if err != nil {
-		http.Error(w, "job not found", http.StatusNotFound)
-		return
-	}
-	writeJSON(w, http.StatusOK, job)
+	// Graph Canvas
+	s.router.Get("/graph", s.handleGetGraph)
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
