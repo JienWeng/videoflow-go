@@ -2,8 +2,12 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
-	"os"
+	"strings"
+	"time"
+	"videoflow-go/internal/providers"
+	"videoflow-go/internal/routing"
 
 	"videoflow-go/internal/models"
 
@@ -21,100 +25,9 @@ type ProviderPresetInfo struct {
 }
 
 var presetCatalog = map[string]ProviderPresetInfo{
-	"minimax": {
-		Label:           "MiniMax",
-		Protocol:        "chat",
-		URL:             "https://api.minimax.io/v1",
-		DefaultModel:    "MiniMax-Text-01",
-		SuggestedModels: []string{"MiniMax-Text-01", "MiniMax-Text-02"},
-		EnvKey:          "MINIMAX_API_KEY",
-	},
-	"openai": {
-		Label:           "OpenAI API",
-		Protocol:        "chat",
-		URL:             "https://api.openai.com/v1",
-		DefaultModel:    "gpt-4o-mini",
-		SuggestedModels: []string{"gpt-4o", "gpt-4o-mini", "gpt-4-turbo"},
-		EnvKey:          "OPENAI_API_KEY",
-	},
-	"anthropic": {
-		Label:           "Anthropic / Claude",
-		Protocol:        "anthropic",
-		URL:             "https://api.anthropic.com",
-		DefaultModel:    "claude-3-5-sonnet-20241022",
-		SuggestedModels: []string{"claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"},
-		EnvKey:          "ANTHROPIC_API_KEY",
-	},
-	"gemini": {
-		Label:           "Google Gemini",
-		Protocol:        "chat",
-		URL:             "https://generativelanguage.googleapis.com/v1beta/openai",
-		DefaultModel:    "gemini-2.0-flash",
-		SuggestedModels: []string{"gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"},
-		EnvKey:          "GEMINI_API_KEY",
-	},
-	"atlas": {
-		Label:           "AtlasCloud",
-		Protocol:        "chat",
-		URL:             "https://api.atlascloud.ai/v1",
-		DefaultModel:    "qwen/qwen3-vl-30b-a3b-instruct",
-		SuggestedModels: []string{"qwen/qwen3-vl-30b-a3b-instruct", "black-forest-labs/flux-schnell"},
-		EnvKey:          "ATLASCLOUD_API_KEY",
-	},
-	"openrouter": {
-		Label:           "OpenRouter",
-		Protocol:        "chat",
-		URL:             "https://openrouter.ai/api/v1",
-		DefaultModel:    "openai/gpt-4o-mini",
-		SuggestedModels: []string{"openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet", "meta-llama/llama-3.3-70b-instruct"},
-		EnvKey:          "OPENROUTER_API_KEY",
-	},
-	"deepseek": {
-		Label:           "DeepSeek",
-		Protocol:        "chat",
-		URL:             "https://api.deepseek.com",
-		DefaultModel:    "deepseek-chat",
-		SuggestedModels: []string{"deepseek-chat", "deepseek-reasoner"},
-		EnvKey:          "DEEPSEEK_API_KEY",
-	},
-	"opencode": {
-		Label:           "OpenCode Zen",
-		Protocol:        "responses",
-		URL:             "https://opencode.ai/zen/v1",
-		DefaultModel:    "deepseek-v4-flash",
-		SuggestedModels: []string{"deepseek-v4-flash"},
-		EnvKey:          "OPENCODE_API_KEY",
-	},
-	"opencode-go": {
-		Label:           "OpenCode Go",
-		Protocol:        "chat",
-		URL:             "https://opencode.ai/zen/go/v1",
-		DefaultModel:    "deepseek-v4-flash",
-		SuggestedModels: []string{"deepseek-v4-flash"},
-		EnvKey:          "OPENCODE_GO_API_KEY",
-	},
-	"codex": {
-		Label:           "ChatGPT via Codex",
-		Protocol:        "codex",
-		URL:             "",
-		DefaultModel:    "gpt-4o",
-		SuggestedModels: []string{"gpt-4o", "gpt-4o-mini"},
-		EnvKey:          "",
-	},
-	"custom": {
-		Label:           "Custom endpoint",
-		Protocol:        "chat",
-		URL:             "",
-		DefaultModel:    "",
-		SuggestedModels: []string{},
-		EnvKey:          "",
-	},
+	"openrouter": {Label: "OpenRouter", Protocol: "chat", URL: providers.OpenRouterURL, DefaultModel: "openai/gpt-4o-mini", SuggestedModels: []string{"openai/gpt-4o-mini", "meta-llama/llama-3.3-70b-instruct"}, EnvKey: "OPENROUTER_API_KEY"},
 }
-
-var presetOrder = []string{
-	"minimax", "atlas", "openai", "anthropic", "gemini",
-	"openrouter", "deepseek", "opencode", "opencode-go", "codex", "custom",
-}
+var presetOrder = []string{"openrouter"}
 
 func maskKey(raw string) string {
 	if raw == "" {
@@ -126,50 +39,26 @@ func maskKey(raw string) string {
 	return "••••" + raw[len(raw)-4:]
 }
 
+func (s *Server) routes() routing.Resolver { return routing.Resolver{Config: s.cfg, DB: s.database} }
 func (s *Server) effectiveProviderKey(name string) (key string, baseURL *string, fromDB bool) {
-	dbKey, dbURL, found, _ := s.database.GetProviderSecret(name)
-	if found && dbKey != "" {
-		return dbKey, dbURL, true
-	}
-	// Fallback to env or config
-	switch name {
-	case "openrouter":
-		if s.cfg.OpenRouterAPIKey != "" {
-			u := "https://openrouter.ai/api/v1"
-			return s.cfg.OpenRouterAPIKey, &u, false
-		}
-	case "atlas", "atlascloud":
-		if s.cfg.AtlasCloudAPIKey != "" {
-			u := "https://api.atlascloud.ai/v1"
-			return s.cfg.AtlasCloudAPIKey, &u, false
-		}
-	}
-	if preset, ok := presetCatalog[name]; ok && preset.EnvKey != "" {
-		if envVal := os.Getenv(preset.EnvKey); envVal != "" {
-			u := preset.URL
-			return envVal, &u, false
-		}
-	}
-	if found {
-		return "", dbURL, true
-	}
-	return "", nil, false
+	key, endpoint, fromDB, _ := s.routes().Credentials(name)
+	return key, &endpoint, fromDB
 }
 
 func (s *Server) handleGetAppSettings(w http.ResponseWriter, r *http.Request) {
 	appSettings := map[string]interface{}{
 		"default_aspect_ratio":   "9:16",
-		"default_video_provider": s.cfg.DefaultVideoProvider,
+		"default_video_provider": "openrouter",
 		"default_image_provider": "openrouter",
 		"default_scene_duration": 5.0,
 		"caption_style":          "clean",
 		"caption_language":       "auto",
-		"whisper_model":          "small",
+		"whisper_model":          "openai/whisper-1",
 		"dialogue_language":      "English",
 		"image_model":            s.cfg.OpenRouterImageModel,
-		"ref_image_model":        s.cfg.AtlasImageModel,
+		"ref_image_model":        s.cfg.OpenRouterImageModel,
 		"video_model":            s.cfg.OpenRouterVideoModel,
-		"vl_model":               "qwen/qwen3-vl-30b-a3b-instruct",
+		"vl_model":               s.cfg.OpenRouterVisionModel,
 		"max_video_refs":         3,
 		"render_negatives":       []string{"blurry", "low quality", "distorted", "watermark"},
 	}
@@ -184,6 +73,8 @@ func (s *Server) handleGetAppSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	appSettings["default_image_provider"] = "openrouter"
+	appSettings["default_video_provider"] = "openrouter"
 	writeJSON(w, http.StatusOK, appSettings)
 }
 
@@ -193,9 +84,55 @@ func (s *Server) handlePutAppSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+	for _, key := range []string{"default_image_provider", "default_video_provider"} {
+		if value, ok := body[key]; ok && value != "openrouter" {
+			http.Error(w, "All generation uses OpenRouter", http.StatusBadRequest)
+			return
+		}
+	}
+	for key, modality := range map[string]string{"image_model": "image", "ref_image_model": "image", "video_model": "video", "vl_model": "vision", "whisper_model": "transcription"} {
+		if value, ok := body[key]; ok {
+			model, valid := value.(string)
+			if !valid || strings.TrimSpace(model) == "" {
+				http.Error(w, "model ID is required", 400)
+				return
+			}
+			client, err := s.routes().Client("openrouter")
+			if err == nil {
+				_, err = client.Model(r.Context(), model, modality)
+			}
+			if err != nil {
+				http.Error(w, err.Error(), 400)
+				return
+			}
+		}
+	}
+	if raw, ok := body["default_scene_duration"]; ok {
+		value, valid := raw.(float64)
+		if !valid || value < 1 || value > 120 || value != float64(int(value)) {
+			http.Error(w, "Scene duration must be an integer between 1 and 120 seconds", 400)
+			return
+		}
+	}
+	if raw, ok := body["render_negatives"]; ok {
+		values, valid := raw.([]any)
+		if !valid {
+			http.Error(w, "render_negatives must be a list of strings", 400)
+			return
+		}
+		for _, value := range values {
+			if _, valid := value.(string); !valid {
+				http.Error(w, "render_negatives must contain strings", 400)
+				return
+			}
+		}
+	}
 	for k, v := range body {
 		b, _ := json.Marshal(v)
-		_ = s.database.SetAppSetting(k, string(b))
+		if err := s.database.SetAppSetting(k, string(b)); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
 	}
 	s.handleGetAppSettings(w, r)
 }
@@ -220,6 +157,13 @@ var standardAgents = []struct {
 	{"style_agent", "Style Agent", "openrouter", "openai/gpt-4o-mini"},
 }
 
+func (s *Server) defaultAgentModel(agent string) string {
+	if agent == "qa_agent" || agent == "asset_recogniser" {
+		return s.routes().Setting("vl_model", s.cfg.OpenRouterVisionModel)
+	}
+	return s.cfg.OpenRouterTextModel
+}
+
 func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 	overrides, _ := s.database.GetAgentSettings()
 	if overrides == nil {
@@ -229,12 +173,16 @@ func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 	res := make([]map[string]interface{}, 0, len(standardAgents))
 	for _, a := range standardAgents {
 		prov := a.DefaultProvider
-		mod := a.DefaultModel
+		mod := s.defaultAgentModel(a.Agent)
 		if ov, ok := overrides[a.Agent]; ok && ov.Provider != "" {
 			prov = ov.Provider
 			if ov.Model != "" {
 				mod = ov.Model
 			}
+		}
+		if selectedProvider, selectedModel, _, err := s.routes().Selection(a.Agent); err == nil {
+			prov = selectedProvider
+			mod = selectedModel
 		}
 		res = append(res, map[string]interface{}{
 			"agent":            a.Agent,
@@ -242,7 +190,7 @@ func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 			"provider":         prov,
 			"model":            mod,
 			"default_provider": a.DefaultProvider,
-			"default_model":    a.DefaultModel,
+			"default_model":    s.defaultAgentModel(a.Agent),
 		})
 	}
 	writeJSON(w, http.StatusOK, res)
@@ -282,26 +230,50 @@ func (s *Server) handlePutAgent(w http.ResponseWriter, r *http.Request) {
 			"agent":            foundAgent.Agent,
 			"label":            foundAgent.Label,
 			"provider":         foundAgent.DefaultProvider,
-			"model":            foundAgent.DefaultModel,
+			"model":            s.defaultAgentModel(foundAgent.Agent),
 			"default_provider": foundAgent.DefaultProvider,
-			"default_model":    foundAgent.DefaultModel,
+			"default_model":    s.defaultAgentModel(foundAgent.Agent),
 		})
 		return
 	}
 
+	if *body.Provider != "openrouter" {
+		conns, err := s.database.ListConnections()
+		valid := false
+		if err == nil {
+			for _, c := range conns {
+				if c.Name == *body.Provider && c.Preset == "openrouter" {
+					valid = true
+				}
+			}
+		}
+		if !valid {
+			http.Error(w, "Select an OpenRouter connection", 400)
+			return
+		}
+	}
 	modelStr := ""
 	if body.Model != nil {
 		modelStr = *body.Model
 	}
-	_ = s.database.SetAgentSetting(agentName, *body.Provider, modelStr)
+	if err := s.database.SetAgentSetting(agentName, *body.Provider, modelStr); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"agent":            foundAgent.Agent,
-		"label":            foundAgent.Label,
-		"provider":         *body.Provider,
-		"model":            modelStr,
+		"agent":    foundAgent.Agent,
+		"label":    foundAgent.Label,
+		"provider": *body.Provider,
+		"model": func() string {
+			_, model, _, err := s.routes().Selection(agentName)
+			if err == nil {
+				return model
+			}
+			return modelStr
+		}(),
 		"default_provider": foundAgent.DefaultProvider,
-		"default_model":    foundAgent.DefaultModel,
+		"default_model":    s.defaultAgentModel(foundAgent.Agent),
 	})
 }
 
@@ -338,6 +310,9 @@ func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 
 	// User-created connections
 	for _, c := range conns {
+		if c.Preset != "openrouter" || c.Protocol != "chat" {
+			continue
+		}
 		key, _, fromDB := s.effectiveProviderKey(c.Name)
 		models := []string{}
 		if c.Model != "" {
@@ -391,51 +366,102 @@ func (s *Server) handlePutProviderConfig(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	keyStr := ""
-	if body.APIKey != nil {
-		keyStr = *body.APIKey
+	if name != "openrouter" {
+		conns, _ := s.database.ListConnections()
+		valid := false
+		for _, c := range conns {
+			if c.Name == name && c.Preset == "openrouter" {
+				valid = true
+			}
+		}
+		if !valid {
+			http.Error(w, "Unknown OpenRouter connection", 400)
+			return
+		}
 	}
-	_ = s.database.SetProviderSecret(name, keyStr, body.BaseURL)
+	if body.BaseURL != nil && *body.BaseURL != "" && !routing.ValidBaseURL(*body.BaseURL) {
+		http.Error(w, "Use https://openrouter.ai/api/v1", 400)
+		return
+	}
+	keyStr, _, _, err := s.database.GetProviderSecret(name)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if body.APIKey != nil {
+		keyStr = strings.TrimSpace(*body.APIKey)
+	}
+	if err = s.database.SetProviderSecret(name, keyStr, body.BaseURL); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
 
 	s.handleGetProviderConfig(w, r)
 }
 
 func (s *Server) handleTestProvider(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
-	key, _, _ := s.effectiveProviderKey(name)
-	if key == "" {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"ok":         false,
-			"latency_ms": nil,
-			"error":      "no API key configured",
-		})
+	start := time.Now()
+	client, err := s.routes().Client(chi.URLParam(r, "name"))
+	if err == nil {
+		err = client.CheckKey(r.Context())
+	}
+	var message any
+	if err != nil {
+		message = err.Error()
+	}
+	writeJSON(w, 200, map[string]any{"ok": err == nil, "latency_ms": time.Since(start).Milliseconds(), "error": message})
+}
+func (s *Server) handleDiscoverModels(w http.ResponseWriter, r *http.Request) {
+	modality := r.URL.Query().Get("modality")
+	if modality == "" {
+		modality = "text"
+	}
+	client, err := s.routes().Client(chi.URLParam(r, "name"))
+	var catalog []providers.Model
+	if err == nil {
+		catalog, err = client.Models(r.Context(), modality)
+	}
+	ids := []string{}
+	for _, model := range catalog {
+		ids = append(ids, model.ID)
+	}
+	var message any
+	if err != nil {
+		message = err.Error()
+	}
+	writeJSON(w, 200, map[string]any{"models": ids, "capabilities": catalog, "modality": modality, "error": message})
+}
+func (s *Server) handleVerifyModel(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Model    string `json:"model"`
+		Modality string `json:"modality"`
+	}
+	if json.NewDecoder(r.Body).Decode(&body) != nil || strings.TrimSpace(body.Model) == "" {
+		http.Error(w, "model is required", 400)
 		return
 	}
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"ok":         true,
-		"latency_ms": 78,
-		"error":      nil,
-	})
-}
-
-func (s *Server) handleDiscoverModels(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
-	modelsList := []string{}
-	if p, ok := presetCatalog[name]; ok {
-		modelsList = p.SuggestedModels
+	if body.Modality == "" {
+		body.Modality = "text"
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"models": modelsList,
-		"error":  nil,
-	})
-}
-
-func (s *Server) handleVerifyModel(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"ok":    true,
-		"error": nil,
-	})
+	client, err := s.routes().Client(chi.URLParam(r, "name"))
+	if err == nil {
+		_, err = client.Model(r.Context(), body.Model, body.Modality)
+	}
+	// A text verification performs one small, billable completion. Media verification only checks the catalog.
+	if err == nil && (body.Modality == "text" || body.Modality == "vision") {
+		var result struct {
+			OK bool `json:"ok"`
+		}
+		err = client.StructuredJSON(r.Context(), body.Model, "Return the requested JSON.", "Return {\"ok\":true}", &result)
+		if err == nil && !result.OK {
+			err = fmt.Errorf("model did not return the requested JSON object")
+		}
+	}
+	var message any
+	if err != nil {
+		message = err.Error()
+	}
+	writeJSON(w, 200, map[string]any{"ok": err == nil, "error": message, "modality": body.Modality, "generation_tested": body.Modality == "text" && err == nil})
 }
 
 func (s *Server) handleConnectionPresets(w http.ResponseWriter, r *http.Request) {
@@ -469,6 +495,23 @@ func (s *Server) handleCreateConnection(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if body.Preset != "openrouter" || (body.Protocol != "" && body.Protocol != "chat") {
+		http.Error(w, "Connections must use OpenRouter Chat Completions", 400)
+		return
+	}
+	if body.BaseURL != nil && *body.BaseURL != "" && !routing.ValidBaseURL(*body.BaseURL) {
+		http.Error(w, "Use https://openrouter.ai/api/v1", 400)
+		return
+	}
+	body.Protocol = "chat"
+	if body.Mode != "auto" && body.Mode != "prompt" && body.Mode != "" {
+		http.Error(w, "Supported output modes are auto and prompt", 400)
+		return
+	}
+	if body.BaseURL == nil || *body.BaseURL == "" {
+		value := providers.OpenRouterURL
+		body.BaseURL = &value
+	}
 	name := "conn_" + uuid.New().String()[:8]
 	conn := &models.Connection{
 		Name:     name,

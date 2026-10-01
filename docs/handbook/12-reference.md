@@ -23,22 +23,17 @@
 | Variable | Role |
 |---|---|
 | `OPENCODE_GO_API_KEY` | Current default text-agent connection credential |
-| `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL` | Built-in OpenRouter credential and endpoint |
-| `OPENROUTER_MODEL` | OpenRouter text model default |
+| `OPENROUTER_API_KEY` | Built-in OpenRouter credential; fixed endpoint https://openrouter.ai/api/v1 |
+| `OPENROUTER_TEXT_MODEL` | OpenRouter text model default |
 | `OPENROUTER_IMAGE_MODEL`, `OPENROUTER_VIDEO_MODEL` | OpenRouter media defaults, used when no saved model override exists |
-| `ATLASCLOUD_API_KEY`, `ATLASCLOUD_BASE_URL` | AtlasCloud media credential/endpoint |
-| `ATLAS_VIDEO_RESOLUTION` | AtlasCloud output resolution; the selected model must support it |
-| `ATLAS_LLM_BASE_URL`, `ATLAS_VL_MODEL` | AtlasCloud vision/text route |
-| `ATLAS_IMAGE_MODEL`, `ATLAS_IMAGE_REF_MODEL` | AtlasCloud text-to-image and reference-edit model IDs |
-| `ATLAS_VIDEO_MODEL` | AtlasCloud video model ID; adapter currently emits H3 payloads |
 | `DEFAULT_IMAGE_PROVIDER`, `DEFAULT_VIDEO_PROVIDER` | Initial media defaults; saved settings may override them, so confirm the effective route in the Create preflight panel |
 | `DATABASE_URL`, `STORAGE_ROOT` | Local database and media locations |
 | `POLL_INTERVAL_S`, `POLL_TIMEOUT_S` | Render polling timing |
 | `LLM_TIMEOUT_S`, `LLM_MAX_RETRIES` | Text request timeout and validation retries |
-| `WHISPER_MODEL` | Local transcription model default |
+| `OPENROUTER_VISION_MODEL` | Vision model default; timed transcription model is saved in Settings |
 | `VITE_API_BASE` | Frontend API base override; configured for the frontend process/build |
 
-[`.env.example`](../../.env.example) lists the primary configuration. [Settings source](../../app/config.py) is the complete environment reference. Saved database settings can override environment defaults.
+[`.env.example`](../.env.example) lists the primary configuration. Saved database settings can override environment defaults.
 
 ## Navigation and API
 
@@ -54,14 +49,15 @@
 | Output editor | `/editor/{output-id}` | `/outputs/{id}/editor`, caption endpoints |
 | Settings | `/settings` | `/settings/providers`, `/settings/agents`, `/settings/app` |
 
-Use the running backend's [OpenAPI UI](http://localhost:8000/docs) for request schemas. Posting generation endpoints can incur provider usage. Health and model listing are not substitutes for an end-to-end generation check.
+Use the running Go backend for request schemas. Posting generation endpoints can incur provider usage. Health and model listing are not substitutes for an end-to-end generation check.
 
 ## Maintainer checks
 
 From the repository root:
 
 ```sh
-uv run pytest -q
+go test ./...
+make build
 ```
 
 From `frontend`:
@@ -70,5 +66,3 @@ From `frontend`:
 npm run check
 npm run build
 ```
-
-The current local verification is 640 passing backend tests plus passing frontend checks/build. This verifies local contracts and UI compilation, not paid live provider generation. Consult [verification evidence](../audits/2026-09-27-verification.md) for the exact scope and limitation.

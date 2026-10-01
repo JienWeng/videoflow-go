@@ -1,9 +1,10 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
-	"time"
 
 	"videoflow-go/internal/models"
 )
@@ -50,47 +51,63 @@ func (s *Server) handleUpdateStyle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIngestStyle(w http.ResponseWriter, r *http.Request) {
-	background := r.URL.Query().Get("background") == "true"
-	projectID, _ := s.database.GetActiveProjectID()
-
-	// Analyzes reference images and extracts style prompt
+	projectID, err := s.database.GetActiveProjectID()
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
 	var body struct {
 		AssetIDs []string `json:"asset_ids"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
-
-	result := map[string]interface{}{
-		"status":       "ok",
-		"style_prompt": "Cinematic visual tone extracted from references",
-		"palette":      "Rich contrast, warm shadows",
-	}
-
-	if background {
-		op := &models.Op{
-			Kind:      "style_ingest",
-			Status:    "running",
-			ProjectID: &projectID,
+	s.operation(w, r, &models.Op{Kind: "style_ingest", ProjectID: &projectID}, func(ctx context.Context) (any, error) {
+		ids := body.AssetIDs
+		if len(ids) == 0 {
+			assets, err := s.database.ListAssets(projectID)
+			if err != nil {
+				return nil, err
+			}
+			for _, asset := range assets {
+				if asset.Type == "character_reference" || asset.Type == "location" {
+					ids = append(ids, asset.ID)
+					if len(ids) == 4 {
+						break
+					}
+				}
+			}
 		}
-		_ = s.database.CreateOp(op)
-
-		go func(opID string) {
-			time.Sleep(1 * time.Second)
-			resBytes, _ := json.Marshal(result)
-			_ = s.database.UpdateOp(opID, "succeeded", resBytes, nil)
-			s.broker.Publish(map[string]interface{}{
-				"type":   "op_done",
-				"op_id":  opID,
-				"kind":   "style_ingest",
-				"status": "succeeded",
-			})
-		}(op.ID)
-
-		writeJSON(w, http.StatusAccepted, map[string]interface{}{
-			"op_id":  op.ID,
-			"status": op.Status,
-		})
-		return
-	}
-
-	writeJSON(w, http.StatusOK, result)
+		if len(ids) == 0 {
+			return nil, fmt.Errorf("upload at least one image reference before extracting style")
+		}
+		if len(ids) > 4 {
+			ids = ids[:4]
+		}
+		images := []string{}
+		for _, id := range ids {
+			asset, err := s.database.GetAsset(id)
+			if err != nil {
+				return nil, err
+			}
+			if asset.ProjectID == nil || *asset.ProjectID != projectID {
+				return nil, fmt.Errorf("reference is outside active project")
+			}
+			image, err := s.imageURL(asset)
+			if err != nil {
+				return nil, err
+			}
+			images = append(images, image)
+		}
+		var style models.StyleGuide
+		if err = s.agentJSON(ctx, "style_agent", "Analyze the image references. Return name, style_prompt, palette, lighting, audience, tone. Describe only visible style features.", "Extract a consistent production style.", images, &style); err != nil {
+			return nil, err
+		}
+		if style.StylePrompt == "" {
+			return nil, fmt.Errorf("OpenRouter returned no style prompt")
+		}
+		style.ProjectID = &projectID
+		if err = s.database.UpsertStyleGuide(&style); err != nil {
+			return nil, err
+		}
+		return style, nil
+	})
 }

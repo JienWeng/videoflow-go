@@ -7,13 +7,13 @@ The editor is reached from an output in My videos. It supports video playback, a
 ## Add captions
 
 1. Open a successful output with audible speech.
-2. Choose a Whisper model and language, or auto-detection where available.
+2. Choose an OpenRouter Whisper model and language, or auto-detection where available.
 3. Start transcription/auto-captions. The first use downloads the selected local model.
 4. Review every line against the actual audio. Script-based corrections can improve names but can also differ from what was spoken.
 5. Choose a style: `kids`, `clean`, or `minimal`.
 6. Burn/save the captioned result and wait for the operation to finish.
 
-`tiny` is smaller and faster; larger models use more local resources. The current service runs on CPU. FFmpeg with libass is required for burning subtitles. Install the appropriate font for the language.
+Transcription runs on OpenRouter using a model such as `openai/whisper-1` and provider-returned timestamps. It consumes account credits; no local Whisper model download is required. FFmpeg with libass is required for burning subtitles. Install the appropriate font for the language.
 
 ## Correct a caption
 

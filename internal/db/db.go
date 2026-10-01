@@ -25,6 +25,12 @@ func Open(databasePath string) (*DB, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
+	// SQLite permits one writer; keep all operations on the connection whose
+	// busy timeout and foreign-key pragmas are initialized below. New pooled
+	// connections otherwise inherit neither setting and fail concurrent writes.
+	conn.SetMaxOpenConns(1)
+	conn.SetMaxIdleConns(1)
+
 	pragmas := []string{
 		"PRAGMA journal_mode = WAL;",
 		"PRAGMA synchronous = NORMAL;",
@@ -965,9 +971,9 @@ func (d *DB) UpdateRenderJob(j *models.RenderJob) error {
 
 	_, err := d.conn.Exec(`
 		UPDATE render_jobs
-		SET status = ?, stage = ?, progress = ?, provider_job_id = ?, response_json = ?, error = ?, updated_at = ?
+		SET status = ?, stage = ?, progress = ?, provider_job_id = ?, response_json = ?, error = ?, model = ?, provider = ?, request_json = ?, updated_at = ?
 		WHERE id = ?
-	`, j.Status, j.Stage, j.Progress, j.ProviderJobID, string(j.ResponseJSON), j.Error, now, j.ID)
+	`, j.Status, j.Stage, j.Progress, j.ProviderJobID, string(j.ResponseJSON), j.Error, j.Model, j.Provider, string(j.RequestJSON), now, j.ID)
 	return err
 }
 
@@ -1447,13 +1453,19 @@ func (d *DB) GetAgentSettings() (map[string]models.AgentSetting, error) {
 }
 
 func (d *DB) SetAgentSetting(agent, provider, model string) error {
-	_, err := d.conn.Exec(`
-		INSERT INTO agent_settings (agent, provider, model)
-		VALUES (?, ?, ?)
-		ON CONFLICT(agent, project_id) DO UPDATE SET
-			provider = excluded.provider,
-			model = excluded.model
-	`, agent, provider, model)
+	// Global rows have NULL project_id, which SQLite does not conflict on.
+	tx, err := d.conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec("DELETE FROM agent_settings WHERE agent = ? AND project_id IS NULL", agent); err != nil {
+		return err
+	}
+	if _, err = tx.Exec("INSERT INTO agent_settings (agent, provider, model) VALUES (?, ?, ?)", agent, provider, model); err != nil {
+		return err
+	}
+	err = tx.Commit()
 	return err
 }
 

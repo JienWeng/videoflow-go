@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,6 +16,7 @@ import (
 	"videoflow-go/internal/api"
 	"videoflow-go/internal/config"
 	"videoflow-go/internal/db"
+	"videoflow-go/internal/desktop"
 	"videoflow-go/internal/events"
 	"videoflow-go/internal/jobs"
 	"videoflow-go/internal/media"
@@ -23,7 +26,19 @@ import (
 func main() {
 	log.Println("Starting VideoFlow Go Backend Engine...")
 
+	desktopMode := flag.Bool("desktop", false, "serve the bundled interface and keep projects in your user data folder")
+	noBrowser := flag.Bool("no-browser", false, "do not open a browser on startup")
+	uiDir := flag.String("ui-dir", "", "interface directory (desktop mode)")
+	bindHost := flag.String("host", "127.0.0.1", "listen address")
+	flag.Parse()
 	cfg := config.Load()
+	if *desktopMode {
+		folder, err := desktop.Configure(cfg, *uiDir)
+		if err != nil {
+			log.Fatal(err)
+		}
+		*uiDir = folder
+	}
 	database, err := db.Open(cfg.DatabasePath)
 	if err != nil {
 		log.Fatalf("Database initialization failed: %v", err)
@@ -40,7 +55,7 @@ func main() {
 	}
 
 	openrouter := providers.NewOpenRouterClient(cfg.OpenRouterAPIKey)
-	atlascloud := providers.NewAtlasCloudClient(cfg.AtlasCloudAPIKey)
+	// All AI generation uses OpenRouter.
 	agentsEngine := agents.NewAgentEngine(openrouter, "openai/gpt-4o-mini")
 
 	workers := jobs.NewWorkerPool(cfg, database, broker, mediaEngine)
@@ -48,22 +63,39 @@ func main() {
 	workers.ReconcilePending()
 	defer workers.Stop()
 
-	server := api.NewServer(cfg, database, broker, workers, agentsEngine, openrouter, atlascloud, mediaEngine)
-	addr := fmt.Sprintf(":%d", cfg.Port)
+	server := api.NewServer(cfg, database, broker, workers, agentsEngine, openrouter, mediaEngine)
+	defer server.Close()
+	addr := net.JoinHostPort(*bindHost, fmt.Sprint(cfg.Port))
+	handler := server.Router()
+	if *desktopMode {
+		handler = desktop.Handler(handler, *uiDir, addr)
+	}
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("Cannot start VideoFlow on %s: %v. Another copy may already be running.", addr, err)
+	}
 	httpServer := &http.Server{
 		Addr:         addr,
-		Handler:      server.Router(),
-		ReadTimeout:  120 * time.Second,
-		WriteTimeout: 120 * time.Second,
+		Handler:      handler,
+		ReadTimeout:  5 * time.Minute,
+		WriteTimeout: 5 * time.Minute,
 		IdleTimeout:  120 * time.Second,
 	}
 
 	go func() {
-		log.Printf("VideoFlow Go server listening on http://127.0.0.1%s", addr)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("VideoFlow ready at http://%s", addr)
+		if err := httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server error: %v", err)
 		}
 	}()
+
+	if *desktopMode && !*noBrowser {
+		go func() {
+			if err := desktop.OpenBrowser("http://" + addr); err != nil {
+				log.Printf("Open http://%s in your browser to use VideoFlow", addr)
+			}
+		}()
+	}
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)

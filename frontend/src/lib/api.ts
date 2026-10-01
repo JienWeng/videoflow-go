@@ -1,11 +1,13 @@
-/** Thin client for the FastAPI backend. */
+/** HTTP client for the Go backend. */
 
 // Follow the page's hostname (localhost vs 127.0.0.1 are different origins —
 // using the same host keeps CORS consistent however the app was opened).
 export const API_BASE =
   import.meta.env.VITE_API_BASE ??
   (typeof window !== 'undefined'
-    ? `http://${window.location.hostname}:8000`
+    ? (['5173', '4173'].includes(window.location.port)
+      ? `http://${window.location.hostname}:8000`
+      : `${window.location.origin}/api`)
     : 'http://localhost:8000');
 
 async function handle(resp: Response) {

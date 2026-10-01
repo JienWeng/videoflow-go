@@ -88,10 +88,10 @@
   let busy = $state('');
   let presets = $state<Record<string, any>>({});
   let newLabel = $state('');
-  let newPreset = $state('openai');
+  let newPreset = $state('openrouter');
   let newProtocol = $state('chat');
-  let newUrl = $state('https://api.openai.com/v1');
-  let newModel = $state('gpt-5.6-luna');
+  let newUrl = $state('https://openrouter.ai/api/v1');
+  let newModel = $state('openai/gpt-4o-mini');
   let newMode = $state('auto');
   let newVision = $state(true);
   function choosePreset() {
@@ -149,26 +149,10 @@
   let tab = $state('providers');
 
   // ------------------------------------------------------------- labels
-  const providerLabels: Record<string, string> = {
-    minimax: 'MiniMax',
-    openai: 'OpenAI',
-    anthropic: 'Anthropic',
-    gemini: 'Gemini',
-    atlas: 'AtlasCloud'
-  };
-  const PROVIDER_ORDER = ['minimax', 'atlas', 'openai', 'anthropic', 'gemini'];
+  const providerLabels: Record<string, string> = { openrouter: 'OpenRouter' };
+  const PROVIDER_ORDER = ['openrouter'];
   const FALLBACK_PRESETS: Record<string, ProviderPreset> = {
-    minimax: { label: 'MiniMax', protocol: 'chat', url: 'https://api.minimax.io/v1', model: 'MiniMax-Text-01', preset: 'minimax', mode: 'auto', vision: true },
-    openai: { label: 'OpenAI API', protocol: 'chat', url: 'https://api.openai.com/v1', model: 'gpt-5.6-luna', preset: 'openai', mode: 'auto', vision: true },
-    anthropic: { label: 'Anthropic / Claude', protocol: 'anthropic', url: 'https://api.anthropic.com', model: 'claude-sonnet-4-6', preset: 'anthropic', mode: 'auto', vision: true },
-    gemini: { label: 'Google Gemini', protocol: 'chat', url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash', preset: 'gemini', mode: 'auto', vision: true },
-    atlas: { label: 'AtlasCloud', protocol: 'chat', url: 'https://api.atlascloud.ai/v1', model: 'qwen/qwen3-vl-30b-a3b-instruct', preset: 'atlas', mode: 'auto', vision: true },
-    openrouter: { label: 'OpenRouter', protocol: 'chat', url: 'https://openrouter.ai/api/v1', model: '', preset: 'openrouter', mode: 'auto', vision: true },
-    deepseek: { label: 'DeepSeek', protocol: 'chat', url: 'https://api.deepseek.com', model: 'deepseek-chat', preset: 'deepseek', mode: 'auto', vision: true },
-    opencode: { label: 'OpenCode Zen', protocol: 'responses', url: 'https://opencode.ai/zen/v1', model: '', preset: 'opencode', mode: 'auto', vision: true },
-    'opencode-go': { label: 'OpenCode Go', protocol: 'chat', url: 'https://opencode.ai/zen/go/v1', model: '', preset: 'opencode-go', mode: 'auto', vision: true },
-    codex: { label: 'ChatGPT via Codex', protocol: 'codex', url: '', model: 'gpt-5.6-luna', preset: 'codex', mode: 'auto', vision: true },
-    custom: { label: 'Custom endpoint', protocol: 'chat', url: '', model: '', preset: 'custom', mode: 'auto', vision: true },
+    openrouter: { label: 'OpenRouter', protocol: 'chat', url: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini', preset: 'openrouter', mode: 'auto', vision: true }
   };
 
   // One-line descriptions for each agent, plus a text/vision split.
@@ -190,8 +174,8 @@
 
   // -------------------------------------------------------------- options
   const ASPECT_RATIOS = ['9:16', '16:9', '1:1', '21:9', '4:3', '3:4'];
-  const WHISPER_MODELS = ['tiny', 'base', 'small', 'medium', 'large-v3'];
-  const CAPTION_STYLES = ['default', 'bold', 'minimal', 'karaoke'];
+  const WHISPER_MODELS = ['openai/whisper-1', 'openai/whisper-large-v3', 'openai/whisper-large-v3-turbo'];
+  const CAPTION_STYLES = ['clean', 'bold', 'minimal', 'cinematic', 'neon', 'kids', 'classic', 'comic'];
   const CAPTION_LANGUAGES = [
     { value: 'auto', label: 'Auto-detect' },
     { value: 'zh', label: 'Chinese' },
@@ -220,7 +204,7 @@
     providers.filter((p) => p.configured)
   );
   const primaryTextProvider = $derived(
-    agents.find((agent) => agent.agent === 'script_agent')?.provider ?? 'atlas'
+    agents.find((agent) => agent.agent === 'script_agent')?.provider ?? 'openrouter'
   );
   const orderedProviders = $derived(
     providers
@@ -262,6 +246,7 @@
     provCfg = cfgMap;
     provKeyInput = keyMap;
     provUrlInput = urlMap;
+    await loadEngineCatalogs();
   }
 
   onMount(() => {
@@ -495,76 +480,46 @@
     }
   }
 
-  const MEDIA_MODELS = {
-    atlascloud: {
-      image: ['openai/gpt-image-2/text-to-image', 'google/nano-banana-2/edit'],
-      video: ['minimax/h3-developer/reference-to-video', 'minimax/h3-developer/text-to-video']
-    },
-    openrouter: {
-      image: ['openai/gpt-image-2'],
-      video: ['google/veo-3.1-lite', 'google/veo-3.1-fast', 'kwaivgi/kling-v3.0-pro']
-    }
-  } as const;
-
+  type VideoCapability = { id: string; supported_frame_images?: string[]; supported_durations?: number[]; supported_resolutions?: string[]; supported_aspect_ratios?: string[] };
+  let engineCatalogs = $state<Record<string, string[]>>({
+    image: ['openai/gpt-image-2'], video: ['google/veo-3.1-lite'],
+    vision: ['qwen/qwen3-vl-30b-a3b-instruct'], transcription: WHISPER_MODELS
+  });
+  let videoCapabilities = $state<VideoCapability[]>([]);
+  let catalogError = $state('');
+  let catalogBusy = $state(false);
+  async function loadEngineCatalogs() {
+    if (!provCfg.openrouter?.configured) return;
+    catalogBusy = true;
+    const failures: string[] = [];
+    await Promise.all(['image', 'video', 'vision', 'transcription'].map(async modality => {
+      try {
+        const result = await get(`/settings/providers/openrouter/models?modality=${modality}`);
+        if (result.error) { failures.push(`${modality}: ${result.error}`); return; }
+        engineCatalogs = { ...engineCatalogs, [modality]: result.models ?? [] };
+        if (modality === 'video') videoCapabilities = result.capabilities ?? [];
+      } catch (e: any) { failures.push(`${modality}: ${e.message}`); }
+    }));
+    catalogError = failures.join('; ');
+    catalogBusy = false;
+  }
   function mediaProviderChanged(kind: 'image' | 'video', provider: string) {
-    const modelKey = kind === 'image' ? 'image_model' : 'video_model';
-    const models = MEDIA_MODELS[provider as keyof typeof MEDIA_MODELS][kind];
-    saveApp({
-      [kind === 'image' ? 'default_image_provider' : 'default_video_provider']: provider,
-      [modelKey]: models[0]
-    } as Partial<AppSettings>);
+    if (provider !== 'openrouter') return;
+    saveApp({ [kind === 'image' ? 'default_image_provider' : 'default_video_provider']: 'openrouter' });
   }
-
-  function engineProvider(key: keyof AppSettings): string {
-    if (key === 'video_model') return app?.default_video_provider ?? 'atlascloud';
-    if (key === 'image_model') return app?.default_image_provider ?? 'atlascloud';
-    if (key === 'ref_image_model') return 'atlascloud'; // Character and prop image generation stays on AtlasCloud.
-    return 'atlas';
-  }
-
   function engineOptions(key: keyof AppSettings): string[] {
-    const provider = engineProvider(key);
-    if (key === 'vl_model') return byName['atlas']?.suggested_models ?? [];
-    const modality = key === 'video_model' ? 'video' : 'image';
-    return [...MEDIA_MODELS[provider as keyof typeof MEDIA_MODELS][modality]];
+    return engineCatalogs[key === 'vl_model' ? 'vision' : key === 'video_model' ? 'video' : 'image'] ?? [];
   }
-
   function videoImageInputLimit(): number {
-    if (app?.default_video_provider === 'atlascloud') {
-      const referenceModels = [
-        'minimax/h3-developer/reference-to-video',
-        'minimax/h3/reference-to-video'
-      ];
-      return referenceModels.includes(app.video_model) ? app.max_video_refs : 0;
-    }
-    return app?.default_video_provider === 'openrouter' ? 2 : 0;
+    return videoCapabilities.find(model => model.id === app?.video_model)?.supported_frame_images?.length ?? 0;
   }
-
   function videoImageInputDescription(): string {
-    if (app?.default_video_provider === 'atlascloud') {
-      if (videoImageInputLimit()) return 'VideoFlow upload cap for this reference-to-video route.';
-      if (app.video_model === 'minimax/h3-developer/text-to-video') {
-        return 'H3 Developer Text-to-Video does not receive image references.';
-      }
-      return 'No image-reference support is registered for this AtlasCloud model.';
-    }
-    return 'Provider limit for the selected video model.';
+    const model = videoCapabilities.find(model => model.id === app?.video_model);
+    return model ? `Supported frame anchors: ${model.supported_frame_images?.join(', ') || 'none'}.` : 'Load the catalog to check frame support.';
   }
-
   function videoModelHint(): string {
-    if (app?.default_video_provider !== 'atlascloud') {
-      return 'OpenRouter model capabilities determine supported image references.';
-    }
-    if (app.video_model === 'minimax/h3-developer/reference-to-video') {
-      return 'H3 Developer Reference-to-Video uses image or video references and can generate audio.';
-    }
-    if (app.video_model === 'minimax/h3-developer/text-to-video') {
-      return 'H3 Developer Text-to-Video ignores image references and can generate audio.';
-    }
-    if (app.video_model === 'minimax/h3/reference-to-video') {
-      return 'H3 Reference-to-Video uses image or video references.';
-    }
-    return 'Custom AtlasCloud model; verify its supported inputs before rendering.';
+    const model = videoCapabilities.find(model => model.id === app?.video_model);
+    return model ? `Durations: ${model.supported_durations?.join(', ')} seconds. Resolutions: ${model.supported_resolutions?.join(', ')}.` : 'Capabilities are checked before OpenRouter receives a render request.';
   }
 
   let engineCustomOpen = $state<Record<string, boolean>>({});
@@ -663,7 +618,7 @@
               <Plug class="size-4" />Providers
             </CardTitle>
             <CardDescription>
-              Add an API key and (optionally) a custom base URL for each provider. Keys are stored on
+              Save your OpenRouter API key. Named OpenRouter connections can use separate keys and default models. Keys are stored on
               this machine and never shown again after saving.
             </CardDescription>
           </CardHeader>
@@ -677,15 +632,14 @@
                   {#each selectablePresets as [id, p]}<option value={id}>{p.label}</option>{/each}
                 </select></label>
                 <label class="text-xs">Protocol<select class="block w-full rounded border p-2 bg-background" bind:value={newProtocol}>
-                  <option value="chat">OpenAI-compatible Chat Completions (includes Gemini)</option>
-                  <option value="responses">OpenAI Responses</option><option value="anthropic">Anthropic Messages</option>
-                  <option value="codex">ChatGPT via local Codex</option>
+                  <option value="chat">OpenRouter Chat Completions</option>
+
                 </select></label>
                 <label class="text-xs">Default model<Input bind:value={newModel} placeholder="Model ID from your provider" /></label>
                 {#if newProtocol !== 'codex'}
                   <label class="text-xs">Base URL<Input bind:value={newUrl} /></label>
                   <label class="text-xs">Chat Completions output mode<select class="block w-full rounded border p-2 bg-background" bind:value={newMode} disabled={newProtocol !== 'chat'}>
-                    <option value="auto">Provider default</option><option value="tools">Tool calling</option><option value="json">JSON mode</option><option value="prompt">JSON in prompt</option>
+                    <option value="auto">Provider default</option><option value="prompt">JSON in prompt</option>
                   </select></label>
                 {/if}
               </div>
@@ -718,7 +672,7 @@
                 </div>
 
                 {#if p.protocol === 'codex'}
-                  <p class="text-sm text-muted-foreground">Uses the Codex CLI login on this computer. Run <code>codex login</code> in a terminal and sign in with ChatGPT. Refresh this page after login; run <code>codex logout</code> to disconnect. Test checks login only; model access is checked when an agent runs.</p>
+                  <p class="text-sm text-muted-foreground">All connections use OpenRouter.</p>
                 {:else}
                 <div class="grid gap-2 sm:grid-cols-2">
                   <div>
@@ -741,9 +695,9 @@
                   </div>
                 </div>
                 <details class="mt-2">
-                  <summary class="cursor-pointer text-xs text-muted-foreground">Advanced · Base URL override</summary>
+                  <summary class="cursor-pointer text-xs text-muted-foreground">OpenRouter endpoint</summary>
                   <label class="mt-2 block max-w-xl text-xs text-muted-foreground" for="url-{p.name}">Base URL</label>
-                  <Input id="url-{p.name}" autocomplete="off" placeholder="default" bind:value={provUrlInput[p.name]} />
+                  <Input id="url-{p.name}" readonly value="https://openrouter.ai/api/v1" />
                 </details>
 
                 {/if}
@@ -854,14 +808,16 @@
               <Sparkles class="size-4" />Generation engines
             </CardTitle>
             <CardDescription>
-              Models are grouped by their selected provider and task. Custom model IDs are unverified until the provider accepts them.
+              All AI tasks use OpenRouter. Model lists come from its live catalogs; custom IDs are checked when saved.
             </CardDescription>
           </CardHeader>
           <CardContent class="space-y-4">
+            <Button size="sm" variant="outline" disabled={catalogBusy || !provCfg.openrouter?.configured} onclick={loadEngineCatalogs}>{catalogBusy ? 'Loading catalogs…' : 'Refresh OpenRouter models'}</Button>
+            {#if catalogError}<p class="text-sm text-destructive">{catalogError}</p>{/if}
             {#if app}
               {@const engines = [
                 { key: 'image_model', label: 'Image model', hint: 'Text-to-image generation.' },
-                { key: 'ref_image_model', label: 'Character and prop image model', hint: 'Generated by AtlasCloud; this route does not use the storyboard provider.' },
+                { key: 'ref_image_model', label: 'Character and prop image model', hint: 'OpenRouter images for character references and props.' },
                 { key: 'video_model', label: 'Video model', hint: videoModelHint() },
                 { key: 'vl_model', label: 'Vision model', hint: 'Reads frames for QA.' }
               ] as const}
@@ -921,7 +877,7 @@
                   value={app.default_video_provider}
                   onchange={(e) => mediaProviderChanged('video', (e.currentTarget as HTMLSelectElement).value)}
                 >
-                  <option value="atlascloud">Atlas Cloud</option>
+
                   <option value="openrouter">OpenRouter</option>
                 </select>
               </div>
@@ -938,7 +894,7 @@
                   value={app.default_image_provider}
                   onchange={(e) => mediaProviderChanged('image', (e.currentTarget as HTMLSelectElement).value)}
                 >
-                  <option value="atlascloud">Atlas Cloud</option>
+
                   <option value="openrouter">OpenRouter</option>
                 </select>
               </div>
@@ -1060,16 +1016,16 @@
               </div>
 
               <div class="flex flex-wrap items-center gap-3">
-                <div class="min-w-[180px] flex-1 text-sm font-medium">Whisper model</div>
+                <div class="min-w-[180px] flex-1 text-sm font-medium">OpenRouter transcription model</div>
                 <select
-                  aria-label="Whisper model"
+                  aria-label="OpenRouter transcription model"
                   class="w-48 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
                   disabled={busy === 'app'}
                   value={app.whisper_model}
                   onchange={(e) =>
                     saveApp({ whisper_model: (e.currentTarget as HTMLSelectElement).value })}
                 >
-                  {#each WHISPER_MODELS as m (m)}
+                  {#each engineCatalogs.transcription as m (m)}
                     <option value={m}>{m}</option>
                   {/each}
                 </select>

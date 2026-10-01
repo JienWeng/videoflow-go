@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"videoflow-go/internal/agents"
@@ -21,9 +22,11 @@ import (
 )
 
 func setupTestServer(t *testing.T) (*api.Server, func()) {
-	testDBPath := "test_api.sqlite"
+	testDBPath := filepath.Join(t.TempDir(), "test_api.sqlite")
 	cfg := config.Load()
 	cfg.DatabasePath = testDBPath
+	cfg.StorageRoot = t.TempDir()
+	cfg.OpenRouterAPIKey = ""
 
 	database, err := db.Open(testDBPath)
 	if err != nil {
@@ -33,15 +36,15 @@ func setupTestServer(t *testing.T) (*api.Server, func()) {
 	broker := events.NewBroker()
 	mediaEngine := media.NewMediaEngine()
 	openrouter := providers.NewOpenRouterClient(cfg.OpenRouterAPIKey)
-	atlascloud := providers.NewAtlasCloudClient(cfg.AtlasCloudAPIKey)
 	agentsEngine := agents.NewAgentEngine(openrouter, "openai/gpt-4o-mini")
 
 	workers := jobs.NewWorkerPool(cfg, database, broker, mediaEngine)
 	workers.Start()
 
-	server := api.NewServer(cfg, database, broker, workers, agentsEngine, openrouter, atlascloud, mediaEngine)
+	server := api.NewServer(cfg, database, broker, workers, agentsEngine, openrouter, mediaEngine)
 
 	cleanup := func() {
+		server.Close()
 		workers.Stop()
 		database.Close()
 		os.Remove(testDBPath)
@@ -351,7 +354,7 @@ func TestEditorAndPanelEndpoints(t *testing.T) {
 	rr = httptest.NewRecorder()
 	server.Router().ServeHTTP(rr, req)
 	if rr.Code != http.StatusAccepted {
-		t.Fatalf("expected 202 for style ingest background, got %d", rr.Code)
+		t.Fatalf("expected 202 for style ingest background, got %d: %s", rr.Code, rr.Body.String())
 	}
 
 	// 7. Test GET /graph includes render_job and output nodes
@@ -382,4 +385,3 @@ func TestEditorAndPanelEndpoints(t *testing.T) {
 		t.Fatalf("expected graph to contain output node")
 	}
 }
-

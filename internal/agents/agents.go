@@ -11,6 +11,8 @@ import (
 type AgentEngine struct {
 	openrouter *providers.OpenRouterClient
 	model      string
+	language   func() string
+	resolve    func(context.Context, string) (*providers.OpenRouterClient, string, error)
 }
 
 func NewAgentEngine(openrouter *providers.OpenRouterClient, defaultModel string) *AgentEngine {
@@ -21,6 +23,37 @@ func NewAgentEngine(openrouter *providers.OpenRouterClient, defaultModel string)
 		openrouter: openrouter,
 		model:      defaultModel,
 	}
+}
+
+type dialogueLanguageKey struct{}
+
+func WithDialogueLanguage(ctx context.Context, language string) context.Context {
+	return context.WithValue(ctx, dialogueLanguageKey{}, language)
+}
+func (a *AgentEngine) SetLanguageResolver(resolve func() string) { a.language = resolve }
+
+// SetResolver supplies credentials and model settings for every agent call.
+func (a *AgentEngine) SetResolver(resolve func(context.Context, string) (*providers.OpenRouterClient, string, error)) {
+	a.resolve = resolve
+}
+func (a *AgentEngine) structured(ctx context.Context, name, system, prompt string, target any) error {
+	client, model := a.openrouter, a.model
+	if a.resolve != nil {
+		var err error
+		client, model, err = a.resolve(ctx, name)
+		if err != nil {
+			return err
+		}
+	}
+	language := "English"
+	if a.language != nil {
+		language = a.language()
+	}
+	if value, _ := ctx.Value(dialogueLanguageKey{}).(string); value != "" {
+		language = value
+	}
+	system += "\nWrite all character dialogue in " + language + "."
+	return client.StructuredJSON(ctx, model, system, prompt, target)
 }
 
 // --- Develop Idea ---
@@ -43,25 +76,11 @@ func (a *AgentEngine) DevelopIdea(ctx context.Context, idea string) (*DevelopIde
 	prompt := fmt.Sprintf("Idea: %s", idea)
 
 	var res DevelopIdeaResponse
-	err := a.openrouter.StructuredJSON(ctx, a.model, system, prompt, &res)
+	err := a.structured(ctx, "idea_agent", system, prompt, &res)
 	if err != nil {
-		// Fallback deterministic option if offline or key missing
-		return &DevelopIdeaResponse{
-			OptionA: ConceptOption{
-				Title:       "Cinematic Narrative",
-				Hook:        "A captivating opening sequence that introduces the central conflict.",
-				Narrative:   idea,
-				VisualStyle: "Rich cinematic lighting with wide anamorphic framing.",
-			},
-			OptionB: ConceptOption{
-				Title:       "Fast-Paced Action Story",
-				Hook:        "Starts directly in the middle of a high-stakes scene.",
-				Narrative:   idea + " with rapid scene shifts.",
-				VisualStyle: "Dynamic handheld camera movement and vibrant contrast.",
-			},
-			Recommendation: "Option A offers deeper character development and visual consistency.",
-		}, nil
+		return nil, err
 	}
+
 	return &res, nil
 }
 
@@ -98,27 +117,22 @@ Return a title, overall summary, and the list of scenes.`, sceneCount, targetDur
 	prompt := fmt.Sprintf("Idea: %s", idea)
 
 	var res ScriptDraft
-	err := a.openrouter.StructuredJSON(ctx, a.model, system, prompt, &res)
+	err := a.structured(ctx, "script_agent", system, prompt, &res)
 	if err != nil {
-		// Deterministic fallback
-		draft := &ScriptDraft{
-			Title:   "Story: " + idea,
-			Summary: idea,
-			Scenes:  []SceneDraft{},
+		return nil, err
+	}
+
+	if len(res.Scenes) != sceneCount {
+		return nil, fmt.Errorf("OpenRouter returned an unexpected scene count")
+	}
+	for i := range res.Scenes {
+		scene := &res.Scenes[i]
+		if scene.Title == "" || scene.Summary == "" || scene.Duration <= 0 {
+			return nil, fmt.Errorf("OpenRouter returned an incomplete scene")
 		}
-		perScene := targetDuration / sceneCount
-		if perScene < 3 {
-			perScene = 5
+		if scene.AspectRatio == "" {
+			scene.AspectRatio = aspectRatio
 		}
-		for i := 1; i <= sceneCount; i++ {
-			draft.Scenes = append(draft.Scenes, SceneDraft{
-				Title:       fmt.Sprintf("Scene %d", i),
-				Summary:     fmt.Sprintf("Progression part %d for: %s", i, idea),
-				Duration:    perScene,
-				AspectRatio: aspectRatio,
-			})
-		}
-		return draft, nil
 	}
 	return &res, nil
 }
@@ -142,33 +156,18 @@ func (a *AgentEngine) GenerateShots(ctx context.Context, title, summary string, 
 	prompt := fmt.Sprintf("Scene Title: %s\nSummary: %s\nTotal Duration: %d seconds", title, summary, duration)
 
 	var res ShotsListDraft
-	err := a.openrouter.StructuredJSON(ctx, a.model, system, prompt, &res)
-	if err != nil || len(res.Shots) == 0 {
-		// Deterministic fallback
-		dur1 := duration / 2
-		if dur1 <= 0 {
-			dur1 = 3
+	err := a.structured(ctx, "shot_agent", system, prompt, &res)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(res.Shots) == 0 {
+		return nil, fmt.Errorf("OpenRouter returned no shots")
+	}
+	for _, shot := range res.Shots {
+		if shot.Order <= 0 || shot.Duration <= 0 || shot.Prompt == "" {
+			return nil, fmt.Errorf("OpenRouter returned an incomplete shot")
 		}
-		dur2 := duration - dur1
-		if dur2 <= 0 {
-			dur2 = 3
-		}
-		return []ShotDraft{
-			{
-				Order:    1,
-				Duration: dur1,
-				Prompt:   fmt.Sprintf("Establishing shot of %s, cinematic lighting", summary),
-				Camera:   "wide",
-				Movement: "slow pan",
-			},
-			{
-				Order:    2,
-				Duration: dur2,
-				Prompt:   fmt.Sprintf("Close up dramatic focus on the subject in %s", summary),
-				Camera:   "close-up",
-				Movement: "static",
-			},
-		}, nil
 	}
 	return res.Shots, nil
 }
@@ -189,12 +188,10 @@ Respond in JSON with a natural conversational 'reply', and an optional 'action' 
 	prompt := fmt.Sprintf("Conversation history: %s\nUser message: %s", string(historyBytes), message)
 
 	var res ChatIntentResponse
-	err := a.openrouter.StructuredJSON(ctx, a.model, system, prompt, &res)
+	err := a.structured(ctx, "intent_agent", system, prompt, &res)
 	if err != nil {
-		return &ChatIntentResponse{
-			Reply:  "I understand! Let's work on developing this scene and preparing the video shots.",
-			Action: "none",
-		}, nil
+		return nil, err
 	}
+
 	return &res, nil
 }

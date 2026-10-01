@@ -6,35 +6,31 @@ import (
 )
 
 type Config struct {
-	Port                 int
-	StorageRoot          string
-	DatabasePath         string
-	WorkerConcurrency    int
-	MaxConcurrentPolls   int
-	DefaultVideoProvider string
-	OpenRouterAPIKey     string
-	AtlasCloudAPIKey     string
-	MiniMaxAPIKey        string
-	OpenRouterImageModel string
-	OpenRouterVideoModel string
-	AtlasImageModel      string
-	AtlasVideoModel      string
-	MiniMaxTextModel     string
+	Port                  int
+	StorageRoot           string
+	DatabasePath          string
+	WorkerConcurrency     int
+	MaxConcurrentPolls    int
+	OpenRouterAPIKey      string
+	OpenRouterBaseURL     string
+	OpenRouterTextModel   string
+	OpenRouterVisionModel string
+	OpenRouterImageModel  string
+	OpenRouterVideoModel  string
 }
 
 func Load() *Config {
 	cfg := &Config{
-		Port:                 8000,
-		StorageRoot:          "storage",
-		DatabasePath:         "db.sqlite",
-		WorkerConcurrency:    3,
-		MaxConcurrentPolls:   5,
-		DefaultVideoProvider: "openrouter",
-		OpenRouterImageModel: "google/imagen-3",
-		OpenRouterVideoModel: "minimax/h3-developer/text-to-video",
-		AtlasImageModel:      "flux-schnell",
-		AtlasVideoModel:      "kling-v1-5",
-		MiniMaxTextModel:     "abab6.5s-chat",
+		Port:                  8000,
+		StorageRoot:           "storage",
+		DatabasePath:          "db.sqlite",
+		WorkerConcurrency:     3,
+		MaxConcurrentPolls:    5,
+		OpenRouterBaseURL:     "https://openrouter.ai/api/v1",
+		OpenRouterTextModel:   "openai/gpt-4o-mini",
+		OpenRouterVisionModel: "qwen/qwen3-vl-30b-a3b-instruct",
+		OpenRouterImageModel:  "openai/gpt-image-2",
+		OpenRouterVideoModel:  "google/veo-3.1-lite",
 	}
 
 	if p := os.Getenv("PORT"); p != "" {
@@ -51,14 +47,10 @@ func Load() *Config {
 	if orKey := os.Getenv("OPENROUTER_API_KEY"); orKey != "" {
 		cfg.OpenRouterAPIKey = orKey
 	}
-	if acKey := os.Getenv("ATLASCLOUD_API_KEY"); acKey != "" {
-		cfg.AtlasCloudAPIKey = acKey
-	}
-	if mmKey := os.Getenv("MINIMAX_API_KEY"); mmKey != "" {
-		cfg.MiniMaxAPIKey = mmKey
-	}
-	if dvp := os.Getenv("DEFAULT_VIDEO_PROVIDER"); dvp != "" {
-		cfg.DefaultVideoProvider = dvp
+	for name, target := range map[string]*string{"OPENROUTER_TEXT_MODEL": &cfg.OpenRouterTextModel, "OPENROUTER_VISION_MODEL": &cfg.OpenRouterVisionModel, "OPENROUTER_IMAGE_MODEL": &cfg.OpenRouterImageModel, "OPENROUTER_VIDEO_MODEL": &cfg.OpenRouterVideoModel} {
+		if value := os.Getenv(name); value != "" {
+			*target = value
+		}
 	}
 	return cfg
 }
@@ -67,9 +59,6 @@ func (c *Config) MissingKeys() []string {
 	var missing []string
 	if c.OpenRouterAPIKey == "" {
 		missing = append(missing, "OPENROUTER_API_KEY")
-	}
-	if c.AtlasCloudAPIKey == "" {
-		missing = append(missing, "ATLASCLOUD_API_KEY")
 	}
 	return missing
 }

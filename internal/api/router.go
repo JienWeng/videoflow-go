@@ -1,9 +1,11 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"videoflow-go/internal/agents"
@@ -26,9 +28,11 @@ type Server struct {
 	workers    *jobs.WorkerPool
 	agents     *agents.AgentEngine
 	openrouter *providers.OpenRouterClient
-	atlascloud *providers.AtlasCloudClient
 	media      *media.MediaEngine
 	router     *chi.Mux
+	ctx        context.Context
+	cancel     context.CancelFunc
+	tasks      sync.WaitGroup
 }
 
 func NewServer(
@@ -38,23 +42,27 @@ func NewServer(
 	workers *jobs.WorkerPool,
 	agentsEngine *agents.AgentEngine,
 	openrouter *providers.OpenRouterClient,
-	atlascloud *providers.AtlasCloudClient,
 	mediaEngine *media.MediaEngine,
 ) *Server {
+	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{
+		ctx: ctx, cancel: cancel,
 		cfg:        cfg,
 		database:   database,
 		broker:     broker,
 		workers:    workers,
 		agents:     agentsEngine,
 		openrouter: openrouter,
-		atlascloud: atlascloud,
 		media:      mediaEngine,
 		router:     chi.NewRouter(),
 	}
+	s.agents.SetResolver(s.routes().Agent)
+	s.agents.SetLanguageResolver(func() string { return s.routes().Setting("dialogue_language", "English") })
 	s.setupRoutes()
 	return s
 }
+
+func (s *Server) Close() { s.cancel(); s.tasks.Wait() }
 
 func (s *Server) Router() http.Handler {
 	return s.router
@@ -69,7 +77,7 @@ func (s *Server) setupRoutes() {
 	s.router.Use(middleware.RealIP)
 	s.router.Use(middleware.Logger)
 	s.router.Use(middleware.Recoverer)
-	s.router.Use(middleware.Timeout(120 * time.Second))
+	s.router.Use(middleware.Timeout(5 * time.Minute))
 
 	// CORS matching SvelteKit frontend origins
 	s.router.Use(cors.Handler(cors.Options{
@@ -88,12 +96,17 @@ func (s *Server) setupRoutes() {
 	// Health
 	s.router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		resp := map[string]interface{}{
-			"status":       "ok",
-			"missing_keys": s.cfg.MissingKeys(),
-			"text_model":   s.cfg.MiniMaxTextModel,
-			"image_model":  s.cfg.AtlasImageModel,
-			"video_model":  s.cfg.AtlasVideoModel,
-			"server":       "videoflow-go-v1",
+			"status": "ok",
+			"missing_keys": func() []string {
+				if _, err := s.routes().Client("openrouter"); err != nil {
+					return []string{"OPENROUTER_API_KEY"}
+				}
+				return []string{}
+			}(),
+			"text_model":  s.cfg.OpenRouterTextModel,
+			"image_model": s.routes().MediaModel("image"),
+			"video_model": s.routes().MediaModel("video"),
+			"server":      "videoflow-go-v1",
 		}
 		writeJSON(w, http.StatusOK, resp)
 	})

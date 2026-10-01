@@ -14,7 +14,7 @@ Start by identifying the stage that failed. Keep the project, scene, operation, 
 | Saved key seems impossible to clear | A saved override may fall back to `.env`; clear that source and restart if disconnection is intended |
 | JSON/schema validation fails | Try an output mode supported by the model and inspect its response; a successful key check is not a schema check |
 | OpenRouter fails despite a working text test | Text, image, and video use separate requests; review the compatibility audit and built-in media credentials |
-| OpenRouter-only story asks for AtlasCloud | Check Engines and agent routes; media provider and LLM provider settings are separate |
+| Legacy provider selection fails | Choose OpenRouter and reset older agent overrides; other providers are retired |
 | Video generated remotely but download fails | Check the OpenRouter render job and local disk/storage errors before resubmitting; retrieval uses the authenticated content endpoint |
 | Too many references, unsupported resolution, or duration error | Open the selected route in Settings → Engines, check its displayed model limits and VideoFlow reference cap, then choose a supported value or reduce references before retrying |
 | Story progress appears stuck | Stage updates are currently saved at completion; inspect backend errors and Activity before restarting |
@@ -23,7 +23,7 @@ Start by identifying the stage that failed. Keep the project, scene, operation, 
 | Narrated mode has no narration | A narration-specific stage is not implemented; write and review narration manually |
 | Wrong project label/data | Refresh after switching; do not switch while background work runs or mix projects across tabs |
 | Missing thumbnail or QA | Install FFmpeg and configure a vision-capable QA model; successful render does not guarantee successful QA |
-| Captions fail | Confirm speech exists, FFmpeg has libass, Whisper download completed, and timings are valid |
+| Captions fail | Confirm speech exists, FFmpeg has libass, OpenRouter credits and the chosen Whisper model supports verbose JSON timestamps, and timings are valid |
 | Chinese captions show boxes | Install the Noto CJK font in `storage/fonts/` |
 | Custom storage path has broken previews | The frontend currently assumes `storage/` in paths; use the default until URL mapping is fixed |
 | Backend restart interrupted creation | Inspect saved intermediate work; orchestration operations do not resume automatically |

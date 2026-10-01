@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -33,6 +34,7 @@ func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAssetTypes(w http.ResponseWriter, r *http.Request) {
 	types := []string{
 		"character_reference",
+		"storyboard",
 		"location",
 		"prop",
 		"video_reference",
@@ -129,9 +131,28 @@ func (s *Server) handleRecogniseAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
-	if body.Description != "" {
-		asset.Description = body.Description
-		_ = s.database.UpdateAsset(asset)
+	image, err := s.imageURL(asset)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	var result struct {
+		Description string   `json:"description"`
+		Tags        []string `json:"tags"`
+	}
+	if err = s.agentJSON(r.Context(), "asset_recogniser", "Describe the visible subjects, appearance, objects and visual style. Return description and tags.", "User notes: "+body.Description, []string{image}, &result); err != nil {
+		http.Error(w, err.Error(), 502)
+		return
+	}
+	if result.Description == "" {
+		http.Error(w, fmt.Sprint("OpenRouter returned no description"), 502)
+		return
+	}
+	asset.Description = result.Description
+	asset.TagsJSON, _ = json.Marshal(result.Tags)
+	if err = s.database.UpdateAsset(asset); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
 	}
 
 	writeJSON(w, http.StatusOK, asset)

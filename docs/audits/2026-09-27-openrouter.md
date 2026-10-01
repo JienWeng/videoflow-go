@@ -2,6 +2,8 @@
 
 [Audit overview](2026-09-27-implementation.md) · [Provider setup](../handbook/03-providers.md)
 
+> Superseded for the Go backend by the [1 October implementation report](2026-10-01-openrouter-go.md). This older report described capabilities that were not present in the initial Go migration.
+
 ## Verdict
 
 **The contract and routing defects identified below have been repaired and regression-tested. Full live compatibility is not yet certified.** Verification is mocked; no paid OpenRouter request was made. Account/model availability and generated quality remain unverified. In particular, OpenRouter's video guide does not specify whether local data-URL references are accepted, so reference-to-video needs a live smoke test.

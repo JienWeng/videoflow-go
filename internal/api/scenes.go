@@ -5,12 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	"videoflow-go/internal/models"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 )
 
 func (s *Server) handleListScenes(w http.ResponseWriter, r *http.Request) {
@@ -53,10 +51,10 @@ func (s *Server) handleCreateScene(w http.ResponseWriter, r *http.Request) {
 	}
 	scene.ProjectID = &projectID
 	if scene.Duration <= 0 {
-		scene.Duration = 5
+		scene.Duration = int(s.routes().NumberSetting("default_scene_duration", 5))
 	}
 	if scene.AspectRatio == "" {
-		scene.AspectRatio = "16:9"
+		scene.AspectRatio = s.routes().Setting("default_aspect_ratio", "9:16")
 	}
 	if err := s.database.CreateScene(&scene); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -194,99 +192,27 @@ func (s *Server) handleExpandScene(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGenerateShots(w http.ResponseWriter, r *http.Request) {
 	sceneID := chi.URLParam(r, "id")
-	background := r.URL.Query().Get("background") == "true"
-
 	scene, err := s.database.GetScene(sceneID)
 	if err != nil {
-		http.Error(w, "scene not found", http.StatusNotFound)
+		http.Error(w, "scene not found", 404)
 		return
 	}
-
-	projectID, _ := s.database.GetActiveProjectID()
-
-	if background {
-		op := &models.Op{
-			Kind:      "shots",
-			Status:    "running",
-			SceneID:   &sceneID,
-			ProjectID: &projectID,
+	s.operation(w, r, &models.Op{Kind: "shots", SceneID: &sceneID, ProjectID: scene.ProjectID}, func(ctx context.Context) (any, error) {
+		drafts, err := s.agents.GenerateShots(ctx, scene.Title, scene.Summary, scene.Duration)
+		if err != nil {
+			return nil, err
 		}
-		_ = s.database.CreateOp(op)
-
-		go func(opID string, sc models.Scene) {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-			defer cancel()
-
-			shots, err := s.agents.GenerateShots(ctx, sc.Title, sc.Summary, sc.Duration)
-			if err != nil {
-				errMsg := err.Error()
-				_ = s.database.UpdateOp(opID, "failed", nil, &errMsg)
-				s.broker.Publish(map[string]interface{}{
-					"type":     "op_failed",
-					"op_id":    opID,
-					"kind":     "shots",
-					"status":   "failed",
-					"scene_id": sc.ID,
-					"error":    errMsg,
-				})
-				return
+		shots := []models.Shot{}
+		for _, draft := range drafts {
+			camera, movement := draft.Camera, draft.Movement
+			shot := models.Shot{SceneID: scene.ID, ShotOrder: draft.Order, Duration: draft.Duration, Prompt: draft.Prompt, Camera: &camera, Movement: &movement}
+			if err = s.database.CreateShot(&shot); err != nil {
+				return nil, err
 			}
-
-			createdShots := []models.Shot{}
-			for _, sh := range shots {
-				shot := models.Shot{
-					SceneID:   sc.ID,
-					ShotOrder: sh.Order,
-					Duration:  sh.Duration,
-					Prompt:    sh.Prompt,
-					Camera:    &sh.Camera,
-					Movement:  &sh.Movement,
-				}
-				_ = s.database.CreateShot(&shot)
-				createdShots = append(createdShots, shot)
-			}
-
-			resBytes, _ := json.Marshal(map[string]interface{}{
-				"scene_id": sc.ID,
-				"shots":    createdShots,
-			})
-			_ = s.database.UpdateOp(opID, "succeeded", resBytes, nil)
-			s.broker.Publish(map[string]interface{}{
-				"type":     "op_done",
-				"op_id":    opID,
-				"kind":     "shots",
-				"status":   "succeeded",
-				"scene_id": sc.ID,
-			})
-		}(op.ID, *scene)
-
-		writeJSON(w, http.StatusAccepted, map[string]interface{}{
-			"op_id":  op.ID,
-			"status": op.Status,
-		})
-		return
-	}
-
-	shots, err := s.agents.GenerateShots(r.Context(), scene.Title, scene.Summary, scene.Duration)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	createdShots := []models.Shot{}
-	for _, sh := range shots {
-		shot := models.Shot{
-			SceneID:   scene.ID,
-			ShotOrder: sh.Order,
-			Duration:  sh.Duration,
-			Prompt:    sh.Prompt,
-			Camera:    &sh.Camera,
-			Movement:  &sh.Movement,
+			shots = append(shots, shot)
 		}
-		_ = s.database.CreateShot(&shot)
-		createdShots = append(createdShots, shot)
-	}
-	writeJSON(w, http.StatusOK, createdShots)
+		return map[string]any{"scene_id": scene.ID, "shots": shots}, nil
+	})
 }
 
 func (s *Server) handleReorderShots(w http.ResponseWriter, r *http.Request) {
@@ -324,10 +250,29 @@ func (s *Server) handleRefineScene(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
-	if body.Instruction != "" {
-		scene.Summary = scene.Summary + " (Refined: " + body.Instruction + ")"
-		_ = s.database.UpdateScene(scene)
+	if body.Instruction == "" {
+		http.Error(w, "instruction is required", 400)
+		return
 	}
+	var result struct {
+		Title   string `json:"title"`
+		Summary string `json:"summary"`
+	}
+	if err = s.agentJSON(r.Context(), "refine_agent", "Refine the scene according to the instruction. Return title and summary; preserve the scene's intent.", fmt.Sprintf("Title: %s\nSummary: %s\nInstruction: %s", scene.Title, scene.Summary, body.Instruction), nil, &result); err != nil {
+		http.Error(w, err.Error(), 502)
+		return
+	}
+	if result.Title == "" || result.Summary == "" {
+		http.Error(w, "OpenRouter returned incomplete refined scene", 502)
+		return
+	}
+	scene.Title = result.Title
+	scene.Summary = result.Summary
+	if err = s.database.UpdateScene(scene); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"scene": scene,
 		"note":  "Refined scene fields based on instruction",
@@ -347,10 +292,27 @@ func (s *Server) handleRefineShot(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
-	if body.Instruction != "" {
-		shot.Prompt = shot.Prompt + ", " + body.Instruction
-		_ = s.database.UpdateShot(shot)
+	if body.Instruction == "" {
+		http.Error(w, "instruction is required", 400)
+		return
 	}
+	var result struct {
+		Prompt string `json:"prompt"`
+	}
+	if err = s.agentJSON(r.Context(), "refine_agent", "Refine the video shot prompt according to the instruction. Return prompt.", shot.Prompt+"\nInstruction: "+body.Instruction, nil, &result); err != nil {
+		http.Error(w, err.Error(), 502)
+		return
+	}
+	if result.Prompt == "" {
+		http.Error(w, "OpenRouter returned an empty shot prompt", 502)
+		return
+	}
+	shot.Prompt = result.Prompt
+	if err = s.database.UpdateShot(shot); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"shot": shot,
 		"note": "Refined shot prompt based on instruction",
@@ -371,8 +333,8 @@ func (s *Server) handleRenderScene(w http.ResponseWriter, r *http.Request) {
 	job := &models.RenderJob{
 		ProjectID:   &projectID,
 		SceneID:     &scene.ID,
-		Provider:    s.cfg.DefaultVideoProvider,
-		Model:       s.cfg.OpenRouterVideoModel,
+		Provider:    "openrouter",
+		Model:       s.routes().MediaModel("video"),
 		Status:      "pending",
 		Stage:       &stage,
 		Progress:    &progress,
@@ -389,141 +351,115 @@ func (s *Server) handleRenderScene(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleStoryboard(w http.ResponseWriter, r *http.Request) {
 	sceneID := chi.URLParam(r, "id")
-	background := r.URL.Query().Get("background") == "true"
-	projectID, _ := s.database.GetActiveProjectID()
-
-	if background {
-		op := &models.Op{
-			Kind:      "storyboard",
-			Status:    "running",
-			SceneID:   &sceneID,
-			ProjectID: &projectID,
-		}
-		_ = s.database.CreateOp(op)
-
-		go func(opID, scID, pid string) {
-			time.Sleep(1 * time.Second)
-			assetID := "asset_storyboard_" + scID
-			storyboardAsset := &models.Asset{
-				ID:           assetID,
-				ProjectID:    &pid,
-				Type:         "location",
-				Name:         "Scene Storyboard",
-				FilePath:     "storage/storyboards/sample.png",
-				TagsJSON:     []byte(`["storyboard"]`),
-				MetadataJSON: []byte(fmt.Sprintf(`{"scene_id":"%s"}`, scID)),
-			}
-			_ = s.database.CreateAsset(storyboardAsset)
-
-			resBytes, _ := json.Marshal(map[string]interface{}{
-				"scene_id":       scID,
-				"asset_id":       assetID,
-				"storyboard_url": "/storage/storyboards/sample.png",
-			})
-			_ = s.database.UpdateOp(opID, "succeeded", resBytes, nil)
-			s.broker.Publish(map[string]interface{}{
-				"type":     "op_done",
-				"op_id":    opID,
-				"kind":     "storyboard",
-				"status":   "succeeded",
-				"scene_id": scID,
-			})
-		}(op.ID, sceneID, projectID)
-
-		writeJSON(w, http.StatusAccepted, map[string]interface{}{
-			"op_id":  op.ID,
-			"status": op.Status,
-		})
+	scene, err := s.database.GetScene(sceneID)
+	if err != nil {
+		http.Error(w, "scene not found", 404)
 		return
 	}
-
-	writeJSON(w, http.StatusOK, map[string]string{
-		"scene_id":       sceneID,
-		"storyboard_url": "/storage/storyboards/sample.png",
+	s.operation(w, r, &models.Op{Kind: "storyboard", SceneID: &sceneID, ProjectID: scene.ProjectID}, func(ctx context.Context) (any, error) {
+		refs, err := s.sceneReferences(scene)
+		if err != nil {
+			return nil, err
+		}
+		assets, err := s.generateAssets(ctx, scene.ProjectID, nil, scene.ID, scene.Title+" storyboard", "storyboard", "Storyboard keyframe of "+scene.Title+". "+scene.Summary, scene.AspectRatio, refs)
+		if err != nil {
+			return nil, err
+		}
+		ids := []string{}
+		_ = json.Unmarshal(scene.AssetIDsJSON, &ids)
+		for _, asset := range assets {
+			ids = append(ids, asset.ID)
+		}
+		scene.AssetIDsJSON, _ = json.Marshal(ids)
+		if err = s.database.UpdateScene(scene); err != nil {
+			return nil, err
+		}
+		return map[string]any{"scene_id": scene.ID, "asset_id": assets[0].ID, "storyboard_url": "/" + assets[0].FilePath}, nil
 	})
 }
 
 func (s *Server) handlePlanSceneAssets(w http.ResponseWriter, r *http.Request) {
-	sceneID := chi.URLParam(r, "id")
-	scene, err := s.database.GetScene(sceneID)
+	scene, err := s.database.GetScene(chi.URLParam(r, "id"))
 	if err != nil {
-		http.Error(w, "scene not found", http.StatusNotFound)
+		http.Error(w, "scene not found", 404)
 		return
 	}
-
 	var body struct {
 		Instruction string `json:"instruction"`
 		MaxAssets   int    `json:"max_assets"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
-
-	plan := map[string]interface{}{
-		"scene_id": scene.ID,
-		"assets": []map[string]interface{}{
-			{
-				"name":        "Key Prop",
-				"type":        "prop",
-				"description": "Essential prop for " + scene.Title,
-			},
-		},
-		"suggested_shots": []string{},
-	}
-	writeJSON(w, http.StatusOK, plan)
-}
-
-func (s *Server) handleGenerateSceneAssets(w http.ResponseWriter, r *http.Request) {
-	sceneID := chi.URLParam(r, "id")
-	background := r.URL.Query().Get("background") == "true"
-	projectID, _ := s.database.GetActiveProjectID()
-
-	if background {
-		op := &models.Op{
-			Kind:      "assets",
-			Status:    "running",
-			SceneID:   &sceneID,
-			ProjectID: &projectID,
-		}
-		_ = s.database.CreateOp(op)
-
-		go func(opID, scID, pid string) {
-			time.Sleep(1 * time.Second)
-			assetID := "asset_" + uuid.New().String()[:8]
-			newAsset := &models.Asset{
-				ID:           assetID,
-				ProjectID:    &pid,
-				Type:         "prop",
-				Name:         "Scene Asset",
-				FilePath:     "storage/assets/default_prop.png",
-				TagsJSON:     []byte("[]"),
-				MetadataJSON: []byte(fmt.Sprintf(`{"scene_id":"%s"}`, scID)),
-			}
-			_ = s.database.CreateAsset(newAsset)
-
-			resBytes, _ := json.Marshal(map[string]interface{}{
-				"scene_id":  scID,
-				"asset_ids": []string{assetID},
-				"assets":    []models.Asset{*newAsset},
-			})
-			_ = s.database.UpdateOp(opID, "succeeded", resBytes, nil)
-			s.broker.Publish(map[string]interface{}{
-				"type":     "op_done",
-				"op_id":    opID,
-				"kind":     "assets",
-				"status":   "succeeded",
-				"scene_id": scID,
-			})
-		}(op.ID, sceneID, projectID)
-
-		writeJSON(w, http.StatusAccepted, map[string]interface{}{
-			"op_id":  op.ID,
-			"status": op.Status,
-		})
+	plan, err := s.planAssets(r.Context(), scene, body.Instruction, body.MaxAssets)
+	if err != nil {
+		http.Error(w, err.Error(), 502)
 		return
 	}
-
-	writeJSON(w, http.StatusOK, []map[string]string{
-		{"name": "Scene Asset", "status": "planned"},
+	writeJSON(w, 200, plan)
+}
+func (s *Server) handleGenerateSceneAssets(w http.ResponseWriter, r *http.Request) {
+	sceneID := chi.URLParam(r, "id")
+	scene, err := s.database.GetScene(sceneID)
+	if err != nil {
+		http.Error(w, "scene not found", 404)
+		return
+	}
+	var body struct {
+		Instruction string `json:"instruction"`
+		MaxAssets   int    `json:"max_assets"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	s.operation(w, r, &models.Op{Kind: "assets", SceneID: &sceneID, ProjectID: scene.ProjectID}, func(ctx context.Context) (any, error) {
+		plan, err := s.planAssets(ctx, scene, body.Instruction, body.MaxAssets)
+		if err != nil {
+			return nil, err
+		}
+		assets := []models.Asset{}
+		ids := []string{}
+		existing := []string{}
+		_ = json.Unmarshal(scene.AssetIDsJSON, &existing)
+		for _, item := range plan.Assets {
+			generated, err := s.generateAssets(ctx, scene.ProjectID, nil, scene.ID, item.Name, item.Type, item.Description, "1:1", nil)
+			if err != nil {
+				return nil, err
+			}
+			assets = append(assets, generated...)
+			for _, asset := range generated {
+				ids = append(ids, asset.ID)
+				existing = append(existing, asset.ID)
+			}
+		}
+		scene.AssetIDsJSON, _ = json.Marshal(existing)
+		if err = s.database.UpdateScene(scene); err != nil {
+			return nil, err
+		}
+		return map[string]any{"scene_id": scene.ID, "asset_ids": ids, "assets": assets}, nil
 	})
+}
+
+func (s *Server) sceneReferences(scene *models.Scene) ([]string, error) {
+	characterIDs := []string{}
+	_ = json.Unmarshal(scene.CharacterIDsJSON, &characterIDs)
+	refs := []string{}
+	for _, id := range characterIDs {
+		character, err := s.database.GetCharacter(id)
+		if err != nil {
+			return nil, err
+		}
+		ids := []string{}
+		_ = json.Unmarshal(character.ReferenceAssetIDsJSON, &ids)
+		if len(ids) > 0 {
+			asset, err := s.database.GetAsset(ids[0])
+			if err != nil {
+				return nil, err
+			}
+			image, err := s.imageURL(asset)
+			if err != nil {
+				return nil, err
+			}
+			refs = append(refs, image)
+		}
+	}
+	return refs, nil
 }
 
 func (s *Server) handleCastMemberAdd(w http.ResponseWriter, r *http.Request) {
@@ -571,42 +507,70 @@ func (s *Server) handleShotAssetDetach(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleConversationalize(w http.ResponseWriter, r *http.Request) {
-	background := r.URL.Query().Get("background") == "true"
-	projectID, _ := s.database.GetActiveProjectID()
-
-	if background {
-		op := &models.Op{
-			Kind:      "conversation",
-			Status:    "running",
-			ProjectID: &projectID,
-		}
-		_ = s.database.CreateOp(op)
-
-		go func(opID string) {
-			time.Sleep(1 * time.Second)
-			resBytes, _ := json.Marshal(map[string]string{
-				"status":  "converted",
-				"message": "Conversational conversion complete",
-			})
-			_ = s.database.UpdateOp(opID, "succeeded", resBytes, nil)
-			s.broker.Publish(map[string]interface{}{
-				"type":   "op_done",
-				"op_id":  opID,
-				"kind":   "conversation",
-				"status": "succeeded",
-			})
-		}(op.ID)
-
-		writeJSON(w, http.StatusAccepted, map[string]interface{}{
-			"op_id":  op.ID,
-			"status": op.Status,
-		})
+	projectID, err := s.database.GetActiveProjectID()
+	if err != nil {
+		http.Error(w, err.Error(), 400)
 		return
 	}
-
-	writeJSON(w, http.StatusOK, map[string]string{
-		"status":  "converted",
-		"message": "Conversational conversion complete",
+	var body struct {
+		SceneIDs     []string `json:"scene_ids"`
+		Instruction  string   `json:"instruction"`
+		IncludeShots bool     `json:"include_shots"`
+		Preview      bool     `json:"preview"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	s.operation(w, r, &models.Op{Kind: "conversation", ProjectID: &projectID}, func(ctx context.Context) (any, error) {
+		ids := body.SceneIDs
+		if len(ids) == 0 {
+			scenes, err := s.database.ListScenes(projectID)
+			if err != nil {
+				return nil, err
+			}
+			for _, scene := range scenes {
+				ids = append(ids, scene.ID)
+			}
+		}
+		updated := []models.Scene{}
+		for _, id := range ids {
+			scene, err := s.database.GetScene(id)
+			if err != nil {
+				return nil, err
+			}
+			if scene.ProjectID == nil || *scene.ProjectID != projectID {
+				return nil, fmt.Errorf("scene is outside the active project")
+			}
+			var result struct {
+				Summary string `json:"summary"`
+			}
+			err = s.agentJSON(ctx, "scene_agent", "Rewrite this scene to include natural character dialogue and clear staging. Preserve its events and duration. Return summary including dialogue.", scene.Title+"\n"+scene.Summary+"\nInstruction: "+body.Instruction, nil, &result)
+			if err != nil {
+				return nil, err
+			}
+			if result.Summary == "" {
+				return nil, fmt.Errorf("OpenRouter returned no conversational scene")
+			}
+			scene.Summary = result.Summary
+			if !body.Preview {
+				if err = s.database.UpdateScene(scene); err != nil {
+					return nil, err
+				}
+			}
+			if body.IncludeShots && !body.Preview {
+				drafts, err := s.agents.GenerateShots(ctx, scene.Title, scene.Summary, scene.Duration)
+				if err != nil {
+					return nil, err
+				}
+				for _, draft := range drafts {
+					camera, movement := draft.Camera, draft.Movement
+					shot := &models.Shot{SceneID: scene.ID, ShotOrder: draft.Order, Duration: draft.Duration, Prompt: draft.Prompt, Camera: &camera, Movement: &movement}
+					if err = s.database.CreateShot(shot); err != nil {
+						return nil, err
+					}
+				}
+			}
+			updated = append(updated, *scene)
+		}
+		return map[string]any{"status": "converted", "scenes": updated, "preview": body.Preview}, nil
 	})
 }
 

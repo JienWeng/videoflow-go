@@ -1,0 +1,34 @@
+VideoFlow — start here
+
+1. Download the ZIP for your computer and extract the ENTIRE folder.
+   Mac: darwin-arm64 for Apple Silicon; darwin-amd64 for Intel Macs.
+   Linux: linux-amd64 for most PCs; linux-arm64 for ARM machines.
+2. Open "Start VideoFlow" inside the extracted folder.
+   On Linux, mark Start VideoFlow.sh as executable and run it.
+   Keep the app's terminal window open while using VideoFlow.
+3. The app opens your browser at http://127.0.0.1:8000.
+4. Open Settings, paste your OpenRouter API key, and test the connection.
+   You need an OpenRouter account with credits. AI generation costs money.
+5. Create a project and generate your video.
+
+Go, Node.js and Python are NOT required to run a download.
+Close the terminal window (or press Ctrl+C) to stop the app.
+If it does not open automatically, visit http://127.0.0.1:8000.
+If port 8000 is busy, stop the other copy before starting this one.
+
+Your projects, media and saved key stay in your computer's user data folder:
+  Mac: ~/Library/Application Support/VideoFlow
+  Linux: ~/.config/VideoFlow (or $XDG_CONFIG_HOME/VideoFlow)
+Extract newer versions into a new folder; your data stays separate.
+Back up that user data folder. It contains your saved API key; keep it private.
+
+Optional media tools
+Image and video generation work without FFmpeg. Video QA, transcription,
+caption burning and some video editing need FFmpeg with libass support.
+If FFmpeg is already installed, VideoFlow uses it automatically. You can also
+put the matching ffmpeg executable next to the videoflow executable.
+FFmpeg is not included in these downloads.
+
+This preview is not code-signed. macOS may show a security prompt.
+Check the download source and the SHA256SUMS file before choosing to run it.
+For macOS, use the system's Open Anyway option only for a download you trust.

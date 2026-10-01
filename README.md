@@ -1,3 +1,11 @@
+## Download and use
+
+For a beginner, use the [GitHub downloads](https://github.com/JienWeng/videoflow-go/releases): extract the ZIP for your computer and open **Start VideoFlow**. The app opens in your browser. Add your OpenRouter key in Settings; AI generation needs OpenRouter credits. No Go or Node installation is required.
+
+The preview is unsigned. FFmpeg is optional for generation and required for transcription, video QA and caption burning. See [beginner instructions](docs/QUICKSTART.txt).
+
+To build downloadable packages, build the frontend, then run `python3 scripts/package.py`. A tagged release runs checks and publishes four macOS/Linux archives with checksums. Start a local combined server with `bin/videoflow-server --desktop --ui-dir frontend/build`; add `--no-browser` for a service. The server binds to localhost by default; `--host` explicitly sets another interface.
+
 # VideoFlow Go
 
 A streamlined, high-performance, single-binary AI video studio backend built in **Go (Golang)** with an interactive **SvelteKit** frontend.
@@ -88,10 +96,15 @@ Set environment variables in `.env` or in your shell:
 | `PORT` | `8000` | HTTP API listen port |
 | `STORAGE_ROOT` | `storage` | Path to store generated videos and images |
 | `DATABASE_PATH` | `db.sqlite` | SQLite database file |
-| `OPENROUTER_API_KEY` | `""` | OpenRouter API Key for LLMs and video generation |
-| `ATLASCLOUD_API_KEY` | `""` | AtlasCloud API Key for video rendering |
+| `OPENROUTER_API_KEY` | `""` | OpenRouter key for all AI generation and analysis |
+| `OPENROUTER_TEXT_MODEL` | `openai/gpt-4o-mini` | Default text agent model |
+| `OPENROUTER_VISION_MODEL` | `qwen/qwen3-vl-30b-a3b-instruct` | Default vision model |
+| `OPENROUTER_IMAGE_MODEL` | `openai/gpt-image-2` | Default image/reference model |
+| `OPENROUTER_VIDEO_MODEL` | `google/veo-3.1-lite` | Default video model |
 
 ---
+
+All AI work uses OpenRouter. Save the key in Settings or set `OPENROUTER_API_KEY`; saved settings take effect without restarting. See [OpenRouter setup](handbook/03-providers.md) for model catalogs, paid checks, and FFmpeg requirements.
 
 ## User Handbook
 

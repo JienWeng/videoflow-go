@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"videoflow-go/internal/models"
@@ -91,11 +93,21 @@ func (s *Server) handleCharacterRefSheets(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Trigger async character reference generation or return prompt
-	writeJSON(w, http.StatusAccepted, map[string]interface{}{
-		"status":       "generating",
-		"character_id": c.ID,
-		"message":      "Generating character reference sheet",
+	s.operation(w, r, &models.Op{Kind: "character_reference", ProjectID: c.ProjectID}, func(ctx context.Context) (any, error) {
+		images, err := s.generateAssets(ctx, c.ProjectID, &c.ID, "", c.Name+" reference", "character_reference", fmt.Sprintf("Character reference sheet showing front, side and full body views of %s. Appearance: %s. Description: %s. Visual rules: %s", c.Name, c.Appearance, c.Description, c.VisualRulesJSON), "1:1", nil)
+		if err != nil {
+			return nil, err
+		}
+		ids := []string{}
+		_ = json.Unmarshal(c.ReferenceAssetIDsJSON, &ids)
+		for _, image := range images {
+			ids = append(ids, image.ID)
+		}
+		c.ReferenceAssetIDsJSON, _ = json.Marshal(ids)
+		if err = s.database.UpdateCharacter(c); err != nil {
+			return nil, err
+		}
+		return c, nil
 	})
 }
 
@@ -112,9 +124,28 @@ func (s *Server) handleCharacterBible(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
-	if body.Notes != "" {
-		c.Description = c.Description + " " + body.Notes
-		_ = s.database.UpdateCharacter(c)
+	var result struct {
+		Description    string `json:"description"`
+		Appearance     string `json:"appearance"`
+		Personality    string `json:"personality"`
+		SampleDialogue string `json:"sample_dialogue"`
+	}
+	existing, _ := json.Marshal(c)
+	if err = s.agentJSON(r.Context(), "character_memory", "Develop a consistent character bible from the existing character and notes. Return description, appearance, personality and sample_dialogue.", string(existing)+"\nNotes: "+body.Notes, nil, &result); err != nil {
+		http.Error(w, err.Error(), 502)
+		return
+	}
+	if result.Description == "" {
+		http.Error(w, "OpenRouter returned no character bible", 502)
+		return
+	}
+	c.Description = result.Description
+	c.Appearance = result.Appearance
+	c.Personality = result.Personality
+	c.SampleDialogue = result.SampleDialogue
+	if err = s.database.UpdateCharacter(c); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
 	}
 
 	writeJSON(w, http.StatusOK, c)

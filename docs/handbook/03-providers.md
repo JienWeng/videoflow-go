@@ -1,56 +1,32 @@
-# 3. Configure providers
+# Configure OpenRouter
 
-[Handbook](README.md) · Previous: [Install](02-installation.md) · Next: [Projects](04-projects.md)
+VideoFlow Go uses OpenRouter for all AI tasks: story planning, scripts, shots, chat, image generation, character references, visual recognition, frame QA, video generation, and speech transcription. FFmpeg performs local frame extraction, audio extraction and caption burning; it is not an AI provider.
 
-VideoFlow has three separate AI jobs: text planning, image generation, and video generation. Vision QA is another model assignment. A working text connection does not prove image or video generation is ready.
+## Setup
 
-## Understand the current defaults
+1. Create an API key at https://openrouter.ai/keys and enable sufficient credits for the models you choose.
+2. In **Settings → Providers**, save the built-in OpenRouter key. Alternatively set `OPENROUTER_API_KEY` before starting the Go server. Database credentials take precedence over the environment.
+3. Run **Test connection**. It calls OpenRouter's `/key` endpoint and does not generate content.
+4. Use **Load models** to fetch the current text catalog. **Test text model + JSON** makes a small billable completion and checks its JSON response. It does not certify image, vision, video, or transcription behavior.
+5. Open **Engines** and refresh OpenRouter's model catalogs. Select models for images, character/prop images, video, frame vision and transcription. Saving an engine model checks that it appears in the appropriate live catalog.
+6. In **Agents**, choose text or vision model IDs. Agent selections and saved keys are read on each call, including after a restart.
 
-| Job | Current implementation default | Where to configure |
-|---|---|---|
-| Story and planning agents | OpenCode Go, `deepseek-v4-flash` | Settings → Providers, then Agents |
-| Vision QA | AtlasCloud, `qwen/qwen3-vl-30b-a3b-instruct` | Settings → Agents |
-| Character and prop images | AtlasCloud or OpenRouter | Settings → Engines |
-| Storyboard images | AtlasCloud or OpenRouter | Settings → Engines |
-| Whole-scene and shot video | AtlasCloud H3 or OpenRouter | Settings → Engines |
+Defaults: `openai/gpt-4o-mini` for text, `qwen/qwen3-vl-30b-a3b-instruct` for vision, `openai/gpt-image-2` for images, `google/veo-3.1-lite` for video, and `openai/whisper-1` for timed transcription. Catalog availability does not guarantee account access or sufficient credits.
 
-These are configured IDs from the source, not verified recommendations or guarantees of account access. Confirm availability in your provider account. The initial account setup is: sign in on the provider website, create an API key, and enable the account usage needed by your chosen models. Keep the key private.
+Named connections must use OpenRouter Chat Completions at `https://openrouter.ai/api/v1`. Each named connection uses its own saved key and default model; built-in media tasks use the built-in OpenRouter key. Other provider presets and arbitrary endpoint overrides are no longer available. Existing unrelated connection records are preserved but cannot be selected for new work. Credentials in the Go SQLite database are stored locally in plaintext; protect the database.
 
-OpenRouter can be selected for image and video media as well as text. Configure the built-in OpenRouter credential for media; named text connections keep independent credentials. Actual account/model behavior still needs a live smoke test, and local image references sent to video models use data URLs whose support is not specified in OpenRouter's video guide. See the [compatibility report](../audits/2026-09-27-openrouter.md).
+## Media behavior
 
-## Configure a text connection
+Images use `POST /images` and are saved with their actual format. Storyboard images appear in the scene's storyboard view. Character reference sheets are saved as assets and linked to their character; character references can guide storyboard image generation.
 
-1. Open **Settings → Providers**.
-2. Use a built-in provider, or fill **Add a named connection** with a descriptive name and preset.
-3. Choose a model ID from that provider. A model name is not an API key.
-4. Save the API key. For a custom endpoint, confirm its base URL and protocol.
-5. Use **Load models** where available. Manual IDs are supported when discovery is unavailable.
-6. Run the connection check, then **Test model + JSON** for your chosen model. The latter makes a real request and consumes provider usage.
-7. Open **Agents** and assign the connection and model to each text agent you want to use. Saving a key alone does not reroute agents from their defaults.
-8. Assign a model that accepts image inputs to QA. A successful text/JSON test does not verify vision.
+Videos use `POST /videos`, `GET /videos/{id}`, and authenticated `GET /videos/{id}/content?index=N`. Models, explicit durations, aspect ratios, resolutions, audio flags and frame anchors are checked before paid submission. Local scene timings are mapped to the next supported duration, or the model's maximum when longer; the actual provider request is saved with the job. Shot beats are expressed in the prompt, not as a native multi-shot API field. Saved negative prompts and dialogue language are included in the request prompt.
 
-For built-in OpenRouter text routing, use `https://openrouter.ai/api/v1` and an available text model. If a model rejects tool output, a named Chat Completions connection can choose JSON mode or schema-in-prompt output. All results still go through local schema validation and retries.
+When supported, the latest generated storyboard is used as a first-frame anchor. Explicit `frame_images` override that automatic anchor. Local references are embedded as data URLs. OpenRouter's image guide documents these; its video guide demonstrates remote URLs, so live reference-video acceptance remains model-dependent. Guidance `input_references` are accepted only when capability metadata advertises support; video/audio reference assets are not mapped.
 
-Named connections are LLM routes. A named OpenRouter connection's independently saved key is not automatically the built-in OpenRouter media credential. Configure the built-in OpenRouter entry when testing its media integration.
+The worker marks success only after downloading real video content and saving outputs. It stores the upstream job ID before polling and resumes it after shutdown/restart. Clicking retry/resubmit creates a fresh generation that may incur a new charge. Provider errors fail the job; no sample video or fabricated QA score is substituted.
 
-## Configure AtlasCloud media
+Frame QA sends three sampled images to a vision model. Its score describes sampled visual frames, not an audio or continuous-motion assessment. It requires local FFmpeg. Transcription uses `/audio/transcriptions` with `verbose_json` and genuine provider timestamps; choose a Whisper model that returns segments. Caption burning requires an FFmpeg build with libass.
 
-Set `ATLASCLOUD_API_KEY` in `.env`, or save the AtlasCloud provider key in Settings. The environment distinguishes the media base URL (`ATLASCLOUD_BASE_URL`, ending `/api/v1`) from the LLM base URL (`ATLAS_LLM_BASE_URL`, ending `/v1`). Keep those endpoint roles separate.
+Official contracts: [image generation](https://openrouter.ai/docs/guides/overview/multimodal/image-generation), [video generation](https://openrouter.ai/docs/guides/overview/multimodal/video-generation), [transcription](https://openrouter.ai/docs/guides/overview/multimodal/stt).
 
-In **Engines**, inspect the image/video provider and model. AtlasCloud defaults to H3 Developer Reference-to-Video (`minimax/h3-developer/reference-to-video`): the adapter uploads stored image references, sends their public URLs in `refers`, and flattens ordered shots into one chronological prompt. The route can generate audio, and the prompt asks it to speak each written dialogue line. H3 Developer Text-to-Video remains selectable, but ignores image references. Both Developer routes accept 4–15 seconds and 480P, 768P, or 2K; the local preflight reports an invalid resolution before generation. The app caps uploaded image references at the configured maximum.
-
-## OpenRouter media
-
-Changing the provider in Engines selects the corresponding media model. The model is checked against OpenRouter's video model catalog before submission; unsupported duration or aspect ratio values return the supported values. Image guidance references and explicit first/last-frame anchors are sent through their separate API fields. The worker downloads completed videos through OpenRouter's authenticated content endpoint.
-
-Local image assets are embedded as data URLs, avoiding an AtlasCloud upload. OpenRouter's image guide documents data URLs for image references; its video guide only shows ordinary URLs, so test a reference-image video on your account/model before relying on it. OpenRouter video references do not accept a reference video asset. Multi-shot specs are expressed as a timed shot sequence in the prompt because the dedicated endpoint has no native multi-shot field.
-
-## How saved settings behave
-
-App values resolve in this order: project override → global saved value → configuration default. Provider database credentials take precedence over environment credentials. Clearing a saved key can reveal the environment key again; it does not necessarily disconnect the provider. API credentials in SQLite are base64-obfuscated, not encrypted.
-
-Settings contain Providers, Engines, Defaults, Agents, and Appearance. Start with credentials and agent routing, then media engines; use Defaults for durations, language, and captions, and Appearance for theme.
-
-The optional local Codex connection depends on a compatible authenticated CLI on the API machine. It is not needed for this guide; CLI/model compatibility was not validated in this audit.
-
-**Expected result:** selected agents point to configured connections and their model checks succeed. Complete a small workflow only after reviewing the media limitations. For authentication or schema errors, see [Troubleshooting](11-troubleshooting.md).
+See the [current verification report](../audits/2026-10-01-openrouter-go.md) for what was tested. Paid live media quality and reference-video acceptance remain external checks.
