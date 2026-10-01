@@ -6,8 +6,8 @@ Start by identifying the stage that failed. Keep the project, scene, operation, 
 
 | Symptom | Check and next action |
 |---|---|
-| `uv`, `node`, or `npm` not found | Install the prerequisite, reopen the terminal, and check its version |
-| Cannot import `app` | Run the backend from the repository root containing `pyproject.toml`; run `uv sync --frozen --extra dev --python 3.12` |
+| `go`, `node`, or `npm` not found | Install the prerequisite, reopen the terminal, and check its version |
+| `videoflow-server` binary not found | Run `make build` or `go build -o bin/videoflow-server ./cmd/server` from the repository root |
 | Frontend loads but requests fail | Check API `/health`, port 8000, and the backend terminal; use frontend port 5173 or 4173 |
 | Page on a remote machine cannot reach API | The default client calls port 8000 on the browser's host; remote deployment/CORS is not configured by this local guide |
 | Model/key error | Check the exact agent assignment, provider key, account access, and model ID; test the selected model |
