@@ -33,3 +33,6 @@ frontend/.env.*
 
 # Download archives
 dist/
+
+# Python build-script caches
+__pycache__/

@@ -2,9 +2,9 @@
 
 For a beginner, use the [GitHub downloads](https://github.com/JienWeng/videoflow-go/releases): extract the ZIP for your computer and open **Start VideoFlow**. The app opens in your browser. Add your OpenRouter key in Settings; AI generation needs OpenRouter credits. No Go or Node installation is required.
 
-The preview is unsigned. FFmpeg is optional for generation and required for transcription, video QA and caption burning. See [beginner instructions](docs/QUICKSTART.txt).
+The preview is unsigned. FFmpeg, FFprobe and a caption font are included, so transcription, video QA and caption burning need no separate dependency installation. The exact media sources and licenses are included in each archive. See [beginner instructions](docs/QUICKSTART.txt).
 
-To build downloadable packages, build the frontend, then run `python3 scripts/package.py`. A tagged release runs checks and publishes four macOS/Linux archives with checksums. Start a local combined server with `bin/videoflow-server --desktop --ui-dir frontend/build`; add `--no-browser` for a service. The server binds to localhost by default; `--host` explicitly sets another interface.
+To build a download, build the frontend, run `python3 scripts/build_media.py` on the target platform, then run `python3 scripts/package.py --target <platform-architecture>`. Media build tools are documented in the builder; users do not need them. A tagged release runs checks and publishes four macOS/Linux archives with checksums. Start a local combined server with `bin/videoflow-server --desktop --ui-dir frontend/build`; add `--no-browser` for a service. The server binds to localhost by default; `--host` explicitly sets another interface.
 
 # VideoFlow Go
 

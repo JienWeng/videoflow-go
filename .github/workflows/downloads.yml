@@ -4,10 +4,22 @@ on:
   push:
     tags: ['v*']
 permissions:
-  contents: write
+  contents: read
 jobs:
   package:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-amd64
+            runner: ubuntu-22.04
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+          - target: darwin-amd64
+            runner: macos-15-intel
+          - target: darwin-arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -18,21 +30,49 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - run: go test -race ./...
-      - run: go vet ./...
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install meson==1.9.1 ninja==1.13.0
+      - run: python3 scripts/build_media.py
+      - name: Test using only bundled media tools
+        env:
+          MEDIA_TARGET: ${{ matrix.target }}
+        run: |
+          export PATH="$PWD/bin/media/$MEDIA_TARGET:$PATH"
+          go test -race ./...
+          go vet ./...
       - run: npm ci && npm run check && npm run build
         working-directory: frontend
-      - run: python3 scripts/package.py
+      - run: python3 scripts/test_package.py
+      - run: python3 scripts/package.py --target '${{ matrix.target }}'
+      - run: python3 scripts/smoke_package.py --archive 'dist/VideoFlow-${{ matrix.target }}.zip'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-${{ matrix.target }}
+          path: dist/*.zip
+  downloads:
+    needs: package
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: VideoFlow-*
+          merge-multiple: true
+          path: dist
+      - run: cd dist && sha256sum *.zip > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: VideoFlow-downloads
           path: dist/*
-      - name: Publish tagged downloads
+      - name: Publish tagged downloads after all native checks pass
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" dist/* --title "VideoFlow $GITHUB_REF_NAME" --notes-file docs/release-notes.md --prerelease
+            gh release create "$GITHUB_REF_NAME" dist/* --title "VideoFlow $GITHUB_REF_NAME — fully bundled" --notes-file docs/release-notes.md --prerelease
           fi

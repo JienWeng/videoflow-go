@@ -40,7 +40,7 @@ func Configure(cfg *config.Config, uiDir string) (string, error) {
 	if os.Getenv("STORAGE_ROOT") == "" {
 		cfg.StorageRoot = filepath.Join(dataRoot, "storage")
 	}
-	// An optional bundled FFmpeg is preferred over the system installation.
+	// The bundled FFmpeg is preferred over the system installation.
 	if err := os.Setenv("PATH", folder+string(os.PathListSeparator)+os.Getenv("PATH")); err != nil {
 		return "", err
 	}

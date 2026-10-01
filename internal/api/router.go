@@ -96,7 +96,8 @@ func (s *Server) setupRoutes() {
 	// Health
 	s.router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		resp := map[string]interface{}{
-			"status": "ok",
+			"status":      "ok",
+			"media_ready": s.media.Available(),
 			"missing_keys": func() []string {
 				if _, err := s.routes().Client("openrouter"); err != nil {
 					return []string{"OPENROUTER_API_KEY"}

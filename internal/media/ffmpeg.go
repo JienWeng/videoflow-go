@@ -130,7 +130,24 @@ func (m *MediaEngine) BurnCaptions(ctx context.Context, videoPath, destPath stri
 		return fmt.Errorf("caption style %q is unsupported; choose clean, bold, minimal, cinematic, neon, kids, classic or comic", style)
 	}
 	escaped := strings.NewReplacer("\\", "\\\\", ":", "\\:", "'", "\\'").Replace(subtitles)
-	cmd := exec.CommandContext(ctx, m.ffmpegPath, "-y", "-i", videoPath, "-vf", "subtitles='"+escaped+"':force_style='"+formatting+"'", "-c:v", "libx264", "-c:a", "copy", destPath)
+	filter := "subtitles='" + escaped + "'"
+	// Bundled FFmpeg has no dependency on a system font provider. Supply the
+	// packaged font directory explicitly so captions work on a clean computer.
+	fontDir := filepath.Join(filepath.Dir(m.ffmpegPath), "fonts")
+	if info, err := os.Stat(filepath.Join(fontDir, "NotoSans-Regular.ttf")); err == nil && !info.IsDir() {
+		escapedFontDir := strings.NewReplacer("\\", "\\\\", ":", "\\:", "'", "\\'").Replace(fontDir)
+		filter += ":fontsdir='" + escapedFontDir + "'"
+		fontName := "Noto Sans"
+		// The CJK family includes Latin glyphs as well. Select it directly because
+		// a build without a system font provider cannot discover fallback families.
+		if info, err := os.Stat(filepath.Join(fontDir, "NotoSansCJKsc-Regular.otf")); err == nil && !info.IsDir() {
+			fontName = "Noto Sans CJK SC"
+		}
+		formatting = strings.ReplaceAll(formatting, "FontName=DejaVu Sans", "FontName="+fontName)
+		formatting = strings.ReplaceAll(formatting, "FontName=DejaVu Serif", "FontName="+fontName)
+	}
+	filter += ":force_style='" + formatting + "'"
+	cmd := exec.CommandContext(ctx, m.ffmpegPath, "-y", "-i", videoPath, "-vf", filter, "-c:v", "libx264", "-c:a", "copy", destPath)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("burn captions: %w: %s", err, out)
 	}

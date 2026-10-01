@@ -22,12 +22,11 @@ Your projects, media and saved key stay in your computer's user data folder:
 Extract newer versions into a new folder; your data stays separate.
 Back up that user data folder. It contains your saved API key; keep it private.
 
-Optional media tools
-Image and video generation work without FFmpeg. Video QA, transcription,
-caption burning and some video editing need FFmpeg with libass support.
-If FFmpeg is already installed, VideoFlow uses it automatically. You can also
-put the matching ffmpeg executable next to the videoflow executable.
-FFmpeg is not included in these downloads.
+Everything needed for local media processing is included
+FFmpeg, FFprobe and a caption font are bundled. You do not need to install
+Go, Node.js, Python or FFmpeg separately. Transcription still sends extracted
+audio to OpenRouter and needs your key, credits and internet connection.
+License texts are in licenses/; matching media source code is in media-sources.zip.
 
 This preview is not code-signed. macOS may show a security prompt.
 Check the download source and the SHA256SUMS file before choosing to run it.
