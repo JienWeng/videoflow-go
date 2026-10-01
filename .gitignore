@@ -1,0 +1,32 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# SQLite & local runtime storage
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+storage/
+test_db.sqlite*
+
+# Environment
+.env
+.env.local
+
+# Frontend
+frontend/node_modules/
+frontend/.svelte-kit/
+frontend/build/
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# OS / Editor
+.idea/
+.vscode/
+*.swp
+.DS_Store

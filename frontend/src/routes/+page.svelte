@@ -1,0 +1,218 @@
+<script lang="ts">
+  import { PaneGroup, Pane, Handle } from '$lib/components/ui/resizable';
+  import EntityCanvas from '$lib/canvas/EntityCanvas.svelte';
+  import ChatPanel from '$lib/chat/ChatPanel.svelte';
+  import Onboarding from '$lib/shell/Onboarding.svelte';
+  import { palette } from '$lib/shell/palette.svelte';
+  import * as Card from '$lib/components/ui/card';
+  import { Button } from '$lib/components/ui/button';
+  import { get } from '$lib/api';
+  import { subscribeJobs } from '$lib/sse';
+  import { onMount } from 'svelte';
+  import type { Node } from '@xyflow/svelte';
+  import Users from '@lucide/svelte/icons/users';
+  import Palette from '@lucide/svelte/icons/palette';
+  import MessageSquare from '@lucide/svelte/icons/message-square';
+  import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
+  import CloudOff from '@lucide/svelte/icons/cloud-off';
+  import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+
+  let canvas: EntityCanvas | undefined = $state();
+  let chat: ChatPanel | undefined = $state();
+  let selected = $state<Node | null>(null);
+  // -1 = unknown (don't flash the empty state before the first /graph response).
+  let nodeCount = $state(-1);
+  // Set when the /graph probe fails so we can show a Retry card instead of a
+  // blank/stale canvas (mirrors the scenes-page error pattern).
+  let graphError = $state('');
+  let mobile = $state(false);
+  let chatPane: any = $state();
+  let chatHidden = $state(false);
+  let chatExpanded = $state(false);
+
+  function hideChat() {
+    chatHidden = true;
+    chatPane?.collapse();
+  }
+
+  function restoreChat() {
+    chatHidden = false;
+    chatPane?.expand();
+  }
+
+  function toggleChatSize() {
+    chatExpanded = !chatExpanded;
+    chatPane?.resize(chatExpanded ? (mobile ? 65 : 55) : (mobile ? 42 : 28));
+  }
+
+  async function checkEmpty() {
+    try {
+      const g = await get('/graph');
+      nodeCount = g.nodes?.length ?? 0;
+      graphError = '';
+    } catch (e) {
+      graphError = (e as Error).message;
+    }
+  }
+
+  function refreshAll() {
+    canvas?.refresh();
+    checkEmpty();
+  }
+
+  /** Retry after a fetch failure: clear the error, re-probe and reload canvas. */
+  function retryGraph() {
+    graphError = '';
+    canvas?.refresh();
+    checkEmpty();
+  }
+
+  // The Cmd/Ctrl+K listener and the <CommandPalette> mount live in the root
+  // layout so the palette works on every route. The Studio just registers its
+  // canvas/chat-specific palette callbacks here and clears them on unmount.
+  onMount(() => {
+    checkEmpty();
+    const media = window.matchMedia('(max-width: 767px)');
+    const update = () => (mobile = media.matches);
+    update();
+    media.addEventListener('change', update);
+    palette.setHandlers({
+      onfocus: (id) => canvas?.focusNode(id),
+      onnewstory: () => chat?.startNewStory()
+    });
+    const stopJobs = subscribeJobs(refreshAll, refreshAll);
+    return () => {
+      palette.clearHandlers();
+      stopJobs();
+      media.removeEventListener('change', update);
+    };
+  });
+</script>
+
+<PaneGroup direction={mobile ? 'vertical' : 'horizontal'} class="h-full">
+  <Pane defaultSize={mobile ? 58 : 72} minSize={mobile ? 35 : 40}>
+    <div class="relative h-full">
+      <EntityCanvas bind:this={canvas} onselect={(n) => (selected = n)} />
+
+      {#if graphError}
+        <!-- Fetch failed: a centered, actionable card instead of a dead canvas. -->
+        <div class="pointer-events-none absolute inset-0 z-10 grid place-items-center">
+          <Card.Root class="pointer-events-auto max-w-sm shadow-lg">
+            <Card.Header>
+              <Card.Title class="flex items-center gap-2">
+                <CloudOff class="size-4 text-muted-foreground" />
+                Could not load the canvas
+              </Card.Title>
+              <Card.Description>
+                The backend did not respond. Check that it is running, then retry.
+              </Card.Description>
+            </Card.Header>
+            <Card.Content>
+              <p class="mb-3 break-words text-xs text-muted-foreground">{graphError}</p>
+              <Button size="sm" variant="secondary" onclick={retryGraph}>
+                <RefreshCw class="size-3.5 mr-1.5" />Retry
+              </Button>
+            </Card.Content>
+          </Card.Root>
+        </div>
+      {:else if nodeCount === 0}
+        <div class="pointer-events-none absolute inset-0 z-10 grid place-items-center">
+          <Card.Root class="pointer-events-auto max-w-sm shadow-lg">
+            <Card.Header>
+            <Card.Title>Make your first video</Card.Title>
+            <Card.Description>
+              Describe the story and VideoFlow handles the pipeline.
+              </Card.Description>
+            </Card.Header>
+            <Card.Content>
+              <ol class="space-y-3 text-sm">
+                <li class="flex items-start gap-2.5">
+                  <Users class="size-4 mt-0.5 shrink-0 text-muted-foreground" />
+                  <span>
+                    <a href="/create" class="font-medium underline underline-offset-2 inline-flex items-center gap-0.5">
+                      Create a video<ArrowUpRight class="size-3" />
+                    </a>
+                    <span class="block text-muted-foreground">Start with a story idea and choose a style.</span>
+                  </span>
+                </li>
+                <li class="flex items-start gap-2.5">
+                  <Palette class="size-4 mt-0.5 shrink-0 text-muted-foreground" />
+                  <span>
+                    <a href="/settings" class="font-medium underline underline-offset-2 inline-flex items-center gap-0.5">
+                      Configure AI providers<ArrowUpRight class="size-3" />
+                    </a>
+                    <span class="block text-muted-foreground">Check credentials and model routes before generation.</span>
+                  </span>
+                </li>
+                <li class="flex items-start gap-2.5">
+                  <Palette class="size-4 mt-0.5 shrink-0 text-muted-foreground" />
+                  <span>
+                    <a href="/scenes" class="font-medium underline underline-offset-2 inline-flex items-center gap-0.5">
+                      Open advanced workspace<ArrowUpRight class="size-3" />
+                    </a>
+                    <span class="block text-muted-foreground">Edit scenes, characters, assets, and renders manually.</span>
+                  </span>
+                </li>
+                <li class="flex items-start gap-2.5">
+                  <Palette class="size-4 mt-0.5 shrink-0 text-muted-foreground" />
+                  <span>
+                    <a href="/settings" class="font-medium underline underline-offset-2 inline-flex items-center gap-0.5">
+                      Configure AI providers<ArrowUpRight class="size-3" />
+                    </a>
+                    <span class="block text-muted-foreground">Check credentials and model routes before generation.</span>
+                  </span>
+                </li>
+                <li class="flex items-start gap-2.5">
+                  <MessageSquare class="size-4 mt-0.5 shrink-0 text-muted-foreground" />
+                  <span>
+                    <span class="font-medium">Write a script</span>
+                    <span class="block text-muted-foreground">
+                      Tell the chat on the right what your story is about.
+                    </span>
+                  </span>
+                </li>
+              </ol>
+            </Card.Content>
+          </Card.Root>
+        </div>
+      {/if}
+    </div>
+  </Pane>
+  {#if !chatHidden}<Handle withHandle />{/if}
+  <Pane
+    bind:this={chatPane}
+    collapsible
+    collapsedSize={0}
+    defaultSize={mobile ? 42 : 28}
+    minSize={mobile ? 30 : 20}
+    onCollapse={() => (chatHidden = true)}
+    onExpand={() => (chatHidden = false)}>
+    <div class="h-full border-l border-border">
+      <ChatPanel
+        bind:this={chat}
+        expanded={chatExpanded}
+        onhide={hideChat}
+        onresize={toggleChatSize}
+        onfocus={(id) => canvas?.focusNode(id)}
+        onmutate={refreshAll}
+        selected={selected
+          ? {
+              id: selected.id,
+              kind: String(selected.data?.kind ?? ''),
+              label: String(selected.data?.label ?? '')
+            }
+          : null}
+      />
+    </div>
+  </Pane>
+</PaneGroup>
+
+{#if chatHidden}
+  <div class="fixed bottom-4 right-4 z-40">
+    <Button variant="secondary" class="shadow-lg" onclick={restoreChat}>
+      <MessageSquare class="mr-1.5 size-4" />Show chat
+    </Button>
+  </div>
+{/if}
+
+<Onboarding onpalette={() => (palette.open = true)} />

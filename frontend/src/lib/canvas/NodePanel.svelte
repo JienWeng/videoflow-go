@@ -1,0 +1,540 @@
+<script lang="ts" module>
+  // Caption config is project-wide — fetch once per app session, lazily on
+  // the first output-node selection, and share across panel instances.
+  type CaptionConfig = {
+    styles: string[];
+    models: string[];
+    default_model: string;
+    default_language: string;
+    default_style: string;
+  };
+  let captionConfigPromise: Promise<CaptionConfig> | null = null;
+</script>
+
+<script lang="ts">
+  import { untrack } from 'svelte';
+  import type { Node } from '@xyflow/svelte';
+  import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
+  import { Label } from '$lib/components/ui/label';
+  import { Textarea } from '$lib/components/ui/textarea';
+  import { Badge } from '$lib/components/ui/badge';
+  import { Separator } from '$lib/components/ui/separator';
+  import { toast } from 'svelte-sonner';
+  import { Captions, Clapperboard, History, RefreshCw, Sparkles, Trash2, X } from '@lucide/svelte';
+  import { get, patch, post, del, mediaUrl, isImage } from '$lib/api';
+  import { runBackgroundOp } from '$lib/ops';
+
+  let {
+    node,
+    onclose,
+    onsaved
+  }: { node: Node | null; onclose: () => void; onsaved: () => void } = $props();
+
+  // The panel's own source of truth for which node it shows. It tracks the
+  // `node` prop, EXCEPT when the form is dirty and the user cancels the
+  // discard confirm — then the new selection is ignored and the panel keeps
+  // the node being edited (we can't revert the parent's selection from here).
+  // The panel is a plain fixed-position div (NOT a modal Sheet) so the canvas
+  // underneath stays pannable/clickable while it is open.
+  let shown = $state<Node | null>(null);
+
+  const kind = $derived(String(shown?.data?.kind ?? ''));
+  const data = $derived((shown?.data ?? {}) as Record<string, any>);
+
+  // Editable form state, re-seeded whenever the selected node changes.
+  let form = $state<Record<string, any>>({});
+  // True once any form field was touched; reset on seed/save/refine/revert.
+  let formDirty = $state(false);
+  const markFormDirty = () => (formDirty = true);
+  let saving = $state(false);
+  let refineInstruction = $state('');
+  let refining = $state(false);
+  let confirmingDelete = $state(false);
+  let deleting = $state(false);
+  let confirmTimer: ReturnType<typeof setTimeout> | undefined;
+  let showHistory = $state(false);
+  let revisions = $state<any[]>([]);
+  let reverting = $state('');
+
+  // Output node actions (QA retry + captions). Captioning uses the project
+  // defaults from /caption-config — fine-tuning lives in /editor/{id}.
+  let retrying = $state(false);
+  let captioning = $state(false);
+  let captionStyle = $state('');
+  let captionModel = $state('');
+  let captionLanguage = $state('zh');
+
+  // Sync the `node` prop into `shown`, guarding unsaved edits on node-switch.
+  // Design note: reverting the parent's selection on cancel is impractical
+  // (selection lives in +page.svelte and there is no "reselect" callback), so
+  // we accept confirm-then-discard semantics: proceed only on OK; on cancel
+  // the incoming selection is simply ignored and the panel keeps `shown`.
+  $effect(() => {
+    const next = node;
+    untrack(() => {
+      if ((next?.id ?? null) === (shown?.id ?? null)) return;
+      if (formDirty && shown && !confirm('Discard unsaved changes?')) return;
+      shown = next;
+    });
+  });
+
+  // Re-seed the form whenever the shown node changes.
+  $effect(() => {
+    const d = (shown?.data ?? {}) as Record<string, any>;
+    refineInstruction = '';
+    confirmingDelete = false;
+    showHistory = false;
+    revisions = [];
+    formDirty = false;
+    if (shown && String(d.kind) === 'scene') {
+      form = {
+        title: d.label ?? '',
+        summary: d.summary ?? '',
+        duration: d.duration ?? 0,
+        aspect_ratio: d.aspect_ratio ?? ''
+      };
+    } else if (shown && String(d.kind) === 'shot') {
+      form = {
+        prompt: d.prompt ?? '',
+        duration: d.duration ?? 0,
+        camera: d.camera ?? '',
+        movement: d.movement ?? '',
+        shot_order: d.shot_order ?? 0
+      };
+    } else {
+      form = {};
+    }
+    if (shown && String(d.kind) === 'output') void loadCaptionConfig();
+  });
+
+  // Close requested via Escape or the X button. Dirty edits get a confirm;
+  // a refused close simply does nothing (the panel never left the DOM).
+  function requestClose() {
+    if (formDirty && !confirm('Discard unsaved changes?')) return;
+    formDirty = false;
+    onclose();
+  }
+
+  function onWindowKeydown(e: KeyboardEvent) {
+    if (e.key !== 'Escape' || !shown) return;
+    // Bail when an overlay owns this Escape — e.g. the command palette (a
+    // bits-ui Dialog) is open. Otherwise Escape over the palette would also
+    // close this docked panel and pop a spurious "Discard unsaved changes?".
+    // bits-ui calls preventDefault when it handles Escape to close a dialog;
+    // the [role=dialog] check is the belt for any other open modal.
+    if (e.defaultPrevented) return;
+    if (typeof document !== 'undefined' && document.querySelector('[role="dialog"]')) return;
+    requestClose();
+  }
+
+  async function loadCaptionConfig() {
+    captionConfigPromise ??= get('/caption-config');
+    try {
+      const cfg = await captionConfigPromise;
+      captionStyle = cfg.default_style || cfg.styles?.[0] || 'kids';
+      captionModel = cfg.default_model || cfg.models?.[0] || '';
+      captionLanguage = cfg.default_language || 'zh';
+    } catch {
+      captionConfigPromise = null; // allow retry on next selection
+    }
+  }
+
+  async function fixAndRerender() {
+    if (!shown) return;
+    retrying = true;
+    try {
+      const res = await post(`/outputs/${shown.id}/retry`);
+      toast.success(`Corrective re-render started — job ${res.job_id}`);
+      onsaved();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      retrying = false;
+    }
+  }
+
+  async function addCaptions() {
+    if (!shown) return;
+    captioning = true;
+    try {
+      await runBackgroundOp(
+        `/outputs/${shown.id}/caption`,
+        {
+          style: captionStyle || undefined,
+          model: captionModel || undefined,
+          language: captionLanguage === 'auto' ? null : captionLanguage
+        },
+        {
+          label: 'Captioning',
+          onDone: () => {
+            captioning = false;
+            onsaved();
+          },
+          onFail: () => (captioning = false)
+        }
+      );
+    } catch (err: any) {
+      captioning = false;
+      toast.error(err.message);
+    }
+  }
+
+  async function save() {
+    if (!shown) return;
+    saving = true;
+    try {
+      if (kind === 'scene') {
+        await patch(`/scenes/${shown.id}`, {
+          title: form.title,
+          summary: form.summary,
+          duration: Number(form.duration),
+          aspect_ratio: form.aspect_ratio
+        });
+      } else if (kind === 'shot') {
+        await patch(`/shots/${shown.id}`, {
+          prompt: form.prompt,
+          duration: Number(form.duration),
+          camera: form.camera,
+          movement: form.movement,
+          shot_order: Number(form.shot_order)
+        });
+      }
+      formDirty = false;
+      toast.success('Saved');
+      onsaved();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function refine() {
+    if (!shown || !refineInstruction.trim()) return;
+    refining = true;
+    try {
+      if (kind === 'scene') {
+        const r = await post(`/scenes/${shown.id}/refine`, { instruction: refineInstruction.trim() });
+        form = {
+          title: r.scene.title ?? '',
+          summary: r.scene.summary ?? '',
+          duration: r.scene.duration ?? 0,
+          aspect_ratio: r.scene.aspect_ratio ?? ''
+        };
+        toast.success(r.note || 'Refined');
+      } else if (kind === 'shot') {
+        const r = await post(`/shots/${shown.id}/refine`, { instruction: refineInstruction.trim() });
+        form = {
+          prompt: r.shot.prompt ?? '',
+          duration: r.shot.duration ?? 0,
+          camera: r.shot.camera ?? '',
+          movement: r.shot.movement ?? '',
+          shot_order: r.shot.shot_order ?? 0
+        };
+        toast.success(r.note || 'Refined');
+      }
+      refineInstruction = '';
+      formDirty = false; // form now mirrors the server-side refined entity
+      onsaved();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      refining = false;
+    }
+  }
+
+  function seedForm(e: Record<string, any>) {
+    formDirty = false;
+    if (kind === 'scene') {
+      form = {
+        title: e.title ?? '',
+        summary: e.summary ?? '',
+        duration: e.duration ?? 0,
+        aspect_ratio: e.aspect_ratio ?? ''
+      };
+    } else if (kind === 'shot') {
+      form = {
+        prompt: e.prompt ?? '',
+        duration: e.duration ?? 0,
+        camera: e.camera ?? '',
+        movement: e.movement ?? '',
+        shot_order: e.shot_order ?? 0
+      };
+    }
+  }
+
+  async function toggleHistory() {
+    if (!shown) return;
+    showHistory = !showHistory;
+    if (!showHistory) return;
+    try {
+      revisions = await get(`/${kind}s/${shown.id}/revisions`);
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  }
+
+  async function revert(revisionId: string) {
+    if (!shown) return;
+    reverting = revisionId;
+    try {
+      const entity = await post(`/revisions/${revisionId}/revert`);
+      seedForm(entity);
+      revisions = await get(`/${kind}s/${shown.id}/revisions`);
+      toast.success('Reverted');
+      onsaved();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      reverting = '';
+    }
+  }
+
+  async function deleteAsset() {
+    if (!shown) return;
+    if (!confirmingDelete) {
+      confirmingDelete = true;
+      clearTimeout(confirmTimer);
+      confirmTimer = setTimeout(() => (confirmingDelete = false), 3000);
+      return;
+    }
+    clearTimeout(confirmTimer);
+    deleting = true;
+    try {
+      const r = await del(`/assets/${shown.id}`);
+      toast.success(`Asset deleted (detached from ${r.detached_from} place${r.detached_from === 1 ? '' : 's'}).`);
+      onsaved();
+      onclose();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      deleting = false;
+      confirmingDelete = false;
+    }
+  }
+
+  const videoSrc = $derived(
+    kind === 'output' ? mediaUrl(data.captioned_path || data.video_path) : null
+  );
+  const imageSrc = $derived(
+    kind === 'asset' && isImage(data.file_path) ? mediaUrl(data.file_path) : null
+  );
+</script>
+
+<svelte:window onkeydown={onWindowKeydown} />
+
+{#if shown}
+  <!-- Docked overlay card: absolutely positioned INSIDE the canvas pane (its
+    parent is `relative`), top-right with a small inset and a capped height.
+    Deliberately NOT a viewport-fixed full-height slab — that used to cover the
+    chat composer + selection chips and the minimap. As an in-pane card the
+    canvas stays pannable behind/around it, the chat stays reachable, and
+    clicking another node just switches the panel. -->
+  <aside
+    class="bg-popover/95 text-popover-foreground absolute right-3 top-3 z-40 flex max-h-[calc(100%-12rem)] w-[340px] max-w-[calc(100%-1.5rem)] flex-col gap-4 rounded-lg border border-border text-sm shadow-xl backdrop-blur"
+    aria-label="{kind} details"
+    data-testid="node-panel"
+  >
+    <header class="flex flex-col gap-1.5 p-4 pb-0">
+      <h2 class="font-semibold capitalize">{kind.replace('_', ' ')}</h2>
+      <p class="text-muted-foreground truncate">{data.label}</p>
+    </header>
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      class="absolute top-2 right-2"
+      onclick={requestClose}
+    >
+      <X />
+      <span class="sr-only">Close</span>
+    </Button>
+
+    <div class="flex flex-col gap-4 overflow-y-auto px-4 pb-4">
+      {#if kind === 'scene'}
+        <div class="grid gap-1.5">
+          <Label for="np-title">Title</Label>
+          <Input id="np-title" bind:value={form.title} oninput={markFormDirty} />
+        </div>
+        <div class="grid gap-1.5">
+          <Label for="np-summary">Summary</Label>
+          <Textarea id="np-summary" rows={4} bind:value={form.summary} oninput={markFormDirty} />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="grid gap-1.5">
+            <Label for="np-duration">Duration (s)</Label>
+            <Input id="np-duration" type="number" bind:value={form.duration} oninput={markFormDirty} />
+          </div>
+          <div class="grid gap-1.5">
+            <Label for="np-aspect">Aspect ratio</Label>
+            <Input id="np-aspect" bind:value={form.aspect_ratio} oninput={markFormDirty} />
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <Input placeholder="Tell AI what to change…" bind:value={refineInstruction} />
+          <Button variant="outline" onclick={refine} disabled={refining || !refineInstruction.trim()}>
+            <Sparkles class="size-4 mr-1" />{refining ? 'Refining…' : 'AI refine'}
+          </Button>
+        </div>
+        <div class="flex items-center gap-2">
+          <Button class="flex-1" onclick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          {#if formDirty}
+            <Badge variant="outline" class="text-muted-foreground">unsaved</Badge>
+          {/if}
+        </div>
+      {:else if kind === 'shot'}
+        <div class="grid gap-1.5">
+          <Label for="np-prompt">Prompt</Label>
+          <Textarea id="np-prompt" rows={5} bind:value={form.prompt} oninput={markFormDirty} />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="grid gap-1.5">
+            <Label for="np-shot-duration">Duration (s)</Label>
+            <Input id="np-shot-duration" type="number" bind:value={form.duration} oninput={markFormDirty} />
+          </div>
+          <div class="grid gap-1.5">
+            <Label for="np-order">Order</Label>
+            <Input id="np-order" type="number" bind:value={form.shot_order} oninput={markFormDirty} />
+          </div>
+        </div>
+        <div class="grid gap-1.5">
+          <Label for="np-camera">Camera</Label>
+          <Input id="np-camera" bind:value={form.camera} oninput={markFormDirty} />
+        </div>
+        <div class="grid gap-1.5">
+          <Label for="np-movement">Movement</Label>
+          <Input id="np-movement" bind:value={form.movement} oninput={markFormDirty} />
+        </div>
+        <div class="flex gap-2">
+          <Input placeholder="Tell AI what to change…" bind:value={refineInstruction} />
+          <Button variant="outline" onclick={refine} disabled={refining || !refineInstruction.trim()}>
+            <Sparkles class="size-4 mr-1" />{refining ? 'Refining…' : 'AI refine'}
+          </Button>
+        </div>
+        <div class="flex items-center gap-2">
+          <Button class="flex-1" onclick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          {#if formDirty}
+            <Badge variant="outline" class="text-muted-foreground">unsaved</Badge>
+          {/if}
+        </div>
+      {:else if kind === 'output'}
+        {#if videoSrc}
+          <!-- svelte-ignore a11y_media_has_caption -->
+          <!-- Capped height so portrait videos don't push the actions below the fold. -->
+          <video controls src={videoSrc} class="mx-auto max-h-64 w-full rounded-md border border-border object-contain"></video>
+        {:else}
+          <p class="text-sm text-muted-foreground">No video file available.</p>
+        {/if}
+        <Button variant="secondary" class="w-full" href={`/editor/${shown?.id}`}>
+          <Clapperboard class="size-4 mr-1" />Open in editor
+        </Button>
+
+        <div class="text-xs text-muted-foreground">
+          {#if data.captioned_path}<p class="truncate">Captioned: {data.captioned_path}</p>{/if}
+          {#if data.video_path}<p class="truncate">Video: {data.video_path}</p>{/if}
+        </div>
+
+        <Separator />
+
+        <div class="grid gap-1.5">
+          <Label>Quality check</Label>
+          <p class="text-sm">QA: {data.score ?? '—'}{data.score != null ? '/10' : ''}</p>
+          {#if data.qa_issues?.length}
+            <ul class="text-xs text-muted-foreground space-y-0.5">
+              {#each data.qa_issues.slice(0, 3) as issue (issue)}
+                <li class="truncate" title={issue}>- {issue}</li>
+              {/each}
+            </ul>
+            <Button variant="secondary" size="sm" disabled={retrying} onclick={fixAndRerender}>
+              <RefreshCw class="size-4 mr-1 {retrying ? 'animate-spin' : ''}" />
+              {retrying ? 'Submitting…' : 'Fix & re-render'}
+            </Button>
+          {/if}
+        </div>
+
+        <Separator />
+
+        <div class="grid gap-1.5">
+          <Label>Captions</Label>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={captioning}
+            title="Burn captions with the project defaults — fine-tune in the editor"
+            onclick={addCaptions}
+          >
+            <Captions class="size-4 mr-1" />
+            {captioning ? 'Transcribing…' : data.captioned_path ? 'Re-caption' : 'Auto captions'}
+          </Button>
+          <p class="text-xs text-muted-foreground">
+            Uses the project defaults — open the editor to fine-tune text, timing and style.
+          </p>
+        </div>
+      {:else if kind === 'asset'}
+        {#if imageSrc}
+          <img src={imageSrc} alt={String(data.label ?? '')} class="w-full rounded-md border border-border object-cover" />
+        {/if}
+        <div class="grid gap-2 text-sm">
+          <div class="flex justify-between gap-2">
+            <span class="text-muted-foreground">Type</span>
+            <span>{data.asset_type}</span>
+          </div>
+          <div class="flex justify-between gap-2">
+            <span class="text-muted-foreground">File</span>
+            <span class="truncate">{data.file_path}</span>
+          </div>
+        </div>
+        <Button variant="destructive" onclick={deleteAsset} disabled={deleting}>
+          <Trash2 class="size-4 mr-1" />
+          {deleting ? 'Deleting…' : confirmingDelete ? 'Confirm delete' : 'Delete asset'}
+        </Button>
+      {:else if kind === 'render_job'}
+        <div class="flex items-center gap-2 text-sm">
+          <span class="text-muted-foreground">Status</span>
+          <Badge
+            variant={data.status === 'succeeded'
+              ? 'default'
+              : data.status === 'failed'
+                ? 'destructive'
+                : 'secondary'}>{data.status}</Badge
+          >
+        </div>
+      {:else if kind === 'character'}
+        <p class="text-sm">{data.label}</p>
+      {/if}
+
+      {#if kind === 'scene' || kind === 'shot'}
+        <div class="grid gap-2 border-t border-border pt-3">
+          <Button variant="ghost" size="sm" class="justify-start" onclick={toggleHistory}>
+            <History class="size-4 mr-1" />
+            {showHistory ? 'Hide history' : 'History'}
+          </Button>
+          {#if showHistory}
+            {#if revisions.length === 0}
+              <p class="px-2 text-xs text-muted-foreground">No edits recorded yet.</p>
+            {:else}
+              {#each revisions as rev (rev.id)}
+                <div class="flex items-center justify-between gap-2 rounded-md border border-border px-2 py-1.5">
+                  <div class="min-w-0 text-xs">
+                    <p class="truncate font-medium">{Object.keys(rev.fields_json).join(', ')}</p>
+                    <p class="text-muted-foreground">
+                      {new Date(rev.created_at).toLocaleString()} · {rev.source}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onclick={() => revert(rev.id)}
+                    disabled={reverting !== ''}
+                  >
+                    {reverting === rev.id ? 'Reverting…' : 'Revert'}
+                  </Button>
+                </div>
+              {/each}
+            {/if}
+          {/if}
+        </div>
+      {/if}
+    </div>
+  </aside>
+{/if}

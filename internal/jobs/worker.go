@@ -1,0 +1,154 @@
+package jobs
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"videoflow-go/internal/config"
+	"videoflow-go/internal/db"
+	"videoflow-go/internal/events"
+	"videoflow-go/internal/media"
+)
+
+type WorkerPool struct {
+	cfg        *config.Config
+	database   *db.DB
+	broker     *events.Broker
+	media      *media.MediaEngine
+	queue      chan string
+	semaphore  chan struct{}
+	ctx        context.Context
+	cancel     context.CancelFunc
+	wg         sync.WaitGroup
+	httpClient *http.Client
+}
+
+func NewWorkerPool(cfg *config.Config, database *db.DB, broker *events.Broker, mediaEngine *media.MediaEngine) *WorkerPool {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &WorkerPool{
+		cfg:        cfg,
+		database:   database,
+		broker:     broker,
+		media:      mediaEngine,
+		queue:      make(chan string, 1000),
+		semaphore:  make(chan struct{}, cfg.MaxConcurrentPolls),
+		ctx:        ctx,
+		cancel:     cancel,
+		httpClient: &http.Client{Timeout: 120 * time.Second},
+	}
+}
+
+func (w *WorkerPool) Start() {
+	for i := 0; i < w.cfg.WorkerConcurrency; i++ {
+		w.wg.Add(1)
+		go w.workerLoop(i)
+	}
+	log.Printf("Started %d render worker goroutines (max %d concurrent polls)", w.cfg.WorkerConcurrency, w.cfg.MaxConcurrentPolls)
+}
+
+func (w *WorkerPool) Stop() {
+	w.cancel()
+	w.wg.Wait()
+}
+
+func (w *WorkerPool) Enqueue(jobID string) {
+	select {
+	case w.queue <- jobID:
+	default:
+		log.Printf("Worker queue is full, dropping enqueue for job %s", jobID)
+	}
+}
+
+func (w *WorkerPool) ReconcilePending() int {
+	jobs, err := w.database.ListPendingRenderJobs()
+	if err != nil {
+		log.Printf("Error reconciling pending jobs: %v", err)
+		return 0
+	}
+	for _, j := range jobs {
+		w.Enqueue(j.ID)
+	}
+	if len(jobs) > 0 {
+		log.Printf("Reconciled %d in-flight render jobs on startup", len(jobs))
+	}
+	return len(jobs)
+}
+
+func (w *WorkerPool) workerLoop(workerID int) {
+	defer w.wg.Done()
+
+	for {
+		select {
+		case <-w.ctx.Done():
+			return
+		case jobID := <-w.queue:
+			w.semaphore <- struct{}{}
+			err := w.processJob(jobID)
+			<-w.semaphore
+			if err != nil {
+				log.Printf("[worker %d] job %s failed: %v", workerID, jobID, err)
+			}
+		}
+	}
+}
+
+func (w *WorkerPool) processJob(jobID string) error {
+	job, err := w.database.GetRenderJob(jobID)
+	if err != nil {
+		return fmt.Errorf("job not found: %w", err)
+	}
+
+	// Update to running
+	job.Status = "running"
+	stage := "generating"
+	prog := "Rendering video clip..."
+	job.Stage = &stage
+	job.Progress = &prog
+	_ = w.database.UpdateRenderJob(job)
+
+	w.broker.Publish(map[string]interface{}{
+		"type":       "job_updated",
+		"job_id":     job.ID,
+		"status":     job.Status,
+		"stage":      *job.Stage,
+		"progress":   *job.Progress,
+		"project_id": job.ProjectID,
+	})
+
+	// Simulate or execute provider polling loop
+	// (OpenRouter/AtlasCloud poll until status=succeeded or failed)
+	time.Sleep(1 * time.Second)
+
+	return nil
+}
+
+func (w *WorkerPool) DownloadFile(url, destPath string) error {
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		return err
+	}
+	resp, err := w.httpClient.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("bad status: %s", resp.Status)
+	}
+
+	out, err := os.Create(destPath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, resp.Body)
+	return err
+}
