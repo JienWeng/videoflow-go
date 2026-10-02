@@ -2,7 +2,7 @@
 
 For a beginner, choose the Electron app from the [GitHub downloads](https://github.com/JienWeng/videoflow-go/releases): install the macOS DMG or the Ubuntu/Debian DEB for your processor, open **VideoFlow**, and add your OpenRouter key in Settings. The desktop app includes its backend, frontend, FFmpeg, FFprobe and caption fonts. No Go, Node, Python or FFmpeg installation is required. AI generation needs internet access and OpenRouter credits. See [desktop beginner instructions](docs/DESKTOP-QUICKSTART.txt).
 
-macOS preview packages are unsigned and may require approval in the system security settings. Linux AppImage and tar.gz alternatives are available for distributions permitting Chromium user namespaces; AppImage can also need FUSE.
+Use the [rebuilt macOS 0.3.1 preview](https://github.com/JienWeng/videoflow-go/releases/tag/v0.3.1-macos-preview.1) instead of the affected 0.3.0 Mac packages. Its ad-hoc signatures pass strict integrity checks, but it is not Apple-notarized and requires explicit approval in System Settings → Privacy & Security → Open Anyway. Linux AppImage and tar.gz alternatives are available for distributions permitting Chromium user namespaces; AppImage can also need FUSE.
 
 The earlier browser launcher remains available: extract its native ZIP and open **Start VideoFlow**. See [browser launcher instructions](docs/QUICKSTART.txt). Developers can run the separate web frontend and backend using `docker compose up --build -d`; see [desktop and web build instructions](docs/ELECTRON-AND-WEB.md).
 

@@ -18,7 +18,8 @@ You do not need to install Node, Go, Python, FFmpeg or FFprobe yourself.
 Closing VideoFlow closes the local engine too. You do not keep a terminal
 or a separate server running.
 
-macOS preview packages are unsigned. The system can block the first launch.
+Use the rebuilt macOS 0.3.1 adhoc-preview release. Its signatures are valid,
+but it is not Apple-notarized. The system can block the first launch.
 Use the system's Open Anyway option only for a download you trust.
 
 On other Linux distributions, use the AppImage or portable tar.gz package.
