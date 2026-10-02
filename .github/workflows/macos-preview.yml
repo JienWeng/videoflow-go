@@ -57,7 +57,6 @@ jobs:
       - name: Rebuild with consistent ad-hoc signatures
         env:
           ARCH: ${{ matrix.arch }}
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         working-directory: electron
         run: npm run dist -- --config macos-preview.json --mac --"$ARCH" --publish never
       - name: Verify final downloaded bundle integrity

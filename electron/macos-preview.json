@@ -1,5 +1,5 @@
 {
-  "extends": "./package.json",
+  "extends": "./base-config.cjs",
   "artifactName": "VideoFlow-${version}-mac-${arch}-adhoc-preview.${ext}",
   "mac": {
     "identity": "-",
