@@ -10,4 +10,3 @@ server.listen(Number(process.env.PORT), '127.0.0.1', () => {
   setTimeout(() => process.stderr.write(line.slice(18)), 10);
 });
 process.on('SIGTERM', () => server.close(() => process.exit(0)));
-

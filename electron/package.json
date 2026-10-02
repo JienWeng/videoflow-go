@@ -50,5 +50,6 @@
     },
     "beforePack": "./validate-payload.cjs",
     "artifactName": "VideoFlow-${version}-${os}-${arch}.${ext}"
-  }
+  },
+  "homepage": "https://github.com/JienWeng/videoflow-go"
 }
