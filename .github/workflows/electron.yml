@@ -4,7 +4,25 @@ on:
 permissions:
   contents: read
 jobs:
+  macos-signing-ready:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Require macOS distribution credentials before rebuilding
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then
+              echo "Missing repository secret: $name. See docs/MACOS-SIGNING.md."
+              exit 1
+            fi
+          done
   package:
+    needs: macos-signing-ready
     strategy:
       fail-fast: false
       matrix:
@@ -57,14 +75,28 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb
-      - name: Package desktop candidate
+      - name: Package signed and notarized macOS app
+        if: runner.os == 'macOS'
         env:
           NATIVE_TARGET: ${{ matrix.target }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         working-directory: electron
         run: |
           case "$NATIVE_TARGET" in
             darwin-amd64) npm run dist -- --mac --x64 --publish never ;;
             darwin-arm64) npm run dist -- --mac --arm64 --publish never ;;
+          esac
+      - name: Package Linux desktop app
+        if: runner.os == 'Linux'
+        env:
+          NATIVE_TARGET: ${{ matrix.target }}
+        working-directory: electron
+        run: |
+          case "$NATIVE_TARGET" in
             linux-amd64) npm run dist -- --linux --x64 --publish never ;;
             linux-arm64) npm run dist -- --linux --arm64 --publish never ;;
           esac
@@ -81,6 +113,14 @@ jobs:
             linux-amd64) xvfb-run -a python3 scripts/smoke_electron.py --executable /usr/bin/videoflow-desktop ;;
             linux-arm64) xvfb-run -a python3 scripts/smoke_electron.py --executable /usr/bin/videoflow-desktop ;;
           esac
+      - name: Verify the downloaded macOS ZIP against Gatekeeper
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist/macos-download-check
+          ditto -x -k dist/electron/*.zip dist/macos-download-check
+          xattr -w com.apple.quarantine '0083;00000000;VideoFlowReleaseCheck;' dist/macos-download-check/VideoFlow.app
+          python3 scripts/audit_macos.py --app dist/macos-download-check/VideoFlow.app --output dist/macos-download-check/report.json --require-trusted
+          python3 scripts/smoke_electron.py --executable dist/macos-download-check/VideoFlow.app/Contents/MacOS/VideoFlow
       - uses: actions/upload-artifact@v4
         with:
           name: VideoFlow-Electron-${{ matrix.target }}
@@ -108,8 +148,8 @@ jobs:
       - name: Publish verified desktop packages
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: v0.3.0-electron.1
+          RELEASE_TAG: v0.3.1-electron.1
         run: |
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" dist/electron/*.deb dist/electron/*.dmg dist/electron/*.zip dist/electron/*.AppImage dist/electron/*.tar.gz dist/electron/SHA256SUMS.txt --target "$GITHUB_SHA" --title 'VideoFlow 0.3.0 — Electron desktop and web' --notes-file docs/electron-release-notes.md --prerelease
+            gh release create "$RELEASE_TAG" dist/electron/*.deb dist/electron/*.dmg dist/electron/*.zip dist/electron/*.AppImage dist/electron/*.tar.gz dist/electron/SHA256SUMS.txt --target "$GITHUB_SHA" --title 'VideoFlow 0.3.1 — signed macOS desktop' --notes-file docs/electron-release-notes.md --prerelease
           fi

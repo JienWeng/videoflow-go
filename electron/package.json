@@ -1,6 +1,6 @@
 {
   "name": "videoflow-desktop",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "VideoFlow desktop with its bundled Go engine and media tools",
   "author": "VideoFlow contributors",
@@ -37,7 +37,17 @@
         "dmg",
         "zip"
       ],
-      "category": "public.app-category.video"
+      "category": "public.app-category.video",
+      "forceCodeSigning": true,
+      "hardenedRuntime": true,
+      "notarize": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "binaries": [
+        "Contents/Resources/engine/videoflow",
+        "Contents/Resources/engine/ffmpeg",
+        "Contents/Resources/engine/ffprobe"
+      ]
     },
     "linux": {
       "target": [
