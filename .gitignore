@@ -36,3 +36,7 @@ dist/
 
 # Python build-script caches
 __pycache__/
+
+# Electron build dependencies and native payload
+electron/node_modules/
+electron/payload/

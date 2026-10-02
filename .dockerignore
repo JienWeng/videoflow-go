@@ -1,0 +1,13 @@
+.git
+.codegraph
+.env*
+**/.env*
+**/node_modules
+**/.svelte-kit
+frontend/build
+bin
+dist
+electron/payload
+storage
+**/*.sqlite*
+__pycache__

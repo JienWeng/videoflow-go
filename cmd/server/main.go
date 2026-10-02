@@ -66,13 +66,15 @@ func main() {
 	server := api.NewServer(cfg, database, broker, workers, agentsEngine, openrouter, mediaEngine)
 	defer server.Close()
 	addr := net.JoinHostPort(*bindHost, fmt.Sprint(cfg.Port))
-	handler := server.Router()
-	if *desktopMode {
-		handler = desktop.Handler(handler, *uiDir, addr)
-	}
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatalf("Cannot start VideoFlow on %s: %v. Another copy may already be running.", addr, err)
+	}
+	// PORT=0 is used by Electron; guard and report the actual assigned port.
+	addr = listener.Addr().String()
+	handler := server.Router()
+	if *desktopMode {
+		handler = desktop.Handler(handler, *uiDir, addr)
 	}
 	httpServer := &http.Server{
 		Addr:         addr,
@@ -102,12 +104,16 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 	log.Println("Shutting down server gracefully...")
+	// Cancel background provider/media tasks before waiting for HTTP connections.
+	server.Close()
+	workers.Stop()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := httpServer.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		log.Printf("Server forced to shutdown: %v", err)
+		_ = httpServer.Close()
 	}
 	log.Println("VideoFlow Go backend stopped.")
 }

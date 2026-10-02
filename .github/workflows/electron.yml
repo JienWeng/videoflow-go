@@ -1,0 +1,116 @@
+name: Electron candidate packages
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-amd64
+            runner: ubuntu-22.04
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+          - target: darwin-amd64
+            runner: macos-15-intel
+          - target: darwin-arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install meson==1.9.1 ninja==1.13.0
+      - run: python3 scripts/build_media.py
+      - name: Test using only bundled media tools
+        env:
+          MEDIA_TARGET: ${{ matrix.target }}
+        run: |
+          export PATH="$PWD/bin/media/$MEDIA_TARGET:$PATH"
+          go test -race ./...
+          go vet ./...
+      - run: npm ci && npm run check && npm run build
+        working-directory: frontend
+      - run: python3 scripts/test_package.py
+      - run: python3 scripts/package.py --target '${{ matrix.target }}'
+      - run: python3 scripts/smoke_package.py --archive 'dist/VideoFlow-${{ matrix.target }}.zip'
+      - run: python3 scripts/test_prepare_electron.py
+      - run: python3 scripts/prepare_electron.py --archive 'dist/VideoFlow-${{ matrix.target }}.zip' --target '${{ matrix.target }}'
+      - run: npm ci && npm test
+        working-directory: electron
+      - name: Test engine listener and shutdown
+        run: VIDEOFLOW_INTEGRATION=1 npm test
+        working-directory: electron
+      - name: Prepare Linux display
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+      - name: Package desktop candidate
+        env:
+          NATIVE_TARGET: ${{ matrix.target }}
+        working-directory: electron
+        run: |
+          case "$NATIVE_TARGET" in
+            darwin-amd64) npm run dist -- --mac --x64 --publish never ;;
+            darwin-arm64) npm run dist -- --mac --arm64 --publish never ;;
+            linux-amd64) npm run dist -- --linux --x64 --publish never ;;
+            linux-arm64) npm run dist -- --linux --arm64 --publish never ;;
+          esac
+      - name: Install the Linux package with the default OS sandbox policy
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y ./dist/electron/*.deb
+      - name: Verify the packaged app window and engine cleanup
+        env:
+          NATIVE_TARGET: ${{ matrix.target }}
+        run: |
+          case "$NATIVE_TARGET" in
+            darwin-amd64) python3 scripts/smoke_electron.py --executable dist/electron/mac/VideoFlow.app/Contents/MacOS/VideoFlow ;;
+            darwin-arm64) python3 scripts/smoke_electron.py --executable dist/electron/mac-arm64/VideoFlow.app/Contents/MacOS/VideoFlow ;;
+            linux-amd64) xvfb-run -a python3 scripts/smoke_electron.py --executable /usr/bin/videoflow-desktop ;;
+            linux-arm64) xvfb-run -a python3 scripts/smoke_electron.py --executable /usr/bin/videoflow-desktop ;;
+          esac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VideoFlow-Electron-${{ matrix.target }}
+          path: |
+            dist/electron/*.dmg
+            dist/electron/*.zip
+            dist/electron/*.deb
+            dist/electron/*.AppImage
+            dist/electron/*.tar.gz
+            electron/package-lock.json
+  publish:
+    needs: package
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: VideoFlow-Electron-*
+          merge-multiple: true
+          path: dist/electron
+      - name: Checksum the native installers
+        working-directory: dist/electron
+        run: sha256sum *.deb *.dmg *.zip *.AppImage *.tar.gz > SHA256SUMS.txt
+      - name: Publish verified desktop packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: v0.3.0-electron.1
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" dist/electron/*.deb dist/electron/*.dmg dist/electron/*.zip dist/electron/*.AppImage dist/electron/*.tar.gz dist/electron/SHA256SUMS.txt --target "$GITHUB_SHA" --title 'VideoFlow 0.3.0 — Electron desktop and web' --notes-file docs/electron-release-notes.md --prerelease
+          fi

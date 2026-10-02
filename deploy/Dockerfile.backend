@@ -1,0 +1,15 @@
+FROM golang:1.26-bookworm AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd ./cmd
+COPY internal ./internal
+RUN CGO_ENABLED=0 GOMAXPROCS=2 go build -p 2 -trimpath -o /videoflow ./cmd/server
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates fonts-noto-core fonts-noto-cjk && rm -rf /var/lib/apt/lists/* \
+    && useradd --uid 10001 --create-home videoflow && mkdir /data && chown videoflow /data
+COPY --from=build /videoflow /usr/local/bin/videoflow
+USER videoflow
+ENV DATABASE_PATH=/data/db.sqlite STORAGE_ROOT=/data/storage PORT=8000
+EXPOSE 8000
+CMD ["videoflow", "--host", "0.0.0.0"]

@@ -125,3 +125,7 @@ Explore the complete guide to using VideoFlow Go in the [`handbook/`](handbook/R
 | [11. Troubleshooting](handbook/11-troubleshooting.md) | Diagnostics and resolution for common setup & render issues |
 | [12. Reference](handbook/12-reference.md) | Technical reference, route map, environment variables, and CLI commands |
 
+
+## Desktop app and web deployment
+
+Electron packaging reuses the Go backend and Svelte interface, bundling the media tools for desktop users. Separate frontend/backend containers remain available for web deployment. See [Electron and web build instructions](docs/ELECTRON-AND-WEB.md). The Electron workflow builds macOS and Linux installers for Intel and ARM processors.

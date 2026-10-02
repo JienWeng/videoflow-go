@@ -1,0 +1,54 @@
+{
+  "name": "videoflow-desktop",
+  "version": "0.3.0",
+  "private": true,
+  "description": "VideoFlow desktop with its bundled Go engine and media tools",
+  "author": "VideoFlow contributors",
+  "main": "main.cjs",
+  "scripts": {
+    "test": "node --test test/*.test.cjs",
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^44.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "io.videoflow.desktop",
+    "productName": "VideoFlow",
+    "directories": {
+      "output": "../dist/electron"
+    },
+    "files": [
+      "main.cjs",
+      "engine.cjs",
+      "package.json",
+      "validate-payload.cjs"
+    ],
+    "extraResources": [
+      {
+        "from": "payload/VideoFlow",
+        "to": "engine"
+      }
+    ],
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.video"
+    },
+    "linux": {
+      "target": [
+        "deb",
+        "AppImage",
+        "tar.gz"
+      ],
+      "category": "AudioVideo",
+      "maintainer": "VideoFlow contributors"
+    },
+    "beforePack": "./validate-payload.cjs",
+    "artifactName": "VideoFlow-${version}-${os}-${arch}.${ext}"
+  }
+}
