@@ -1,0 +1,21 @@
+{
+  "extends": "./package.json",
+  "artifactName": "VideoFlow-${version}-mac-${arch}-adhoc-preview.${ext}",
+  "mac": {
+    "identity": "-",
+    "forceCodeSigning": false,
+    "hardenedRuntime": false,
+    "notarize": false
+  },
+  "extraResources": [
+    {"from": "payload/VideoFlow", "to": "engine"},
+    {"from": "../docs/MACOS-PREVIEW-START-HERE.txt", "to": "START HERE.txt"}
+  ],
+  "dmg": {
+    "contents": [
+      {"x": 130, "y": 180, "type": "file"},
+      {"x": 410, "y": 180, "type": "link", "path": "/Applications"},
+      {"x": 270, "y": 340, "type": "file", "path": "../docs/MACOS-PREVIEW-START-HERE.txt"}
+    ]
+  }
+}

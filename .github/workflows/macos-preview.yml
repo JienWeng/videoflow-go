@@ -1,0 +1,95 @@
+name: Rebuilt macOS ad-hoc preview
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            target: darwin-arm64
+            runner: macos-15
+          - arch: x64
+            target: darwin-amd64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: electron/package-lock.json
+      - name: Reuse the unchanged verified backend and media bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCH: ${{ matrix.arch }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          git diff v0.3.0-electron.1 --exit-code -- cmd internal frontend scripts/build_media.py scripts/media-sources.json
+          mkdir -p seed
+          gh release download v0.3.0-electron.1 --pattern "VideoFlow-0.3.0-mac-$ARCH.zip" --pattern SHA256SUMS.txt --dir seed
+          python3 - <<'PY'
+          import hashlib, os
+          from pathlib import Path
+          name = 'VideoFlow-0.3.0-mac-' + os.environ['ARCH'] + '.zip'
+          hashes = dict((line.split()[1], line.split()[0]) for line in Path('seed/SHA256SUMS.txt').read_text().splitlines())
+          assert hashlib.sha256(Path('seed', name).read_bytes()).hexdigest() == hashes[name]
+          PY
+          ditto -x -k "seed/VideoFlow-0.3.0-mac-$ARCH.zip" seed/extracted
+          python3 - <<'PY'
+          import os, zipfile
+          from pathlib import Path
+          root = Path('seed/extracted/VideoFlow.app/Contents/Resources/engine')
+          with zipfile.ZipFile('seed/native.zip', 'w') as archive:
+              for item in root.rglob('*'):
+                  if item.is_file():
+                      archive.write(item, 'VideoFlow/' + str(item.relative_to(root)))
+          PY
+          python3 scripts/prepare_electron.py --archive seed/native.zip --target "$TARGET"
+      - run: npm ci && npm test
+        working-directory: electron
+      - name: Rebuild with consistent ad-hoc signatures
+        env:
+          ARCH: ${{ matrix.arch }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        working-directory: electron
+        run: npm run dist -- --config macos-preview.json --mac --"$ARCH" --publish never
+      - name: Verify final downloaded bundle integrity
+        run: |
+          mkdir -p verified
+          ditto -x -k dist/electron/*.zip verified
+          xattr -w com.apple.quarantine '0083;00000000;VideoFlowPreviewCheck;' verified/VideoFlow.app
+          python3 scripts/audit_macos.py --app verified/VideoFlow.app --output verified/signature-report.json --require-valid-signature
+          python3 scripts/smoke_electron.py --executable verified/VideoFlow.app/Contents/MacOS/VideoFlow
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macOS-adhoc-preview-${{ matrix.arch }}
+          path: |
+            dist/electron/*.dmg
+            dist/electron/*.zip
+  publish:
+    needs: package
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: macOS-adhoc-preview-*
+          merge-multiple: true
+          path: dist
+      - run: cd dist && sha256sum *.dmg *.zip > SHA256SUMS.txt
+      - name: Publish clearly labelled preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view v0.3.1-macos-preview.1 >/dev/null 2>&1; then
+            gh release create v0.3.1-macos-preview.1 dist/*.dmg dist/*.zip dist/SHA256SUMS.txt --target "$GITHUB_SHA" --title 'VideoFlow 0.3.1 — macOS ad-hoc preview (manual approval required)' --notes-file docs/MACOS-PREVIEW-RELEASE.md --prerelease
+          fi
