@@ -1,0 +1,37 @@
+VideoFlow desktop — start here
+
+1. Open https://github.com/JienWeng/videoflow-go/releases
+2. Download the Electron package for your computer:
+   Mac with an Apple Silicon chip (M1/M2/M3 or newer): mac-arm64 DMG.
+   Intel Mac: mac-x64 DMG.
+   Ubuntu/Debian Linux, most PCs: linux-amd64 DEB.
+   Ubuntu/Debian Linux, ARM computers: linux-arm64 DEB.
+3. Mac: open the DMG, drag VideoFlow to Applications, then open VideoFlow.
+   Linux: open the DEB with your software installer, install it, then open
+   VideoFlow from your applications menu. System installation can request
+   your administrator password and install standard desktop libraries.
+4. Open Settings in VideoFlow. Paste your OpenRouter API key and test it.
+   You need an OpenRouter account with credits and internet access for AI.
+5. Create a project and generate your video.
+
+You do not need to install Node, Go, Python, FFmpeg or FFprobe yourself.
+Closing VideoFlow closes the local engine too. You do not keep a terminal
+or a separate server running.
+
+macOS preview packages are unsigned. The system can block the first launch.
+Use the system's Open Anyway option only for a download you trust.
+
+On other Linux distributions, use the AppImage or portable tar.gz package.
+These need standard graphical desktop libraries and a distribution policy
+permitting Chromium user namespaces. AppImage can also require FUSE.
+Prefer the DEB installer on Ubuntu/Debian for automatic sandbox integration.
+
+Your projects, media and saved key stay in your computer's user data folder:
+  Mac: ~/Library/Application Support/VideoFlow
+  Linux: ~/.config/VideoFlow (or $XDG_CONFIG_HOME/VideoFlow)
+Back up that folder and keep it private. It contains your saved API key.
+New app versions use the same data folder. Avoid running the old browser
+launcher and Electron simultaneously against the same data directory.
+
+The web deployment option is separate and is documented for maintainers in
+ELECTRON-AND-WEB.md. Desktop users do not need Docker or a remote server.

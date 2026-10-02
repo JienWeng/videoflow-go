@@ -1,8 +1,10 @@
 ## Download and use
 
-For a beginner, use the [GitHub downloads](https://github.com/JienWeng/videoflow-go/releases): extract the ZIP for your computer and open **Start VideoFlow**. The app opens in your browser. Add your OpenRouter key in Settings; AI generation needs OpenRouter credits. No Go or Node installation is required.
+For a beginner, choose the Electron app from the [GitHub downloads](https://github.com/JienWeng/videoflow-go/releases): install the macOS DMG or the Ubuntu/Debian DEB for your processor, open **VideoFlow**, and add your OpenRouter key in Settings. The desktop app includes its backend, frontend, FFmpeg, FFprobe and caption fonts. No Go, Node, Python or FFmpeg installation is required. AI generation needs internet access and OpenRouter credits. See [desktop beginner instructions](docs/DESKTOP-QUICKSTART.txt).
 
-The preview is unsigned. FFmpeg, FFprobe and a caption font are included, so transcription, video QA and caption burning need no separate dependency installation. The exact media sources and licenses are included in each archive. See [beginner instructions](docs/QUICKSTART.txt).
+macOS preview packages are unsigned and may require approval in the system security settings. Linux AppImage and tar.gz alternatives are available for distributions permitting Chromium user namespaces; AppImage can also need FUSE.
+
+The earlier browser launcher remains available: extract its native ZIP and open **Start VideoFlow**. See [browser launcher instructions](docs/QUICKSTART.txt). Developers can run the separate web frontend and backend using `docker compose up --build -d`; see [desktop and web build instructions](docs/ELECTRON-AND-WEB.md).
 
 To build a download, build the frontend, run `python3 scripts/build_media.py` on the target platform, then run `python3 scripts/package.py --target <platform-architecture>`. Media build tools are documented in the builder; users do not need them. A tagged release runs checks and publishes four macOS/Linux archives with checksums. Start a local combined server with `bin/videoflow-server --desktop --ui-dir frontend/build`; add `--no-browser` for a service. The server binds to localhost by default; `--host` explicitly sets another interface.
 
