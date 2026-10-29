@@ -41,18 +41,29 @@
     get('/projects/active').then((p) => (activeProject = p)).catch(() => {});
   });
 
-  const createNav = [{ href: '/create', label: 'Create video', icon: Clapperboard }];
-
-  const outputNav = [{ href: '/render', label: 'My videos', icon: Film }];
-
-  const advancedNav = [
-    { href: '/', label: 'Studio', icon: Clapperboard },
-    { href: '/scenes', label: 'Scenes', icon: ListVideo },
-    { href: '/characters', label: 'Characters', icon: Users },
-    { href: '/assets', label: 'Assets', icon: Image }
+  const navGroups = [
+    {
+      label: 'Create',
+      items: [{ href: '/create', label: 'Create video', mobileLabel: 'Create', icon: Clapperboard }]
+    },
+    {
+      label: 'Output',
+      items: [{ href: '/render', label: 'My videos', mobileLabel: 'Videos', icon: Film }]
+    },
+    {
+      label: 'Advanced',
+      items: [
+        { href: '/', label: 'Studio', mobileLabel: 'Studio', icon: Clapperboard },
+        { href: '/scenes', label: 'Scenes', mobileLabel: 'Scenes', icon: ListVideo },
+        { href: '/characters', label: 'Characters', mobileLabel: 'Characters', icon: Users },
+        { href: '/assets', label: 'Assets', mobileLabel: 'Assets', icon: Image }
+      ]
+    },
+    {
+      label: 'System',
+      items: [{ href: '/settings', label: 'Settings', mobileLabel: 'Settings', icon: SlidersHorizontal }]
+    }
   ];
-
-  const systemNav = [{ href: '/settings', label: 'Settings', icon: SlidersHorizontal }];
 
   // The editor is contextual (reached from a render output), so it highlights Render.
   function isActive(href: string, pathname: string): boolean {
@@ -74,13 +85,11 @@
 <div class="flex h-screen min-w-0 flex-col bg-background text-foreground md:flex-row">
   <nav aria-label="Primary" class="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 py-1.5 md:hidden">
     <a class="shrink-0 rounded-md px-2 py-1.5 text-xs font-medium hover:bg-accent" href="/projects" title={activeProject?.name ?? 'Projects'}>{activeProject?.name ?? 'Projects'}</a>
-    <a class="shrink-0 rounded-md px-2 py-1.5 text-xs hover:bg-accent" href="/create">Create</a>
-    <a class="shrink-0 rounded-md px-2 py-1.5 text-xs hover:bg-accent" href="/render">Videos</a>
-    <a class="shrink-0 rounded-md px-2 py-1.5 text-xs hover:bg-accent" href="/">Studio</a>
-    <a class="shrink-0 rounded-md px-2 py-1.5 text-xs hover:bg-accent" href="/scenes">Scenes</a>
-    <a class="shrink-0 rounded-md px-2 py-1.5 text-xs hover:bg-accent" href="/characters">Characters</a>
-    <a class="shrink-0 rounded-md px-2 py-1.5 text-xs hover:bg-accent" href="/assets">Assets</a>
-    <a class="shrink-0 rounded-md px-2 py-1.5 text-xs hover:bg-accent" href="/settings">Settings</a>
+    {#each navGroups as group}
+      {#each group.items as item}
+        <a class="shrink-0 rounded-md px-2 py-1.5 text-xs hover:bg-accent" href={item.href}>{item.mobileLabel ?? item.label}</a>
+      {/each}
+    {/each}
   </nav>
   <aside class="hidden w-48 shrink-0 flex-col border-r border-border p-3 md:flex">
     <div class="px-2 pt-3 pb-1 text-sm font-semibold tracking-wide">VideoFlow</div>
@@ -95,64 +104,20 @@
       <span class="truncate">{activeProject?.name ?? 'Projects'}</span>
     </a>
 
-    <!-- Primary creation path -->
-    <div class="px-2 pt-4 pb-1 text-[10px] tracking-wider text-muted-foreground/70 uppercase">
-      Create
-    </div>
-    {#each createNav as item}
-      <a
-        href={item.href}
-        class="flex items-center gap-2 rounded-md pl-2 pr-2 py-1.5 text-sm hover:bg-accent
-               {isActive(item.href, page.url.pathname) ? 'bg-accent font-medium' : 'text-muted-foreground'}"
-      >
-        <item.icon class="size-4" />
-        {item.label}
-      </a>
-    {/each}
-
-    <!-- Output group -->
-    <div class="px-2 pt-4 pb-1 text-[10px] tracking-wider text-muted-foreground/70 uppercase">
-      Output
-    </div>
-    {#each outputNav as item}
-      <a
-        href={item.href}
-        class="flex items-center gap-2 rounded-md pl-2 pr-2 py-1.5 text-sm hover:bg-accent
-               {isActive(item.href, page.url.pathname) ? 'bg-accent font-medium' : 'text-muted-foreground'}"
-      >
-        <item.icon class="size-4" />
-        {item.label}
-      </a>
-    {/each}
-
-    <!-- Advanced group -->
-    <div class="px-2 pt-4 pb-1 text-[10px] tracking-wider text-muted-foreground/70 uppercase">
-      Advanced
-    </div>
-    {#each advancedNav as item}
-      <a
-        href={item.href}
-        class="flex items-center gap-2 rounded-md pl-2 pr-2 py-1.5 text-sm hover:bg-accent
-               {isActive(item.href, page.url.pathname) ? 'bg-accent font-medium' : 'text-muted-foreground'}"
-      >
-        <item.icon class="size-4" />
-        {item.label}
-      </a>
-    {/each}
-
-    <!-- System group -->
-    <div class="px-2 pt-4 pb-1 text-[10px] tracking-wider text-muted-foreground/70 uppercase">
-      System
-    </div>
-    {#each systemNav as item}
-      <a
-        href={item.href}
-        class="flex items-center gap-2 rounded-md pl-2 pr-2 py-1.5 text-sm hover:bg-accent
-               {isActive(item.href, page.url.pathname) ? 'bg-accent font-medium' : 'text-muted-foreground'}"
-      >
-        <item.icon class="size-4" />
-        {item.label}
-      </a>
+    {#each navGroups as group}
+      <div class="px-2 pt-4 pb-1 text-[10px] tracking-wider text-muted-foreground/70 uppercase">
+        {group.label}
+      </div>
+      {#each group.items as item}
+        <a
+          href={item.href}
+          class="flex items-center gap-2 rounded-md pl-2 pr-2 py-1.5 text-sm hover:bg-accent
+                 {isActive(item.href, page.url.pathname) ? 'bg-accent font-medium' : 'text-muted-foreground'}"
+        >
+          <item.icon class="size-4" />
+          {item.label}
+        </a>
+      {/each}
     {/each}
 
     <div class="mt-auto">

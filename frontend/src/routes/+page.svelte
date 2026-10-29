@@ -12,6 +12,7 @@
   import type { Node } from '@xyflow/svelte';
   import Users from '@lucide/svelte/icons/users';
   import Palette from '@lucide/svelte/icons/palette';
+  import ListVideo from '@lucide/svelte/icons/list-video';
   import MessageSquare from '@lucide/svelte/icons/message-square';
   import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
   import CloudOff from '@lucide/svelte/icons/cloud-off';
@@ -145,21 +146,12 @@
                   </span>
                 </li>
                 <li class="flex items-start gap-2.5">
-                  <Palette class="size-4 mt-0.5 shrink-0 text-muted-foreground" />
+                  <ListVideo class="size-4 mt-0.5 shrink-0 text-muted-foreground" />
                   <span>
                     <a href="/scenes" class="font-medium underline underline-offset-2 inline-flex items-center gap-0.5">
                       Open advanced workspace<ArrowUpRight class="size-3" />
                     </a>
                     <span class="block text-muted-foreground">Edit scenes, characters, assets, and renders manually.</span>
-                  </span>
-                </li>
-                <li class="flex items-start gap-2.5">
-                  <Palette class="size-4 mt-0.5 shrink-0 text-muted-foreground" />
-                  <span>
-                    <a href="/settings" class="font-medium underline underline-offset-2 inline-flex items-center gap-0.5">
-                      Configure AI providers<ArrowUpRight class="size-3" />
-                    </a>
-                    <span class="block text-muted-foreground">Check credentials and model routes before generation.</span>
                   </span>
                 </li>
                 <li class="flex items-start gap-2.5">
