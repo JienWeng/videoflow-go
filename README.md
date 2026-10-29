@@ -2,8 +2,6 @@
 
 VideoFlow is a desktop app for creating AI-assisted videos. It includes the app, local engine, and media tools; you do not need to install Go, Node.js, Python, or FFmpeg to use it.
 
-![VideoFlow project screen](docs/images/projects.png)
-
 ## Use the app
 
 1. [Download VideoFlow](https://github.com/JienWeng/videoflow-go/releases) for your computer.
