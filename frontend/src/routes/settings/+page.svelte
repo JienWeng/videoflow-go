@@ -784,8 +784,8 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                   {#if test}
                     {#if test.ok}
                       <span class="flex items-center gap-1 text-xs text-emerald-500">
-                        <CircleCheck class="size-3.5" />Connected
-                        {#if test.latency_ms != null}({test.latency_ms}ms){/if}
+                        <CircleCheck class="size-3.5" />{test.checked === 'configuration' ? 'Configuration checked' : 'Connected'}
+                        {#if test.checked !== 'configuration' && test.latency_ms != null}({test.latency_ms}ms){/if}
                       </span>
                     {:else}
                       <span class="text-xs text-destructive">{test.error ?? 'Connection failed'}</span>

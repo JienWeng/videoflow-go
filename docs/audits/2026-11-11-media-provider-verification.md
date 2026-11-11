@@ -27,3 +27,5 @@ Deferred Minor: an explicit advanced BytePlus render request can still forward `
 3. Initial models use explicit documented profiles. Reference requests on the fal image base profile select its documented `/edit` sibling. Unknown endpoints require a supported profile and tests, rather than assuming every model uses the same schema.
 4. Media configuration/catalog checks do not claim paid execution or real account/model access; a later small budgeted live generation remains necessary.
 5. Real billing, output fidelity, actual account entitlement and speech quality remain unverified without live calls. Native packaging is a separate build gate; older v0.3.2 ZIPs do not gain new providers by refreshing the app.
+
+Final UI verification also caught a stale “Connected” result badge after a media configuration-only check. A browser probe failed before correction and passed after the badge became “Configuration checked” without a network-latency claim. Frontend check/build were repeated for this copy fix.
