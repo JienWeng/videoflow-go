@@ -1,0 +1,49 @@
+name: Publish verified macOS Electron preview
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify native build provenance and both Mac checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run view 43058107849 --json headSha,jobs > native-checks.json
+          python3 - <<'PY'
+          import json
+          data = json.load(open('native-checks.json'))
+          assert data['headSha'] == '9bb49cee03df50d9ed030d5918bf139674f46582'
+          for name in ['package (darwin-arm64, macos-15)', 'package (darwin-amd64, macos-15-intel)']:
+              assert any(j['name'] == name and j['conclusion'] == 'success' for j in data['jobs']), name
+          PY
+          git diff 9bb49cee03df50d9ed030d5918bf139674f46582 --exit-code -- cmd internal frontend electron go.mod go.sum
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 43058107849
+          pattern: VideoFlow-Electron-darwin-*
+          merge-multiple: true
+          path: dist
+      - name: Verify expected files and checksum downloads
+        run: |
+          cp llms.txt dist/llms.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          root=Path('dist')
+          expected={f'VideoFlow-0.4.0-mac-{arch}-adhoc-preview.{ext}' for arch in ['arm64','x64'] for ext in ['dmg','zip']}
+          assert {p.name for p in root.iterdir()} == expected|{'llms.txt'}
+          (root/'SHA256SUMS.txt').write_text(''.join(hashlib.sha256((root/name).read_bytes()).hexdigest()+'  '+name+'\n' for name in sorted(expected|{'llms.txt'})))
+          PY
+      - name: Publish verified Mac downloads only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.4.0-electron-preview.1 dist/* --target 9bb49cee03df50d9ed030d5918bf139674f46582 --title 'VideoFlow 0.4.0 — new Studio & Settings (Mac Electron preview)' --notes-file docs/electron-0.4.0-release.md --prerelease
