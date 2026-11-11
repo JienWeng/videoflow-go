@@ -58,7 +58,11 @@
     assets = Object.fromEntries(all.map((a: any) => [a.id, a]));
   }
   onMount(() =>
-    refresh()
+    refresh().then(() => {
+      const id = new URL(window.location.href).searchParams.get('character_id');
+      const character = characters.find((c: any) => c.id === id);
+      if (character) startEdit(character);
+    })
       .catch((e) => (error = e.message))
       .finally(() => (loaded = true))
   );

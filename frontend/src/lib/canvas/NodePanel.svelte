@@ -484,6 +484,7 @@
             <span class="truncate">{data.file_path}</span>
           </div>
         </div>
+        <Button variant="secondary" href={`/assets?asset_id=${encodeURIComponent(shown?.id ?? '')}`}>Edit asset identity & review</Button>
         <Button variant="destructive" onclick={deleteAsset} disabled={deleting}>
           <Trash2 class="size-4 mr-1" />
           {deleting ? 'Deleting…' : confirmingDelete ? 'Confirm delete' : 'Delete asset'}
@@ -501,6 +502,9 @@
         </div>
       {:else if kind === 'character'}
         <p class="text-sm">{data.label}</p>
+        <p class="text-xs text-muted-foreground">Edit appearance, personality, consistency rules and reference photos in Characters.</p>
+        <Button variant="secondary" href={`/characters?character_id=${encodeURIComponent(shown?.id ?? '')}`}>Edit character</Button>
+        <Button variant="outline" href="/voices">Edit saved voice</Button>
       {/if}
 
       {#if kind === 'scene' || kind === 'shot'}

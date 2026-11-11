@@ -140,6 +140,8 @@
   }
 </script>
 
+<svelte:window onblur={endDrag} />
+
 <div class="flex rounded-lg border border-border bg-card">
   <!-- Track gutter (fixed, outside the scroller) -->
   <div class="flex w-24 shrink-0 flex-col border-r border-border text-xs text-muted-foreground">
@@ -169,6 +171,7 @@
       onpointermove={onMove}
       onpointerup={endDrag}
       onpointercancel={endDrag}
+      onlostpointercapture={endDrag}
     >
       <!-- Ruler -->
       <div class="relative h-6 border-b border-border bg-muted/30">

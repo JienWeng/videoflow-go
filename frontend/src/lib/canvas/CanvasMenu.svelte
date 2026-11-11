@@ -149,8 +149,8 @@
   }
 
   // Clamp so the menu never opens off-screen.
-  const left = $derived(Math.min(x, (typeof window !== 'undefined' ? window.innerWidth : 9999) - 240));
-  const top = $derived(Math.min(y, (typeof window !== 'undefined' ? window.innerHeight : 9999) - 320));
+  const left = $derived(Math.max(8, Math.min(x, (typeof window !== 'undefined' ? window.innerWidth : 9999) - 240)));
+  const top = $derived(Math.max(8, Math.min(y, (typeof window !== 'undefined' ? window.innerHeight : 9999) - 320)));
 
   const itemCls =
     'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent disabled:opacity-50';
@@ -161,7 +161,7 @@
 <div
   bind:this={el}
   data-testid="canvas-context-menu"
-  class="fixed z-50 w-56 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+  class="fixed z-50 max-h-[calc(100dvh-1rem)] overflow-y-auto w-56 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
   style="left: {left}px; top: {top}px"
   role="menu"
   tabindex="-1"
