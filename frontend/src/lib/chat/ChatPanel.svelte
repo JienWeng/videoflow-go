@@ -300,6 +300,8 @@
           send: `Write a story featuring ${sel.label}`
         });
       }
+      if (sel.kind === 'asset') return [{label:'Manage identity & review',href:`/assets?asset_id=${encodeURIComponent(sel.id)}`}];
+      if (sel.kind === 'render_job') return [{label:'View render progress',href:'/render'}];
       if (out.length) return out.slice(0, 3);
       // Unhandled kinds (asset, render_job) fall through to global chips.
     }

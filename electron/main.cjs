@@ -44,7 +44,7 @@ else {
         const rendered = await window.webContents.executeJavaScript(`new Promise(resolve => {
           const deadline = Date.now() + 10000;
           const check = () => {
-            if (document.body.textContent.includes('VideoFlow')) resolve(true);
+            if (document.body.textContent.includes('Story studio') && document.querySelector('#workspace-session') && document.querySelector('[aria-label=\"Workbench\"]')) resolve(true);
             else if (Date.now() > deadline) resolve(false);
             else setTimeout(check, 100);
           };

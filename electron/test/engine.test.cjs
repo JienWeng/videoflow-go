@@ -58,3 +58,11 @@ test('missing executable reports startup error without waiting for shutdown time
   const engine = new Engine({executable: '/nonexistent/videoflow-engine'});
   await assert.rejects(engine.start(), /ENOENT/);
 });
+test('desktop PATH preserves explicit paths and finds standard user CLI installs', () => {
+  const {desktopPath} = require('../engine.cjs');
+  const result=desktopPath('/custom/bin:/usr/bin','/Users/creator','darwin').split(path.delimiter);
+  assert.equal(result[0],'/custom/bin');
+  assert.ok(result.includes('/Users/creator/.local/bin'));
+  assert.ok(result.includes('/opt/homebrew/bin'));
+  assert.equal(new Set(result).size,result.length);
+});

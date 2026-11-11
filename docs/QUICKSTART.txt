@@ -8,12 +8,14 @@ VideoFlow — start here
    Keep the app's terminal window open while using VideoFlow.
 3. The app opens your browser at http://127.0.0.1:8000.
 4. Open Settings and configure fal.ai for default images/video and OpenRouter
-   for text/vision/transcription. BytePlus direct video is optional.
+   for vision/transcription. Install and sign in to Codex or Claude Code for
+   text planning; choose an AI session in Studio. BytePlus video is optional.
    Check configuration is not a paid generation/access test. See PROVIDERS.md.
    You need credits with the selected providers. AI generation costs money.
 5. Create a project and generate your video.
 
-Go, Node.js and Python are NOT required to run a download.
+Go and Python are NOT required to run a download. Codex/Claude Code and
+optional HyperFrames have their own installation/account prerequisites.
 Close the terminal window (or press Ctrl+C) to stop the app.
 If it does not open automatically, visit http://127.0.0.1:8000.
 If port 8000 is busy, stop the other copy before starting this one.

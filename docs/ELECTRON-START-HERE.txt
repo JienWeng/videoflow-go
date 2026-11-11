@@ -1,0 +1,32 @@
+VideoFlow 0.4.0 — desktop quick start
+
+1. Quit the older VideoFlow app, then install/open this version.
+   macOS: choose arm64 for Apple Silicon or x64 for Intel; drag to Applications.
+   Linux: install the DEB, or use the AppImage/tar.gz for your architecture.
+2. Your existing projects remain in your system's VideoFlow user data folder.
+   Create/switch a project using the project button in the left navigation.
+3. For AI planning, install and sign in to the official Codex or Claude Code
+   CLI on this computer. In Studio, choose an AI session or Start session.
+   These account tools are separate from VideoFlow; opening the app does not
+   install them, sign you in or verify your subscription.
+4. In Settings → AI connections, add fal.ai for default image/video generation
+   and OpenRouter for vision/transcription. BytePlus video is optional.
+5. Describe your story in Chat. Click a canvas node to inspect/edit Details.
+   Suggestions fill your draft. Review proposals before pressing Run.
+   Review/approve generated keyframes before explicitly rendering scenes.
+6. Open Videos for progress/results. Voices & captions and Compositions are
+   under More tools. HyperFrames needs its optional runtime; see the repo guide.
+
+VideoFlow includes its Go backend, FFmpeg, FFprobe and fonts. You do not need
+Go or Python to run the app. Codex/Claude and optional HyperFrames have their
+own installation/account prerequisites. Media generation needs internet,
+provider credentials and credits. Automated installer checks do not use paid
+AI generation, so real account access and output quality still need testing.
+
+Mac preview: ad-hoc signed, not Apple-notarized. If blocked, use System Settings
+→ Privacy & Security → Open Anyway only for the official GitHub download you
+verified. Managed computers may not permit this. Do not disable Gatekeeper.
+
+Quit VideoFlow normally to stop its private backend. Keep your user data folder
+private and backed up: it contains projects, media and saved provider credentials.
+GitHub: https://github.com/JienWeng/videoflow-go

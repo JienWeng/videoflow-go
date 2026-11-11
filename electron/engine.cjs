@@ -1,3 +1,10 @@
+const path = require('node:path');
+const os = require('node:os');
+function desktopPath(current = '', home = os.homedir(), platform = process.platform) {
+  const extra = [path.join(home,'.local','bin'),path.join(home,'.npm-global','bin'),path.join(home,'.volta','bin'),path.join(home,'.asdf','shims'),path.join(home,'.local','share','mise','shims'),'/usr/local/bin','/usr/bin','/bin'];
+  if(platform==='darwin')extra.push('/opt/homebrew/bin');
+  return [...new Set([...current.split(path.delimiter).filter(Boolean),...extra])].join(path.delimiter);
+}
 const {spawn} = require('node:child_process');
 
 class Engine {
@@ -8,6 +15,7 @@ class Engine {
   async start() {
     if (this.child || this.stopping) throw new Error('Engine already started or stopped');
     const environment = {...process.env, ...this.env, PORT: '0'};
+    environment.PATH = desktopPath(environment.PATH);
     delete environment.NODE_TEST_CONTEXT;
     this.child = this.spawnProcess(this.executable, this.args, {
       env: environment, stdio: ['ignore', 'pipe', 'pipe']
@@ -64,4 +72,4 @@ class Engine {
     return this.stopPromise;
   }
 }
-module.exports = {Engine};
+module.exports = {Engine, desktopPath};

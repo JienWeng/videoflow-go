@@ -70,7 +70,7 @@
   let captionModel = $state('');
   let captionLanguage = $state('zh');
 
-  export function canLeave(){if(saving||refining)return false;return !formDirty || confirm('Discard unsaved changes?');}
+  export function canLeave(){if(saving||refining||reverting||deleting)return false;return !formDirty || confirm('Discard unsaved changes?');}
   beforeNavigate(({cancel})=>{if(!canLeave())cancel();});
   // Sync the `node` prop into `shown`, guarding unsaved edits on node-switch.
   // Design note: reverting the parent's selection on cancel is impractical

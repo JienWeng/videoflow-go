@@ -1,7 +1,6 @@
 VideoFlow macOS preview — start here
 
-This preview uses valid ad-hoc code signatures to repair the broken
-bundle signature in version 0.3.0. It is NOT Apple-notarized or signed
+This preview uses ad-hoc code signatures for application integrity. It is NOT Apple-notarized or signed
 with a Developer ID. macOS still requires your explicit approval.
 
 1. Use the NEW version 0.3.1 adhoc-preview download for your processor.
@@ -14,11 +13,15 @@ with a Developer ID. macOS still requires your explicit approval.
    VideoFlow and click Open Anyway, then confirm your choice.
    Approve only the VideoFlow download you obtained from this project's
    GitHub release. Company-managed Macs may prohibit this override.
-5. Open VideoFlow and add your OpenRouter key in Settings.
+5. Open VideoFlow. Install/sign in to Codex or Claude Code if you want AI
+   planning, then select an AI session in Studio. Add fal.ai/OpenRouter or
+   BytePlus credentials in Settings → AI connections for media generation.
 
 Apple's instructions: https://support.apple.com/102445
 
-You do not need Go, Node, Python, FFmpeg or developer tools installed.
+The app includes Go engine, FFmpeg and fonts; you do not install them.
+Codex/Claude Code are separate optional account tools and may have their
+own prerequisites. HyperFrames is an optional additional runtime.
 This build keeps the Electron renderer sandbox enabled. It does not turn
 off Gatekeeper or change your system's global security settings.
 
