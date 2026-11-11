@@ -8,11 +8,26 @@ import (
 func (s *Server) generationPrerequisites(ctx context.Context, brief generationBrief) []map[string]string {
 	missing := []map[string]string{}
 	add := func(route, reason string) {
-		missing = append(missing, map[string]string{"route": route, "setting": "/settings", "reason": reason})
+		setting := "/settings"
+		if route == "local_text" {
+			setting = "/director"
+		}
+		missing = append(missing, map[string]string{"route": route, "setting": setting, "reason": reason})
 	}
-	for _, agent := range []string{"script_agent", "shot_agent", "prompt_agent"} {
-		if _, _, err := s.routes().Agent(ctx, agent); err != nil {
-			add(agent, err.Error())
+	if s.cfg.UseLocalText {
+		session, err := s.directorSession(ctx)
+		if err != nil {
+			add("local_text", err.Error())
+		} else if _, err = s.directorRunner.Available(session.Engine); err != nil {
+			add("local_text", err.Error())
+		} else if session.Status != "ready" {
+			add("local_text", "Local session is busy or requires review in Local sessions")
+		}
+	} else {
+		for _, agent := range []string{"script_agent", "shot_agent", "prompt_agent"} {
+			if _, _, err := s.routes().Agent(ctx, agent); err != nil {
+				add(agent, err.Error())
+			}
 		}
 	}
 	client, _, imageModel, err := s.selectedMedia(ctx, "image")

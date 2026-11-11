@@ -25,6 +25,7 @@ func routerServer(t *testing.T, h http.HandlerFunc) *Server {
 	remote := httptest.NewServer(h)
 	t.Cleanup(remote.Close)
 	cfg := config.Load()
+	cfg.UseLocalText = false
 	cfg.StorageRoot = t.TempDir()
 	cfg.DatabasePath = filepath.Join(t.TempDir(), "db.sqlite")
 	cfg.OpenRouterAPIKey = ""

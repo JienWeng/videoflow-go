@@ -258,7 +258,7 @@
     shotsByScene = shotsByScene;
   }
   onMount(() => {
-    refresh()
+    refresh().then(()=>{const sceneID=new URL(window.location.href).searchParams.get('scene_id');if(sceneID&&scenes.some(s=>s.id===sceneID))selectedId=sceneID})
       .catch((e) => (error = e.message))
       .finally(() => (loaded = true));
     get('/style').then((s) => (style = s)).catch(() => {});

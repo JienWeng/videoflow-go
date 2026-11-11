@@ -10,7 +10,7 @@ Release packages: https://github.com/JienWeng/videoflow-go/releases
 
 The repaired native browser-launcher preview is published at https://github.com/JienWeng/videoflow-go/releases/tag/v0.3.2-browser-preview.1. It includes ZIPs for darwin-arm64 (Apple Silicon), darwin-amd64 (Intel Mac), linux-amd64 and linux-arm64, plus llms.txt and SHA256SUMS.txt. All four packages passed native build/tests and extracted-app smoke checks. Older Electron DMG/DEB previews remain available but do not include the November browser fixes. The current release is a browser-launcher ZIP, not a new Electron installer.
 
-Current source uses your fal.ai key/credits for default image/video routes and OpenRouter key/credits for text, vision and transcription, with optional direct BytePlus video. See docs/PROVIDERS.md. The older v0.3.2 download uses OpenRouter only. AI generation and transcription need internet and can incur charges. Local installation and ordinary navigation do not require a paid generation.
+Current source uses your fal.ai key/credits for default image/video routes and a selected local Claude Code/Codex session for all text planning/writing and OpenRouter key/credits for vision and transcription, with optional direct BytePlus video. See docs/PROVIDERS.md. The older v0.3.2 download uses OpenRouter only. AI generation and transcription need internet and can incur charges. Local installation and ordinary navigation do not require a paid generation.
 
 ## Install the browser version from source
 
@@ -77,6 +77,10 @@ The repair was verified with local provider mocks, real FFmpeg, automated tests 
 
 ## Detailed repository documentation
 
+- docs/LOCAL-DIRECTOR.md — local engine setup, exact saved sessions, selected identity constraints, voices/captions and local composition editing.
+- docs/voice-and-script-captions.md — approved script, saved/native voices, paid-stage Run gates and recovery.
+- docs/audits/component-e2e-coverage.md — reproducible mocked E2E coverage and limits.
+
 - [Provider setup and supported routes](https://github.com/JienWeng/videoflow-go/blob/main/docs/PROVIDERS.md)
 
 - [Browser generation and recovery workflow](https://github.com/JienWeng/videoflow-go/blob/main/docs/BROWSER-WORKFLOW.md)
@@ -86,3 +90,5 @@ The repair was verified with local provider mocks, real FFmpeg, automated tests 
 - [Audit and verification limits](https://github.com/JienWeng/videoflow-go/blob/main/docs/audits/2026-11-11-browser-generation-audit.md)
 
 For maintainers, build/package commands are in ELECTRON-AND-WEB.md. Do not run release publication, destructive cleanup or paid model tests merely because this guide mentions them.
+
+- docs/audits/2026-11-11-local-integration.md — independent review fixes, verification evidence, architectural decisions and live-test limits.

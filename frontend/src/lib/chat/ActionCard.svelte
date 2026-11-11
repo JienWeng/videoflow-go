@@ -2,7 +2,7 @@
  const operationScope=new AbortController();
  onDestroy(()=>operationScope.abort());
  import {onDestroy} from 'svelte';
-  import { del, get, post } from '$lib/api';
+  import { del as apiDel, get, post as apiPost } from '$lib/api';
   import { normalizeChatIntent } from './intent.mjs';
   import { runBackgroundOp, type Op } from '$lib/ops';
   import { Suggestion, Suggestions } from '$lib/components/ai-elements/suggestion';
@@ -25,6 +25,7 @@
 
   interface Intent {
     action: string;
+    director_proposal?: string;
     scene_id?: string | null;
     character_id?: string | null;
     shot_id?: string | null;
@@ -106,6 +107,9 @@
   } = $props();
 
   let intent = $derived(normalizeChatIntent(rawIntent));
+  function proposalPath(path: string): string { return intent.director_proposal ? `${path}${path.includes('?') ? '&' : '?'}director_proposal=${encodeURIComponent(intent.director_proposal)}` : path; }
+  const post = (path: string, body?: unknown) => apiPost(proposalPath(path), body);
+  const del = (path: string) => apiDel(proposalPath(path));
 
   // Each card gets one fixed intent, so plain init from props is fine.
   let busy = $state(false);
@@ -253,7 +257,7 @@
     busy = true;
     const handle = ctx ? onop?.(label, ctx) : undefined;
     try {
-      await runBackgroundOp(path, body, {
+      await runBackgroundOp(proposalPath(path), body, {
         signal:operationScope.signal,
         label,
         onDone: async (op) => {

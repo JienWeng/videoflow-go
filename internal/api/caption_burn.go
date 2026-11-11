@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/google/uuid"
 	"os"
 	"path/filepath"
@@ -12,12 +11,15 @@ import (
 // Keep the previous export until the replacement has actually been written.
 func (s *Server) saveBurnedCaptions(ctx context.Context, output *models.RenderOutput, segments []models.CaptionSegment, style string) (any, error) {
 	if len(segments) == 0 {
-		output.CaptionsJSON, _ = json.Marshal(map[string]any{"segments": segments, "style": style})
+		output.CaptionsJSON = s.ScriptCaptionPayload(output, segments, style)
 		output.CaptionedPath = nil
 		if err := s.database.UpdateRenderOutput(output); err != nil {
 			return nil, err
 		}
 		return map[string]any{"output_id": output.ID, "status": "cleared"}, nil
+	}
+	if err := s.ValidateScriptCaptionSource(output); err != nil {
+		return nil, err
 	}
 	source, err := s.storagePath(output.VideoPath)
 	if err != nil {
@@ -32,7 +34,7 @@ func (s *Server) saveBurnedCaptions(ctx context.Context, output *models.RenderOu
 		os.Remove(dest)
 		return nil, err
 	}
-	raw, _ := json.Marshal(map[string]any{"segments": segments, "style": style})
+	raw := s.ScriptCaptionPayload(output, segments, style)
 	public := filepath.ToSlash(filepath.Join("storage", "outputs", name))
 	output.CaptionsJSON = raw
 	output.CaptionedPath = &public

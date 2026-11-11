@@ -208,7 +208,7 @@
 
 <div class="p-6">
   <div class="mb-4">
-    <h1 class="text-lg font-semibold">Characters</h1>
+    <div class="flex items-center gap-4"><h1 class="text-lg font-semibold">Characters</h1><a href="/voices" class="text-xs text-muted-foreground underline underline-offset-4">Voices &amp; script captions</a></div>
     <p class="text-sm text-muted-foreground">Add reference images for consistent characters.</p>
   </div>
 

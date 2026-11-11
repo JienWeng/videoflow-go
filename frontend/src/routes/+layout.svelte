@@ -56,7 +56,10 @@
         { href: '/', label: 'Studio', mobileLabel: 'Studio', icon: Clapperboard },
         { href: '/scenes', label: 'Scenes', mobileLabel: 'Scenes', icon: ListVideo },
         { href: '/characters', label: 'Characters', mobileLabel: 'Characters', icon: Users },
-        { href: '/assets', label: 'Assets', mobileLabel: 'Assets', icon: Image }
+        { href: '/assets', label: 'Assets', mobileLabel: 'Assets', icon: Image },
+        { href: '/voices', label: 'Voices & captions', mobileLabel: 'Voices', icon: Users },
+        { href: '/compositions', label: 'Compositions', mobileLabel: 'Edit', icon: Film },
+        { href: '/director', label: 'Local sessions', mobileLabel: 'Sessions', icon: Clapperboard }
       ]
     },
     {

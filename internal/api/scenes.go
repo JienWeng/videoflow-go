@@ -12,7 +12,7 @@ import (
 )
 
 func (s *Server) handleListScenes(w http.ResponseWriter, r *http.Request) {
-	projectID, err := s.database.GetActiveProjectID()
+	projectID, err := s.activeProjectID(r.Context())
 	if err != nil {
 		http.Error(w, "no active project", http.StatusInternalServerError)
 		return
@@ -39,7 +39,7 @@ func (s *Server) handleGetScene(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateScene(w http.ResponseWriter, r *http.Request) {
-	projectID, err := s.database.GetActiveProjectID()
+	projectID, err := s.activeProjectID(r.Context())
 	if err != nil {
 		http.Error(w, "no active project", http.StatusInternalServerError)
 		return
@@ -360,7 +360,7 @@ func (s *Server) handleRenderScene(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	projectID, err := s.database.GetActiveProjectID()
+	projectID, err := s.activeProjectID(r.Context())
 	if err != nil || scene.ProjectID == nil || *scene.ProjectID != projectID {
 		http.Error(w, "scene not in active project", 400)
 		return
@@ -377,7 +377,7 @@ func (s *Server) handleRenderScene(w http.ResponseWriter, r *http.Request) {
 		Progress:    &progress,
 		RequestJSON: []byte(fmt.Sprintf(`{"scene_id":"%s"}`, scene.ID)),
 	}
-	if err := s.prepareVideoJob(job); err != nil {
+	if err := s.prepareDirectorVideoJob(r.Context(), job); err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}
@@ -567,7 +567,7 @@ func (s *Server) handleShotAssetDetach(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleConversationalize(w http.ResponseWriter, r *http.Request) {
-	projectID, err := s.database.GetActiveProjectID()
+	projectID, err := s.activeProjectID(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return
@@ -705,7 +705,7 @@ func (s *Server) handleDevelopIdea(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGenerateScript(w http.ResponseWriter, r *http.Request) {
-	projectID, err := s.database.GetActiveProjectID()
+	projectID, err := s.activeProjectID(r.Context())
 	if err != nil {
 		http.Error(w, "no active project", http.StatusInternalServerError)
 		return
@@ -739,7 +739,7 @@ func (s *Server) handleGenerateScript(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListScripts(w http.ResponseWriter, r *http.Request) {
-	projectID, err := s.database.GetActiveProjectID()
+	projectID, err := s.activeProjectID(r.Context())
 	if err != nil {
 		http.Error(w, "no active project", http.StatusInternalServerError)
 		return

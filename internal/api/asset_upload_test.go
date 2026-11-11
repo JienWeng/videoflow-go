@@ -2,9 +2,11 @@ package api_test
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"mime/multipart"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"videoflow-go/internal/models"
 )
@@ -25,7 +27,8 @@ func TestCharacterReferenceUploadAppearsOnCharacter(t *testing.T) {
 	var body bytes.Buffer
 	form := multipart.NewWriter(&body)
 	file, _ := form.CreateFormFile("file", "reference.png")
-	file.Write([]byte("fixture image"))
+	png, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aO1cAAAAASUVORK5CYII=")
+	file.Write(png)
 	form.WriteField("character_id", character.ID)
 	form.Close()
 	upload := httptest.NewRecorder()
@@ -37,6 +40,14 @@ func TestCharacterReferenceUploadAppearsOnCharacter(t *testing.T) {
 	}
 	var asset models.Asset
 	json.Unmarshal(upload.Body.Bytes(), &asset)
+	if !strings.HasPrefix(asset.FilePath, "storage/assets/") {
+		t.Fatalf("upload must return public media URL under arbitrary storage roots: %q", asset.FilePath)
+	}
+	mediaResponse := httptest.NewRecorder()
+	router.ServeHTTP(mediaResponse, httptest.NewRequest("GET", "/"+asset.FilePath, nil))
+	if mediaResponse.Code != 200 || !bytes.Equal(mediaResponse.Body.Bytes(), png) {
+		t.Fatal("uploaded public URL does not serve the original image", mediaResponse.Code)
+	}
 	result := httptest.NewRecorder()
 	router.ServeHTTP(result, httptest.NewRequest("GET", "/characters/"+character.ID, nil))
 	json.Unmarshal(result.Body.Bytes(), &character)
@@ -56,7 +67,8 @@ func TestReferenceUploadRejectsUnknownCharacterWithoutSavingAsset(t *testing.T) 
 	var body bytes.Buffer
 	form := multipart.NewWriter(&body)
 	file, _ := form.CreateFormFile("file", "reference.png")
-	file.Write([]byte("fixture image"))
+	png, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aO1cAAAAASUVORK5CYII=")
+	file.Write(png)
 	form.WriteField("character_id", "char_missing")
 	form.Close()
 	req := httptest.NewRequest("POST", "/assets/upload", &body)

@@ -18,20 +18,22 @@
 
   const completed = $derived(new Set(stages));
   const current = $derived(
-    status === 'failed' ? '' : labels.find((stage) => !completed.has(stage.key))?.key ?? 'render'
+    status === 'failed' || status === 'awaiting_reference_review' ? '' : labels.find((stage) => !completed.has(stage.key))?.key ?? 'render'
   );
 </script>
 
 <div class="rounded-xl border border-border bg-card p-5 shadow-sm">
   <div class="mb-4 flex items-center justify-between gap-3">
     <div>
-      <h2 class="font-semibold">{status === 'rendering' ? 'Rendering your video' : status === 'completed' ? 'Video complete' : 'Creating your video'}</h2>
+      <h2 class="font-semibold">{status === 'awaiting_reference_review' ? 'Review your keyframes' : status === 'rendering' ? 'Rendering your video' : status === 'completed' ? 'Video complete' : 'Creating your video'}</h2>
       <p class="text-sm text-muted-foreground">
         VideoFlow is handling the scenes, dialogue, visuals, and render.
       </p>
     </div>
     {#if status === 'running'}
       <span class="text-xs text-muted-foreground">Planning and submitting…</span>
+    {:else if status === 'awaiting_reference_review'}
+      <span class="text-xs text-muted-foreground">Waiting for your approval</span>
     {:else if status === 'rendering'}
       <span class="text-xs text-muted-foreground">Rendering…</span>
     {:else if status === 'completed'}

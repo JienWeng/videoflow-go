@@ -18,7 +18,7 @@ var defaultCaptionStyles = []string{
 }
 
 func (s *Server) handleStartRender(w http.ResponseWriter, r *http.Request) {
-	projectID, err := s.database.GetActiveProjectID()
+	projectID, err := s.activeProjectID(r.Context())
 	if err != nil {
 		http.Error(w, "no active project", http.StatusInternalServerError)
 		return
@@ -29,6 +29,9 @@ func (s *Server) handleStartRender(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", 400)
 		return
 	}
+	delete(body, "director_context")
+	delete(body, "director_keyframe")
+	delete(body, "voice_policy")
 	provider, _ := body["provider"].(string)
 	if provider == "" {
 		provider, _ = s.routes().MediaSelection("video")
@@ -72,7 +75,7 @@ func (s *Server) handleStartRender(w http.ResponseWriter, r *http.Request) {
 		RequestJSON: reqBytes,
 	}
 
-	if err := s.prepareVideoJob(job); err != nil {
+	if err := s.prepareDirectorVideoJob(r.Context(), job); err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}
@@ -105,7 +108,7 @@ func (s *Server) handleRenderFromShot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	projectID, err := s.database.GetActiveProjectID()
+	projectID, err := s.activeProjectID(r.Context())
 	if err != nil {
 		http.Error(w, "no active project", 400)
 		return
@@ -132,7 +135,7 @@ func (s *Server) handleRenderFromShot(w http.ResponseWriter, r *http.Request) {
 		RequestJSON: reqBytes,
 	}
 
-	if err := s.prepareVideoJob(job); err != nil {
+	if err := s.prepareDirectorVideoJob(r.Context(), job); err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}
@@ -150,7 +153,7 @@ func (s *Server) handleRenderFromShot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListRenderJobs(w http.ResponseWriter, r *http.Request) {
-	projectID, err := s.database.GetActiveProjectID()
+	projectID, err := s.activeProjectID(r.Context())
 	if err != nil {
 		http.Error(w, "no active project", http.StatusInternalServerError)
 		return
@@ -199,7 +202,17 @@ func (s *Server) handleResubmitJob(w http.ResponseWriter, r *http.Request) {
 	if fresh.Provider == "" {
 		fresh.Provider = "openrouter"
 	}
-	if err = s.prepareVideoJob(fresh); err != nil {
+	var frozen map[string]json.RawMessage
+	_ = json.Unmarshal(fresh.RequestJSON, &frozen)
+	if frozen["director_context"] != nil {
+		err = s.validateFrozenVideo(r.Context(), fresh)
+		if err == nil {
+			err = s.prepareVideoJob(fresh)
+		}
+	} else {
+		err = s.prepareDirectorVideoJob(r.Context(), fresh)
+	}
+	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}
@@ -275,6 +288,11 @@ func (s *Server) handleGetEditorData(w http.ResponseWriter, r *http.Request) {
 		"segments":  capSegments,
 		"style":     capStyle,
 		"available": len(capSegments) > 0,
+	}
+
+	if err := s.ValidateScriptCaptionSource(output); err != nil {
+		captionsBlock["stale"] = true
+		captionsBlock["stale_reason"] = err.Error()
 	}
 
 	// 3. Scene + Shots blocks
@@ -551,7 +569,12 @@ func (s *Server) handleGetCaptions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	staleReason := ""
+	if err := s.ValidateScriptCaptionSource(output); err != nil {
+		staleReason = err.Error()
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"stale": staleReason != "", "stale_reason": staleReason,
 		"segments":  capSegments,
 		"style":     capStyle,
 		"available": len(capSegments) > 0,
@@ -692,6 +715,10 @@ func (s *Server) handleDownloadOutput(w http.ResponseWriter, r *http.Request) {
 	}
 	path := output.VideoPath
 	if r.URL.Query().Get("variant") == "captioned" {
+		if err := s.ValidateScriptCaptionSource(output); err != nil {
+			http.Error(w, err.Error(), 409)
+			return
+		}
 		if output.CaptionedPath == nil {
 			http.Error(w, "captioned video has not been generated", 404)
 			return

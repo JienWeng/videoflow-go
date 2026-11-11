@@ -10,7 +10,7 @@ import (
 )
 
 func (s *Server) handleGetStyle(w http.ResponseWriter, r *http.Request) {
-	projectID, err := s.database.GetActiveProjectID()
+	projectID, err := s.activeProjectID(r.Context())
 	if err != nil {
 		http.Error(w, "no active project", http.StatusInternalServerError)
 		return
@@ -32,7 +32,7 @@ func (s *Server) handleGetStyle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateStyle(w http.ResponseWriter, r *http.Request) {
-	projectID, err := s.database.GetActiveProjectID()
+	projectID, err := s.activeProjectID(r.Context())
 	if err != nil {
 		http.Error(w, "no active project", http.StatusInternalServerError)
 		return
@@ -51,7 +51,7 @@ func (s *Server) handleUpdateStyle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIngestStyle(w http.ResponseWriter, r *http.Request) {
-	projectID, err := s.database.GetActiveProjectID()
+	projectID, err := s.activeProjectID(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return

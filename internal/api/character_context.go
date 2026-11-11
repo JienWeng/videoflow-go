@@ -24,7 +24,7 @@ func (s *Server) characterNotes(project *string, raw []byte) (string, error) {
 		if err != nil || project == nil || c.ProjectID == nil || *project != *c.ProjectID {
 			return "", fmt.Errorf("character not found in this project")
 		}
-		fmt.Fprintf(&notes, "\nCharacter %s (%s): %s. Appearance: %s. Personality: %s. Visual rules: %s. Voice rules: %s.", c.Name, c.ID, c.Description, c.Appearance, c.Personality, c.VisualRulesJSON, c.VoiceRulesJSON)
+		fmt.Fprintf(&notes, "\nCharacter %s (%s): %s. Appearance: %s. Personality: %s. Visual rules: %s. Voice rules: %s. Sample dialogue: %s.", c.Name, c.ID, c.Description, c.Appearance, c.Personality, c.VisualRulesJSON, c.VoiceRulesJSON, c.SampleDialogue)
 	}
 	return notes.String(), nil
 }

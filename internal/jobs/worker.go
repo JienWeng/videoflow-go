@@ -22,18 +22,20 @@ import (
 )
 
 type WorkerPool struct {
-	cfg          *config.Config
-	database     *db.DB
-	broker       *events.Broker
-	media        *media.MediaEngine
-	queue        chan string
-	semaphore    chan struct{}
-	ctx          context.Context
-	cancel       context.CancelFunc
-	wg           sync.WaitGroup
-	pollInterval time.Duration
-	activeMu     sync.Mutex
-	active       map[string]bool
+	validationMu        sync.RWMutex
+	submissionValidator func(context.Context, *models.RenderJob) error
+	cfg                 *config.Config
+	database            *db.DB
+	broker              *events.Broker
+	media               *media.MediaEngine
+	queue               chan string
+	semaphore           chan struct{}
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	wg                  sync.WaitGroup
+	pollInterval        time.Duration
+	activeMu            sync.Mutex
+	active              map[string]bool
 }
 
 func NewWorkerPool(cfg *config.Config, database *db.DB, broker *events.Broker, mediaEngine *media.MediaEngine) *WorkerPool {
@@ -188,7 +190,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 			}
 		}
 		// Only fields in the provider contract are forwarded. Local IDs never leave the app.
-		allowed := map[string]bool{"prompt": true, "duration": true, "aspect_ratio": true, "resolution": true, "generate_audio": true, "seed": true, "frame_images": true, "input_references": true, "provider": true}
+		allowed := map[string]bool{"prompt": true, "duration": true, "aspect_ratio": true, "resolution": true, "generate_audio": true, "seed": true, "frame_images": true, "input_references": true, "provider": true, "director_context": true, "director_keyframe": true, "voice_policy": true}
 		for key := range payload {
 			if !allowed[key] {
 				delete(payload, key)
@@ -241,6 +243,10 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 			}
 		}
 		prompt += "\nSpoken dialogue language: " + language
+		if payload["voice_policy"] != nil {
+			prompt += "\nFinal audio requirement: SILENT VISUAL PASS. No generated dialogue, narration or substitute voice; approved saved speech is a separate explicit stage."
+			payload["generate_audio"] = false
+		}
 		payload["prompt"] = prompt
 		if job.Model == "" {
 			job.Model = resolver.DefaultMediaModel(provider, "video")
@@ -321,12 +327,17 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 						approved[id] = true
 					}
 				}
+				blockedReview := false
 				for _, asset := range assets {
 					var meta struct {
 						SceneID string `json:"scene_id"`
 					}
 					_ = json.Unmarshal(asset.MetadataJSON, &meta)
 					if asset.Type == "storyboard" && meta.SceneID == *job.SceneID && approved[asset.ID] {
+						if !models.ReferenceApproved(asset.MetadataJSON) {
+							blockedReview = true
+							continue
+						}
 						image, e := media.ImageDataURL(w.cfg.StorageRoot, asset.FilePath)
 						if e != nil {
 							return e
@@ -334,6 +345,9 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 						payload["frame_images"] = []map[string]any{{"type": "image_url", "image_url": map[string]string{"url": image}, "frame_type": "first_frame"}}
 						break
 					}
+				}
+				if blockedReview && payload["frame_images"] == nil {
+					return fmt.Errorf("generated reference needs explicit consistency review before video generation")
 				}
 			}
 		}
@@ -368,7 +382,11 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 		if err != nil {
 			return err
 		}
-		if err = client.ValidateVideo(ctx, payload); err != nil {
+		if err = w.validateSubmission(ctx, job); err != nil {
+			return err
+		}
+		upstreamPayload := providerVideoPayload(payload)
+		if err = client.ValidateVideo(ctx, upstreamPayload); err != nil {
 			return err
 		}
 		claimed, e := w.database.ClaimRenderSubmission(job.ID, job.Model, job.RequestJSON)
@@ -382,7 +400,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 		stage := "submitting"
 		job.Stage = &stage
 
-		id, e := client.CreateVideo(ctx, payload)
+		id, e := client.CreateVideo(ctx, upstreamPayload)
 		if e != nil {
 			var rejected *providers.HTTPError
 			if errors.As(e, &rejected) && rejected.Status >= 400 && rejected.Status < 500 && rejected.Status != 408 && rejected.Status != 409 {

@@ -24,6 +24,7 @@ import (
 func setupTestServer(t *testing.T) (*api.Server, func()) {
 	testDBPath := filepath.Join(t.TempDir(), "test_api.sqlite")
 	cfg := config.Load()
+	cfg.UseLocalText = false
 	cfg.DatabasePath = testDBPath
 	cfg.StorageRoot = t.TempDir()
 	cfg.OpenRouterAPIKey = ""

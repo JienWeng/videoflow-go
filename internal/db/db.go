@@ -47,6 +47,12 @@ func Open(databasePath string) (*DB, error) {
 	if err := d.migrate(); err != nil {
 		return nil, fmt.Errorf("migration failed: %w", err)
 	}
+	if err := d.ensureDirectorWorkflow(); err != nil {
+		return nil, err
+	}
+	if err := d.EnsureVoiceWorkflow(); err != nil {
+		return nil, err
+	}
 	if err := d.ensureMediaProviders(); err != nil {
 		return nil, err
 	}
@@ -849,8 +855,11 @@ func (d *DB) CreateUploadedAsset(a *models.Asset) error {
 	if err = insertAsset(tx, a); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(`UPDATE characters SET reference_asset_ids_json=json_insert(reference_asset_ids_json,'$[#]',?),updated_at=? WHERE id=?`, a.ID, time.Now().UTC(), *a.CharacterID); err != nil {
-		return err
+	extension := strings.ToLower(filepath.Ext(a.FilePath))
+	if extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".webp" || extension == ".gif" || extension == ".svg" {
+		if _, err = tx.Exec(`UPDATE characters SET reference_asset_ids_json=json_insert(reference_asset_ids_json,'$[#]',?),updated_at=? WHERE id=?`, a.ID, time.Now().UTC(), *a.CharacterID); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }

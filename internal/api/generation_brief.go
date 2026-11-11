@@ -108,9 +108,10 @@ func (s *Server) persistDraft(project string, b generationBrief, draft *agents.S
 	if string(cast) == "null" {
 		cast = []byte("[]")
 	}
-	snapshot, _ := json.Marshal(map[string]any{"generation_brief": b})
+
 	scenes := []models.Scene{}
 	for i, sc := range draft.Scenes {
+		snapshot, _ := json.Marshal(map[string]any{"generation_brief": b, "spoken_lines": sc.SpokenLines})
 		scenes = append(scenes, models.Scene{ProjectID: &project, SceneOrder: i + 1, Title: sc.Title, Summary: sc.Summary, Duration: sc.Duration, AspectRatio: sc.AspectRatio, CharacterIDsJSON: cast, SceneJSON: snapshot})
 	}
 	if err := s.database.SaveScriptScenes(script, scenes); err != nil {

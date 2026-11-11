@@ -1,6 +1,14 @@
 <script lang="ts">
+ let identityTraits: {name:string;value:string}[] = $state([]);
+ let identityBusy = $state(false);
+ let reviewBusy=$state(false);let reviewScene=$state('');
+ async function reviewReference(approved:boolean){if(!detail)return;reviewBusy=true;try{const updated=await post(`/assets/${detail.id}/review`,{approved,expected_updated_at:detail.updated_at});assets=assets.map((a:any)=>a.id===updated.id?updated:a);detail=updated;toast.success(approved?'Reference approved for reuse':'Reference rejected');}catch(e){toast.error((e as Error).message)}finally{reviewBusy=false}}
+
+ function openDetail(asset:any){detail=asset;identityTraits=Object.entries(asset.metadata_json?.locked_traits??{}).map(([name,value])=>({name,value:String(value)}));}
+ async function saveIdentity(){if(!detail)return;identityBusy=true;try{const traits:Record<string,string>={};for(const row of identityTraits){if(!row.name.trim()||!row.value.trim())throw new Error('Each identity trait needs a name and value');if(traits[row.name.trim()])throw new Error('Trait names must be unique');traits[row.name.trim()]=row.value.trim()}const updated=await put(`/assets/${detail.id}/identity`,{expected_updated_at:detail.updated_at,locked_traits:traits});assets=assets.map((a:any)=>a.id===updated.id?updated:a);detail=updated;toast.success('Identity locks saved');}catch(e){toast.error((e as Error).message)}finally{identityBusy=false}}
+
   import { onMount } from 'svelte';
-  import { get, post, patch, del, upload, mediaUrl, isImage, isVideo } from '$lib/api';
+  import { get, post, put, patch, del, upload, mediaUrl, isImage, isVideo } from '$lib/api';
   import { runBackgroundOp } from '$lib/ops';
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
@@ -216,7 +224,7 @@
     [assets, characters] = await Promise.all([get('/assets'), get('/characters')]);
   }
   onMount(() => {
-    refresh()
+    refresh().then(()=>{const params=new URL(window.location.href).searchParams;reviewScene=params.get('scene_id')??'';const id=params.get('asset_id');if(id){const asset=assets.find((a:any)=>a.id===id);if(asset)openDetail(asset)}})
       .catch((e) => (error = e.message))
       .finally(() => (loaded = true));
     loadStyle();
@@ -259,7 +267,7 @@
   );
 
   let filtered = $derived.by(() => {
-    let out = assets;
+    let out = reviewScene?assets.filter((a:any)=>a.metadata_json?.scene_id===reviewScene):assets;
     if (search) {
       const q = search.toLowerCase();
       out = out.filter((a) =>
@@ -450,7 +458,8 @@
   </div>
 
   {#if !loaded}
-    <div class="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-4">
+    {#if reviewScene}<p class="mb-3 text-sm">References for scene {reviewScene}. <button class="underline" onclick={()=>reviewScene=''}>Show all assets</button></p>{/if}
+ <div class="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-4">
       {#each Array(4) as _, i (i)}
         <div class="rounded-lg border border-border p-3 space-y-2">
           <Skeleton class="w-full aspect-square rounded-md" />
@@ -467,12 +476,13 @@
     <p class="text-sm text-muted-foreground">Clear the filter or add an asset.</p>
   {/if}
 
-  <div class="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-4">
+  {#if reviewScene}<p class="mb-3 text-sm">References for scene {reviewScene}. <button class="underline" onclick={()=>reviewScene=''}>Show all assets</button></p>{/if}
+ <div class="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-4">
     {#each filtered as asset (asset.id)}
       <Card>
         <CardContent class="p-3">
           <button type="button" class="block w-full text-left" title="Open"
-            onclick={() => (detail = asset)}>
+            onclick={() => openDetail(asset)}>
             {#if asset.type === 'video' || isVideo?.(asset.file_path)}
               <!-- svelte-ignore a11y_media_has_caption -->
               <video preload="metadata" src={mediaUrl(asset.file_path)}
@@ -494,6 +504,7 @@
             <div class="text-xs text-muted-foreground mb-1">{asset.description.slice(0, 90)}</div>
           {/if}
           <div class="flex flex-wrap gap-1 mb-2">
+            {#if asset.metadata_json?.consistency_review}<Badge variant="outline">Reference {asset.metadata_json.consistency_review}</Badge>{/if}
             {#if asset.metadata_json?.render_job_id}
               <Badge variant="secondary">From render</Badge>
             {/if}
@@ -506,7 +517,7 @@
           </div>
           <div class="flex items-center gap-1">
             <Button variant="ghost" size="icon" class="size-8" title="Open detail"
-              onclick={() => (detail = asset)}>
+              onclick={() => openDetail(asset)}>
               <Maximize2 class="size-3.5" />
             </Button>
             <Button variant="ghost" size="icon" class="size-8" title="Describe with AI"
@@ -532,7 +543,7 @@
 
 <!-- Asset detail / lightbox -->
 <Dialog.Root open={detail !== null} onOpenChange={(open) => !open && (detail = null)}>
-  <Dialog.Content class="max-w-4xl sm:max-w-4xl">
+  <Dialog.Content class="max-h-[90vh] overflow-y-auto max-w-4xl sm:max-w-4xl">
     <Dialog.Header>
       <Dialog.Title class="truncate">{detail?.name || detail?.id}</Dialog.Title>
       <Dialog.Description>{canonical(detail?.type)} · {detail?.id}</Dialog.Description>
@@ -558,6 +569,11 @@
           {/if}
         </div>
         <div class="space-y-3 text-xs">
+ {#if detail.metadata_json?.consistency_review}<section aria-label="Reference consistency review"><h3 class="font-semibold">Reference review · {detail.metadata_json.consistency_review}</h3><p class="mt-2 text-muted-foreground">Compare this image with your selected characters, reference assets and locked traits. Approve only when their appearance is consistent. Rejection keeps the image for inspection and prevents reuse.</p>{#if detail.metadata_json.scene_id}<a class="mt-2 inline-block underline" href={`/scenes?scene_id=${encodeURIComponent(detail.metadata_json.scene_id)}`}>Open scene {detail.metadata_json.scene_id}</a>{/if}<div class="mt-3 flex gap-2"><Button size="sm" disabled={reviewBusy||identityBusy||detail.metadata_json.consistency_review==='approved'} onclick={()=>reviewReference(true)}>Approve reference</Button><Button size="sm" variant="outline" disabled={reviewBusy||identityBusy||detail.metadata_json.consistency_review==='rejected'} onclick={()=>reviewReference(false)}>Reject reference</Button></div></section>{/if}
+ <section aria-label="Asset identity locks"><h3 class="font-semibold">Identity locks</h3><p class="text-muted-foreground">Keep specific traits across generated scenes, for example kind: car and color: red. Select this asset in Local sessions to use its reference.</p>
+ {#each identityTraits as row,i}<div class="mt-2 flex gap-2"><input aria-label={`Trait ${i+1} name`} class="min-w-0 w-1/3 rounded border p-2" bind:value={row.name} placeholder="color"/><input aria-label={`Trait ${i+1} value`} class="min-w-0 flex-1 rounded border p-2" bind:value={row.value} placeholder="red"/><button aria-label={`Remove trait ${i+1}`} onclick={()=>identityTraits=identityTraits.filter((_,n)=>n!==i)}>Remove</button></div>{/each}
+ <Button size="sm" variant="outline" disabled={identityBusy||identityTraits.length>=32} onclick={()=>identityTraits=[...identityTraits,{name:'',value:''}]}>Add trait</Button><Button size="sm" disabled={identityBusy} onclick={saveIdentity}>{identityBusy?'Saving…':'Save identity locks'}</Button></section>
+
           {#if detail.description}
             <div>
               <div class="text-muted-foreground mb-0.5">Description</div>

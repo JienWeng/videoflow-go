@@ -37,12 +37,18 @@ func (s *Server) requestReplay(next http.Handler) http.Handler {
 			return
 		}
 		r.Body = io.NopCloser(bytes.NewReader(data))
-		project, err := s.database.GetActiveProjectID()
+		project, err := s.activeProjectID(r.Context())
 		if err != nil {
 			http.Error(w, "no active project", 400)
 			return
 		}
-		digest := sha256.Sum256(append([]byte(project+":"+r.Method+":"+r.URL.RequestURI()+":"), data...))
+		scope := project
+		if s.cfg.UseLocalText {
+			if binding, ok := r.Context().Value(directorBindingKey{}).(directorBinding); ok {
+				scope += ":" + binding.SessionID
+			}
+		}
+		digest := sha256.Sum256(append([]byte(scope+":"+r.Method+":"+r.URL.RequestURI()+":"), data...))
 		s.recoveryMu.Lock()
 		replay, err := s.database.BeginRequest(key, hex.EncodeToString(digest[:]))
 		if err != nil {

@@ -5,7 +5,7 @@ import (
 )
 
 func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
-	projectID, err := s.database.GetActiveProjectID()
+	projectID, err := s.activeProjectID(r.Context())
 	if err != nil {
 		http.Error(w, "no active project", http.StatusInternalServerError)
 		return

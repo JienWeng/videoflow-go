@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 )
 
@@ -15,7 +17,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	projectID, _ := s.database.GetActiveProjectID()
+	projectID, _ := s.activeProjectID(r.Context())
 	scenes, _ := s.database.ListScenes(projectID)
 	chars, _ := s.database.ListCharacters(projectID)
 	jobs, _ := s.database.ListRenderJobs(projectID)
@@ -48,9 +50,27 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contextJSON, _ := json.Marshal(map[string]any{"scenes": sceneOptions, "characters": charOptions, "outputs": outputsList})
-	res, err := s.agents.Chat(r.Context(), body.Message, body.History, string(contextJSON))
+	ctx := r.Context()
+	var plannedSnapshot *directorContext
+	if s.cfg.UseLocalText {
+		binding, _ := ctx.Value(directorBindingKey{}).(directorBinding)
+		var snapshotErr error
+		plannedSnapshot, snapshotErr = s.buildDirectorContext(projectID, binding.Selection)
+		if snapshotErr != nil {
+			http.Error(w, snapshotErr.Error(), 409)
+			return
+		}
+		ctx = context.WithValue(ctx, directorSnapshotKey{}, plannedSnapshot)
+		body.History = nil
+		ctx = context.WithValue(ctx, directorUserMessageKey{}, body.Message)
+	}
+	res, err := s.agents.Chat(ctx, body.Message, body.History, string(contextJSON))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		status := 500
+		if errors.Is(err, errDirectorContextChanged) {
+			status = 409
+		}
+		http.Error(w, err.Error(), status)
 		return
 	}
 
@@ -102,6 +122,28 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		"warnings": []string{},
 	}
 
+	if s.cfg.UseLocalText {
+		binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)
+		snapshot := plannedSnapshot
+		currentSelectionRaw, _ := s.database.GetDirectorSelection(binding.SessionID)
+		var currentSelection directorSelection
+		_ = json.Unmarshal(currentSelectionRaw, &currentSelection)
+		current, err := s.buildDirectorContext(projectID, currentSelection)
+		if err != nil || snapshot == nil || current.Revision != snapshot.Revision {
+			http.Error(w, errDirectorContextChanged.Error(), 409)
+			return
+		}
+		selection, _ := json.Marshal(binding.Selection)
+		id, err := s.database.CreateDirectorProposal(binding.SessionID, projectID, snapshot.Revision, selection)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		intent["director_proposal"] = id
+		response["session_id"] = binding.SessionID
+		response["context_revision"] = snapshot.Revision
+		response["warnings"] = snapshot.Warnings
+	}
 	writeJSON(w, http.StatusOK, response)
 }
 

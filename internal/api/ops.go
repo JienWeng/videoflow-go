@@ -22,7 +22,7 @@ func (s *Server) handleGetOp(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListOps(w http.ResponseWriter, r *http.Request) {
 	projectID := r.URL.Query().Get("project_id")
 	if projectID == "" {
-		projectID, _ = s.database.GetActiveProjectID()
+		projectID, _ = s.activeProjectID(r.Context())
 	}
 	kind := r.URL.Query().Get("kind")
 	limit := 20

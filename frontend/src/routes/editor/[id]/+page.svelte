@@ -39,6 +39,7 @@
   let output = $state<EditorOutput | null>(null);
   let segments = $state<Segment[]>([]);
   let style = $state('');
+ let captionStaleReason = $state('');
   let styles = $state<string[]>([]);
   let shots = $state<Shot[]>([]);
   let scene = $state<SceneRef>(null);
@@ -99,11 +100,13 @@
       const r = await get(`/outputs/${outputId}/editor`);
       output = r.output;
       segments = (r.captions?.segments ?? []).map((s: Segment) => ({
+ ...s,
         start: Number(s.start),
         end: Number(s.end),
         text: s.text ?? ''
       }));
       style = r.captions?.style ?? '';
+ captionStaleReason = r.captions?.stale_reason ?? '';
       shots = r.shots ?? [];
       scene = r.scene ?? null;
       specDuration = Number(r.total_duration) || 0;
@@ -212,6 +215,7 @@
         `/outputs/${output.id}/captions`,
         {
           segments: segments.map((s) => ({
+ ...s,
             start: Number(s.start),
             end: Number(s.end),
             text: s.text
@@ -429,13 +433,15 @@
       >
         <Download class="mr-1 size-3.5" />Raw
       </Button>
-      <Button size="sm" disabled={!dirty || saving} onclick={save}>
+      <Button size="sm" disabled={!dirty || saving || !!captionStaleReason} onclick={save}>
         <Save class="mr-1 size-3.5" />
         {saving ? 'Re-burning…' : 'Save'}
       </Button>
     </header>
 
-    <!-- Main -->
+    {#if captionStaleReason}<p role="alert" class="mx-4 rounded border border-amber-500 p-3 text-sm">Captions need alignment review: {captionStaleReason} <a href="/voices" class="underline">Review script and audio</a></p>{/if}
+
+ <!-- Main -->
     <div class="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
       <!-- Left: player + transport + timeline -->
       <div class="flex min-w-0 flex-1 flex-col gap-3 p-4">

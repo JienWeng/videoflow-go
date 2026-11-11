@@ -3,10 +3,15 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"videoflow-go/internal/models"
 
@@ -15,7 +20,7 @@ import (
 )
 
 func (s *Server) handleListAssets(w http.ResponseWriter, r *http.Request) {
-	projectID, err := s.database.GetActiveProjectID()
+	projectID, err := s.activeProjectID(r.Context())
 	if err != nil {
 		http.Error(w, "no active project", http.StatusInternalServerError)
 		return
@@ -65,6 +70,7 @@ func (s *Server) handleDeleteAsset(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUploadAsset(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 50<<20)
 	if err := r.ParseMultipartForm(50 << 20); err != nil { // 50 MB
 		http.Error(w, "file too large", http.StatusBadRequest)
 		return
@@ -82,7 +88,7 @@ func (s *Server) handleUploadAsset(w http.ResponseWriter, r *http.Request) {
 		assetType = "character_reference"
 	}
 
-	projectID, err := s.database.GetActiveProjectID()
+	projectID, err := s.activeProjectID(r.Context())
 	if err != nil {
 		http.Error(w, "no active project", http.StatusBadRequest)
 		return
@@ -103,7 +109,34 @@ func (s *Server) handleUploadAsset(w http.ResponseWriter, r *http.Request) {
 	}
 
 	assetID := "asset_" + uuid.New().String()[:8]
-	ext := filepath.Ext(header.Filename)
+	ext := strings.ToLower(filepath.Ext(header.Filename))
+	if assetType == "character_reference" || ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".webp" {
+		headerBytes := make([]byte, 512)
+		n, _ := file.Read(headerBytes)
+		if _, err = file.Seek(0, 0); err != nil {
+			http.Error(w, "could not inspect uploaded image", 400)
+			return
+		}
+		contentType := http.DetectContentType(headerBytes[:n])
+		extensions := map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"}
+		normal, ok := extensions[contentType]
+		if !ok {
+			http.Error(w, "reference must contain an actual PNG, JPEG, GIF or WebP image", 400)
+			return
+		}
+		if contentType != "image/webp" {
+			config, _, err := image.DecodeConfig(io.LimitReader(file, 50<<20))
+			if err != nil || config.Width <= 0 || config.Height <= 0 || config.Width > 16384 || config.Height > 16384 || int64(config.Width)*int64(config.Height) > 100000000 {
+				http.Error(w, "reference image is invalid or exceeds supported dimensions", 400)
+				return
+			}
+			if _, err = file.Seek(0, 0); err != nil {
+				http.Error(w, "could not read uploaded image", 400)
+				return
+			}
+		}
+		ext = normal
+	}
 	destPath := filepath.Join(destDir, assetID+ext)
 
 	out, err := os.Create(destPath)
@@ -129,7 +162,7 @@ func (s *Server) handleUploadAsset(w http.ResponseWriter, r *http.Request) {
 		ProjectID:    &projectID,
 		Type:         assetType,
 		Name:         header.Filename,
-		FilePath:     destPath,
+		FilePath:     filepath.ToSlash(filepath.Join("storage", "assets", assetID+ext)),
 		TagsJSON:     []byte("[]"),
 		MetadataJSON: []byte("{}"),
 	}
@@ -153,6 +186,11 @@ func (s *Server) handleRecogniseAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	project, _ := s.activeProjectID(r.Context())
+	if asset.ProjectID == nil || *asset.ProjectID != project {
+		http.Error(w, "asset not found in active project", 404)
+		return
+	}
 	var body struct {
 		Description string `json:"description"`
 	}
@@ -177,10 +215,15 @@ func (s *Server) handleRecogniseAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	asset.Description = result.Description
 	asset.TagsJSON, _ = json.Marshal(result.Tags)
-	if err = s.database.UpdateAsset(asset); err != nil {
+	if asset.ProjectID == nil {
+		http.Error(w, "asset project unavailable", 409)
+		return
+	}
+	if err = s.database.UpdateAssetRecognition(*asset.ProjectID, asset.ID, asset.Description, asset.TagsJSON); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
 
+	asset, _ = s.database.GetAsset(asset.ID)
 	writeJSON(w, http.StatusOK, asset)
 }

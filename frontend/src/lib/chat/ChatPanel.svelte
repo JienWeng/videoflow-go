@@ -131,6 +131,7 @@
   // Keyed per project; restore on mount (last 30), save on every change.
   // ---------------------------------------------------------------------
   let storageKey = $state<string | null>(null);
+ let localSessionLabel = $state('Local sessions');
 
   /** Drop the non-serializable / refetched parts (state, callbacks live in
    * the template anyway — cards re-render fine from intent + options). */
@@ -140,6 +141,28 @@
   }
 
   async function initPersistence() {
+    try {
+      const status = await get('/director/status');
+      if (status.all_text_local) {
+        const sessions = await get('/director/sessions');
+        const session = sessions.find((item: any) => item.selected);
+        storageKey = null;
+        if (!session) { messages = [{role:'assistant',text:'Choose or create a Claude Code/Codex session in Local sessions before planning your video.'}]; return; }
+        localSessionLabel = `${session.engine} · ${session.title}`;
+        const turns = await get(`/director/sessions/${session.id}/turns`);
+        const restored: Msg[] = [];
+        for (const turn of turns.filter((item: any) => item.kind === 'chat')) {
+          const request = turn.request_json;
+          if (request?.user_message) restored.push({role:'user',text:request.user_message});
+          const reply = turn.result_json?.reply;
+          if (reply) restored.push({role:'assistant',text:reply});
+          else if (turn.error) restored.push({role:'assistant',text:turn.error});
+        }
+        messages = restored.length ? restored : [greeting()];
+        return;
+      }
+    } catch { /* legacy UI history is labelled separately from native sessions */ }
+
     let projectId = 'default';
     try {
       projectId = (await get('/projects/active'))?.id ?? 'default';
@@ -583,9 +606,6 @@
     try {
       const r = await post('/chat', { message, history });
       const intent = { ...r.intent };
-      // Meta-messages ("我想做一个视频") get echoed back as intent.idea — don't
-      // seed the card's Idea field with them; the user should type a real idea.
-      if (intent.idea && intent.idea.trim() === message) intent.idea = null;
       messages.push({
         role: 'assistant',
         text: intent.reply,
@@ -654,7 +674,7 @@
     <div class="min-w-0">
       <div class="text-sm font-semibold leading-tight">Chat</div>
       <div class="truncate text-[11px] leading-tight text-muted-foreground">
-        Project command center
+        <a href="/director" class="underline" title="Choose native engine, saved session and reference context">{localSessionLabel}</a>
       </div>
     </div>
     <div class="ml-auto flex items-center gap-1">

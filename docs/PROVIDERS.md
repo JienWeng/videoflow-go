@@ -4,7 +4,7 @@ This guide describes the provider architecture on current source. The v0.3.2 bro
 
 | Task | Fresh-install default | Other supported provider |
 | --- | --- | --- |
-| Story, chat, shot/prompt agents | OpenRouter | Named OpenRouter connections |
+| Story, chat, shot/prompt writing | Selected local Claude Code/Codex session | Select a different native session |
 | Vision/QA | OpenRouter | Named OpenRouter connections |
 | Transcription | OpenRouter | — |
 | Characters, props, storyboards | fal.ai | OpenRouter |
@@ -12,9 +12,9 @@ This guide describes the provider architecture on current source. The v0.3.2 bro
 
 ## Set up and switch
 
-Open Settings → Providers. Save an OpenRouter key for text/vision/transcription and a fal.ai key for images/video. Save a BytePlus ModelArk key if you want direct Seedance video. Keys are sent only by the local backend. Environment alternatives are `OPENROUTER_API_KEY`, `FAL_KEY`, and `BYTEPLUS_API_KEY`; their presence is not proof of model access.
+Open Settings → Providers. Set up a local text engine in [Local sessions](LOCAL-DIRECTOR.md). Save an OpenRouter key for vision/transcription and a fal.ai key for images/video. Save a BytePlus ModelArk key if you want direct Seedance video. Keys are sent only by the local backend. Environment alternatives are `OPENROUTER_API_KEY`, `FAL_KEY`, and `BYTEPLUS_API_KEY`; their presence is not proof of model access.
 
-In Settings → Engines, select Image provider and Video provider independently, then choose a model from that provider's supported catalog. Switching providers restores its previous model choices. Image/reference model IDs cannot be sent to a video-only provider, and a model ID from one provider is rejected under another. Text-agent selectors include only OpenRouter connections.
+In Settings → Engines, select Image provider and Video provider independently, then choose a model from that provider's supported catalog. Switching providers restores its previous model choices. Image/reference model IDs cannot be sent to a video-only provider, and a model ID from one provider is rejected under another. All text planning/writing uses the selected native session; legacy cloud-text route records do not override it.
 
 Media **Check configuration** verifies the locally saved configuration, not the account's permissions or a paid generation. Media **Verify** checks the supported model profile without submitting generation. OpenRouter's text-model verification is a small billable completion. A later small, budgeted generation is needed to verify real account/model access and output quality.
 

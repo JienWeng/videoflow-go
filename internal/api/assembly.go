@@ -11,7 +11,7 @@ import (
 )
 
 func (s *Server) handleAssembleOutputs(w http.ResponseWriter, r *http.Request) {
-	project, err := s.database.GetActiveProjectID()
+	project, err := s.activeProjectID(r.Context())
 	if err != nil {
 		http.Error(w, "no active project", 400)
 		return
@@ -52,6 +52,10 @@ func (s *Server) handleAssembleOutputs(w http.ResponseWriter, r *http.Request) {
 		}
 		path := output.VideoPath
 		if body.Captioned {
+			if err := s.ValidateScriptCaptionSource(output); err != nil {
+				http.Error(w, err.Error(), 409)
+				return
+			}
 			if output.CaptionedPath == nil {
 				http.Error(w, "each selected clip needs a captioned export first", 400)
 				return

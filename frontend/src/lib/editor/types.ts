@@ -1,6 +1,6 @@
 /** Shared types for the video editor page (mirrors GET /outputs/{id}/editor). */
 
-export type Segment = { start: number; end: number; text: string };
+export type Segment = { id?: string; character_id?: string; language?: string; start: number; end: number; text: string };
 
 export type Shot = {
   index: number;

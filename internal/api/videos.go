@@ -21,7 +21,7 @@ func (s *Server) handleVideoPreflight(w http.ResponseWriter, r *http.Request) {
 		style = "2d-picture-book"
 	}
 
-	project, _ := s.database.GetActiveProjectID()
+	project, _ := s.activeProjectID(r.Context())
 	brief := generationBrief{Idea: "Preflight", AspectRatio: aspectRatio, Style: style}
 	brief.SceneCount, _ = strconv.Atoi(r.URL.Query().Get("scene_count"))
 	brief.TargetDuration, _ = strconv.Atoi(r.URL.Query().Get("target_duration"))
@@ -65,7 +65,7 @@ func (s *Server) handleVideoPreflight(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
-	project, err := s.database.GetActiveProjectID()
+	project, err := s.activeProjectID(r.Context())
 	if err != nil {
 		http.Error(w, "no active project", 400)
 		return
@@ -107,6 +107,9 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 		defer func() { <-s.operationSlots }()
 		ctx, cancel := context.WithTimeout(s.ctx, 10*time.Minute)
 		defer cancel()
+		if binding := r.Context().Value(directorBindingKey{}); binding != nil {
+			ctx = context.WithValue(ctx, directorBindingKey{}, binding)
+		}
 		ctx = context.WithValue(brief.context(ctx), mediaRoutesKey{}, routes)
 		stages := []string{}
 		fail := func(err error) { message := err.Error(); s.database.UpdateOp(op.ID, "failed", nil, &message) }
@@ -170,6 +173,17 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		record("visuals")
+		if s.cfg.UseLocalText {
+			sceneIDs := []string{}
+			for _, scene := range scenes {
+				sceneIDs = append(sceneIDs, scene.ID)
+			}
+			raw, _ := json.Marshal(map[string]any{"project_id": project, "script_id": script.ID, "scene_ids": sceneIDs, "stages": stages, "status": "awaiting_reference_review", "brief": brief, "media_routes": routes})
+			if err = s.database.UpdateOp(op.ID, "succeeded", raw, nil); err != nil {
+				fail(err)
+			}
+			return
+		}
 		jobs := []models.RenderJob{}
 		sceneIDs := []string{}
 		for i := range scenes {

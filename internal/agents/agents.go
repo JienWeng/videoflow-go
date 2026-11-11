@@ -10,10 +10,11 @@ import (
 )
 
 type AgentEngine struct {
-	openrouter *providers.OpenRouterClient
-	model      string
-	language   func() string
-	resolve    func(context.Context, string) (*providers.OpenRouterClient, string, error)
+	structuredRunner func(context.Context, string, string, string, any) error
+	openrouter       *providers.OpenRouterClient
+	model            string
+	language         func() string
+	resolve          func(context.Context, string) (*providers.OpenRouterClient, string, error)
 }
 
 func NewAgentEngine(openrouter *providers.OpenRouterClient, defaultModel string) *AgentEngine {
@@ -37,7 +38,20 @@ func (a *AgentEngine) SetLanguageResolver(resolve func() string) { a.language = 
 func (a *AgentEngine) SetResolver(resolve func(context.Context, string) (*providers.OpenRouterClient, string, error)) {
 	a.resolve = resolve
 }
+func (a *AgentEngine) SetStructuredRunner(runner func(context.Context, string, string, string, any) error) {
+	a.structuredRunner = runner
+}
 func (a *AgentEngine) structured(ctx context.Context, name, system, prompt string, target any) error {
+	if a.structuredRunner != nil {
+		language := "English"
+		if a.language != nil {
+			language = a.language()
+		}
+		if value, _ := ctx.Value(dialogueLanguageKey{}).(string); value != "" {
+			language = value
+		}
+		return a.structuredRunner(ctx, name, system+"\nWrite all character dialogue in "+language+".", prompt, target)
+	}
 	client, model := a.openrouter, a.model
 	if a.resolve != nil {
 		var err error
@@ -113,11 +127,11 @@ func (a *AgentEngine) DevelopIdea(ctx context.Context, idea string) (*DevelopIde
 		return nil, err
 	}
 	if len(response.Options) != 2 || response.RecommendedIndex < 0 || response.RecommendedIndex >= 2 {
-		return nil, fmt.Errorf("OpenRouter returned invalid idea options")
+		return nil, fmt.Errorf("Text engine returned invalid idea options")
 	}
 	for _, o := range response.Options {
 		if strings.TrimSpace(o.Title) == "" || strings.TrimSpace(o.Premise) == "" {
-			return nil, fmt.Errorf("OpenRouter returned incomplete idea options")
+			return nil, fmt.Errorf("Text engine returned incomplete idea options")
 		}
 	}
 	return &response, nil
@@ -125,11 +139,19 @@ func (a *AgentEngine) DevelopIdea(ctx context.Context, idea string) (*DevelopIde
 
 // --- Generate Script & Scenes ---
 
+type SpokenLine struct {
+	ID          string `json:"id"`
+	CharacterID string `json:"character_id"`
+	Language    string `json:"language"`
+	Text        string `json:"text"`
+	Visible     bool   `json:"visible"`
+}
 type SceneDraft struct {
-	Title       string `json:"title"`
-	Summary     string `json:"summary"`
-	Duration    int    `json:"duration"`
-	AspectRatio string `json:"aspect_ratio"`
+	SpokenLines []SpokenLine `json:"spoken_lines"`
+	Title       string       `json:"title"`
+	Summary     string       `json:"summary"`
+	Duration    int          `json:"duration"`
+	AspectRatio string       `json:"aspect_ratio"`
 }
 
 type ScriptDraft struct {
@@ -151,7 +173,7 @@ func (a *AgentEngine) GenerateScript(ctx context.Context, idea string, sceneCoun
 
 	system := fmt.Sprintf(`You are a scriptwriter. Break down the story idea into exactly %d structured scenes.
 Total target duration is %d seconds. Aspect ratio is %s.
-Return a title, overall summary, and the list of scenes.`, sceneCount, targetDuration, aspectRatio)
+Return a title, overall summary, and the list of scenes. For spoken dialogue/narration include spoken_lines with stable unique utterance id, character_id from the selected cast (empty for narrator), language, exact text, and visible indicating on-screen dialogue. Silent scenes have no spoken lines. Never use visual descriptions as spoken text.`, sceneCount, targetDuration, aspectRatio)
 
 	prompt := fmt.Sprintf("Idea: %s", idea)
 
@@ -162,12 +184,12 @@ Return a title, overall summary, and the list of scenes.`, sceneCount, targetDur
 	}
 
 	if len(res.Scenes) != sceneCount {
-		return nil, fmt.Errorf("OpenRouter returned an unexpected scene count")
+		return nil, fmt.Errorf("Text engine returned an unexpected scene count")
 	}
 	for i := range res.Scenes {
 		scene := &res.Scenes[i]
 		if scene.Title == "" || scene.Summary == "" || scene.Duration <= 0 {
-			return nil, fmt.Errorf("OpenRouter returned an incomplete scene")
+			return nil, fmt.Errorf("Text engine returned an incomplete scene")
 		}
 		if scene.AspectRatio == "" {
 			scene.AspectRatio = aspectRatio
@@ -201,11 +223,11 @@ func (a *AgentEngine) GenerateShots(ctx context.Context, title, summary string, 
 	}
 
 	if len(res.Shots) == 0 {
-		return nil, fmt.Errorf("OpenRouter returned no shots")
+		return nil, fmt.Errorf("Text engine returned no shots")
 	}
 	for _, shot := range res.Shots {
 		if shot.Order <= 0 || shot.Duration <= 0 || shot.Prompt == "" {
-			return nil, fmt.Errorf("OpenRouter returned an incomplete shot")
+			return nil, fmt.Errorf("Text engine returned an incomplete shot")
 		}
 	}
 	return res.Shots, nil

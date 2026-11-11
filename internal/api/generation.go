@@ -45,6 +45,9 @@ func (s *Server) operation(w http.ResponseWriter, r *http.Request, op *models.Op
 		defer s.tasks.Done()
 		defer func() { <-s.operationSlots }()
 		ctx, cancel := context.WithTimeout(s.ctx, 10*time.Minute)
+		if binding := r.Context().Value(directorBindingKey{}); binding != nil {
+			ctx = context.WithValue(ctx, directorBindingKey{}, binding)
+		}
 		defer cancel()
 		result, err := work(ctx)
 		status := "succeeded"
@@ -65,6 +68,9 @@ func (s *Server) operation(w http.ResponseWriter, r *http.Request, op *models.Op
 }
 
 func (s *Server) agentJSON(ctx context.Context, agent, system, prompt string, images []string, target any) error {
+	if len(images) == 0 && s.cfg.UseLocalText {
+		return s.localTextJSON(ctx, agent, system, prompt, target)
+	}
 	client, model, err := s.routes().Agent(ctx, agent)
 	if err != nil {
 		return err
@@ -95,6 +101,16 @@ func (s *Server) stylePrompt(projectID *string) string {
 }
 
 func (s *Server) generateAssets(ctx context.Context, projectID *string, characterID *string, sceneID, name, kind, prompt, aspect string, references []string) ([]models.Asset, error) {
+	ctx, frozenIdentity, err := s.directorGenerationContext(ctx, projectID, sceneID, characterID)
+	if err != nil {
+		return nil, err
+	}
+	references, identityNotes, err := s.directorImageInputs(ctx, projectID, references)
+	if err != nil {
+		return nil, err
+	}
+	descriptionPrompt := prompt
+	prompt += identityNotes
 	modelKind := "image"
 	if characterID != nil || kind == "prop" {
 		modelKind = "reference"
@@ -129,7 +145,7 @@ func (s *Server) generateAssets(ctx context.Context, projectID *string, characte
 	if strings.TrimSpace(prepared.Prompt) == "" {
 		return nil, fmt.Errorf("Text provider returned no image prompt")
 	}
-	payload["prompt"] = prepared.Prompt
+	payload["prompt"] = prepared.Prompt + identityNotes
 	images, err := client.GenerateImages(ctx, payload)
 	if err != nil {
 		return nil, err
@@ -163,7 +179,20 @@ func (s *Server) generateAssets(ctx context.Context, projectID *string, characte
 			return nil, err
 		}
 		metadata, _ := json.Marshal(map[string]any{"scene_id": sceneID, "provider": provider, "model": payload["model"], "media_type": image.MediaType})
-		asset := models.Asset{ID: id, ProjectID: projectID, CharacterID: characterID, Type: kind, Name: name, Description: prompt, FilePath: filepath.ToSlash(filepath.Join("storage", "assets", id+ext)), TagsJSON: json.RawMessage(`[]`), MetadataJSON: metadata}
+		if frozenIdentity != nil {
+			var fields map[string]any
+			_ = json.Unmarshal(metadata, &fields)
+			fields["director_context_revision"] = frozenIdentity.Revision
+			fields["director_context"] = frozenIdentity
+			metadata, _ = json.Marshal(fields)
+		}
+		if s.cfg.UseLocalText {
+			var reviewMeta map[string]any
+			_ = json.Unmarshal(metadata, &reviewMeta)
+			reviewMeta["consistency_review"] = "pending"
+			metadata, _ = json.Marshal(reviewMeta)
+		}
+		asset := models.Asset{ID: id, ProjectID: projectID, CharacterID: characterID, Type: kind, Name: name, Description: descriptionPrompt, FilePath: filepath.ToSlash(filepath.Join("storage", "assets", id+ext)), TagsJSON: json.RawMessage(`[]`), MetadataJSON: metadata}
 		if err = s.database.CreateAsset(&asset); err != nil {
 			return nil, err
 		}

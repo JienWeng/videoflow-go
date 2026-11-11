@@ -11,6 +11,7 @@ import (
 	"videoflow-go/internal/agents"
 	"videoflow-go/internal/config"
 	"videoflow-go/internal/db"
+	"videoflow-go/internal/director"
 	"videoflow-go/internal/events"
 	"videoflow-go/internal/jobs"
 	"videoflow-go/internal/media"
@@ -22,21 +23,23 @@ import (
 )
 
 type Server struct {
-	cfg            *config.Config
-	database       *db.DB
-	broker         *events.Broker
-	workers        *jobs.WorkerPool
-	agents         *agents.AgentEngine
-	openrouter     *providers.OpenRouterClient
-	media          *media.MediaEngine
-	router         *chi.Mux
-	ctx            context.Context
-	cancel         context.CancelFunc
-	tasks          sync.WaitGroup
-	activeRequests sync.Map
-	recoveryMu     sync.Mutex
-	paidRequests   chan struct{}
-	operationSlots chan struct{}
+	directorRunner  *director.Runner
+	directorCancels sync.Map
+	cfg             *config.Config
+	database        *db.DB
+	broker          *events.Broker
+	workers         *jobs.WorkerPool
+	agents          *agents.AgentEngine
+	openrouter      *providers.OpenRouterClient
+	media           *media.MediaEngine
+	router          *chi.Mux
+	ctx             context.Context
+	cancel          context.CancelFunc
+	tasks           sync.WaitGroup
+	activeRequests  sync.Map
+	recoveryMu      sync.Mutex
+	paidRequests    chan struct{}
+	operationSlots  chan struct{}
 }
 
 func NewServer(
@@ -50,7 +53,8 @@ func NewServer(
 ) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{
-		ctx: ctx, cancel: cancel, paidRequests: make(chan struct{}, 3), operationSlots: make(chan struct{}, 3),
+		directorRunner: &director.Runner{Codex: cfg.CodexExecutable, Claude: cfg.ClaudeExecutable},
+		ctx:            ctx, cancel: cancel, paidRequests: make(chan struct{}, 3), operationSlots: make(chan struct{}, 3),
 		cfg:        cfg,
 		database:   database,
 		broker:     broker,
@@ -62,6 +66,17 @@ func NewServer(
 	}
 	s.agents.SetResolver(s.routes().Agent)
 	s.agents.SetLanguageResolver(func() string { return s.routes().Setting("dialogue_language", "English") })
+	s.agents.SetStructuredRunner(func(ctx context.Context, name, system, prompt string, target any) error {
+		if !s.cfg.UseLocalText {
+			client, model, err := s.routes().Agent(ctx, name)
+			if err != nil {
+				return err
+			}
+			return client.StructuredJSON(ctx, model, system, prompt, target)
+		}
+		return s.localTextJSON(ctx, name, system, prompt, target)
+	})
+	s.workers.SetSubmissionValidator(s.validateFrozenVideo)
 	s.setupRoutes()
 	return s
 }
@@ -78,6 +93,7 @@ func (s *Server) Database() *db.DB {
 
 func (s *Server) setupRoutes() {
 	s.router.Use(middleware.RequestID)
+	s.router.Use(s.bindDirectorRequest)
 	s.router.Use(s.requestReplay)
 	s.router.Use(middleware.RealIP)
 	s.router.Use(middleware.Logger)
@@ -92,6 +108,10 @@ func (s *Server) setupRoutes() {
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
+
+	s.registerDirectorRoutes()
+	s.registerCompositionRoutes()
+	s.RegisterVoiceCaptionRoutes()
 
 	// Static storage server
 	_ = os.MkdirAll(s.cfg.StorageRoot, 0755)

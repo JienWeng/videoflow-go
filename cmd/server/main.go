@@ -55,7 +55,7 @@ func main() {
 	}
 
 	openrouter := providers.NewOpenRouterClient(cfg.OpenRouterAPIKey)
-	// Text agents use OpenRouter; media routes are resolved independently.
+	// The API routes writing through the selected local session; OpenRouter handles vision/transcription.
 	agentsEngine := agents.NewAgentEngine(openrouter, "openai/gpt-4o-mini")
 
 	workers := jobs.NewWorkerPool(cfg, database, broker, mediaEngine)
@@ -63,10 +63,10 @@ func main() {
 	if err := database.InterruptOperations(); err != nil {
 		log.Fatalf("Cannot recover interrupted operations: %v", err)
 	}
-	workers.ReconcilePending()
 	defer workers.Stop()
 
 	server := api.NewServer(cfg, database, broker, workers, agentsEngine, openrouter, mediaEngine)
+	workers.ReconcilePending()
 	defer server.Close()
 	addr := net.JoinHostPort(*bindHost, fmt.Sprint(cfg.Port))
 	listener, err := net.Listen("tcp", addr)

@@ -54,6 +54,7 @@
     from_db: boolean;
   };
   type AppSettings = {
+ all_text_local?: boolean;
     default_aspect_ratio: string;
     default_video_provider: string;
     default_image_provider: string;
@@ -810,7 +811,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
               <Sparkles class="size-4" />Generation engines
             </CardTitle>
             <CardDescription>
-              fal.ai defaults for new image/video routes. OpenRouter handles text/vision/transcription; BytePlus supports direct Seedance video. Existing saved routes are preserved.
+              fal.ai defaults for new image/video routes. Local Claude Code/Codex sessions handle text; OpenRouter handles vision/transcription; BytePlus supports direct Seedance video. Existing saved routes are preserved.
             </CardDescription>
           </CardHeader>
           <CardContent class="space-y-4">
@@ -1103,6 +1104,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
           <CardContent>
            <div class="space-y-5">
             <!-- Bulk controls -->
+ {#if !app?.all_text_local}
             <div class="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 p-3">
               <span class="text-xs font-medium">Set all text agents to</span>
               <select
@@ -1131,7 +1133,8 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
               </Button>
             </div>
 
-            {#snippet agentRow(a: Agent)}
+            {/if}
+ {#snippet agentRow(a: Agent)}
               <div
                 class="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-3"
                 data-agent={a.agent}
@@ -1219,9 +1222,9 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                 Text agents
               </div>
               <div class="space-y-2">
-                {#each textAgents as a (a.agent)}
+                {#if app?.all_text_local}<p class="text-sm">All planning and writing use the selected local Claude Code/Codex session. <a class="underline" href="/director">Manage engine, sessions and selected references</a></p>{:else}{#each textAgents as a (a.agent)}
                   {@render agentRow(a)}
-                {/each}
+                {/each}{/if}
               </div>
             </div>
 

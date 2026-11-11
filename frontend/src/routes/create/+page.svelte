@@ -25,6 +25,11 @@
   let preflightError = $state('');
   let activeProject: any = $state(null);
   let lastResult: any = $state(null);
+ let reviewAssets:any[]=$state([]);let reviewLoading=$state(false);let renderingScene=$state('');
+ async function refreshReviewAssets(){reviewLoading=true;try{reviewAssets=await get('/assets')}catch(e){opError=String(e)}finally{reviewLoading=false}}
+ function sceneReferencesApproved(id:string){const refs=reviewAssets.filter(a=>a.metadata_json?.scene_id===id&&a.metadata_json?.consistency_review);return refs.length>0&&refs.every(a=>a.metadata_json.consistency_review==='approved')}
+ async function renderReviewedScene(id:string){renderingScene=id;try{await refreshReviewAssets();if(!sceneReferencesApproved(id))throw Error('Approve the generated references before rendering this scene.');await post(`/scenes/${id}/render`);await goto('/render')}catch(e){opError=String(e)}finally{renderingScene=''}}
+
   let poller: ReturnType<typeof setInterval> | null = null;
   let renderPoller: ReturnType<typeof setInterval> | null = null;
 
@@ -39,6 +44,7 @@
   }
 
   async function checkRenderJobs() {
+    if(lastResult?.status==='awaiting_reference_review'){busy=false;opStatus='awaiting_reference_review';stopRenderPolling();await refreshReviewAssets();return}
     const ids: string[] = lastResult?.render_job_ids ?? [];
     if (!ids.length) {
       busy = false;
@@ -196,7 +202,7 @@
       </div>
       <h1 class="text-2xl font-semibold tracking-tight">Create a video</h1>
       <p class="mt-2 max-w-xl text-muted-foreground">
-        Describe the story. VideoFlow builds scenes, dialogue, visuals, and render jobs. Provider calls may incur charges.
+        Describe the story. VideoFlow builds scenes, dialogue and visuals for your review. Provider calls may incur charges.
       </p>
     </div>
 
@@ -268,7 +274,7 @@
           <p class="mt-2 text-muted-foreground">Checking configured models and supported video settings…</p>
         {:else}
           <p class="mt-2">Effective project style: <strong>{preflight.effective_style}</strong></p>
-          <p class="mt-1 text-muted-foreground">This request creates a story, shots, storyboard images and separate scene clips. Images: {preflight.effective_routes.image_provider} / {preflight.effective_routes.image_model}. Video: {preflight.effective_routes.video_provider} / {preflight.effective_routes.video_model}. Supported clip durations: {(preflight.video_durations ?? []).join(', ')} seconds. Assemble approved clips in My videos after rendering.</p>
+          <p class="mt-1 text-muted-foreground">This request creates a story, shots and storyboard images. Review and approve the generated references before starting separate scene clips. Images: {preflight.effective_routes.image_provider} / {preflight.effective_routes.image_model}. Video: {preflight.effective_routes.video_provider} / {preflight.effective_routes.video_model}. Supported clip durations: {(preflight.video_durations ?? []).join(', ')} seconds. Assemble approved clips in My videos after rendering.</p>
           {#each preflight.warnings ?? [] as warning}
             <p class="mt-2 text-amber-700 dark:text-amber-300">Unverified route: {warning.reason}</p>
           {/each}
@@ -304,8 +310,12 @@
 
       {#if lastResult && opStatus !== 'running'}
         <div class="rounded-lg border border-border p-4 text-sm">
-          <p class="font-medium">{opStatus === 'failed' ? 'Existing work is preserved.' : opStatus === 'completed' ? 'Video complete.' : 'Render jobs submitted.'}</p>
+          {#if lastResult.status==='awaiting_reference_review'}
+ <p class="font-medium">Your keyframes are ready for review.</p><p class="mt-1 text-muted-foreground">Compare the generated images with your character and asset references, then approve each reference. Video generation starts only when you choose Render scene.</p><div class="mt-3 space-y-3">{#each lastResult.scene_ids??[] as sceneID,i}<div class="flex flex-wrap items-center gap-2"><span>Scene {i+1}</span><a class="underline" href={`/assets?scene_id=${encodeURIComponent(sceneID)}`}>Review references</a><Button type="button" size="sm" disabled={reviewLoading||!!renderingScene||!sceneReferencesApproved(sceneID)} onclick={()=>renderReviewedScene(sceneID)}>Render scene {i+1}</Button><span class="text-muted-foreground">{sceneReferencesApproved(sceneID)?'References approved':'Waiting for reference approval'}</span></div>{/each}<Button type="button" variant="outline" size="sm" disabled={reviewLoading} onclick={refreshReviewAssets}>Refresh approvals</Button></div>
+ {:else}
+ <p class="font-medium">{opStatus === 'failed' ? 'Existing work is preserved.' : opStatus === 'completed' ? 'Video complete.' : 'Render jobs submitted.'}</p>
           <p class="mt-1 text-muted-foreground">Open existing scenes to inspect completed work. Creating again starts a new pipeline and may repeat paid stages.</p>
+          {/if}
           <div class="mt-3 flex flex-wrap gap-2">
             <Button type="button" variant="secondary" onclick={() => goto('/scenes')}>Open existing scenes</Button>
             <Button type="button" variant="outline" onclick={() => goto('/render')}>Open render jobs</Button>

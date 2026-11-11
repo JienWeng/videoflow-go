@@ -12,7 +12,7 @@ import (
 )
 
 func (s *Server) handleListCharacters(w http.ResponseWriter, r *http.Request) {
-	projectID, err := s.database.GetActiveProjectID()
+	projectID, err := s.activeProjectID(r.Context())
 	if err != nil {
 		http.Error(w, "no active project", http.StatusInternalServerError)
 		return
@@ -39,7 +39,7 @@ func (s *Server) handleGetCharacter(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateCharacter(w http.ResponseWriter, r *http.Request) {
-	projectID, err := s.database.GetActiveProjectID()
+	projectID, err := s.activeProjectID(r.Context())
 	if err != nil {
 		http.Error(w, "no active project", http.StatusInternalServerError)
 		return
