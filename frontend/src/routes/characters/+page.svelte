@@ -147,11 +147,11 @@
       description: editForm.description,
       appearance: editForm.appearance,
       personality: editForm.personality,
-      visual_rules: editForm.visual_rules
+      visual_rules_json: editForm.visual_rules
         .split('\n')
         .map((s) => s.trim())
         .filter(Boolean),
-      voice_rules: editForm.voice_rules
+      voice_rules_json: editForm.voice_rules
         .split('\n')
         .map((s) => s.trim())
         .filter(Boolean),

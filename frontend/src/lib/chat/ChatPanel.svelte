@@ -92,6 +92,7 @@
     onmutate,
     onhide,
     onresize,
+    embedded = false,
     expanded = false,
     selected = null
   }: {
@@ -99,13 +100,14 @@
     onmutate?: () => void | Promise<void>;
     onhide?: () => void;
     onresize?: () => void;
+    embedded?: boolean;
     expanded?: boolean;
     selected?: SelectedNode | null;
   } = $props();
 
   const greeting = (): Msg => ({
     role: 'assistant',
-    text: 'Tell me what to do — e.g. 「写一个关于小猫的故事」, "generate a storyboard", or "add captions".'
+    text: 'Describe your story, or select an item on the canvas and tell me what to change. Review each proposal before running it.'
   });
 
   let messages = $state<Msg[]>([greeting()]);
@@ -123,7 +125,7 @@
       if (messages[i].role !== 'user') continue;
       return /[一-鿿]/.test(messages[i].text);
     }
-    return true;
+    return false;
   });
 
   // ---------------------------------------------------------------------
@@ -140,52 +142,33 @@
     return { role, text, intent, options, warnings, chips, op, thumbs };
   }
 
+  let conversationGeneration=0;
+  let historyLoading=$state(true);
   async function initPersistence() {
+    const generation=++conversationGeneration;
+    historyLoading=true;busy=false;storageKey=null;
     try {
-      const status = await get('/director/status');
-      if (status.all_text_local) {
-        const sessions = await get('/director/sessions');
-        const session = sessions.find((item: any) => item.selected);
-        storageKey = null;
-        if (!session) { messages = [{role:'assistant',text:'Choose or create a Claude Code/Codex session in Local sessions before planning your video.'}]; return; }
-        localSessionLabel = `${session.engine} · ${session.title}`;
-        const turns = await get(`/director/sessions/${session.id}/turns`);
-        const restored: Msg[] = [];
-        for (const turn of turns.filter((item: any) => item.kind === 'chat')) {
-          const request = turn.request_json;
-          if (request?.user_message) restored.push({role:'user',text:request.user_message});
-          const reply = turn.result_json?.reply;
-          if (reply) restored.push({role:'assistant',text:reply});
-          else if (turn.error) restored.push({role:'assistant',text:turn.error});
+      const status=await get('/director/status');if(generation!==conversationGeneration)return;
+      if(status.all_text_local){
+        const sessions=await get('/director/sessions');if(generation!==conversationGeneration)return;
+        const session=sessions.find((item:any)=>item.selected);
+        if(!session){messages=[{role:'assistant',text:'Choose an AI session above to start planning your story.'}];return;}
+        localSessionLabel=`${session.engine} · ${session.title}`;
+        const turns=await get(`/director/sessions/${session.id}/turns`);if(generation!==conversationGeneration)return;
+        const restored:Msg[]=[];
+        for(const turn of turns.filter((item:any)=>item.kind==='chat')){
+          if(turn.request_json?.user_message)restored.push({role:'user',text:turn.request_json.user_message});
+          if(turn.result_json?.reply)restored.push({role:'assistant',text:turn.result_json.reply});
+          else if(turn.error)restored.push({role:'assistant',text:turn.error});
         }
-        messages = restored.length ? restored : [greeting()];
-        return;
+        messages=restored.length?restored:[greeting()];return;
       }
-    } catch { /* legacy UI history is labelled separately from native sessions */ }
-
-    let projectId = 'default';
-    try {
-      projectId = (await get('/projects/active'))?.id ?? 'default';
-    } catch {
-      /* backend down — still keep history under the fallback key */
-    }
-    const key = `videoflow.chat.${projectId}`;
-    try {
-      const raw = sessionStorage.getItem(key);
-      const saved = raw ? JSON.parse(raw) : null;
-      if (Array.isArray(saved) && saved.length) {
-        // Ops that were still running when we left can't be resumed here —
-        // the Activity tray tracks them; mark the row stale instead.
-        messages = saved.slice(-30).map((m: Msg) =>
-          m.op?.status === 'running'
-            ? { ...m, op: { ...m.op, status: 'failed' as const, detail: 'interrupted — check the Activity tray' } }
-            : m
-        );
-      }
-    } catch {
-      /* corrupt entry — start fresh */
-    }
-    storageKey = key; // persistence only starts after restore
+      const project=await get('/projects/active');if(generation!==conversationGeneration)return;
+      const key=`videoflow.chat.${project?.id??'default'}`;
+      try{const saved=JSON.parse(sessionStorage.getItem(key)??'null');messages=Array.isArray(saved)&&saved.length?saved.slice(-30).map((m:Msg)=>m.op?.status==='running'?{...m,op:{...m.op,status:'failed',detail:'interrupted — check Activity'}}:m):[greeting()];}catch{messages=[greeting()];}
+      storageKey=key;
+    }catch(e){if(generation===conversationGeneration)messages=[{role:'assistant',text:`Could not load conversation. Check the backend and refresh your session. ${String(e)}`}];}
+    finally{if(generation===conversationGeneration)historyLoading=false;}
   }
 
   $effect(() => {
@@ -211,7 +194,7 @@
    * user still types the actual idea.
    */
   export function startNewStory() {
-    input = userPrefersZh ? '写一个新故事：' : 'Write a new story: ';
+    input = userPrefersZh ? 'Write a new story: ' : 'Write a new story: ';
     inputWrapper?.querySelector('textarea')?.focus();
   }
 
@@ -255,9 +238,9 @@
     /** The next pipeline action for a single scene, if it isn't done yet. */
     function sceneNextChip(sceneId: string, label: string): Chip | null {
       if (!scenesWithShots.has(sceneId))
-        return { label: `给《${label}》生成分镜头`, send: `给《${label}》生成分镜头` };
+        return { label: `Plan shots for ${label}`, send: `Plan shots for ${label}` };
       if (!scenesWithStoryboard.has(sceneId))
-        return { label: `给《${label}》生成分镜图`, send: `给《${label}》生成分镜图` };
+        return { label: `Prepare keyframes for ${label}`, send: `Prepare keyframes for ${label}` };
       if (!renderedScenes.has(sceneId))
         return { label: `Render《${label}》`, send: `render scene 《${label}》` };
       return null;
@@ -297,9 +280,9 @@
       if (sel.kind === 'scene') {
         const next = sceneNextChip(sel.id, sel.label);
         if (next) out.push(next);
-        out.push({ label: `改进场景《${sel.label}》…`, fill: `改进场景《${sel.label}》：` });
+        out.push({ label: `Refine this scene…`, fill: `Refine this scene: ` });
       } else if (sel.kind === 'shot') {
-        out.push({ label: '改进这个镜头…', fill: '改进这个镜头：' });
+        out.push({ label: 'Refine this shot…', fill: 'Refine this shot: ' });
         const sceneId = byId.get(sel.id)?.data?.scene_id;
         const scene = sceneId ? byId.get(sceneId) : null;
         if (scene) {
@@ -307,14 +290,14 @@
           if (next) out.push(next);
         }
       } else if (sel.kind === 'output') {
-        out.push({ label: '给这个视频加字幕', send: '给这个视频加字幕' });
+        out.push({ label: 'Add captions to this video', send: 'Add captions to this video' });
         const qa = byId.get(sel.id)?.data?.qa_issues;
         if (Array.isArray(qa) && qa.length)
           out.push({ label: 'Fix the latest render', send: 'fix the latest render' });
       } else if (sel.kind === 'character') {
         out.push({
-          label: `给《${sel.label}》写一个新故事`,
-          send: `给《${sel.label}》写一个新故事`
+          label: `Write a story featuring ${sel.label}`,
+          send: `Write a story featuring ${sel.label}`
         });
       }
       if (out.length) return out.slice(0, 3);
@@ -324,18 +307,18 @@
     const out: Chip[] = [];
     if (!characters.length) out.push({ label: 'Add characters first', href: '/characters' });
     if (!scenes.length) {
-      out.push({ label: '写一个小故事', send: '帮我写一个一个场景的小故事' });
+      out.push({ label: 'Write a story', send: 'Help me write a short story with one scene' });
     } else {
       if (!style?.style_prompt) {
         out.push({ label: 'Ingest style from story', send: 'ingest style from story' });
       }
       const noShots = scenes.find((s) => !scenesWithShots.has(s.id));
-      if (noShots) out.push({ label: `给《${noShots.label}》生成分镜头`, send: `给《${noShots.label}》生成分镜头` });
+      if (noShots) out.push({ label: `Plan shots for ${noShots.label}`, send: `Plan shots for ${noShots.label}` });
       const noStoryboard = scenes.find(
         (s) => scenesWithShots.has(s.id) && !scenesWithStoryboard.has(s.id)
       );
       if (noStoryboard)
-        out.push({ label: `给《${noStoryboard.label}》生成分镜图`, send: `给《${noStoryboard.label}》生成分镜图` });
+        out.push({ label: `Prepare keyframes for ${noStoryboard.label}`, send: `Prepare keyframes for ${noStoryboard.label}` });
       const notRendered = scenes.find(
         (s) => scenesWithStoryboard.has(s.id) && !renderedScenes.has(s.id)
       );
@@ -349,11 +332,11 @@
       // Latest output is missing burned-in captions.
       const latest = outputs[outputs.length - 1];
       if (latest && !latest.data?.captioned_path) {
-        out.push({ label: '给最新视频加字幕', send: '给最新视频加字幕' });
+        out.push({ label: 'Add captions to the latest video', send: 'Add captions to the latest video' });
       }
       if (scenes.every((s) => renderedScenes.has(s.id))) {
-        out.push({ label: '下一个视频：写个新故事', fill: '写一个新故事：' });
-        out.push({ label: '建议一些道具', send: '建议一些道具' });
+        out.push({ label: 'Start another story', fill: 'Write a new story: ' });
+        out.push({ label: 'Suggest props', send: 'Suggest props' });
       }
     }
     return out.slice(0, 4);
@@ -379,13 +362,17 @@
       input = c.fill;
       inputWrapper?.querySelector('textarea')?.focus();
     } else if (c.send) {
-      send(c.send);
+      input = c.send;
+      focusComposer();
     }
   }
 
   onMount(() => {
     refreshChips();
     initPersistence();
+    const update=()=>initPersistence();
+    window.addEventListener('videoflow-session-changed',update);
+    return ()=>window.removeEventListener('videoflow-session-changed',update);
   });
 
   /** Context passed up by ActionCard after a successful run. */
@@ -395,14 +382,14 @@
     outputId?: string;
   }
 
-  const captionsChip: Chip = { label: '给最新视频加字幕', send: '给最新视频加字幕' };
+  const captionsChip: Chip = { label: 'Add captions to the latest video', send: 'Add captions to the latest video' };
 
   // ---------------------------------------------------------------------
   // Background-op progress: when an ActionCard launches a background op we
   // append a Task progress row that flips to done/failed on the op result.
   //
   // Navigation policy: we NEVER goto() on the user's behalf mid-conversation
-  // (a chip click like 给这个视频加字幕 must not yank them off the page).
+  // (a chip click like Add captions to this video must not yank them off the page).
   // Instead completed ops get prominent href chips — "Open in editor",
   // "View in Assets", "Track in Render" — which navigate normally when the
   // user clicks them (the one sanctioned navigation).
@@ -481,7 +468,7 @@
       return {
         role: 'assistant',
         text: `《${title}》 is fully rendered.`,
-        chips: [captionsChip, { label: '写一个新故事…', fill: '写一个新故事：' }]
+        chips: [captionsChip, { label: '写一个新故事…', fill: 'Write a new story: ' }]
       };
     }
 
@@ -597,14 +584,16 @@
 
   async function send(text?: string) {
     const message = (text ?? input).trim();
-    if (!message || busy) return;
+    if (!message || busy || historyLoading) return;
+    const generation=conversationGeneration;
     input = '';
     // Conversation memory: the last 6 turns (text only — no cards/state).
     const history = messages.slice(-6).map((m) => ({ role: m.role, text: m.text }));
     messages.push({ role: 'user', text: message });
     busy = true;
     try {
-      const r = await post('/chat', { message, history });
+      const r = await post('/chat', { message, history, selected: selected ? {id:selected.id,kind:selected.kind} : null });
+      if(generation!==conversationGeneration)return;
       const intent = { ...r.intent };
       messages.push({
         role: 'assistant',
@@ -615,14 +604,15 @@
         state: r.state
       });
     } catch (e) {
+      if(generation!==conversationGeneration)return;
       messages.push({
         role: 'assistant',
         text: `Something went wrong: ${(e as Error).message}`
       });
     } finally {
-      busy = false;
+      if(generation===conversationGeneration){busy = false;
       refreshChips();
-      focusComposer(); // the card may have stolen focus — composer stays primary
+      focusComposer();}
     }
   }
 </script>
@@ -668,8 +658,11 @@
   {/each}
 {/snippet}
 
+
+
 <div class="h-full flex flex-col">
   <div class="flex items-center gap-2 border-b border-border px-4 py-2">
+    {#if !embedded}
     <MessageSquare class="size-4 shrink-0 text-muted-foreground" />
     <div class="min-w-0">
       <div class="text-sm font-semibold leading-tight">Chat</div>
@@ -677,7 +670,9 @@
         <a href="/director" class="underline" title="Choose native engine, saved session and reference context">{localSessionLabel}</a>
       </div>
     </div>
+    {/if}
     <div class="ml-auto flex items-center gap-1">
+      {#if !embedded}
       <Button
         variant="ghost"
         size="icon"
@@ -698,6 +693,7 @@
       >
         <PanelRightClose class="size-3.5" />
       </Button>
+      {/if}
       <Tooltip.Provider delayDuration={300}>
         <Tooltip.Root>
           <Tooltip.Trigger>
@@ -805,7 +801,7 @@
                 {onfocus}
                 onran={handleRan}
                 onop={handleOpStart}
-                onsuggest={(text) => send(text)}
+                onsuggest={(text) => { input=text; focusComposer(); }}
               />
             {/if}
           </MessageContent>
@@ -847,13 +843,13 @@
         <PromptInputTextarea
           bind:value={input}
           class="min-h-12 border-0 bg-transparent shadow-none focus-visible:ring-0"
-          placeholder="Ask me to generate, render, caption…"
+          placeholder={selected ? `What should change in ${selected.label}?` : "Describe your story or select an item…"}
         />
       </PromptInputBody>
       <PromptInputToolbar>
         <PromptInputTools />
         <PromptInputSubmit
-          disabled={busy || !input.trim()}
+          disabled={busy || historyLoading || !input.trim()}
           status={busy ? 'submitted' : 'ready'}
         />
       </PromptInputToolbar>

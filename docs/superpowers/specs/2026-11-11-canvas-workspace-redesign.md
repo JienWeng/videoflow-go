@@ -1,6 +1,6 @@
 # Canvas-first VideoFlow redesign
 
-Status: proposed for user review. No product implementation authorized by approval of this document yet.
+Status: approved by user, including Settings consolidation; implementation in progress.
 Repository: JienWeng/videoflow-go.
 
 ## Intent and decisions
@@ -56,3 +56,7 @@ Use existing Svelte 5, SvelteKit, Tailwind, xyflow and component library. No new
 Test real browser desktop and narrow mobile, including populated and empty project, missing backend and CLI, session create/select, every node kind, selection switch with dirty form accept/cancel, field save/error/conflict, draft preservation, contextual chat proposal target, stale proposal refusal, drawer/focus/keyboard, long names and overflow. Reuse and update existing component/native/canvas tests. Test rendering boundaries with mocks; no paid inference merely for UI QA. Run type checking and production build, relevant backend tests if contracts change. Record tested versus untested states; do not claim every possible combination.
 
 Deliver working preview on the existing Tailscale link, screenshots, QA evidence and concise remaining limitations. Existing published download packages are not automatically rebuilt.
+
+## Approval and Settings extension
+
+User approved the design and explicitly requested reducing/scoping Settings tabs and standardizing scattered controls. Group everyday defaults and appearance under General, connections/models under AI connections, and agent routing/recovery under Advanced. Preserve all existing settings and legacy hash deep links. Implementation may settle layout details without another approval round.

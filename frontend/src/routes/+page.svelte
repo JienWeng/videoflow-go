@@ -1,210 +1,54 @@
 <script lang="ts">
-  import { PaneGroup, Pane, Handle } from '$lib/components/ui/resizable';
-  import EntityCanvas from '$lib/canvas/EntityCanvas.svelte';
-  import ChatPanel from '$lib/chat/ChatPanel.svelte';
-  import Onboarding from '$lib/shell/Onboarding.svelte';
-  import { palette } from '$lib/shell/palette.svelte';
-  import * as Card from '$lib/components/ui/card';
-  import { Button } from '$lib/components/ui/button';
-  import { get } from '$lib/api';
-  import { subscribeJobs } from '$lib/sse';
   import { onMount } from 'svelte';
   import type { Node } from '@xyflow/svelte';
-  import Users from '@lucide/svelte/icons/users';
-  import Palette from '@lucide/svelte/icons/palette';
-  import ListVideo from '@lucide/svelte/icons/list-video';
-  import MessageSquare from '@lucide/svelte/icons/message-square';
-  import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
-  import CloudOff from '@lucide/svelte/icons/cloud-off';
-  import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-
-  let canvas: EntityCanvas | undefined = $state();
-  let chat: ChatPanel | undefined = $state();
-  let selected = $state<Node | null>(null);
-  // -1 = unknown (don't flash the empty state before the first /graph response).
-  let nodeCount = $state(-1);
-  // Set when the /graph probe fails so we can show a Retry card instead of a
-  // blank/stale canvas (mirrors the scenes-page error pattern).
-  let graphError = $state('');
-  let mobile = $state(false);
-  let chatPane: any = $state();
-  let chatHidden = $state(false);
-  let chatExpanded = $state(false);
-
-  function hideChat() {
-    chatHidden = true;
-    chatPane?.collapse();
-  }
-
-  function restoreChat() {
-    chatHidden = false;
-    chatPane?.expand();
-  }
-
-  function toggleChatSize() {
-    chatExpanded = !chatExpanded;
-    chatPane?.resize(chatExpanded ? (mobile ? 65 : 55) : (mobile ? 42 : 28));
-  }
-
-  async function checkEmpty() {
-    try {
-      const g = await get('/graph');
-      nodeCount = g.nodes?.length ?? 0;
-      graphError = '';
-    } catch (e) {
-      graphError = (e as Error).message;
-    }
-  }
-
-  function refreshAll() {
-    canvas?.refresh();
-    checkEmpty();
-  }
-
-  /** Retry after a fetch failure: clear the error, re-probe and reload canvas. */
-  function retryGraph() {
-    graphError = '';
-    canvas?.refresh();
-    checkEmpty();
-  }
-
-  // The Cmd/Ctrl+K listener and the <CommandPalette> mount live in the root
-  // layout so the palette works on every route. The Studio just registers its
-  // canvas/chat-specific palette callbacks here and clears them on unmount.
-  onMount(() => {
-    checkEmpty();
-    const media = window.matchMedia('(max-width: 767px)');
-    const update = () => (mobile = media.matches);
-    update();
-    media.addEventListener('change', update);
-    palette.setHandlers({
-      onfocus: (id) => canvas?.focusNode(id),
-      onnewstory: () => chat?.startNewStory()
-    });
-    const stopJobs = subscribeJobs(refreshAll, refreshAll);
-    return () => {
-      palette.clearHandlers();
-      stopJobs();
-      media.removeEventListener('change', update);
-    };
-  });
+  import EntityCanvas from '$lib/canvas/EntityCanvas.svelte';
+  import NodePanel from '$lib/canvas/NodePanel.svelte';
+  import ChatPanel from '$lib/chat/ChatPanel.svelte';
+  import SessionSelector from '$lib/shell/SessionSelector.svelte';
+  import Onboarding from '$lib/shell/Onboarding.svelte';
+  import { Button } from '$lib/components/ui/button';
+  import { palette } from '$lib/shell/palette.svelte';
+  import { get } from '$lib/api';
+  import { subscribeJobs } from '$lib/sse';
+  let canvas:EntityCanvas|undefined=$state(), details:NodePanel|undefined=$state(), chat:ChatPanel|undefined=$state();
+  let selected=$state<Node|null>(null);
+  let tab=$state('chat'), mobileView=$state('canvas'), nodeCount=$state(-1), error=$state('');
+  const context=$derived(selected?{id:selected.id,kind:String(selected.data?.kind??''),label:String(selected.data?.label??'')}:null);
+  async function probe(){try{const g=await get('/graph');nodeCount=g.nodes?.length??0;error=''}catch(e){error=String(e)}}
+  async function refresh(){await canvas?.refresh();await probe();}
+  function beforeSelect(next:Node|null){return next?.id===selected?.id || details?.canLeave()!==false;}
+  function select(next:Node|null){const changed=next?.id!==selected?.id;selected=next;if(next&&changed){tab='details';mobileView='workbench';}}
+  function clear(){canvas?.clearSelection();}
+  onMount(()=>{probe();palette.setHandlers({onfocus:id=>canvas?.focusNode(id),onnewstory:()=>{tab='chat';mobileView='workbench';chat?.startNewStory()}});const stop=subscribeJobs(refresh,refresh);return()=>{stop();palette.clearHandlers()}});
 </script>
-
-<PaneGroup direction={mobile ? 'vertical' : 'horizontal'} class="h-full">
-  <Pane defaultSize={mobile ? 58 : 72} minSize={mobile ? 35 : 40}>
-    <div class="relative h-full">
-      <EntityCanvas bind:this={canvas} onselect={(n) => (selected = n)} />
-
-      {#if graphError}
-        <!-- Fetch failed: a centered, actionable card instead of a dead canvas. -->
-        <div class="pointer-events-none absolute inset-0 z-10 grid place-items-center">
-          <Card.Root class="pointer-events-auto max-w-sm shadow-lg">
-            <Card.Header>
-              <Card.Title class="flex items-center gap-2">
-                <CloudOff class="size-4 text-muted-foreground" />
-                Could not load the canvas
-              </Card.Title>
-              <Card.Description>
-                The backend did not respond. Check that it is running, then retry.
-              </Card.Description>
-            </Card.Header>
-            <Card.Content>
-              <p class="mb-3 break-words text-xs text-muted-foreground">{graphError}</p>
-              <Button size="sm" variant="secondary" onclick={retryGraph}>
-                <RefreshCw class="size-3.5 mr-1.5" />Retry
-              </Button>
-            </Card.Content>
-          </Card.Root>
-        </div>
-      {:else if nodeCount === 0}
-        <div class="pointer-events-none absolute inset-0 z-10 grid place-items-center">
-          <Card.Root class="pointer-events-auto max-w-sm shadow-lg">
-            <Card.Header>
-            <Card.Title>Make your first video</Card.Title>
-            <Card.Description>
-              Describe the story and VideoFlow handles the pipeline.
-              </Card.Description>
-            </Card.Header>
-            <Card.Content>
-              <ol class="space-y-3 text-sm">
-                <li class="flex items-start gap-2.5">
-                  <Users class="size-4 mt-0.5 shrink-0 text-muted-foreground" />
-                  <span>
-                    <a href="/create" class="font-medium underline underline-offset-2 inline-flex items-center gap-0.5">
-                      Create a video<ArrowUpRight class="size-3" />
-                    </a>
-                    <span class="block text-muted-foreground">Start with a story idea and choose a style.</span>
-                  </span>
-                </li>
-                <li class="flex items-start gap-2.5">
-                  <Palette class="size-4 mt-0.5 shrink-0 text-muted-foreground" />
-                  <span>
-                    <a href="/settings" class="font-medium underline underline-offset-2 inline-flex items-center gap-0.5">
-                      Configure AI providers<ArrowUpRight class="size-3" />
-                    </a>
-                    <span class="block text-muted-foreground">Check credentials and model routes before generation.</span>
-                  </span>
-                </li>
-                <li class="flex items-start gap-2.5">
-                  <ListVideo class="size-4 mt-0.5 shrink-0 text-muted-foreground" />
-                  <span>
-                    <a href="/scenes" class="font-medium underline underline-offset-2 inline-flex items-center gap-0.5">
-                      Open advanced workspace<ArrowUpRight class="size-3" />
-                    </a>
-                    <span class="block text-muted-foreground">Edit scenes, characters, assets, and renders manually.</span>
-                  </span>
-                </li>
-                <li class="flex items-start gap-2.5">
-                  <MessageSquare class="size-4 mt-0.5 shrink-0 text-muted-foreground" />
-                  <span>
-                    <span class="font-medium">Write a script</span>
-                    <span class="block text-muted-foreground">
-                      Tell the chat on the right what your story is about.
-                    </span>
-                  </span>
-                </li>
-              </ol>
-            </Card.Content>
-          </Card.Root>
-        </div>
-      {/if}
-    </div>
-  </Pane>
-  {#if !chatHidden}<Handle withHandle />{/if}
-  <Pane
-    bind:this={chatPane}
-    collapsible
-    collapsedSize={0}
-    defaultSize={mobile ? 42 : 28}
-    minSize={mobile ? 30 : 20}
-    onCollapse={() => (chatHidden = true)}
-    onExpand={() => (chatHidden = false)}>
-    <div class="h-full border-l border-border">
-      <ChatPanel
-        bind:this={chat}
-        expanded={chatExpanded}
-        onhide={hideChat}
-        onresize={toggleChatSize}
-        onfocus={(id) => canvas?.focusNode(id)}
-        onmutate={refreshAll}
-        selected={selected
-          ? {
-              id: selected.id,
-              kind: String(selected.data?.kind ?? ''),
-              label: String(selected.data?.label ?? '')
-            }
-          : null}
-      />
-    </div>
-  </Pane>
-</PaneGroup>
-
-{#if chatHidden}
-  <div class="fixed bottom-4 right-4 z-40">
-    <Button variant="secondary" class="shadow-lg" onclick={restoreChat}>
-      <MessageSquare class="mr-1.5 size-4" />Show chat
-    </Button>
+<div class="flex h-full min-h-0 flex-col">
+  <header class="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
+    <div><h1 class="text-base font-semibold">Story studio</h1><p class="text-xs text-muted-foreground">Select an item. Shape the story. Review before generating.</p></div>
+    <div class="flex gap-2"><Button variant="outline" size="sm" href="/create">New story</Button><Button variant="outline" size="sm" href="/render">View videos</Button></div>
+  </header>
+  <div class="flex shrink-0 border-b border-border md:hidden" aria-label="Studio view">
+    <button class="min-h-11 flex-1 text-sm {mobileView==='canvas'?'bg-accent font-semibold':''}" aria-pressed={mobileView==='canvas'} onclick={()=>mobileView='canvas'}>Canvas</button>
+    <button class="min-h-11 flex-1 text-sm {mobileView==='workbench'?'bg-accent font-semibold':''}" aria-pressed={mobileView==='workbench'} onclick={()=>mobileView='workbench'}>Workbench{context?' · '+context.kind:''}</button>
   </div>
-{/if}
-
-<Onboarding onpalette={() => (palette.open = true)} />
+  <div class="flex min-h-0 flex-1">
+    <section aria-label="Story canvas" class="relative min-w-0 flex-1 {mobileView==='canvas'?'block':'hidden'} md:block">
+      <EntityCanvas bind:this={canvas} externalPanel beforeselect={beforeSelect} onselect={select} />
+      {#if error}<div role="alert" class="absolute inset-x-4 top-20 rounded-xl border border-destructive bg-background p-4 text-sm"><p>Could not load your story.</p><p class="mt-1 text-xs text-muted-foreground">{error}</p><Button variant="outline" class="mt-3" onclick={refresh}>Retry</Button></div>
+      {:else if nodeCount===0}<div class="pointer-events-none absolute inset-0 flex items-center justify-center p-5"><div class="pointer-events-auto w-full max-w-sm rounded-2xl border border-border bg-background p-6"><h2 class="text-xl font-semibold tracking-tight">Your story starts here</h2><p class="mt-2 text-sm leading-relaxed text-muted-foreground">Start an AI session, then describe your idea in Chat. Characters, scenes and shots will appear on this canvas.</p><Button class="mt-5 w-full" onclick={()=>{tab='chat';mobileView='workbench'}}>Open chat</Button><a href="/create" class="mt-3 block text-center text-xs text-muted-foreground underline underline-offset-4">Prefer a guided start?</a></div></div>{/if}
+    </section>
+    <aside aria-label="Contextual workbench" class="min-h-0 w-full shrink-0 flex-col border-l border-border bg-background md:w-[380px] lg:w-[420px] {mobileView==='workbench'?'flex':'hidden md:flex'}">
+      <div class="space-y-3 border-b border-border p-4"><div class="flex items-start justify-between gap-2"><div class="min-w-0"><p class="text-xs text-muted-foreground">{context?context.kind.replace('_',' '):'Project scope'}</p><h2 class="truncate text-sm font-semibold" title={context?.label}>{context?.label??'Story assistant'}</h2></div>{#if context}<Button size="sm" variant="ghost" onclick={clear}>Clear selection</Button>{/if}</div><SessionSelector />
+        <nav aria-label="Workflow next steps" class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground"><a class="underline underline-offset-4" href="/characters">Characters</a><a class="underline underline-offset-4" href={context?.kind==='scene'?`/assets?scene_id=${context.id}`:'/assets'}>Review references</a><a class="underline underline-offset-4" href="/render">Render progress</a><a class="underline underline-offset-4" href="/voices">Voices & captions</a></nav>
+      </div>
+      <div role="tablist" aria-label="Workbench" class="flex shrink-0 border-b border-border px-4">
+        {#each ['details','chat'] as value}<button role="tab" id={'wb-'+value} aria-selected={tab===value} aria-controls={'panel-'+value} tabindex={tab===value?0:-1} class="min-h-11 flex-1 border-b-2 text-sm {tab===value?'border-primary font-semibold':'border-transparent text-muted-foreground'}" onclick={()=>tab=value} onkeydown={e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();tab=e.key==='Home'?'details':e.key==='End'?'chat':value==='chat'?'details':'chat';document.getElementById('wb-'+tab)?.focus();}}}>{value==='details'?'Details':'Chat'}</button>{/each}
+      </div>
+      <div id="panel-details" role="tabpanel" aria-labelledby="wb-details" class="min-h-0 flex-1 {tab==='details'?'':'hidden'}"><NodePanel bind:this={details} embedded node={selected} onclose={clear} onsaved={refresh} />{#if !selected}<div class="p-6"><h3 class="font-medium">Select something to edit</h3><p class="mt-2 text-sm text-muted-foreground">Click a scene, shot, character or asset. Its current details and editing options appear here.</p><Button variant="outline" class="mt-4 md:hidden" onclick={()=>mobileView='canvas'}>Back to canvas</Button></div>{/if}</div>
+      <div id="panel-chat" role="tabpanel" aria-labelledby="wb-chat" class="flex min-h-0 flex-1 flex-col {tab==='chat'?'':'hidden'}">
+        {#if selected}<details class="shrink-0 border-b border-border px-4 py-2 text-xs"><summary class="cursor-pointer text-muted-foreground">Context: {context?.label}</summary><p class="mt-2 max-h-32 overflow-auto whitespace-pre-wrap">{String(selected.data?.prompt??selected.data?.summary??selected.data?.description??'Current record and related references are resolved by the server.')}</p></details>{/if}
+        <div class="min-h-0 flex-1"><ChatPanel embedded bind:this={chat} selected={context} onfocus={id=>canvas?.focusNode(id)} onmutate={refresh} /></div>
+      </div>
+    </aside>
+  </div>
+</div>
+<Onboarding onpalette={()=>palette.open=true} />

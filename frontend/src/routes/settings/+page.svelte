@@ -1,5 +1,7 @@
 <script lang="ts">
  import GenerationRecovery from '$lib/GenerationRecovery.svelte';
+  import { replaceState } from '$app/navigation';
+  import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { get, put, post } from '$lib/api';
   import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '$lib/components/ui/card';
@@ -7,7 +9,6 @@
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { Separator } from '$lib/components/ui/separator';
-  import { Tabs, TabsList, TabsTrigger, TabsContent } from '$lib/components/ui/tabs';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { toast } from 'svelte-sonner';
   import {
@@ -149,7 +150,9 @@ media_model_preferences:Record<string,Record<string,string>>;
   let theme = $state<'light' | 'dark' | 'system'>('system');
 
   // Active settings tab (bound so clicking a trigger switches sections).
-  let tab = $state('providers');
+  let tab = $state('general');
+  function settingsHash(){const h=window.location.hash.slice(1);tab=['providers','engines','connections'].includes(h)?'connections':['agents','advanced'].includes(h)?'advanced':'general';}
+  function chooseSection(value:string){tab=value;replaceState('#'+value,page.state);}
 
   // ------------------------------------------------------------- labels
   const providerLabels: Record<string, string> = { fal:'fal.ai',byteplus:'BytePlus ModelArk',openrouter:'OpenRouter' };
@@ -252,8 +255,7 @@ media_model_preferences:Record<string,Record<string,string>>;
   }
 
   onMount(() => {
-    if (window.location.hash === '#engines') tab = 'engines';
-    else if (window.location.hash === '#providers') tab = 'providers';
+    settingsHash();
     // Hydrate the theme radio from the shared key (fallback to system).
     try {
       const stored = localStorage.getItem(THEME_KEY);
@@ -587,11 +589,11 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
   }
 </script>
 
-<div class="p-6 max-w-3xl">
+<div class="mx-auto max-w-6xl p-4 sm:p-8">
   <div class="mb-4">
-    <h1 class="text-lg font-semibold">Settings</h1>
+    <h1 class="text-2xl font-semibold tracking-tight">Settings</h1>
     <p class="text-sm text-muted-foreground">
-      Configure providers, generation engines, defaults and agent routing.
+      Manage your workspace preferences and AI connections in one place.
     </p>
   </div>
 
@@ -608,21 +610,21 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
       {/each}
     </div>
   {:else}
-    <Tabs bind:value={tab} class="w-full">
-      <TabsList class="mb-4">
-        <TabsTrigger value="providers">Providers</TabsTrigger>
-        <TabsTrigger value="engines">Engines</TabsTrigger>
-        <TabsTrigger value="defaults">Defaults</TabsTrigger>
-        <TabsTrigger value="agents">Agents</TabsTrigger>
-        <TabsTrigger value="appearance">Appearance</TabsTrigger>
-      </TabsList>
-
+    <div class="grid gap-6 md:grid-cols-[200px_minmax(0,1fr)]">
+      <nav aria-label="Settings sections" class="flex gap-2 md:block md:space-y-2">
+        {#each [{id:'general',label:'General',hint:'Video defaults & appearance'},{id:'connections',label:'AI connections',hint:'Credentials & media models'},{id:'advanced',label:'Advanced',hint:'Routing & recovery'}] as section}
+          <button type="button" aria-label={section.label} aria-current={tab===section.id?'page':undefined} onclick={()=>chooseSection(section.id)} class="min-h-11 flex-1 rounded-lg px-3 py-2 text-left md:w-full {tab===section.id?'bg-accent font-semibold':'hover:bg-accent text-muted-foreground'}"><span class="block text-sm">{section.label}</span><span class="hidden text-xs font-normal md:block">{section.hint}</span></button>
+        {/each}
+      </nav>
+      <div class="min-w-0 space-y-6" data-testid="settings-content">
+        <p class="text-xs text-muted-foreground">Preferences save when changed. Credentials use their own Save button; generation tests require an explicit action.</p>
       <!-- ============================================ PROVIDERS -->
-      <TabsContent value="providers" id="providers">
+      {#if tab === 'connections'}
+      <section id="providers" class="space-y-4">
         <Card>
           <CardHeader>
             <CardTitle class="flex items-center gap-2 text-base">
-              <Plug class="size-4" />Providers
+              <Plug class="size-4" />AI connections
             </CardTitle>
             <CardDescription>
               Configure fal.ai for images/video, OpenRouter for text/vision/transcription, and optional direct BytePlus Seedance video. Keys stay on the local backend. Keys are stored on
@@ -801,14 +803,16 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
             {/each}
           </CardContent>
         </Card>
-      </TabsContent>
+      </section>
+      {/if}
 
       <!-- ============================================ ENGINES -->
-      <TabsContent value="engines" id="engines">
+      {#if tab === 'connections'}
+      <section id="engines" class="space-y-4">
         <Card>
           <CardHeader>
             <CardTitle class="flex items-center gap-2 text-base">
-              <Sparkles class="size-4" />Generation engines
+              <Sparkles class="size-4" />Media models
             </CardTitle>
             <CardDescription>
               fal.ai defaults for new image/video routes. Local Claude Code/Codex sessions handle text; OpenRouter handles vision/transcription; BytePlus supports direct Seedance video. Existing saved routes are preserved.
@@ -916,10 +920,12 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
             {/if}
           </CardContent>
         </Card>
-      </TabsContent>
+      </section>
+      {/if}
 
       <!-- ============================================ DEFAULTS -->
-      <TabsContent value="defaults">
+      {#if tab === 'general'}
+      <section id="defaults" class="space-y-4">
         <Card>
           <CardHeader>
             <CardTitle class="text-base">Scene defaults</CardTitle>
@@ -1089,10 +1095,12 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
             {/if}
           </CardContent>
         </Card>
-      </TabsContent>
+      </section>
+      {/if}
 
       <!-- ============================================ AGENTS -->
-      <TabsContent value="agents">
+      {#if tab === 'advanced'}
+      <section id="agents" class="space-y-4">
         <Card>
           <CardHeader>
             <CardTitle class="text-base">Agent routing</CardTitle>
@@ -1241,10 +1249,12 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
            </div>
           </CardContent>
         </Card>
-      </TabsContent>
+      </section>
+      {/if}
 
       <!-- ============================================ APPEARANCE -->
-      <TabsContent value="appearance">
+      {#if tab === 'general'}
+      <section id="appearance" class="space-y-4">
         <Card>
           <CardHeader>
             <CardTitle class="flex items-center gap-2 text-base">
@@ -1272,9 +1282,12 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
             </div>
           </CardContent>
         </Card>
-      </TabsContent>
-    </Tabs>
+      </section>
+      {/if}
+      </div>
+    </div>
   {/if}
 </div>
 
-<GenerationRecovery/>
+{#if tab==='advanced'}<GenerationRecovery/>{/if}
+<svelte:window onhashchange={settingsHash} />

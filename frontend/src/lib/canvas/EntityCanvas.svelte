@@ -46,7 +46,7 @@
   import CanvasMenu from './CanvasMenu.svelte';
   import NodePanel from './NodePanel.svelte';
 
-  let { onselect }: { onselect: (node: Node | null) => void } = $props();
+  let { onselect, externalPanel = false, beforeselect }: { onselect: (node: Node | null) => void; externalPanel?: boolean; beforeselect?: (node: Node|null)=>boolean } = $props();
 
   let nodes = $state.raw<Node[]>([]);
   let edges = $state.raw<Edge[]>([]);
@@ -146,6 +146,7 @@
       // Re-apply the current highlight so a background refresh (SSE job update)
       // while a node panel is open doesn't flash the dimming/labels away.
       edges = styleEdges(e, selectedNodeId, hoveredEdge, selectedEdge);
+      if(panelNode){const fresh=nodes.find(n=>n.id===panelNode?.id)??null;panelNode=fresh;if(externalPanel)onselect(fresh);}
       loaded = true;
       // Coachmark: only the first time a non-empty graph appears, and only if
       // the user hasn't dismissed it before.
@@ -173,8 +174,7 @@
     nodes = nodes.map((n) => ({ ...n, selected: n.id === id }));
     const node = nodes.find((n) => n.id === id);
     if (node) {
-      panelNode = node;
-      onselect(node);
+      selectNode(node);
     }
     flow?.fitView({ nodes: [{ id }], duration: 400, maxZoom: 1.5 });
   }
@@ -219,7 +219,10 @@
     }
   }
 
+  export function clearSelection(){selectNode(null);}
+
   function selectNode(node: Node | null) {
+    if (beforeselect && !beforeselect(node)) return;
     panelNode = node;
     onselect(node);
   }
@@ -552,11 +555,11 @@
 
   <!-- Docked detail panel: absolutely positioned inside this pane (top-right),
     NOT a viewport-fixed full-height slab, so the chat + minimap stay reachable. -->
-  <NodePanel
+  {#if !externalPanel}<NodePanel
     node={panelNode}
     onclose={() => selectNode(null)}
     onsaved={refresh}
-  />
+  />{/if}
 </div>
 
 <svelte:window onpointerdown={addClickAway} onkeydown={onWindowKeydown} />

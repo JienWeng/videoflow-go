@@ -73,8 +73,8 @@ for(const mode of ['desktop','mobile']){
   await page.getByText('Renamed fixture',{exact:true}).waitFor({state:'hidden'});assert(projects.length===1,'Delete not submitted');
  });
  await check(`${mode} settings: each tab inventory`,async()=>{
-  await page.goto(base+'/settings',{waitUntil:'domcontentloaded'});await page.getByRole('tab').first().waitFor();
-  const tabs=page.getByRole('tab');for(let i=0;i<await tabs.count();i++){await tabs.nth(i).click();await inventory(page,'/settings',mode,await tabs.nth(i).innerText());}
+  await page.goto(base+'/settings',{waitUntil:'domcontentloaded'});await page.getByRole('button',{name:'General',exact:true}).waitFor();
+  for(const name of ['General','AI connections','Advanced']){await page.getByRole('button',{name,exact:true}).click();await inventory(page,'/settings',mode,name);}
  });
  await check(`${mode} scene generator: validation, numeric constraints, cancel`,async()=>{
   await page.goto(base+'/scenes',{waitUntil:'domcontentloaded'});await page.getByRole('button',{name:'New story',exact:true}).first().click();
@@ -87,7 +87,7 @@ for(const mode of ['desktop','mobile']){
   await page.goto(base+'/characters',{waitUntil:'domcontentloaded'});await page.getByRole('button',{name:'Create character',exact:true}).waitFor();assert(await page.getByRole('button',{name:'Create character',exact:true}).isDisabled(),'Empty character allowed');
  });
  await check(`${mode} theme: light, dark, system and persistence`,async()=>{
-  await page.goto(base+'/settings',{waitUntil:'domcontentloaded'});await page.getByRole('tab',{name:'Appearance',exact:true}).click();
+  await page.goto(base+'/settings',{waitUntil:'domcontentloaded'});await page.getByRole('button',{name:'General',exact:true}).click();
   for(const value of ['Light','Dark','System']){const radio=page.getByRole('radio',{name:value,exact:true});await radio.click();assert(await radio.getAttribute('aria-checked')==='true','Theme not selected');assert(await page.evaluate(()=>localStorage.getItem('videoflow.theme'))===value.toLowerCase(),'Theme not persisted');}
  });
  await check(`${mode} backend unavailable: all routes stay rendered`,async()=>{

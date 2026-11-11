@@ -14,7 +14,7 @@
    (Noto Sans CJK on Linux, PingFang on macOS, Microsoft YaHei on Windows). */
 
 :root {
-  font-family: ui-sans-serif, system-ui, 'Segoe UI', 'Noto Sans CJK SC',
+  font-family: "Inter Variable", ui-sans-serif, system-ui, 'Segoe UI', 'Noto Sans CJK SC',
     'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB',
     'Source Han Sans SC', sans-serif;
   /* shadcn-svelte tokens */
@@ -145,3 +145,8 @@
 		@apply font-sans;
   }
 }
+
+/* Shared operational surfaces: readable controls and predictable keyboard focus. */
+:where(button, a, input, select, textarea, summary):focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+::selection { background: var(--primary); color: var(--primary-foreground); }
+@media (max-width: 767px) { main :where(input:not([type="checkbox"]):not([type="radio"]), select) { min-height: 44px; } }

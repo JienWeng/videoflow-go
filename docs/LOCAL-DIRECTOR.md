@@ -39,3 +39,8 @@ OpenCut is **not integrated**. Its current repository is being rewritten and the
 ## Verification scope
 
 [Component/E2E coverage](audits/component-e2e-coverage.md) records tested routes, controls and gaps. Tests use fake native processes and mocked paid services with real local FFmpeg/Chrome media checks. They do not prove live account access, generated identity/voice quality, every possible browser/device state or an OpenCut round trip. No paid inference is needed to run those fixtures.
+
+
+### Canvas workspace
+
+Studio includes an AI session selector. Start a Codex/Claude session there or use More tools → AI sessions for history and recovery. Select a canvas node to edit Details or open Chat with that item's scope. Suggestions fill a draft; review and submit it yourself. Settings groups preferences under General, credentials/models under AI connections, and routing/recovery under Advanced.

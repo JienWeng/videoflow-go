@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,8 +10,9 @@ import (
 
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Message string              `json:"message"`
-		History []map[string]string `json:"history"`
+		Message  string              `json:"message"`
+		History  []map[string]string `json:"history"`
+		Selected *chatSelection      `json:"selected"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Message == "" {
 		http.Error(w, "message is required", http.StatusBadRequest)
@@ -18,6 +20,11 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	projectID, _ := s.activeProjectID(r.Context())
+	selectedContext, selectionErr := s.chatSelectionContext(projectID, body.Selected)
+	if selectionErr != nil {
+		http.Error(w, selectionErr.Error(), 409)
+		return
+	}
 	scenes, _ := s.database.ListScenes(projectID)
 	chars, _ := s.database.ListCharacters(projectID)
 	jobs, _ := s.database.ListRenderJobs(projectID)
@@ -49,7 +56,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	contextJSON, _ := json.Marshal(map[string]any{"scenes": sceneOptions, "characters": charOptions, "outputs": outputsList})
+	contextJSON, _ := json.Marshal(map[string]any{"scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext})
 	ctx := r.Context()
 	var plannedSnapshot *directorContext
 	if s.cfg.UseLocalText {
@@ -74,7 +81,18 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if body.Selected != nil {
+		current, e := s.chatSelectionContext(projectID, body.Selected)
+		if e != nil || !bytes.Equal(current, selectedContext) {
+			http.Error(w, "Selected item changed during planning; review it and try again", 409)
+			return
+		}
+	}
 	action := canonicalChatAction(res.Action)
+	if body.Selected != nil && !selectedChatActionAllowed(body.Selected.Kind, action) {
+		action = "unknown"
+		res.Reply = "That action does not match the selected item. Edit its fields in Details, or clear the selection to work on the project. No generation has been submitted."
+	}
 
 	intent := map[string]interface{}{
 		"action":      action,
@@ -102,6 +120,26 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if body.Selected != nil {
+		switch body.Selected.Kind {
+		case "character":
+			intent["character_id"] = body.Selected.ID
+		case "scene":
+			if action == "refine_scene" || action == "render_scene" || action == "storyboard" || action == "generate_shots" || action == "delete_scene" {
+				intent["scene_id"] = body.Selected.ID
+			}
+		case "shot":
+			if action == "refine_shot" || action == "render_shot" {
+				shot, _ := s.database.GetShot(body.Selected.ID)
+				intent["shot_id"] = shot.ID
+				intent["scene_id"] = shot.SceneID
+			}
+		case "output":
+			if action == "caption" || action == "retry_render" {
+				intent["output_id"] = body.Selected.ID
+			}
+		}
+	}
 	options := map[string]interface{}{
 		"scenes":         sceneOptions,
 		"characters":     charOptions,

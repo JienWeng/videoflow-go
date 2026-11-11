@@ -12,6 +12,7 @@
 </script>
 
 <script lang="ts">
+  import { beforeNavigate } from '$app/navigation';
   import { untrack } from 'svelte';
   import type { Node } from '@xyflow/svelte';
   import { Button } from '$lib/components/ui/button';
@@ -22,14 +23,14 @@
   import { Separator } from '$lib/components/ui/separator';
   import { toast } from 'svelte-sonner';
   import { Captions, Clapperboard, History, RefreshCw, Sparkles, Trash2, X } from '@lucide/svelte';
-  import { get, patch, post, del, mediaUrl, isImage } from '$lib/api';
+  import { get, put, patch, post, del, mediaUrl, isImage } from '$lib/api';
   import { runBackgroundOp } from '$lib/ops';
 
   let {
     node,
     onclose,
-    onsaved
-  }: { node: Node | null; onclose: () => void; onsaved: () => void } = $props();
+    onsaved, embedded = false
+  }: { node: Node | null; onclose: () => void; onsaved: () => void; embedded?: boolean } = $props();
 
   // The panel's own source of truth for which node it shows. It tracks the
   // `node` prop, EXCEPT when the form is dirty and the user cancels the
@@ -48,6 +49,10 @@
   let formDirty = $state(false);
   const markFormDirty = () => (formDirty = true);
   let saving = $state(false);
+  let loadingRecord=$state(false), recordError=$state('');
+  let recordToken=0;
+  let baseline='';
+  function remember(){untrack(()=>{baseline=JSON.stringify(form)});}
   let refineInstruction = $state('');
   let refining = $state(false);
   let confirmingDelete = $state(false);
@@ -65,6 +70,8 @@
   let captionModel = $state('');
   let captionLanguage = $state('zh');
 
+  export function canLeave(){if(saving||refining)return false;return !formDirty || confirm('Discard unsaved changes?');}
+  beforeNavigate(({cancel})=>{if(!canLeave())cancel();});
   // Sync the `node` prop into `shown`, guarding unsaved edits on node-switch.
   // Design note: reverting the parent's selection on cancel is impractical
   // (selection lives in +page.svelte and there is no "reselect" callback), so
@@ -73,8 +80,8 @@
   $effect(() => {
     const next = node;
     untrack(() => {
-      if ((next?.id ?? null) === (shown?.id ?? null)) return;
-      if (formDirty && shown && !confirm('Discard unsaved changes?')) return;
+      if ((next?.id ?? null) === (shown?.id ?? null) && (formDirty || saving || next===shown)) return;
+      if (!embedded && formDirty && shown && !canLeave()) return;
       shown = next;
     });
   });
@@ -82,6 +89,7 @@
   // Re-seed the form whenever the shown node changes.
   $effect(() => {
     const d = (shown?.data ?? {}) as Record<string, any>;
+    const token=++recordToken;recordError='';loadingRecord=false;baseline='';
     refineInstruction = '';
     confirmingDelete = false;
     showHistory = false;
@@ -102,9 +110,16 @@
         movement: d.movement ?? '',
         shot_order: d.shot_order ?? 0
       };
+    } else if(shown && String(d.kind)==='asset'){
+      form={};loadingRecord=true;const id=shown.id;
+      get(`/assets/${id}`).then(a=>{if(token!==recordToken)return;form={updated_at:a.updated_at,traits:Object.entries(a.metadata_json?.locked_traits??{}).map(([name,value])=>({name,value:String(value)})),review:a.metadata_json?.consistency_review};remember();}).catch(e=>{if(token===recordToken)recordError=String(e)}).finally(()=>{if(token===recordToken)loadingRecord=false});
+    } else if(shown && String(d.kind)==='character'){
+      form={};loadingRecord=true;const id=shown.id;
+      get(`/characters/${id}`).then(c=>{if(token!==recordToken)return;form={name:c.name,description:c.description??'',appearance:c.appearance??'',personality:c.personality??'',visual_rules:(c.visual_rules_json??[]).join('\n'),voice_rules:(c.voice_rules_json??[]).join('\n'),sample_dialogue:c.sample_dialogue??''};remember();}).catch(e=>{if(token===recordToken)recordError=String(e)}).finally(()=>{if(token===recordToken)loadingRecord=false});
     } else {
       form = {};
     }
+    untrack(()=>{if(!loadingRecord)remember();});
     if (shown && String(d.kind) === 'output') void loadCaptionConfig();
   });
 
@@ -180,11 +195,19 @@
     }
   }
 
+  function discard(){if(saving||refining)return;if(baseline)form=JSON.parse(baseline);formDirty=false;}
+
   async function save() {
     if (!shown) return;
     saving = true;
     try {
-      if (kind === 'scene') {
+      if(kind==='asset'){
+        const traits:Record<string,string>={};for(const row of form.traits){const name=row.name.trim(),value=row.value.trim();if(!name||!value)throw Error('Each identity trait needs a name and value');if(Object.hasOwn(traits,name))throw Error('Trait names must be unique');traits[name]=value;}
+        const a=await put(`/assets/${shown.id}/identity`,{expected_updated_at:form.updated_at,locked_traits:traits});form.updated_at=a.updated_at;
+      } else if(kind==='character'){
+        if(!form.name?.trim())throw Error('Character name is required');
+        await patch(`/characters/${shown.id}`,{...form,name:form.name.trim(),visual_rules_json:form.visual_rules.split('\n').map((v:string)=>v.trim()).filter(Boolean),voice_rules_json:form.voice_rules.split('\n').map((v:string)=>v.trim()).filter(Boolean)});
+      } else if (kind === 'scene') {
         await patch(`/scenes/${shown.id}`, {
           title: form.title,
           summary: form.summary,
@@ -200,7 +223,7 @@
           shot_order: Number(form.shot_order)
         });
       }
-      formDirty = false;
+      formDirty = false;remember();
       toast.success('Saved');
       onsaved();
     } catch (err: any) {
@@ -235,7 +258,7 @@
         toast.success(r.note || 'Refined');
       }
       refineInstruction = '';
-      formDirty = false; // form now mirrors the server-side refined entity
+      formDirty = false;remember(); // form now mirrors the server-side refined entity
       onsaved();
     } catch (err: any) {
       toast.error(err.message);
@@ -280,7 +303,7 @@
     reverting = revisionId;
     try {
       const entity = await post(`/revisions/${revisionId}/revert`);
-      seedForm(entity);
+      seedForm(entity);remember();
       revisions = await get(`/${kind}s/${shown.id}/revisions`);
       toast.success('Reverted');
       onsaved();
@@ -332,7 +355,7 @@
     canvas stays pannable behind/around it, the chat stays reachable, and
     clicking another node just switches the panel. -->
   <aside
-    class="bg-popover/95 text-popover-foreground absolute right-3 top-3 z-40 flex max-h-[calc(100%-12rem)] w-[340px] max-w-[calc(100%-1.5rem)] flex-col gap-4 rounded-lg border border-border text-sm shadow-xl backdrop-blur"
+    class={embedded ? "relative flex h-full min-h-0 flex-col gap-4 text-sm" : "bg-popover text-popover-foreground absolute right-3 top-3 z-40 flex max-h-[calc(100%-12rem)] w-[340px] max-w-[calc(100%-1.5rem)] flex-col gap-4 rounded-lg border border-border text-sm shadow-xl"}
     aria-label="{kind} details"
     data-testid="node-panel"
   >
@@ -350,7 +373,7 @@
       <span class="sr-only">Close</span>
     </Button>
 
-    <div class="flex flex-col gap-4 overflow-y-auto px-4 pb-4">
+    <div class="flex min-h-0 flex-col gap-4 overflow-y-auto px-4 pb-4">
       {#if kind === 'scene'}
         <div class="grid gap-1.5">
           <Label for="np-title">Title</Label>
@@ -377,7 +400,8 @@
           </Button>
         </div>
         <div class="flex items-center gap-2">
-          <Button class="flex-1" onclick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          <Button variant="outline" onclick={discard} disabled={saving||!formDirty}>Cancel</Button>
+          <Button class="flex-1" onclick={save} disabled={saving||!formDirty}>{saving ? 'Saving…' : 'Save'}</Button>
           {#if formDirty}
             <Badge variant="outline" class="text-muted-foreground">unsaved</Badge>
           {/if}
@@ -412,7 +436,8 @@
           </Button>
         </div>
         <div class="flex items-center gap-2">
-          <Button class="flex-1" onclick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          <Button variant="outline" onclick={discard} disabled={saving||!formDirty}>Cancel</Button>
+          <Button class="flex-1" onclick={save} disabled={saving||!formDirty}>{saving ? 'Saving…' : 'Save'}</Button>
           {#if formDirty}
             <Badge variant="outline" class="text-muted-foreground">unsaved</Badge>
           {/if}
@@ -484,6 +509,12 @@
             <span class="truncate">{data.file_path}</span>
           </div>
         </div>
+        {#if loadingRecord}<p role="status">Loading identity…</p>{:else if recordError}<p role="alert" class="text-destructive">{recordError}</p>{:else}
+          <div class="space-y-3"><h3 class="font-medium">Identity locks</h3><p class="text-xs text-muted-foreground">Keep defining details consistent, such as color: red or vehicle: car.</p>
+          {#each form.traits??[] as trait,i}<div class="grid grid-cols-[1fr_1fr_auto] gap-2"><Input aria-label={'Trait name '+(i+1)} bind:value={trait.name} oninput={markFormDirty} placeholder="Color" /><Input aria-label={'Trait value '+(i+1)} bind:value={trait.value} oninput={markFormDirty} placeholder="Red" /><Button variant="ghost" aria-label={'Remove trait '+(i+1)} onclick={()=>{form.traits.splice(i,1);markFormDirty()}}><X class="size-4" /></Button></div>{/each}
+          <Button variant="outline" disabled={(form.traits?.length??0)>=32} onclick={()=>{form.traits.push({name:'',value:''});markFormDirty()}}>Add identity trait</Button>
+          <div class="flex gap-2"><Button onclick={save} disabled={saving||!formDirty}>{saving?'Saving…':'Save identity'}</Button><Button variant="outline" onclick={discard} disabled={!formDirty||saving}>Cancel</Button></div></div>
+        {/if}
         <Button variant="secondary" href={`/assets?asset_id=${encodeURIComponent(shown?.id ?? '')}`}>Edit asset identity & review</Button>
         <Button variant="destructive" onclick={deleteAsset} disabled={deleting}>
           <Trash2 class="size-4 mr-1" />
@@ -501,9 +532,13 @@
           >
         </div>
       {:else if kind === 'character'}
-        <p class="text-sm">{data.label}</p>
-        <p class="text-xs text-muted-foreground">Edit appearance, personality, consistency rules and reference photos in Characters.</p>
-        <Button variant="secondary" href={`/characters?character_id=${encodeURIComponent(shown?.id ?? '')}`}>Edit character</Button>
+        {#if loadingRecord}<p role="status">Loading character…</p>{:else if recordError}<p role="alert" class="text-destructive">{recordError}</p>{:else}
+          {#each [{key:'name',label:'Name'},{key:'description',label:'Description'},{key:'appearance',label:'Appearance'},{key:'personality',label:'Personality'},{key:'visual_rules',label:'Visual rules (one per line)'},{key:'voice_rules',label:'Voice rules (one per line)'},{key:'sample_dialogue',label:'Sample dialogue'}] as field}
+            <div class="grid gap-1.5"><Label for={'np-character-'+field.key}>{field.label}</Label><Textarea id={'np-character-'+field.key} rows={field.key==='name'?1:3} bind:value={form[field.key]} oninput={markFormDirty} /></div>
+          {/each}
+          <div class="flex gap-2"><Button class="flex-1" onclick={save} disabled={saving||!formDirty}>{saving?'Saving…':'Save character'}</Button><Button variant="outline" disabled={saving||!formDirty} onclick={discard}>Cancel</Button></div>
+        {/if}
+        <Button variant="outline" href={`/characters?character_id=${encodeURIComponent(shown?.id??'')}`}>Manage reference photos</Button>
         <Button variant="outline" href="/voices">Edit saved voice</Button>
       {/if}
 

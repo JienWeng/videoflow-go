@@ -1,5 +1,9 @@
 <script lang="ts">
   import '../app.css';
+  import { afterNavigate } from '$app/navigation';
+  import { Button } from '$lib/components/ui/button';
+  import * as Dialog from '$lib/components/ui/dialog';
+  import { Menu, Search } from '@lucide/svelte';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
   import {
@@ -41,33 +45,23 @@
     get('/projects/active').then((p) => (activeProject = p)).catch(() => {});
   });
 
+  let navigationOpen = $state(false);
+  afterNavigate(() => { navigationOpen = false; });
   const navGroups = [
-    {
-      label: 'Create',
-      items: [{ href: '/create', label: 'Create video', mobileLabel: 'Create', icon: Clapperboard }]
-    },
-    {
-      label: 'Output',
-      items: [{ href: '/render', label: 'My videos', mobileLabel: 'Videos', icon: Film }]
-    },
-    {
-      label: 'Advanced',
-      items: [
-        { href: '/', label: 'Studio', mobileLabel: 'Studio', icon: Clapperboard },
-        { href: '/scenes', label: 'Scenes', mobileLabel: 'Scenes', icon: ListVideo },
-        { href: '/characters', label: 'Characters', mobileLabel: 'Characters', icon: Users },
-        { href: '/assets', label: 'Assets', mobileLabel: 'Assets', icon: Image },
-        { href: '/voices', label: 'Voices & captions', mobileLabel: 'Voices', icon: Users },
-        { href: '/compositions', label: 'Compositions', mobileLabel: 'Edit', icon: Film },
-        { href: '/director', label: 'Local sessions', mobileLabel: 'Sessions', icon: Clapperboard }
-      ]
-    },
-    {
-      label: 'System',
-      items: [{ href: '/settings', label: 'Settings', mobileLabel: 'Settings', icon: SlidersHorizontal }]
-    }
+    { label: 'Workspace', items: [
+      { href: '/', label: 'Studio', icon: Clapperboard },
+      { href: '/render', label: 'Videos', icon: Film }
+    ]},
+    { label: 'Library', items: [
+      { href: '/characters', label: 'Characters', icon: Users },
+      { href: '/assets', label: 'Assets', icon: Image },
+      { href: '/scenes', label: 'Scenes & shots', icon: ListVideo }
+    ]}
   ];
-
+  const tools = [
+    {href:'/create', label:'Guided creator'}, {href:'/voices',label:'Voices & captions'},
+    {href:'/compositions',label:'Compositions'}, {href:'/director',label:'AI sessions'}
+  ];
   // The editor is contextual (reached from a render output), so it highlights Render.
   function isActive(href: string, pathname: string): boolean {
     if (href === '/') return pathname === '/';
@@ -85,47 +79,37 @@
   }
 </script>
 
-<div class="flex h-screen min-w-0 flex-col bg-background text-foreground md:flex-row">
-  <nav aria-label="Primary" class="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 py-1.5 md:hidden">
-    <a class="shrink-0 rounded-md px-2 py-1.5 text-xs font-medium hover:bg-accent" href="/projects" title={activeProject?.name ?? 'Projects'}>{activeProject?.name ?? 'Projects'}</a>
-    {#each navGroups as group}
-      {#each group.items as item}
-        <a class="shrink-0 rounded-md px-2 py-1.5 text-xs hover:bg-accent" href={item.href}>{item.mobileLabel ?? item.label}</a>
-      {/each}
-    {/each}
-  </nav>
-  <aside class="hidden w-48 shrink-0 flex-col border-r border-border p-3 md:flex">
-    <div class="px-2 pt-3 pb-1 text-sm font-semibold tracking-wide">VideoFlow</div>
-    <!-- Current-project row: the entry point to /projects (switch, create, manage). -->
-    <a
-      href="/projects"
-      title={activeProject ? `Project: ${activeProject.name}` : 'Projects'}
-      class="mb-1 flex items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-accent
-             {page.url.pathname.startsWith('/projects') ? 'bg-accent font-medium' : 'text-muted-foreground'}"
-    >
-      <FolderOpen class="size-3.5 shrink-0" />
-      <span class="truncate">{activeProject?.name ?? 'Projects'}</span>
+<div class="flex h-dvh min-w-0 flex-col bg-background text-foreground md:flex-row">
+  {#snippet navigation()}
+    <a href="/projects" class="mb-5 flex min-h-11 items-center gap-2 rounded-lg border border-border px-3 text-sm hover:bg-accent" aria-current={page.url.pathname==='/projects'?'page':undefined}>
+      <FolderOpen class="size-4 shrink-0" /><span class="truncate">{activeProject?.name ?? 'Choose project'}</span>
     </a>
-
-    {#each navGroups as group}
-      <div class="px-2 pt-4 pb-1 text-[10px] tracking-wider text-muted-foreground/70 uppercase">
-        {group.label}
-      </div>
-      {#each group.items as item}
-        <a
-          href={item.href}
-          class="flex items-center gap-2 rounded-md pl-2 pr-2 py-1.5 text-sm hover:bg-accent
-                 {isActive(item.href, page.url.pathname) ? 'bg-accent font-medium' : 'text-muted-foreground'}"
-        >
-          <item.icon class="size-4" />
-          {item.label}
-        </a>
+    <nav aria-label="Primary" class="space-y-6">
+      {#each navGroups as group}
+        <div><p class="mb-2 px-3 text-xs font-medium text-muted-foreground">{group.label}</p>
+          {#each group.items as item}
+            <a href={item.href} aria-current={isActive(item.href,page.url.pathname)?'page':undefined} class="flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm {isActive(item.href,page.url.pathname)?'bg-accent font-semibold':'text-muted-foreground hover:bg-accent hover:text-foreground'}"><item.icon class="size-4" />{item.label}</a>
+          {/each}
+        </div>
       {/each}
-    {/each}
-
-    <div class="mt-auto">
-      <ActivityTray />
-    </div>
+      <details open={tools.some(t=>page.url.pathname.startsWith(t.href))} class="group">
+        <summary class="min-h-11 cursor-pointer rounded-lg px-3 py-3 text-sm text-muted-foreground hover:bg-accent">More tools</summary>
+        <div class="mt-1 border-l border-border pl-3 ml-3">{#each tools as tool}<a href={tool.href} aria-current={isActive(tool.href,page.url.pathname)?'page':undefined} class="flex min-h-11 items-center rounded-lg px-3 text-sm hover:bg-accent {isActive(tool.href,page.url.pathname)?'font-semibold':'text-muted-foreground'}">{tool.label}</a>{/each}</div>
+      </details>
+    </nav>
+    <a href="/settings" aria-current={isActive('/settings',page.url.pathname)?'page':undefined} class="mt-6 flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm hover:bg-accent {isActive('/settings',page.url.pathname)?'bg-accent font-semibold':'text-muted-foreground'}"><SlidersHorizontal class="size-4" />Settings</a>
+  {/snippet}
+  <header class="flex h-14 shrink-0 items-center justify-between border-b border-border px-3 md:hidden">
+    <a href="/" class="font-semibold">VideoFlow</a>
+    <Dialog.Root bind:open={navigationOpen}>
+      <Dialog.Trigger><span class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border" aria-label="Open navigation"><Menu class="size-5" /><span class="sr-only">Open navigation</span></span></Dialog.Trigger>
+      <Dialog.Content class="max-h-[90dvh] overflow-y-auto"><Dialog.Header><Dialog.Title>Navigation</Dialog.Title><Dialog.Description>Switch workspace or open your project tools.</Dialog.Description></Dialog.Header>{@render navigation()}</Dialog.Content>
+    </Dialog.Root>
+  </header>
+  <aside class="hidden w-56 shrink-0 flex-col border-r border-border bg-sidebar p-4 md:flex">
+    <a href="/" class="px-3 pt-2 pb-6 text-lg font-semibold tracking-tight">VideoFlow</a>
+    <div class="min-h-0 flex-1 overflow-y-auto">{@render navigation()}</div>
+    <div class="mt-3 border-t border-border pt-3"><Button variant="ghost" class="mb-2 w-full justify-start text-muted-foreground" onclick={()=>palette.toggle()}><Search class="size-4" />Search <kbd class="ml-auto text-xs">⌘ K</kbd></Button><ActivityTray /></div>
   </aside>
   <main class="min-h-0 min-w-0 flex-1 overflow-auto">
     {@render children?.()}
