@@ -94,10 +94,11 @@ jobs:
           for path in paths:
               if path.exists():
                   text = path.read_text().replace('http://azure.archive.ubuntu.com/ubuntu/', mirror).replace('http://azure.ports.ubuntu.com/ubuntu-ports/', mirror)
+                  text = text.replace('http://ports.ubuntu.com/', 'https://ports.ubuntu.com/').replace('http://archive.ubuntu.com/', 'https://archive.ubuntu.com/').replace('http://security.ubuntu.com/', 'https://security.ubuntu.com/')
                   path.write_text(text)
           PYAPT
           sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
-          sudo apt-get -o Acquire::Retries=2 install -y xvfb
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y xvfb
       - name: Package macOS ad-hoc preview
         if: runner.os == 'macOS'
         env:
@@ -120,7 +121,7 @@ jobs:
           esac
       - name: Install the Linux package with the default OS sandbox policy
         if: runner.os == 'Linux'
-        run: sudo apt-get install -y ./dist/electron/*.deb
+        run: sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y ./dist/electron/*.deb
       - name: Verify the packaged app window and engine cleanup
         env:
           NATIVE_TARGET: ${{ matrix.target }}
