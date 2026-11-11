@@ -8,7 +8,9 @@ Release packages: https://github.com/JienWeng/videoflow-go/releases
 
 ## Availability
 
-The repaired native browser-launcher preview is published at https://github.com/JienWeng/videoflow-go/releases/tag/v0.3.2-browser-preview.1. It includes ZIPs for darwin-arm64 (Apple Silicon), darwin-amd64 (Intel Mac), linux-amd64 and linux-arm64, plus llms.txt and SHA256SUMS.txt. All four packages passed native build/tests and extracted-app smoke checks. Older Electron DMG/DEB previews remain available but do not include the November browser fixes. The current release is a browser-launcher ZIP, not a new Electron installer.
+Latest Electron preview: https://github.com/JienWeng/videoflow-go/releases/tag/v0.4.0-electron-preview.1. It contains Mac DMG/ZIP (arm64 Apple Silicon and x64 Intel), Linux DEB/AppImage/tar.gz (x64 and arm64), and SHA256SUMS.txt. Mac downloads are ad-hoc previews, not Apple-notarized. See docs/ELECTRON-START-HERE.txt. Windows installers are not included.
+
+The older v0.3.2 browser-launcher ZIP remains available at https://github.com/JienWeng/videoflow-go/releases/tag/v0.3.2-browser-preview.1 but does not contain the new local director architecture or redesigned workspace.
 
 Current source uses your fal.ai key/credits for default image/video routes and a selected local Claude Code/Codex session for all text planning/writing and OpenRouter key/credits for vision and transcription, with optional direct BytePlus video. See docs/PROVIDERS.md. The older v0.3.2 download uses OpenRouter only. AI generation and transcription need internet and can incur charges. Local installation and ordinary navigation do not require a paid generation.
 
@@ -40,13 +42,13 @@ Update an existing clean checkout, then rebuild:
 
 Preserve any local edits and back up your data before updating. Do not reset or delete local work merely to make an update succeed. Updating GitHub source alone does not replace a running container or previously downloaded app.
 
-## Install a desktop package when one has been published
+## Install the Electron desktop preview
 
 Open the releases page above and read the release notes and checksums. Choose a package built from the intended tested revision:
 
 - Apple Silicon Mac: mac-arm64 DMG.
 - Intel Mac: mac-x64 DMG.
-- Ubuntu/Debian PC: linux-amd64 DEB.
+- Ubuntu/Debian PC: linux-x64/amd64 DEB.
 - Ubuntu/Debian ARM: linux-arm64 DEB.
 
 Mac: open the DMG, drag VideoFlow to Applications, then open it. Linux: install the DEB with your system software installer, then open VideoFlow. Signing/notarization status belongs in the actual release notes; do not claim an unpublished package is notarized. Windows native installers are not currently provided by the documented packaging workflow; use the Docker/browser route.

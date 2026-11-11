@@ -82,8 +82,22 @@ jobs:
       - name: Prepare Linux display
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb
+          # Hosted mirror lists can retain an unreachable Azure mirror. Use
+          # Ubuntu's official signed repositories for this ephemeral runner.
+          sudo python3 - <<'PYAPT'
+          import platform
+          from pathlib import Path
+          mirror = 'https://ports.ubuntu.com/ubuntu-ports/' if platform.machine() in ('aarch64', 'arm64') else 'https://archive.ubuntu.com/ubuntu/'
+          for path in Path('/etc/apt').glob('apt-mirrors*.txt'):
+              path.write_text(mirror + '\n')
+          paths = [Path('/etc/apt/sources.list'), *Path('/etc/apt/sources.list.d').glob('ubuntu.sources')]
+          for path in paths:
+              if path.exists():
+                  text = path.read_text().replace('http://azure.archive.ubuntu.com/ubuntu/', mirror).replace('http://azure.ports.ubuntu.com/ubuntu-ports/', mirror)
+                  path.write_text(text)
+          PYAPT
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+          sudo apt-get -o Acquire::Retries=2 install -y xvfb
       - name: Package macOS ad-hoc preview
         if: runner.os == 'macOS'
         env:
@@ -146,14 +160,15 @@ jobs:
           pattern: VideoFlow-Electron-*
           merge-multiple: true
           path: dist/electron
+      - run: cp llms.txt dist/electron/llms.txt
       - name: Checksum the native installers
         working-directory: dist/electron
-        run: sha256sum *.deb *.dmg *.zip *.AppImage *.tar.gz > SHA256SUMS.txt
+        run: sha256sum *.deb *.dmg *.zip *.AppImage *.tar.gz llms.txt > SHA256SUMS.txt
       - name: Publish verified desktop packages
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: v0.4.0-electron-preview.1
         run: |
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" dist/electron/*.deb dist/electron/*.dmg dist/electron/*.zip dist/electron/*.AppImage dist/electron/*.tar.gz dist/electron/SHA256SUMS.txt --target "$GITHUB_SHA" --title 'VideoFlow 0.4.0 — new Studio & Settings (Electron preview)' --notes-file docs/electron-0.4.0-release.md --prerelease
+            gh release create "$RELEASE_TAG" dist/electron/*.deb dist/electron/*.dmg dist/electron/*.zip dist/electron/*.AppImage dist/electron/*.tar.gz dist/electron/SHA256SUMS.txt dist/electron/llms.txt --target "$GITHUB_SHA" --title 'VideoFlow 0.4.0 — new Studio & Settings (Electron preview)' --notes-file docs/electron-0.4.0-release.md --prerelease
           fi
