@@ -12,13 +12,9 @@ export const API_BASE =
 
 async function handle(resp: Response) {
   if (!resp.ok) {
-    let detail: unknown = resp.statusText;
-    try {
-      const body = await resp.json();
-      detail = body.detail ?? JSON.stringify(body);
-    } catch {
-      /* keep statusText */
-    }
+    const text = await resp.text();
+    let detail: unknown = text || resp.statusText;
+    try { const body=JSON.parse(text);detail=body.detail ?? body.error ?? JSON.stringify(body); } catch { /* plain-text backend error is already useful */ }
     throw new Error(`${resp.status}: ${formatDetail(detail)}`);
   }
   return resp.json();
@@ -40,12 +36,21 @@ function formatDetail(detail: unknown): string {
 
 export const get = (path: string) => fetch(`${API_BASE}${path}`).then(handle);
 
-export const post = (path: string, body?: unknown) =>
-  fetch(`${API_BASE}${path}`, {
-    method: 'POST',
-    headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
-    body: body !== undefined ? JSON.stringify(body) : undefined
-  }).then(handle);
+// Keep the same request key after a lost response, including page reloads.
+async function localPost(path:string,body?:unknown){
+ const payload=body===undefined?undefined:JSON.stringify(body);
+ const bytes=new TextEncoder().encode(path+':'+(payload??''));
+ let fingerprint:string;
+ if(crypto.subtle){const hash=await crypto.subtle.digest('SHA-256',bytes);fingerprint=Array.from(new Uint8Array(hash),b=>b.toString(16).padStart(2,'0')).join('')}
+ else{let hash=14695981039346656037n;for(const b of bytes)hash=BigInt.asUintN(64,(hash^BigInt(b))*1099511628211n);fingerprint=hash.toString(16)}
+ const slot='VideoFlow.pending.'+fingerprint;
+ const newKey=()=>{const bytes=crypto.getRandomValues(new Uint8Array(16));return Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('')};
+ let key:string;try{key=sessionStorage.getItem(slot)||newKey();sessionStorage.setItem(slot,key)}catch{key=newKey()}
+ const response=await fetch(`${API_BASE}${path}`,{method:'POST',headers:{...(payload===undefined?{}:{'Content-Type':'application/json'}),'Idempotency-Key':key},body:payload});
+ try{sessionStorage.removeItem(slot)}catch{/* storage may be unavailable */}
+ return handle(response);
+}
+export const post = (path:string,body?:unknown)=>localPost(path,body);
 
 export const put = (path: string, body: unknown) =>
   fetch(`${API_BASE}${path}`, {

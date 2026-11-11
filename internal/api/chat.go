@@ -47,33 +47,39 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	res, err := s.agents.Chat(r.Context(), body.Message, body.History)
+	contextJSON, _ := json.Marshal(map[string]any{"scenes": sceneOptions, "characters": charOptions, "outputs": outputsList})
+	res, err := s.agents.Chat(r.Context(), body.Message, body.History, string(contextJSON))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	action := res.Action
-	if action == "" {
-		action = "unknown"
-	}
+	action := canonicalChatAction(res.Action)
 
 	intent := map[string]interface{}{
 		"action":      action,
 		"reply":       res.Reply,
 		"idea":        body.Message,
-		"scene_count": 3,
-		"confidence":  0.95,
+		"scene_count": 1,
 	}
 
-	if len(scenes) > 0 {
-		intent["scene_id"] = scenes[0].ID
+	if res.SceneCount >= 1 && res.SceneCount <= 20 {
+		intent["scene_count"] = res.SceneCount
 	}
-	if len(chars) > 0 {
-		intent["character_id"] = chars[0].ID
+	for _, scene := range scenes {
+		if scene.ID == res.SceneID || (res.SceneID == "" && len(scenes) == 1) {
+			intent["scene_id"] = scene.ID
+		}
 	}
-	if len(outputsList) > 0 {
-		intent["output_id"] = outputsList[0]["id"]
+	for _, character := range chars {
+		if character.ID == res.CharacterID || (res.CharacterID == "" && len(chars) == 1) {
+			intent["character_id"] = character.ID
+		}
+	}
+	for _, output := range outputsList {
+		if output["id"] == res.OutputID || (res.OutputID == "" && len(outputsList) == 1) {
+			intent["output_id"] = output["id"]
+		}
 	}
 
 	options := map[string]interface{}{
@@ -83,28 +89,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		"caption_styles": defaultCaptionStyles,
 	}
 
-	sceneSnapshots := []map[string]interface{}{}
-	for _, sc := range scenes {
-		sceneSnapshots = append(sceneSnapshots, map[string]interface{}{
-			"id":             sc.ID,
-			"title":          sc.Title,
-			"expanded":       true,
-			"has_shots":      true,
-			"has_storyboard": false,
-			"rendered":       false,
-		})
-	}
-
-	state := map[string]interface{}{
-		"characters": len(chars),
-		"has_style":  true,
-		"scripts":    1,
-		"scenes":     sceneSnapshots,
-		"next_steps": []string{
-			"Add characters to your studio",
-			"Review and generate cinematography shots",
-			"Render scenes into high-definition video",
-		},
+	state, err := s.projectState(projectID)
+	if err != nil {
+		http.Error(w, "failed to load project state", 500)
+		return
 	}
 
 	response := map[string]interface{}{
@@ -115,4 +103,16 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+// Keep model output on the action-card contract, including legacy agent replies.
+func canonicalChatAction(action string) string {
+	switch action {
+	case "create_script", "add_scene":
+		return "generate_script"
+	case "generate_script", "generate_scenes", "generate_shots", "storyboard", "render_scene", "render_shot", "caption", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
+		return action
+	default:
+		return "unknown"
+	}
 }

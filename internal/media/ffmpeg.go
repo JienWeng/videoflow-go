@@ -7,17 +7,20 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 	"videoflow-go/internal/models"
 )
 
 type MediaEngine struct {
-	ffmpegPath string
+	ffmpegPath    string
+	transcode     chan struct{}
+	transcodeOnce sync.Once
 }
 
 func NewMediaEngine() *MediaEngine {
 	path, _ := exec.LookPath("ffmpeg")
-	return &MediaEngine{ffmpegPath: path}
+	return &MediaEngine{ffmpegPath: path, transcode: make(chan struct{}, 1)}
 }
 
 func (m *MediaEngine) Available() bool {
@@ -92,6 +95,11 @@ func (m *MediaEngine) BurnCaptions(ctx context.Context, videoPath, destPath stri
 	if len(segments) == 0 {
 		return fmt.Errorf("transcribe or write captions before burning them")
 	}
+	release, err := m.acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	dir, err := os.MkdirTemp("", "videoflow-subtitles-")
 	if err != nil {
 		return err

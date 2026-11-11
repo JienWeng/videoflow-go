@@ -11,6 +11,12 @@ VideoFlow is a desktop app for creating AI-assisted videos. It includes the app,
 
 New to VideoFlow? Follow the [desktop quick start](docs/DESKTOP-QUICKSTART.txt), then use the [VideoFlow handbook](docs/handbook/README.md) for projects, providers, scenes, renders, and troubleshooting.
 
+## Installation and later testing
+
+[Download llms.txt](https://raw.githubusercontent.com/JienWeng/videoflow-go/main/llms.txt) for local installation, updates, data storage and a staged test checklist. Future native ZIPs include the guide; it is documentation, not an installer.
+
+Existing desktop releases predate the November browser fixes. To use the repaired source now, run `docker compose up --build -d` and open `http://127.0.0.1:8080`, or use the repaired browser-launcher preview when its checked packages are published. See the [character-to-export workflow](docs/BROWSER-WORKFLOW.md).
+
 ## Run from source
 
 For contributors and local development:
