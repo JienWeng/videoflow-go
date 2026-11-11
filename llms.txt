@@ -8,7 +8,7 @@ Release packages: https://github.com/JienWeng/videoflow-go/releases
 
 ## Availability
 
-Latest Electron preview: https://github.com/JienWeng/videoflow-go/releases/tag/v0.4.0-electron-preview.1. It contains Mac DMG/ZIP (arm64 Apple Silicon and x64 Intel), Linux DEB/AppImage/tar.gz (x64 and arm64), and SHA256SUMS.txt. Mac downloads are ad-hoc previews, not Apple-notarized. See docs/ELECTRON-START-HERE.txt. Windows installers are not included.
+Latest Electron preview: https://github.com/JienWeng/videoflow-go/releases/tag/v0.4.0-electron-preview.1. It contains verified Mac DMG/ZIP (arm64 Apple Silicon and x64 Intel), llms.txt and SHA256SUMS.txt. New Linux installers are not included: CI could not resolve Ubuntu package servers during installation tests. Use the current source/browser route for Linux. Mac downloads are ad-hoc previews, not Apple-notarized. See docs/ELECTRON-START-HERE.txt. Windows installers are not included.
 
 The older v0.3.2 browser-launcher ZIP remains available at https://github.com/JienWeng/videoflow-go/releases/tag/v0.3.2-browser-preview.1 but does not contain the new local director architecture or redesigned workspace.
 
@@ -48,8 +48,7 @@ Open the releases page above and read the release notes and checksums. Choose a 
 
 - Apple Silicon Mac: mac-arm64 DMG.
 - Intel Mac: mac-x64 DMG.
-- Ubuntu/Debian PC: linux-x64/amd64 DEB.
-- Ubuntu/Debian ARM: linux-arm64 DEB.
+- Linux: current Electron installer publication is blocked; use the source/browser route above.
 
 Mac: open the DMG, drag VideoFlow to Applications, then open it. Linux: install the DEB with your system software installer, then open VideoFlow. Signing/notarization status belongs in the actual release notes; do not claim an unpublished package is notarized. Windows native installers are not currently provided by the documented packaging workflow; use the Docker/browser route.
 

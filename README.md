@@ -4,8 +4,8 @@ VideoFlow is a desktop app for creating AI-assisted videos. It includes the app,
 
 ## Use the app
 
-1. Download the [latest Electron preview](https://github.com/JienWeng/videoflow-go/releases/tag/v0.4.0-electron-preview.1) for your Mac or Linux processor. Mac builds are ad-hoc previews, not Apple-notarized.
-2. Mac: open the matching DMG and drag VideoFlow to Applications. Linux: install the DEB, or use AppImage/tar.gz. Quit the old app before replacing it; existing projects stay in your user data folder.
+1. Download the [latest Electron preview](https://github.com/JienWeng/videoflow-go/releases/tag/v0.4.0-electron-preview.1) for your Mac processor. Mac builds are ad-hoc previews, not Apple-notarized.
+2. Mac: open the matching DMG and drag VideoFlow to Applications. New Linux installers are pending clean-install verification because the CI runner could not resolve Ubuntu package servers; use the source/browser route below. Quit the old app before replacing it; existing projects stay in your user data folder.
 3. In **Settings**, configure the keys required by your version. Current source uses fal.ai for new image/video routes and local Claude Code/Codex sessions for text and OpenRouter for vision/transcription; direct BytePlus video is selectable. See [provider setup](docs/PROVIDERS.md). Older v0.3.2 packages use OpenRouter only. AI generation requires internet access and provider credits.
 4. Create/select an AI session in Studio, describe your story in Chat, and click canvas nodes to edit Details. Review keyframes and proposals before paid generation.
 
