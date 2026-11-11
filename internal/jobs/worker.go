@@ -162,9 +162,23 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 		provider = "openrouter"
 	}
 	job.Provider = provider
-	client, err := resolver.Client(provider)
+	if job.Model == "" {
+		job.Model = resolver.DefaultMediaModel(provider, "video")
+	}
+	client, endpoint, err := resolver.Media(provider, job.Model, job.ProviderEndpoint)
 	if err != nil {
 		return err
+	}
+	pinned, err := w.database.PinRenderEndpoint(job.ID, endpoint)
+	if err != nil {
+		return err
+	}
+	job.ProviderEndpoint = pinned
+	if pinned != endpoint {
+		client, _, err = resolver.Media(provider, job.Model, pinned)
+		if err != nil {
+			return err
+		}
 	}
 	if job.ProviderJobID == nil || *job.ProviderJobID == "" {
 		payload := map[string]any{}
@@ -229,7 +243,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 		prompt += "\nSpoken dialogue language: " + language
 		payload["prompt"] = prompt
 		if job.Model == "" {
-			job.Model = resolver.MediaModel("video")
+			job.Model = resolver.DefaultMediaModel(provider, "video")
 		}
 		payload["model"] = job.Model
 		// Local durations may be storyboard timings. Only explicitly supplied generation durations are sent unchanged.
@@ -384,7 +398,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 		}
 		job.ProviderJobID = &id
 		// Save the upstream ID before polling, so restart resumes rather than submits again.
-		if err = update("running", "polling", "Waiting for OpenRouter video"); err != nil {
+		if err = update("running", "polling", "Waiting for provider video"); err != nil {
 			return err
 		}
 	}
@@ -428,7 +442,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 			if len(existing) >= count {
 				return update("succeeded", "done", "Video downloaded")
 			}
-			if err = update("running", "downloading", "Downloading OpenRouter video"); err != nil {
+			if err = update("running", "downloading", "Downloading provider video"); err != nil {
 				return err
 			}
 			completed := map[string]bool{}
@@ -464,10 +478,10 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 			return update("succeeded", "done", "Video downloaded")
 		case "failed", "cancelled", "canceled", "expired":
 			job.Status = "failed"
-			return fmt.Errorf("OpenRouter video job %s", status)
+			return fmt.Errorf("Provider video job %s", status)
 		case "pending", "queued", "in_progress", "processing", "running":
 		default:
-			return fmt.Errorf("unknown OpenRouter video status %q", status)
+			return fmt.Errorf("unknown provider video status %q", status)
 		}
 		timer := time.NewTimer(w.pollInterval)
 		select {

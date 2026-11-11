@@ -370,12 +370,16 @@ func (s *Server) handleRenderScene(w http.ResponseWriter, r *http.Request) {
 	job := &models.RenderJob{
 		ProjectID:   &projectID,
 		SceneID:     &scene.ID,
-		Provider:    "openrouter",
-		Model:       s.routes().MediaModel("video"),
+		Provider:    "",
+		Model:       "",
 		Status:      "pending",
 		Stage:       &stage,
 		Progress:    &progress,
 		RequestJSON: []byte(fmt.Sprintf(`{"scene_id":"%s"}`, scene.ID)),
+	}
+	if err := s.prepareVideoJob(job); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
 	}
 	if err := s.database.CreateRenderJob(job); err != nil {
 		http.Error(w, "failed to save render job", 500)

@@ -1,6 +1,7 @@
 VideoFlow desktop — start here
 
-The Electron steps below describe older installers. For the November browser
+The Electron steps below describe older OpenRouter-only installers. Current
+source adds fal.ai media and optional BytePlus video; see PROVIDERS.md. For the November browser
 fixes, use the v0.3.2-browser-preview.1 native browser-launcher ZIP or current
 main through Docker. See ../llms.txt for installation and later testing.
 1. Open https://github.com/JienWeng/videoflow-go/releases

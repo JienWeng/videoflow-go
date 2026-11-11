@@ -67,3 +67,20 @@ func (d *DB) CreateRenderRetry(original string, fresh *models.RenderJob) (bool, 
 	}
 	return true, tx.Commit()
 }
+
+// PinRenderEndpoint changes no job state and never reopens a claimed submission.
+func (d *DB) PinRenderEndpoint(id, endpoint string) (string, error) {
+	tx, err := d.conn.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec(`UPDATE render_jobs SET provider_endpoint=? WHERE id=? AND provider_endpoint=''`, endpoint, id); err != nil {
+		return "", err
+	}
+	var pinned string
+	if err = tx.QueryRow(`SELECT provider_endpoint FROM render_jobs WHERE id=?`, id).Scan(&pinned); err != nil {
+		return "", err
+	}
+	return pinned, tx.Commit()
+}

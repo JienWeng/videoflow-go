@@ -67,12 +67,13 @@
     video_model: string;
     vl_model: string;
     max_video_refs: number;
+media_model_preferences:Record<string,Record<string,string>>;
     render_negatives: string[];
   };
-  type TestResult = { ok: boolean; latency_ms: number | null; error: string | null };
+  type TestResult = { checked?:string;message?:string;ok: boolean; latency_ms: number | null; error: string | null };
   type ProviderPreset = {
     label: string;
-    protocol: 'chat' | 'responses' | 'anthropic' | 'codex';
+    protocol: 'chat' | 'responses' | 'anthropic' | 'codex' | 'media' | 'video';
     url: string;
     model: string;
     preset: string;
@@ -114,14 +115,14 @@
   async function discoverModels(name: string) {
     busy = `models-${name}`;
     try {
-      const result = await get(providerEndpoint(name, 'models'));
+      const result = await get(providerEndpoint(name, 'models')+(name==='fal'?'?modality=all':name==='byteplus'?'?modality=video':''));
       if (result.error) { toast.error(result.error); return; }
       providers = providers.map(p => p.name === name ? {...p, suggested_models: result.models, models: result.models} : p);
       if (result.models.length) {
         testModelInput[name] = result.models[0];
         providerModelInput[name] = false;
       }
-      toast.success(`Loaded ${result.models.length} models for agent selection`);
+      toast.success(`Loaded ${result.models.length} supported models`);
     } catch (e: any) { toast.error(e.message); }
     finally { busy = ''; }
   }
@@ -136,7 +137,7 @@
     busy = `verify-${name}`;
     try {
       const result = await post(providerEndpoint(name, 'verify-model'), {model: testModelInput[name]?.trim()});
-      if (result.ok) toast.success('Model returned valid structured JSON');
+      if (result.ok) toast.success(result.generation_tested?'Model returned valid structured JSON':'Model catalog checked; no generation submitted.');
       else toast.error(result.error);
     } catch (e: any) { toast.error(e.message); }
     finally { busy = ''; }
@@ -150,8 +151,7 @@
   let tab = $state('providers');
 
   // ------------------------------------------------------------- labels
-  const providerLabels: Record<string, string> = { openrouter: 'OpenRouter' };
-  const PROVIDER_ORDER = ['openrouter'];
+  const providerLabels: Record<string, string> = { fal:'fal.ai',byteplus:'BytePlus ModelArk',openrouter:'OpenRouter' };
   const FALLBACK_PRESETS: Record<string, ProviderPreset> = {
     openrouter: { label: 'OpenRouter', protocol: 'chat', url: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini', preset: 'openrouter', mode: 'auto', vision: true }
   };
@@ -190,7 +190,7 @@
   const LOAD_MODELS = '__load_models__';
 
   const selectablePresets = $derived.by(() => {
-    const entries = Object.entries(presets).filter(([id, preset]) => (preset as any).preset === id);
+    const entries = Object.entries(presets).filter(([id, preset]) => (preset as any).preset === id && preset.protocol === 'chat');
     return entries.length ? entries : Object.entries(FALLBACK_PRESETS);
   });
 
@@ -202,7 +202,7 @@
   // ------------------------------------------------------------- derived
   const byName = $derived(Object.fromEntries(providers.map((p) => [p.name, p])));
   const configuredProviders = $derived(
-    providers.filter((p) => p.configured)
+    providers.filter((p) => p.configured && p.protocol === 'chat')
   );
   const primaryTextProvider = $derived(
     agents.find((agent) => agent.agent === 'script_agent')?.provider ?? 'openrouter'
@@ -456,7 +456,7 @@
     try {
       const res: TestResult = await post(providerEndpoint(name, 'test'));
       provTest[name] = res;
-      if (res.ok) toast.success(`${providerLabels[name] ?? name}: connected (${res.latency_ms}ms)`);
+      if (res.ok) toast.success(res.checked==='configuration'?res.message!:`${providerLabels[name] ?? name}: connected (${res.latency_ms}ms)`);
       else toast.error(`${providerLabels[name] ?? name}: ${res.error ?? 'failed'}`);
     } catch (e: any) {
       provTest[name] = { ok: false, latency_ms: null, error: e.message };
@@ -472,6 +472,7 @@
     try {
       const updated: AppSettings = await put('/settings/app', patch);
       app = updated;
+if(patch.default_image_provider||patch.default_video_provider)await loadEngineCatalogs();
       toast.success('Saved');
     } catch (e: any) {
       toast.error(e.message);
@@ -489,24 +490,28 @@
   let videoCapabilities = $state<VideoCapability[]>([]);
   let catalogError = $state('');
   let catalogBusy = $state(false);
+  let catalogSequence=0;
   async function loadEngineCatalogs() {
-    if (!provCfg.openrouter?.configured) return;
-    catalogBusy = true;
-    const failures: string[] = [];
-    await Promise.all(['image', 'video', 'vision', 'transcription'].map(async modality => {
-      try {
-        const result = await get(`/settings/providers/openrouter/models?modality=${modality}`);
-        if (result.error) { failures.push(`${modality}: ${result.error}`); return; }
-        engineCatalogs = { ...engineCatalogs, [modality]: result.models ?? [] };
-        if (modality === 'video') videoCapabilities = result.capabilities ?? [];
-      } catch (e: any) { failures.push(`${modality}: ${e.message}`); }
+    if(!app)return;
+    const sequence=++catalogSequence;
+    const imageProvider=app.default_image_provider;
+    const videoProvider=app.default_video_provider;
+    catalogBusy=true;
+    const failures:string[]=[];
+    await Promise.all(['image','video','vision','transcription'].map(async modality=>{
+      const provider=modality==='image'?imageProvider:modality==='video'?videoProvider:'openrouter';
+      if(provider==='openrouter'&&!provCfg.openrouter?.configured){if(sequence===catalogSequence)engineCatalogs={...engineCatalogs,[modality]:[]};return}
+      try{
+        const result=await get(`/settings/providers/${encodeURIComponent(provider)}/models?modality=${modality}`);
+        if(sequence!==catalogSequence)return;
+        if(result.error){failures.push(`${provider} ${modality}: ${result.error}`);engineCatalogs={...engineCatalogs,[modality]:[]};return}
+        engineCatalogs={...engineCatalogs,[modality]:result.models??[]};if(modality==='video')videoCapabilities=result.capabilities??[];
+      }catch(e:any){failures.push(`${provider} ${modality}: ${e.message}`)}
     }));
-    catalogError = failures.join('; ');
-    catalogBusy = false;
+    if(sequence===catalogSequence){catalogError=failures.join('; ');catalogBusy=false}
   }
-  function mediaProviderChanged(kind: 'image' | 'video', provider: string) {
-    if (provider !== 'openrouter') return;
-    saveApp({ [kind === 'image' ? 'default_image_provider' : 'default_video_provider']: 'openrouter' });
+  function mediaProviderChanged(kind:'image'|'video',provider:string){
+    void saveApp({[kind==='image'?'default_image_provider':'default_video_provider']:provider});
   }
   function engineOptions(key: keyof AppSettings): string[] {
     return engineCatalogs[key === 'vl_model' ? 'vision' : key === 'video_model' ? 'video' : 'image'] ?? [];
@@ -520,7 +525,7 @@
   }
   function videoModelHint(): string {
     const model = videoCapabilities.find(model => model.id === app?.video_model);
-    return model ? `Durations: ${model.supported_durations?.join(', ')} seconds. Resolutions: ${model.supported_resolutions?.join(', ')}.` : 'Capabilities are checked before OpenRouter receives a render request.';
+    return model ? `Durations: ${model.supported_durations?.join(', ')} seconds. Resolutions: ${model.supported_resolutions?.join(', ')}.` : 'Capabilities are checked before the selected provider receives a render request.';
   }
 
   let engineCustomOpen = $state<Record<string, boolean>>({});
@@ -619,7 +624,7 @@
               <Plug class="size-4" />Providers
             </CardTitle>
             <CardDescription>
-              Save your OpenRouter API key. Named OpenRouter connections can use separate keys and default models. Keys are stored on
+              Configure fal.ai for images/video, OpenRouter for text/vision/transcription, and optional direct BytePlus Seedance video. Keys stay on the local backend. Keys are stored on
               this machine and never shown again after saving.
             </CardDescription>
           </CardHeader>
@@ -651,7 +656,7 @@
             {#each orderedProviders as p (p.name)}
               {@const cfg = provCfg[p.name]}
               {@const test = provTest[p.name]}
-              <details open={p.name === primaryTextProvider}>
+              <details open={p.name === primaryTextProvider || p.name === app?.default_image_provider || p.name === app?.default_video_provider}>
                 <summary class="cursor-pointer rounded-md py-2 text-sm font-medium">
                   {providerLabels[p.name] ?? p.name}
                   <span class="ml-2 text-xs font-normal text-muted-foreground">{cfg?.configured ? 'Configured' : 'Not configured'}</span>
@@ -672,9 +677,6 @@
                   {/if}
                 </div>
 
-                {#if p.protocol === 'codex'}
-                  <p class="text-sm text-muted-foreground">All connections use OpenRouter.</p>
-                {:else}
                 <div class="grid gap-2 sm:grid-cols-2">
                   <div>
                     <label class="mb-1 block text-xs text-muted-foreground" for="key-{p.name}">
@@ -696,12 +698,11 @@
                   </div>
                 </div>
                 <details class="mt-2">
-                  <summary class="cursor-pointer text-xs text-muted-foreground">OpenRouter endpoint</summary>
+                  <summary class="cursor-pointer text-xs text-muted-foreground">Provider endpoint</summary>
                   <label class="mt-2 block max-w-xl text-xs text-muted-foreground" for="url-{p.name}">Base URL</label>
-                  <Input id="url-{p.name}" readonly value="https://openrouter.ai/api/v1" />
+                  <Input id="url-{p.name}" readonly value={cfg?.base_url ?? ''} />
                 </details>
 
-                {/if}
                 <div class="mt-2 flex flex-wrap items-center gap-2">
                   {#if providerModelInput[p.name]}
                     <Input
@@ -748,7 +749,7 @@
                       Verify
                     </Button>
                   {/if}
-                  <span class="text-xs text-muted-foreground">Model tests consume provider usage.</span>
+                  <span class="text-xs text-muted-foreground">{p.protocol === 'chat' ? 'Text model tests consume provider usage.' : 'Catalog checks do not submit generation or verify account/model access.'}</span>
                   <Button
                     size="sm"
                     disabled={busy === `prov-${p.name}`}
@@ -765,7 +766,7 @@
                     {#if busy === `test-${p.name}`}
                       <LoaderCircle class="size-3.5 mr-1 animate-spin" />Testing…
                     {:else}
-                      <Wifi class="size-3.5 mr-1" />Test connection
+                      <Wifi class="size-3.5 mr-1" />{p.protocol === 'chat' ? 'Test connection' : 'Check configuration'}
                     {/if}
                   </Button>
                   {#if cfg?.from_db}
@@ -809,16 +810,16 @@
               <Sparkles class="size-4" />Generation engines
             </CardTitle>
             <CardDescription>
-              All AI tasks use OpenRouter. Model lists come from its live catalogs; custom IDs are checked when saved.
+              fal.ai defaults for new image/video routes. OpenRouter handles text/vision/transcription; BytePlus supports direct Seedance video. Existing saved routes are preserved.
             </CardDescription>
           </CardHeader>
           <CardContent class="space-y-4">
-            <Button size="sm" variant="outline" disabled={catalogBusy || !provCfg.openrouter?.configured} onclick={loadEngineCatalogs}>{catalogBusy ? 'Loading catalogs…' : 'Refresh OpenRouter models'}</Button>
+            <Button size="sm" variant="outline" disabled={catalogBusy} onclick={loadEngineCatalogs}>{catalogBusy ? 'Loading catalogs…' : 'Refresh model catalogs'}</Button>
             {#if catalogError}<p class="text-sm text-destructive">{catalogError}</p>{/if}
             {#if app}
               {@const engines = [
-                { key: 'image_model', label: 'Image model', hint: 'Text-to-image generation.' },
-                { key: 'ref_image_model', label: 'Character and prop image model', hint: 'OpenRouter images for character references and props.' },
+                { key: 'image_model', label: 'Image model', hint: `Image generation via ${providerLabels[app.default_image_provider] ?? app.default_image_provider}.` },
+                { key: 'ref_image_model', label: 'Character and prop image model', hint: `Character references and props via ${providerLabels[app.default_image_provider] ?? app.default_image_provider}.` },
                 { key: 'video_model', label: 'Video model', hint: videoModelHint() },
                 { key: 'vl_model', label: 'Vision model', hint: 'Reads frames for QA.' }
               ] as const}
@@ -879,7 +880,7 @@
                   onchange={(e) => mediaProviderChanged('video', (e.currentTarget as HTMLSelectElement).value)}
                 >
 
-                  <option value="openrouter">OpenRouter</option>
+                  <option value="fal">fal.ai</option><option value="openrouter">OpenRouter</option><option value="byteplus">BytePlus ModelArk (Seedance)</option>
                 </select>
               </div>
 
@@ -896,7 +897,7 @@
                   onchange={(e) => mediaProviderChanged('image', (e.currentTarget as HTMLSelectElement).value)}
                 >
 
-                  <option value="openrouter">OpenRouter</option>
+                  <option value="fal">fal.ai</option><option value="openrouter">OpenRouter</option>
                 </select>
               </div>
 

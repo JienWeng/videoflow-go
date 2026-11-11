@@ -10,17 +10,17 @@ func (s *Server) generationPrerequisites(ctx context.Context, brief generationBr
 	add := func(route, reason string) {
 		missing = append(missing, map[string]string{"route": route, "setting": "/settings", "reason": reason})
 	}
-	client, err := s.routes().Client("openrouter")
-	if err != nil {
-		add("authentication", err.Error())
-		return missing
-	}
 	for _, agent := range []string{"script_agent", "shot_agent", "prompt_agent"} {
-		if _, _, err = s.routes().Agent(ctx, agent); err != nil {
+		if _, _, err := s.routes().Agent(ctx, agent); err != nil {
 			add(agent, err.Error())
 		}
 	}
-	image, err := client.Model(ctx, s.routes().MediaModel("image"), "image")
+	client, _, imageModel, err := s.selectedMedia(ctx, "image")
+	if err != nil {
+		add("image", err.Error())
+		return missing
+	}
+	image, err := client.Model(ctx, imageModel, "image")
 	if err != nil {
 		add("image", err.Error())
 	} else if len(brief.ReferenceAssetIDs) > 0 {
@@ -30,7 +30,7 @@ func (s *Server) generationPrerequisites(ctx context.Context, brief generationBr
 			add("image", "Selected image model does not support character references; choose a reference-capable image model before generating")
 		}
 	}
-	imagePayload := map[string]any{"model": s.routes().MediaModel("image"), "prompt": "preflight", "aspect_ratio": brief.AspectRatio}
+	imagePayload := map[string]any{"model": imageModel, "prompt": "preflight", "aspect_ratio": brief.AspectRatio}
 	if len(brief.ReferenceAssetIDs) > 0 {
 		refs := []map[string]any{}
 		for range brief.ReferenceAssetIDs {
@@ -41,7 +41,12 @@ func (s *Server) generationPrerequisites(ctx context.Context, brief generationBr
 	if err := client.ValidateImage(ctx, imagePayload); err != nil {
 		add("image", err.Error())
 	}
-	video, err := client.Model(ctx, s.routes().MediaModel("video"), "video")
+	videoClient, _, videoModel, err := s.selectedMedia(ctx, "video")
+	if err != nil {
+		add("video", err.Error())
+		return missing
+	}
+	video, err := videoClient.Model(ctx, videoModel, "video")
 	if err != nil {
 		add("video", err.Error())
 		return missing

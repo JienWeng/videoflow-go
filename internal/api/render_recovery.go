@@ -26,7 +26,11 @@ func (s *Server) handleReconcileRender(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Existing provider job ID and verification evidence are required", 400)
 		return
 	}
-	client, err := s.routes().Client("openrouter")
+	provider := job.Provider
+	if provider == "" {
+		provider = "openrouter"
+	}
+	client, _, err := s.routes().Media(provider, job.Model, job.ProviderEndpoint)
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return

@@ -27,6 +27,8 @@ func setupTestServer(t *testing.T) (*api.Server, func()) {
 	cfg.DatabasePath = testDBPath
 	cfg.StorageRoot = t.TempDir()
 	cfg.OpenRouterAPIKey = ""
+	cfg.FalAPIKey = ""
+	cfg.BytePlusAPIKey = ""
 
 	database, err := db.Open(testDBPath)
 	if err != nil {
@@ -204,8 +206,8 @@ func TestMissingEndpointsResolution(t *testing.T) {
 	req = httptest.NewRequest("POST", "/scenes/"+sceneID+"/render", nil)
 	rr = httptest.NewRecorder()
 	server.Router().ServeHTTP(rr, req)
-	if rr.Code != http.StatusAccepted {
-		t.Fatalf("expected 202 for scene render, got %d", rr.Code)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected missing media credentials to reject scene render before enqueue, got %d", rr.Code)
 	}
 
 	// POST /scenes/{id}/shots/generate?background=true
@@ -316,13 +318,8 @@ func TestEditorAndPanelEndpoints(t *testing.T) {
 	req = httptest.NewRequest("POST", "/outputs/"+out.ID+"/retry", nil)
 	rr = httptest.NewRecorder()
 	server.Router().ServeHTTP(rr, req)
-	if rr.Code != http.StatusAccepted {
-		t.Fatalf("expected 202 for retry output, got %d", rr.Code)
-	}
-	var retryRes map[string]interface{}
-	_ = json.Unmarshal(rr.Body.Bytes(), &retryRes)
-	if retryRes["job_id"] == nil || retryRes["job_id"] == "" {
-		t.Fatalf("expected job_id in retry output response, got %v", retryRes)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected missing credentials to reject retry, got %d: %s", rr.Code, rr.Body.String())
 	}
 
 	// 4. Test POST /outputs/{id}/run-qa?background=true

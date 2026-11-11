@@ -6,7 +6,7 @@ VideoFlow is a desktop app for creating AI-assisted videos. It includes the app,
 
 1. Download the [repaired browser-launcher preview](https://github.com/JienWeng/videoflow-go/releases/tag/v0.3.2-browser-preview.1) for your Mac or Linux processor.
 2. Extract the entire ZIP and open **Start VideoFlow**. Keep its terminal open; the app opens in your browser at `http://127.0.0.1:8000`. Older Electron DMG/DEB packages remain under [all releases](https://github.com/JienWeng/videoflow-go/releases).
-3. In **Settings**, add an [OpenRouter API key](https://openrouter.ai/keys). AI generation requires internet access and account credits.
+3. In **Settings**, configure the keys required by your version. Current source uses fal.ai for new image/video routes and OpenRouter for text/vision/transcription; direct BytePlus video is selectable. See [provider setup](docs/PROVIDERS.md). Older v0.3.2 packages use OpenRouter only. AI generation requires internet access and provider credits.
 4. Create a project and start making a video.
 
 New to VideoFlow? Follow the [desktop quick start](docs/DESKTOP-QUICKSTART.txt), then use the [VideoFlow handbook](docs/handbook/README.md) for projects, providers, scenes, renders, and troubleshooting.

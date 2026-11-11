@@ -15,11 +15,18 @@ import (
 )
 
 type HTTPError struct {
-	Status  int
-	Message string
+	Provider string
+	Status   int
+	Message  string
 }
 
-func (e *HTTPError) Error() string { return fmt.Sprintf("OpenRouter HTTP %d: %s", e.Status, e.Message) }
+func (e *HTTPError) Error() string {
+	name := e.Provider
+	if name == "" {
+		name = "OpenRouter"
+	}
+	return fmt.Sprintf("%s HTTP %d: %s", name, e.Status, e.Message)
+}
 
 const OpenRouterURL = "https://openrouter.ai/api/v1"
 
@@ -326,6 +333,11 @@ func (c *OpenRouterClient) ValidateVideo(ctx context.Context, payload map[string
 	if err != nil {
 		return err
 	}
+	return m.validateVideo(payload)
+}
+
+func (m *Model) validateVideo(payload map[string]any) error {
+	id := m.ID
 	prompt, _ := payload["prompt"].(string)
 	if strings.TrimSpace(prompt) == "" {
 		return fmt.Errorf("video prompt is required")

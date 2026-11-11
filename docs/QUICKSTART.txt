@@ -7,8 +7,10 @@ VideoFlow — start here
    On Linux, mark Start VideoFlow.sh as executable and run it.
    Keep the app's terminal window open while using VideoFlow.
 3. The app opens your browser at http://127.0.0.1:8000.
-4. Open Settings, paste your OpenRouter API key, and test the connection.
-   You need an OpenRouter account with credits. AI generation costs money.
+4. Open Settings and configure fal.ai for default images/video and OpenRouter
+   for text/vision/transcription. BytePlus direct video is optional.
+   Check configuration is not a paid generation/access test. See PROVIDERS.md.
+   You need credits with the selected providers. AI generation costs money.
 5. Create a project and generate your video.
 
 Go, Node.js and Python are NOT required to run a download.

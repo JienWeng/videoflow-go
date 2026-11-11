@@ -47,7 +47,7 @@ def main():
         no_tools = root / 'no-system-tools'
         no_tools.mkdir()
         env = dict(os.environ, PATH=str(no_tools), HOME=str(home), XDG_CONFIG_HOME=str(home / '.config'), PORT=str(port))
-        for name in ['DATABASE_PATH', 'STORAGE_ROOT', 'OPENROUTER_API_KEY', 'LD_LIBRARY_PATH', 'DYLD_LIBRARY_PATH']:
+        for name in ['DATABASE_PATH', 'STORAGE_ROOT', 'OPENROUTER_API_KEY', 'FAL_KEY', 'BYTEPLUS_API_KEY', 'LD_LIBRARY_PATH', 'DYLD_LIBRARY_PATH']:
             env.pop(name, None)
         with (root / 'app.log').open('w') as log:
             app = subprocess.Popen([str(folder/'videoflow'), '--desktop', '--no-browser'], cwd=root, env=env, stdout=log, stderr=subprocess.STDOUT)
@@ -65,7 +65,7 @@ def main():
                 else:
                     raise RuntimeError('Packaged app did not start')
                 assert health['media_ready'] is True, health
-                assert health['missing_keys'] == ['OPENROUTER_API_KEY'], health
+                assert health['missing_keys'] == ['OPENROUTER_API_KEY', 'FAL_KEY'], health
                 with urllib.request.urlopen(base+'/settings') as response:
                     assert b'<html' in response.read()
                 print('Extracted app serves UI/API and finds bundled FFmpeg with an empty system PATH.')

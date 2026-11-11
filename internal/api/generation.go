@@ -95,15 +95,15 @@ func (s *Server) stylePrompt(projectID *string) string {
 }
 
 func (s *Server) generateAssets(ctx context.Context, projectID *string, characterID *string, sceneID, name, kind, prompt, aspect string, references []string) ([]models.Asset, error) {
-	client, err := s.routes().Client("openrouter")
-	if err != nil {
-		return nil, err
-	}
 	modelKind := "image"
 	if characterID != nil || kind == "prop" {
 		modelKind = "reference"
 	}
-	payload := map[string]any{"model": s.routes().MediaModel(modelKind), "prompt": prompt}
+	client, provider, model, err := s.selectedMedia(ctx, modelKind)
+	if err != nil {
+		return nil, err
+	}
+	payload := map[string]any{"model": model, "prompt": prompt}
 	if aspect != "" {
 		payload["aspect_ratio"] = aspect
 	}
@@ -127,7 +127,7 @@ func (s *Server) generateAssets(ctx context.Context, projectID *string, characte
 		return nil, err
 	}
 	if strings.TrimSpace(prepared.Prompt) == "" {
-		return nil, fmt.Errorf("OpenRouter returned no image prompt")
+		return nil, fmt.Errorf("Text provider returned no image prompt")
 	}
 	payload["prompt"] = prepared.Prompt
 	images, err := client.GenerateImages(ctx, payload)
@@ -162,7 +162,7 @@ func (s *Server) generateAssets(ctx context.Context, projectID *string, characte
 		if err = os.WriteFile(path, image.Data, 0644); err != nil {
 			return nil, err
 		}
-		metadata, _ := json.Marshal(map[string]any{"scene_id": sceneID, "provider": "openrouter", "model": payload["model"], "media_type": image.MediaType})
+		metadata, _ := json.Marshal(map[string]any{"scene_id": sceneID, "provider": provider, "model": payload["model"], "media_type": image.MediaType})
 		asset := models.Asset{ID: id, ProjectID: projectID, CharacterID: characterID, Type: kind, Name: name, Description: prompt, FilePath: filepath.ToSlash(filepath.Join("storage", "assets", id+ext)), TagsJSON: json.RawMessage(`[]`), MetadataJSON: metadata}
 		if err = s.database.CreateAsset(&asset); err != nil {
 			return nil, err

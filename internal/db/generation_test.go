@@ -144,3 +144,29 @@ func TestOperationJobBatchRollsBackOnFailure(t *testing.T) {
 		t.Fatal("partial batch survived")
 	}
 }
+
+func TestEndpointPinPreservesSubmissionFence(t *testing.T) {
+	d, err := Open(filepath.Join(t.TempDir(), "db.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	job := &models.RenderJob{Provider: "fal", Model: "model", Status: "pending"}
+	d.CreateRenderJob(job)
+	claimed, err := d.ClaimRenderSubmission(job.ID, job.Model, []byte(`{}`))
+	if err != nil || !claimed {
+		t.Fatal(claimed, err)
+	}
+	endpoint, err := d.PinRenderEndpoint(job.ID, "https://queue.fal.run")
+	if err != nil || endpoint != "https://queue.fal.run" {
+		t.Fatal(endpoint, err)
+	}
+	saved, _ := d.GetRenderJob(job.ID)
+	if saved.Stage == nil || *saved.Stage != "submitting" {
+		t.Fatal("pin reset submission fence")
+	}
+	endpoint, err = d.PinRenderEndpoint(job.ID, "https://different.invalid")
+	if err != nil || endpoint != "https://queue.fal.run" {
+		t.Fatal("endpoint was redirected", endpoint, err)
+	}
+}

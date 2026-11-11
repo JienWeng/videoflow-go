@@ -31,15 +31,16 @@ func (s *Server) handleStartRender(w http.ResponseWriter, r *http.Request) {
 	}
 	provider, _ := body["provider"].(string)
 	if provider == "" {
-		provider = "openrouter"
-	}
-	if provider != "openrouter" {
-		http.Error(w, "Video generation uses OpenRouter", 400)
-		return
+		provider, _ = s.routes().MediaSelection("video")
 	}
 	model, _ := body["model"].(string)
 	if model == "" {
-		model = s.routes().MediaModel("video")
+		selectedProvider, selectedModel := s.routes().MediaSelection("video")
+		if selectedProvider == provider {
+			model = selectedModel
+		} else {
+			model = s.routes().DefaultMediaModel(provider, "video")
+		}
 	}
 	body["model"] = model
 	var sceneID, shotID *string
@@ -71,6 +72,10 @@ func (s *Server) handleStartRender(w http.ResponseWriter, r *http.Request) {
 		RequestJSON: reqBytes,
 	}
 
+	if err := s.prepareVideoJob(job); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
 	if err := s.database.CreateRenderJob(job); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -119,14 +124,18 @@ func (s *Server) handleRenderFromShot(w http.ResponseWriter, r *http.Request) {
 		ProjectID:   &projectID,
 		SceneID:     &body.SceneID,
 		ShotID:      &body.ShotID,
-		Provider:    "openrouter",
-		Model:       s.routes().MediaModel("video"),
+		Provider:    "",
+		Model:       "",
 		Status:      "pending",
 		Stage:       &stage,
 		Progress:    &progress,
 		RequestJSON: reqBytes,
 	}
 
+	if err := s.prepareVideoJob(job); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
 	if err := s.database.CreateRenderJob(job); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -186,10 +195,14 @@ func (s *Server) handleResubmitJob(w http.ResponseWriter, r *http.Request) {
 	}
 	// Explicit retry starts a new generation; only restart reconciliation reuses the upstream ID.
 	stage, progress := "submitted", "Retry queued"
-	if job.Provider != "openrouter" {
-		job.Model = s.routes().MediaModel("video")
+	fresh := &models.RenderJob{ProjectID: job.ProjectID, SceneID: job.SceneID, ShotID: job.ShotID, Provider: job.Provider, ProviderEndpoint: job.ProviderEndpoint, Model: job.Model, Status: "pending", Stage: &stage, Progress: &progress, RequestJSON: job.RequestJSON}
+	if fresh.Provider == "" {
+		fresh.Provider = "openrouter"
 	}
-	fresh := &models.RenderJob{ProjectID: job.ProjectID, SceneID: job.SceneID, ShotID: job.ShotID, Provider: "openrouter", Model: job.Model, Status: "pending", Stage: &stage, Progress: &progress, RequestJSON: job.RequestJSON}
+	if err = s.prepareVideoJob(fresh); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
 	created, err := s.database.CreateRenderRetry(job.ID, fresh)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
@@ -405,53 +418,14 @@ func (s *Server) handleGetEditorData(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRetryOutput(w http.ResponseWriter, r *http.Request) {
-	outputID := chi.URLParam(r, "id")
-	output, err := s.database.GetRenderOutput(outputID)
+	output, err := s.database.GetRenderOutput(chi.URLParam(r, "id"))
 	if err != nil {
-		http.Error(w, "output not found", http.StatusNotFound)
+		http.Error(w, "output not found", 404)
 		return
 	}
-
-	var reqJSON json.RawMessage
-	var provider = "openrouter"
-	var model = s.routes().MediaModel("video")
-	var sceneID *string
-
-	if origJob, err := s.database.GetRenderJob(output.RenderJobID); err == nil && origJob != nil {
-		reqJSON = origJob.RequestJSON
-		if origJob.Provider == "openrouter" {
-			model = origJob.Model
-		}
-		sceneID = origJob.SceneID
-	}
-	if len(reqJSON) == 0 {
-		reqJSON = []byte(fmt.Sprintf(`{"output_id":"%s"}`, outputID))
-	}
-
-	projectID, _ := s.database.GetActiveProjectID()
-	stage := "submitted"
-	progress := "Queued for corrective re-render"
-	retryJob := &models.RenderJob{
-		ProjectID:   &projectID,
-		SceneID:     sceneID,
-		Provider:    provider,
-		Model:       model,
-		Status:      "pending",
-		Stage:       &stage,
-		Progress:    &progress,
-		RequestJSON: reqJSON,
-	}
-	if err := s.database.CreateRenderJob(retryJob); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	s.workers.Enqueue(retryJob.ID)
-
-	writeJSON(w, http.StatusAccepted, map[string]interface{}{
-		"job_id": retryJob.ID,
-		"status": retryJob.Status,
-	})
+	route := chi.RouteContext(r.Context())
+	route.URLParams.Add("id", output.RenderJobID)
+	s.handleResubmitJob(w, r)
 }
 
 func (s *Server) handleSelectOutput(w http.ResponseWriter, r *http.Request) {

@@ -37,6 +37,7 @@ func routerServer(t *testing.T, h http.HandlerFunc) *Server {
 	if err = database.SetProviderSecret("openrouter", "saved-key", nil); err != nil {
 		t.Fatal(err)
 	}
+	database.SetAppSettings(map[string]any{"default_image_provider": "openrouter", "default_video_provider": "openrouter"})
 	broker := events.NewBroker()
 	engine := media.NewMediaEngine()
 	client := providers.NewOpenRouterClientAt("", remote.URL)

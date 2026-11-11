@@ -70,3 +70,62 @@ func TestResubmitLineageReturnsTheActiveReplacement(t *testing.T) {
 		t.Fatal("retrying the original job created multiple paid replacements")
 	}
 }
+
+func TestMediaSettingsExposeSelectedProvider(t *testing.T) {
+	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"data":[]}`)) })
+	s.database.SetAppSetting("default_image_provider", `"fal"`)
+	s.database.SetAppSetting("default_video_provider", `"fal"`)
+	r := call(t, s, "GET", "/settings/app", "")
+	var body map[string]any
+	json.Unmarshal(r.Body.Bytes(), &body)
+	if body["default_video_provider"] != "fal" || body["video_model"] != "bytedance/seedance-2.0/fast/image-to-video" {
+		t.Fatal("settings ignored media selection", r.Body.String())
+	}
+	r = call(t, s, "PUT", "/settings/app", `{"default_video_provider":"byteplus"}`)
+	if r.Code != 200 {
+		t.Fatal(r.Code, r.Body.String())
+	}
+	json.Unmarshal(r.Body.Bytes(), &body)
+	if body["video_model"] != "dreamina-seedance-2-0-260128" {
+		t.Fatal("provider changed without its model", r.Body.String())
+	}
+}
+
+func TestMediaProviderSwitchRemembersModelsAndRejectsMismatch(t *testing.T) {
+	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"data":[]}`)) })
+	for _, body := range []string{`{"default_video_provider":"fal","video_model":"bytedance/seedance-2.0/fast/text-to-video"}`, `{"default_video_provider":"byteplus"}`, `{"default_video_provider":"fal"}`} {
+		r := call(t, s, "PUT", "/settings/app", body)
+		if r.Code != 200 {
+			t.Fatal(r.Code, r.Body.String())
+		}
+	}
+	r := call(t, s, "GET", "/settings/app", "")
+	var state map[string]any
+	json.Unmarshal(r.Body.Bytes(), &state)
+	if state["video_model"] != "bytedance/seedance-2.0/fast/text-to-video" {
+		t.Fatal("provider lost its saved model", r.Body.String())
+	}
+	r = call(t, s, "PUT", "/settings/app", `{"default_video_provider":"byteplus","video_model":"google/veo-3.1-lite"}`)
+	if r.Code != 400 {
+		t.Fatal("foreign model accepted", r.Code)
+	}
+	r = call(t, s, "GET", "/settings/app", "")
+	json.Unmarshal(r.Body.Bytes(), &state)
+	if state["default_video_provider"] != "fal" {
+		t.Fatal("invalid settings partially committed")
+	}
+	r = call(t, s, "PUT", "/settings/app", `{"default_image_provider":"byteplus"}`)
+	if r.Code != 400 {
+		t.Fatal("video-only provider accepted for images")
+	}
+}
+func TestMediaConfigurationCheckDoesNotClaimGeneration(t *testing.T) {
+	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Fatal("media setup check reached OpenRouter") })
+	s.database.SetProviderSecret("fal", "test-key", nil)
+	r := call(t, s, "POST", "/settings/providers/fal/test", `{}`)
+	var body map[string]any
+	json.Unmarshal(r.Body.Bytes(), &body)
+	if body["ok"] != true || body["generation_tested"] != false || body["credentials_verified"] != false {
+		t.Fatal(r.Body.String())
+	}
+}

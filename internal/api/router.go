@@ -108,15 +108,33 @@ func (s *Server) setupRoutes() {
 			"status":      "ok",
 			"media_ready": s.media.Available(),
 			"missing_keys": func() []string {
+				missing := []string{}
 				if _, err := s.routes().Client("openrouter"); err != nil {
-					return []string{"OPENROUTER_API_KEY"}
+					missing = append(missing, "OPENROUTER_API_KEY")
 				}
-				return []string{}
+				seen := map[string]bool{}
+				for _, kind := range []string{"image", "video"} {
+					provider, _ := s.routes().MediaSelection(kind)
+					if provider == "openrouter" || seen[provider] {
+						continue
+					}
+					seen[provider] = true
+					if _, _, _, err := s.routes().Credentials(provider); err != nil {
+						if provider == "fal" {
+							missing = append(missing, "FAL_KEY")
+						} else if provider == "byteplus" {
+							missing = append(missing, "BYTEPLUS_API_KEY")
+						}
+					}
+				}
+				return missing
 			}(),
-			"text_model":  s.cfg.OpenRouterTextModel,
-			"image_model": s.routes().MediaModel("image"),
-			"video_model": s.routes().MediaModel("video"),
-			"server":      "videoflow-go-v1",
+			"image_provider": func() string { p, _ := s.routes().MediaSelection("image"); return p }(),
+			"video_provider": func() string { p, _ := s.routes().MediaSelection("video"); return p }(),
+			"text_model":     s.cfg.OpenRouterTextModel,
+			"image_model":    s.routes().MediaModel("image"),
+			"video_model":    s.routes().MediaModel("video"),
+			"server":         "videoflow-go-v1",
 		}
 		writeJSON(w, http.StatusOK, resp)
 	})

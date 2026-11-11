@@ -92,21 +92,22 @@ type Shot struct {
 
 // RenderJob table
 type RenderJob struct {
-	ID            string          `json:"id"`
-	ProjectID     *string         `json:"project_id"`
-	SceneID       *string         `json:"scene_id"`
-	ShotID        *string         `json:"shot_id"`
-	Provider      string          `json:"provider"`
-	Model         string          `json:"model"`
-	ProviderJobID *string         `json:"provider_job_id"`
-	Status        string          `json:"status"` // pending, running, succeeded, failed
-	Stage         *string         `json:"stage"`
-	Progress      *string         `json:"progress"`
-	RequestJSON   json.RawMessage `json:"request_json"`
-	ResponseJSON  json.RawMessage `json:"response_json"`
-	Error         *string         `json:"error"`
-	CreatedAt     time.Time       `json:"created_at"`
-	UpdatedAt     time.Time       `json:"updated_at"`
+	ProviderEndpoint string          `json:"provider_endpoint"`
+	ID               string          `json:"id"`
+	ProjectID        *string         `json:"project_id"`
+	SceneID          *string         `json:"scene_id"`
+	ShotID           *string         `json:"shot_id"`
+	Provider         string          `json:"provider"`
+	Model            string          `json:"model"`
+	ProviderJobID    *string         `json:"provider_job_id"`
+	Status           string          `json:"status"` // pending, running, succeeded, failed
+	Stage            *string         `json:"stage"`
+	Progress         *string         `json:"progress"`
+	RequestJSON      json.RawMessage `json:"request_json"`
+	ResponseJSON     json.RawMessage `json:"response_json"`
+	Error            *string         `json:"error"`
+	CreatedAt        time.Time       `json:"created_at"`
+	UpdatedAt        time.Time       `json:"updated_at"`
 }
 
 // RenderOutput table

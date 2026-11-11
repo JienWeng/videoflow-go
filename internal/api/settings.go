@@ -25,9 +25,11 @@ type ProviderPresetInfo struct {
 }
 
 var presetCatalog = map[string]ProviderPresetInfo{
+	"fal":        {Label: "fal.ai", Protocol: "media", URL: providers.FalURL, DefaultModel: providers.FalVideoModel, SuggestedModels: []string{providers.FalVideoModel, providers.FalImageModel}, EnvKey: "FAL_KEY"},
+	"byteplus":   {Label: "BytePlus ModelArk (Seedance)", Protocol: "video", URL: providers.BytePlusURL, DefaultModel: providers.BytePlusVideoModel, SuggestedModels: []string{providers.BytePlusVideoModel}, EnvKey: "BYTEPLUS_API_KEY"},
 	"openrouter": {Label: "OpenRouter", Protocol: "chat", URL: providers.OpenRouterURL, DefaultModel: "openai/gpt-4o-mini", SuggestedModels: []string{"openai/gpt-4o-mini", "meta-llama/llama-3.3-70b-instruct"}, EnvKey: "OPENROUTER_API_KEY"},
 }
-var presetOrder = []string{"openrouter"}
+var presetOrder = []string{"fal", "openrouter", "byteplus"}
 
 func maskKey(raw string) string {
 	if raw == "" {
@@ -48,8 +50,8 @@ func (s *Server) effectiveProviderKey(name string) (key string, baseURL *string,
 func (s *Server) handleGetAppSettings(w http.ResponseWriter, r *http.Request) {
 	appSettings := map[string]interface{}{
 		"default_aspect_ratio":   "9:16",
-		"default_video_provider": "openrouter",
-		"default_image_provider": "openrouter",
+		"default_video_provider": "fal",
+		"default_image_provider": "fal",
 		"default_scene_duration": 5.0,
 		"caption_style":          "clean",
 		"caption_language":       "auto",
@@ -73,8 +75,21 @@ func (s *Server) handleGetAppSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	appSettings["default_image_provider"] = "openrouter"
-	appSettings["default_video_provider"] = "openrouter"
+	imageProvider, imageModel := s.routes().MediaSelection("image")
+	videoProvider, videoModel := s.routes().MediaSelection("video")
+	appSettings["default_image_provider"] = imageProvider
+	appSettings["default_video_provider"] = videoProvider
+	appSettings["image_model"] = imageModel
+	appSettings["ref_image_model"] = s.routes().MediaModel("reference")
+	appSettings["video_model"] = videoModel
+	prefs := map[string]map[string]string{}
+	for _, provider := range []string{"fal", "openrouter", "byteplus"} {
+		prefs[provider] = map[string]string{}
+		for _, kind := range []string{"image", "reference", "video"} {
+			prefs[provider][kind] = s.routes().Setting(routing.MediaPreferenceKey(provider, kind), s.routes().DefaultMediaModel(provider, kind))
+		}
+	}
+	appSettings["media_model_preferences"] = prefs
 	writeJSON(w, http.StatusOK, appSettings)
 }
 
@@ -84,13 +99,11 @@ func (s *Server) handlePutAppSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	for _, key := range []string{"default_image_provider", "default_video_provider"} {
-		if value, ok := body[key]; ok && value != "openrouter" {
-			http.Error(w, "All generation uses OpenRouter", http.StatusBadRequest)
-			return
-		}
+	if err := s.prepareMediaSettings(r.Context(), body); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
 	}
-	for key, modality := range map[string]string{"image_model": "image", "ref_image_model": "image", "video_model": "video", "vl_model": "vision", "whisper_model": "transcription"} {
+	for key, modality := range map[string]string{"vl_model": "vision", "whisper_model": "transcription"} {
 		if value, ok := body[key]; ok {
 			model, valid := value.(string)
 			if !valid || strings.TrimSpace(model) == "" {
@@ -127,13 +140,11 @@ func (s *Server) handlePutAppSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	for k, v := range body {
-		b, _ := json.Marshal(v)
-		if err := s.database.SetAppSetting(k, string(b)); err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
+	if err := s.database.SetAppSettings(body); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
 	}
+
 	s.handleGetAppSettings(w, r)
 }
 
@@ -366,7 +377,7 @@ func (s *Server) handlePutProviderConfig(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if name != "openrouter" {
+	if _, standard := presetCatalog[name]; !standard {
 		conns, _ := s.database.ListConnections()
 		valid := false
 		for _, c := range conns {
@@ -379,8 +390,13 @@ func (s *Server) handlePutProviderConfig(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	if body.BaseURL != nil && *body.BaseURL != "" && !routing.ValidBaseURL(*body.BaseURL) {
-		http.Error(w, "Use https://openrouter.ai/api/v1", 400)
+	if body.BaseURL != nil && *body.BaseURL != "" && !routing.ValidProviderURL(func() string {
+		if _, ok := presetCatalog[name]; ok {
+			return name
+		}
+		return "openrouter"
+	}(), *body.BaseURL) {
+		http.Error(w, "Use the official endpoint for this provider", 400)
 		return
 	}
 	keyStr, _, _, err := s.database.GetProviderSecret(name)
@@ -400,6 +416,16 @@ func (s *Server) handlePutProviderConfig(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleTestProvider(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	if name == "fal" || name == "byteplus" {
+		_, _, _, err := s.routes().Credentials(name)
+		var message any
+		if err != nil {
+			message = err.Error()
+		}
+		writeJSON(w, 200, map[string]any{"ok": err == nil, "error": message, "latency_ms": 0, "checked": "configuration", "credentials_verified": false, "generation_tested": false, "message": "Configuration checked; account/model access requires a later generation test."})
+		return
+	}
 	start := time.Now()
 	client, err := s.routes().Client(chi.URLParam(r, "name"))
 	if err == nil {
@@ -416,7 +442,15 @@ func (s *Server) handleDiscoverModels(w http.ResponseWriter, r *http.Request) {
 	if modality == "" {
 		modality = "text"
 	}
-	client, err := s.routes().Client(chi.URLParam(r, "name"))
+	name := chi.URLParam(r, "name")
+	if r.URL.Query().Get("modality") == "" {
+		if name == "fal" {
+			modality = "image"
+		} else if name == "byteplus" {
+			modality = "video"
+		}
+	}
+	client, err := s.mediaCatalogClient(name, "")
 	var catalog []providers.Model
 	if err == nil {
 		catalog, err = client.Models(r.Context(), modality)
@@ -442,26 +476,39 @@ func (s *Server) handleVerifyModel(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Modality == "" {
 		body.Modality = "text"
+		name := chi.URLParam(r, "name")
+		if name == "byteplus" {
+			body.Modality = "video"
+		} else if name == "fal" {
+			body.Modality = "video"
+			if strings.HasPrefix(body.Model, providers.FalImageModel) {
+				body.Modality = "image"
+			}
+		}
 	}
-	client, err := s.routes().Client(chi.URLParam(r, "name"))
+	name := chi.URLParam(r, "name")
+	client, err := s.mediaCatalogClient(name, body.Model)
 	if err == nil {
 		_, err = client.Model(r.Context(), body.Model, body.Modality)
 	}
-	// A text verification performs one small, billable completion. Media verification only checks the catalog.
 	if err == nil && (body.Modality == "text" || body.Modality == "vision") {
-		var result struct {
-			OK bool `json:"ok"`
-		}
-		err = client.StructuredJSON(r.Context(), body.Model, "Return the requested JSON.", "Return {\"ok\":true}", &result)
-		if err == nil && !result.OK {
-			err = fmt.Errorf("model did not return the requested JSON object")
+		text, e := s.routes().Client(name)
+		err = e
+		if err == nil {
+			var result struct {
+				OK bool `json:"ok"`
+			}
+			err = text.StructuredJSON(r.Context(), body.Model, "Return the requested JSON.", "Return {\"ok\":true}", &result)
+			if err == nil && !result.OK {
+				err = fmt.Errorf("model did not return requested JSON")
+			}
 		}
 	}
 	var message any
 	if err != nil {
 		message = err.Error()
 	}
-	writeJSON(w, 200, map[string]any{"ok": err == nil, "error": message, "modality": body.Modality, "generation_tested": body.Modality == "text" && err == nil})
+	writeJSON(w, 200, map[string]any{"ok": err == nil, "error": message, "modality": body.Modality, "generation_tested": (body.Modality == "text" || body.Modality == "vision") && err == nil})
 }
 
 func (s *Server) handleConnectionPresets(w http.ResponseWriter, r *http.Request) {

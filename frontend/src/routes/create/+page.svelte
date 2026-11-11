@@ -268,7 +268,7 @@
           <p class="mt-2 text-muted-foreground">Checking configured models and supported video settings…</p>
         {:else}
           <p class="mt-2">Effective project style: <strong>{preflight.effective_style}</strong></p>
-          <p class="mt-1 text-muted-foreground">This request creates a story, shots, storyboard images and separate scene clips through OpenRouter. Image model: {preflight.effective_routes.image_model}. Video model: {preflight.effective_routes.video_model}. Supported clip durations: {(preflight.video_durations ?? []).join(', ')} seconds. Assemble approved clips in My videos after rendering.</p>
+          <p class="mt-1 text-muted-foreground">This request creates a story, shots, storyboard images and separate scene clips. Images: {preflight.effective_routes.image_provider} / {preflight.effective_routes.image_model}. Video: {preflight.effective_routes.video_provider} / {preflight.effective_routes.video_model}. Supported clip durations: {(preflight.video_durations ?? []).join(', ')} seconds. Assemble approved clips in My videos after rendering.</p>
           {#each preflight.warnings ?? [] as warning}
             <p class="mt-2 text-amber-700 dark:text-amber-300">Unverified route: {warning.reason}</p>
           {/each}

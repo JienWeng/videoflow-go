@@ -47,6 +47,9 @@ func Open(databasePath string) (*DB, error) {
 	if err := d.migrate(); err != nil {
 		return nil, fmt.Errorf("migration failed: %w", err)
 	}
+	if err := d.ensureMediaProviders(); err != nil {
+		return nil, err
+	}
 	if err := d.ensureRequestReplay(); err != nil {
 		return nil, err
 	}
@@ -982,7 +985,7 @@ func (d *DB) UpsertStyleGuide(s *models.StyleGuide) error {
 
 func (d *DB) GetRenderJob(id string) (*models.RenderJob, error) {
 	row := d.conn.QueryRow(`
-		SELECT id, project_id, scene_id, shot_id, provider, model, provider_job_id,
+		SELECT id, project_id, scene_id, shot_id, provider, model, provider_endpoint, provider_job_id,
 		       status, stage, progress, request_json, response_json, error, created_at, updated_at
 		FROM render_jobs
 		WHERE id = ?
@@ -990,7 +993,7 @@ func (d *DB) GetRenderJob(id string) (*models.RenderJob, error) {
 	var j models.RenderJob
 	var req, resp string
 	if err := row.Scan(
-		&j.ID, &j.ProjectID, &j.SceneID, &j.ShotID, &j.Provider, &j.Model, &j.ProviderJobID,
+		&j.ID, &j.ProjectID, &j.SceneID, &j.ShotID, &j.Provider, &j.Model, &j.ProviderEndpoint, &j.ProviderJobID,
 		&j.Status, &j.Stage, &j.Progress, &req, &resp, &j.Error, &j.CreatedAt, &j.UpdatedAt,
 	); err != nil {
 		return nil, err
@@ -1002,7 +1005,7 @@ func (d *DB) GetRenderJob(id string) (*models.RenderJob, error) {
 
 func (d *DB) ListRenderJobs(projectID string) ([]models.RenderJob, error) {
 	rows, err := d.conn.Query(`
-		SELECT id, project_id, scene_id, shot_id, provider, model, provider_job_id,
+		SELECT id, project_id, scene_id, shot_id, provider, model, provider_endpoint, provider_job_id,
 		       status, stage, progress, request_json, response_json, error, created_at, updated_at
 		FROM render_jobs
 		WHERE project_id = ?
@@ -1018,7 +1021,7 @@ func (d *DB) ListRenderJobs(projectID string) ([]models.RenderJob, error) {
 		var j models.RenderJob
 		var req, resp string
 		if err := rows.Scan(
-			&j.ID, &j.ProjectID, &j.SceneID, &j.ShotID, &j.Provider, &j.Model, &j.ProviderJobID,
+			&j.ID, &j.ProjectID, &j.SceneID, &j.ShotID, &j.Provider, &j.Model, &j.ProviderEndpoint, &j.ProviderJobID,
 			&j.Status, &j.Stage, &j.Progress, &req, &resp, &j.Error, &j.CreatedAt, &j.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -1049,9 +1052,9 @@ func insertRenderJob(conn sqlExecutor, j *models.RenderJob) error {
 	}
 
 	_, err := conn.Exec(`
-		INSERT INTO render_jobs (id, project_id, scene_id, shot_id, provider, model, provider_job_id, status, stage, progress, request_json, response_json, error, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, j.ID, j.ProjectID, j.SceneID, j.ShotID, j.Provider, j.Model, j.ProviderJobID, j.Status, j.Stage, j.Progress, req, resp, j.Error, now, now)
+		INSERT INTO render_jobs (id, project_id, scene_id, shot_id, provider, model, provider_endpoint, provider_job_id, status, stage, progress, request_json, response_json, error, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, j.ID, j.ProjectID, j.SceneID, j.ShotID, j.Provider, j.Model, j.ProviderEndpoint, j.ProviderJobID, j.Status, j.Stage, j.Progress, req, resp, j.Error, now, now)
 	return err
 }
 
@@ -1061,15 +1064,15 @@ func (d *DB) UpdateRenderJob(j *models.RenderJob) error {
 
 	_, err := d.conn.Exec(`
 		UPDATE render_jobs
-		SET status = ?, stage = ?, progress = ?, provider_job_id = ?, response_json = ?, error = ?, model = ?, provider = ?, request_json = ?, updated_at = ?
+		SET status = ?, stage = ?, progress = ?, provider_job_id = ?, response_json = ?, error = ?, model = ?, provider = ?, provider_endpoint = ?, request_json = ?, updated_at = ?
 		WHERE id = ?
-	`, j.Status, j.Stage, j.Progress, j.ProviderJobID, string(j.ResponseJSON), j.Error, j.Model, j.Provider, string(j.RequestJSON), now, j.ID)
+	`, j.Status, j.Stage, j.Progress, j.ProviderJobID, string(j.ResponseJSON), j.Error, j.Model, j.Provider, j.ProviderEndpoint, string(j.RequestJSON), now, j.ID)
 	return err
 }
 
 func (d *DB) ListPendingRenderJobs() ([]models.RenderJob, error) {
 	rows, err := d.conn.Query(`
-		SELECT id, project_id, scene_id, shot_id, provider, model, provider_job_id,
+		SELECT id, project_id, scene_id, shot_id, provider, model, provider_endpoint, provider_job_id,
 		       status, stage, progress, request_json, response_json, error, created_at, updated_at
 		FROM render_jobs
 		WHERE status IN ('pending', 'running')
@@ -1085,7 +1088,7 @@ func (d *DB) ListPendingRenderJobs() ([]models.RenderJob, error) {
 		var j models.RenderJob
 		var req, resp string
 		if err := rows.Scan(
-			&j.ID, &j.ProjectID, &j.SceneID, &j.ShotID, &j.Provider, &j.Model, &j.ProviderJobID,
+			&j.ID, &j.ProjectID, &j.SceneID, &j.ShotID, &j.Provider, &j.Model, &j.ProviderEndpoint, &j.ProviderJobID,
 			&j.Status, &j.Stage, &j.Progress, &req, &resp, &j.Error, &j.CreatedAt, &j.UpdatedAt,
 		); err != nil {
 			return nil, err

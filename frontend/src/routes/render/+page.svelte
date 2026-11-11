@@ -152,7 +152,7 @@
   });
 
   async function reconcileRender(j:any){
-    const id=j.provider_job_id || prompt('Existing OpenRouter video job ID (verify it belongs to this request in your provider account):');
+    const id=j.provider_job_id || prompt(`Existing ${j.provider} job ID (verify it belongs to this request in your provider account):`);
     if(!id?.trim())return;
     const reason=j.provider_job_id?'Resume the existing provider job recorded with this request':prompt('Record how you verified this provider job matches the original request (at least 10 characters):');
     if(!reason || reason.trim().length<10){toast.error('Verification evidence is required.');return;}

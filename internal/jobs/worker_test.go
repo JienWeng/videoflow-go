@@ -194,3 +194,56 @@ func TestRecoveredSubmissionNeverPostsAgain(t *testing.T) {
 		t.Fatalf("uncertain submission replayed: posts=%d status=%s", posts, saved.Status)
 	}
 }
+
+func TestBytePlusJobKeepsItsProviderAfterDefaultChanges(t *testing.T) {
+	posts := 0
+	var base string
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/clip.mp4" {
+			if r.Header.Get("Authorization") != "" {
+				t.Error("provider key leaked to media URL")
+			}
+			w.Write([]byte("fixture-video"))
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer ark-key" {
+			t.Error("wrong provider/key")
+		}
+		switch r.Method + " " + r.URL.Path {
+		case "POST /contents/generations/tasks":
+			posts++
+			w.Write([]byte(`{"id":"saved-ark-task"}`))
+		case "GET /contents/generations/tasks/saved-ark-task":
+			json.NewEncoder(w).Encode(map[string]any{"status": "succeeded", "content": map[string]string{"video_url": base + "/clip.mp4"}})
+		default:
+			t.Error("wrong provider path", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer remote.Close()
+	base = remote.URL
+	cfg := config.Load()
+	cfg.StorageRoot = t.TempDir()
+	cfg.BytePlusAPIKey = "ark-key"
+	cfg.BytePlusBaseURL = base
+	d, err := db.Open(filepath.Join(t.TempDir(), "db.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	d.SetAppSetting("default_video_provider", `"fal"`)
+	d.SetAppSetting("video_model", `"changed-model"`)
+	job := &models.RenderJob{Provider: "byteplus", ProviderEndpoint: base, Model: "dreamina-seedance-2-0-260128", Status: "pending", RequestJSON: json.RawMessage(`{"prompt":"Cat","duration":5,"aspect_ratio":"16:9"}`)}
+	if err = d.CreateRenderJob(job); err != nil {
+		t.Fatal(err)
+	}
+	pool := NewWorkerPool(cfg, d, events.NewBroker(), media.NewMediaEngine())
+	defer pool.Stop()
+	if err = pool.processJob(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	saved, _ := d.GetRenderJob(job.ID)
+	if saved.Status != "succeeded" || saved.Provider != "byteplus" || saved.ProviderEndpoint != base || posts != 1 {
+		t.Fatal(saved, posts)
+	}
+}

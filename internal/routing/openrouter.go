@@ -24,6 +24,9 @@ func ValidBaseURL(raw string) bool {
 }
 
 func (r Resolver) Credentials(name string) (key, endpoint string, fromDB bool, err error) {
+	if name == "fal" || name == "byteplus" {
+		return r.mediaCredentials(name)
+	}
 	endpoint = r.Config.OpenRouterBaseURL
 	if endpoint == "" {
 		endpoint = providers.OpenRouterURL
@@ -76,6 +79,9 @@ func (r Resolver) Credentials(name string) (key, endpoint string, fromDB bool, e
 }
 
 func (r Resolver) Client(name string) (*providers.OpenRouterClient, error) {
+	if name == "fal" || name == "byteplus" {
+		return nil, fmt.Errorf("%s is a media provider; text/vision/transcription use OpenRouter", name)
+	}
 	key, endpoint, _, err := r.Credentials(name)
 	if err != nil {
 		return nil, err
@@ -144,16 +150,7 @@ func (r Resolver) Agent(ctx context.Context, name string) (*providers.OpenRouter
 	return client, model, nil
 }
 
-func (r Resolver) MediaModel(kind string) string {
-	switch kind {
-	case "video":
-		return r.Setting("video_model", r.Config.OpenRouterVideoModel)
-	case "reference":
-		return r.Setting("ref_image_model", r.Config.OpenRouterImageModel)
-	default:
-		return r.Setting("image_model", r.Config.OpenRouterImageModel)
-	}
-}
+func (r Resolver) MediaModel(kind string) string { _, model := r.MediaSelection(kind); return model }
 
 func (r Resolver) NumberSetting(key string, fallback float64) float64 {
 	raw, err := r.DB.GetAppSetting(key)

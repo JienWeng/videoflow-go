@@ -55,7 +55,7 @@ func main() {
 	}
 
 	openrouter := providers.NewOpenRouterClient(cfg.OpenRouterAPIKey)
-	// All AI generation uses OpenRouter.
+	// Text agents use OpenRouter; media routes are resolved independently.
 	agentsEngine := agents.NewAgentEngine(openrouter, "openai/gpt-4o-mini")
 
 	workers := jobs.NewWorkerPool(cfg, database, broker, mediaEngine)

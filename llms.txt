@@ -10,7 +10,7 @@ Release packages: https://github.com/JienWeng/videoflow-go/releases
 
 The repaired native browser-launcher preview is published at https://github.com/JienWeng/videoflow-go/releases/tag/v0.3.2-browser-preview.1. It includes ZIPs for darwin-arm64 (Apple Silicon), darwin-amd64 (Intel Mac), linux-amd64 and linux-arm64, plus llms.txt and SHA256SUMS.txt. All four packages passed native build/tests and extracted-app smoke checks. Older Electron DMG/DEB previews remain available but do not include the November browser fixes. The current release is a browser-launcher ZIP, not a new Electron installer.
 
-The local studio uses your OpenRouter API key and credits. AI generation and transcription need internet and can incur charges. Local installation and ordinary navigation do not require a paid generation.
+Current source uses your fal.ai key/credits for default image/video routes and OpenRouter key/credits for text, vision and transcription, with optional direct BytePlus video. See docs/PROVIDERS.md. The older v0.3.2 download uses OpenRouter only. AI generation and transcription need internet and can incur charges. Local installation and ordinary navigation do not require a paid generation.
 
 ## Install the browser version from source
 
@@ -66,7 +66,7 @@ Start with checks that do not submit generation:
 
 Only when ready to spend a small test budget:
 
-5. Add your OpenRouter key in Settings and test the connection. Set a small provider-side spending limit before generation.
+5. Configure the provider keys required by the version you installed in Settings. Current source defaults media to fal.ai; older v0.3.2 packages use OpenRouter. Media configuration/catalog checks do not verify real account access. Set a small provider-side spending limit before generation.
 6. Start with one scene, one character and a duration/aspect supported by the configured model. Review the preflight before submitting. The local studio's configured models are distinct from SaaS server-controlled model policy.
 7. Confirm shots, reference-conditioned keyframes, clip status and playback. One scene render is one generated clip; model output is not guaranteed to match exact camera cuts or character identity.
 8. Open the output editor, add/transcribe captions, save, and play/download the captioned export. Transcription is also a provider request.
@@ -76,6 +76,8 @@ Only when ready to spend a small test budget:
 The repair was verified with local provider mocks, real FFmpeg, automated tests and a browser workflow. Live model quality, your installation and your device still need the checks above; no live-paid test has been claimed.
 
 ## Detailed repository documentation
+
+- [Provider setup and supported routes](https://github.com/JienWeng/videoflow-go/blob/main/docs/PROVIDERS.md)
 
 - [Browser generation and recovery workflow](https://github.com/JienWeng/videoflow-go/blob/main/docs/BROWSER-WORKFLOW.md)
 - [Desktop quick start](https://github.com/JienWeng/videoflow-go/blob/main/docs/DESKTOP-QUICKSTART.txt)

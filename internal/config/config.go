@@ -6,6 +6,10 @@ import (
 )
 
 type Config struct {
+	FalAPIKey             string
+	FalBaseURL            string
+	BytePlusAPIKey        string
+	BytePlusBaseURL       string
 	Port                  int
 	StorageRoot           string
 	DatabasePath          string
@@ -21,6 +25,7 @@ type Config struct {
 
 func Load() *Config {
 	cfg := &Config{
+		FalAPIKey: os.Getenv("FAL_KEY"), FalBaseURL: "https://queue.fal.run", BytePlusAPIKey: os.Getenv("BYTEPLUS_API_KEY"), BytePlusBaseURL: "https://ark.ap-southeast.bytepluses.com/api/v3",
 		Port:                  8000,
 		StorageRoot:           "storage",
 		DatabasePath:          "db.sqlite",
@@ -53,12 +58,4 @@ func Load() *Config {
 		}
 	}
 	return cfg
-}
-
-func (c *Config) MissingKeys() []string {
-	var missing []string
-	if c.OpenRouterAPIKey == "" {
-		missing = append(missing, "OPENROUTER_API_KEY")
-	}
-	return missing
 }
