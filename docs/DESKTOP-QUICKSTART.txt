@@ -1,8 +1,8 @@
 VideoFlow desktop — start here
 
-Existing releases contain older preview builds. For the November browser fixes,
-use current main through Docker or the repaired browser-launcher ZIP preview
-when published. See ../llms.txt for installation and later testing.
+The Electron steps below describe older installers. For the November browser
+fixes, use the v0.3.2-browser-preview.1 native browser-launcher ZIP or current
+main through Docker. See ../llms.txt for installation and later testing.
 1. Open https://github.com/JienWeng/videoflow-go/releases
 2. Download the Electron package for your computer:
    Mac with an Apple Silicon chip (M1/M2/M3 or newer): mac-arm64 DMG.

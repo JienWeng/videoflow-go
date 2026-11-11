@@ -8,7 +8,7 @@ Release packages: https://github.com/JienWeng/videoflow-go/releases
 
 ## Availability
 
-Older Electron and native ZIP previews are available on the releases page. Those packages do not include the November browser fixes. Use current main through Docker, or the repaired v0.3.2 browser preview once its native builds have passed and its release assets are published. Do not invent asset URLs or claim an older package contains current main.
+The repaired native browser-launcher preview is published at https://github.com/JienWeng/videoflow-go/releases/tag/v0.3.2-browser-preview.1. It includes ZIPs for darwin-arm64 (Apple Silicon), darwin-amd64 (Intel Mac), linux-amd64 and linux-arm64, plus llms.txt and SHA256SUMS.txt. All four packages passed native build/tests and extracted-app smoke checks. Older Electron DMG/DEB previews remain available but do not include the November browser fixes. The current release is a browser-launcher ZIP, not a new Electron installer.
 
 The local studio uses your OpenRouter API key and credits. AI generation and transcription need internet and can incur charges. Local installation and ordinary navigation do not require a paid generation.
 

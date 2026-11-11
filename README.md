@@ -4,8 +4,8 @@ VideoFlow is a desktop app for creating AI-assisted videos. It includes the app,
 
 ## Use the app
 
-1. [Download VideoFlow](https://github.com/JienWeng/videoflow-go/releases) for your computer.
-2. Install and open it: use the DMG on macOS or DEB on Ubuntu/Debian. For other Linux distributions, use the AppImage or portable archive.
+1. Download the [repaired browser-launcher preview](https://github.com/JienWeng/videoflow-go/releases/tag/v0.3.2-browser-preview.1) for your Mac or Linux processor.
+2. Extract the entire ZIP and open **Start VideoFlow**. Keep its terminal open; the app opens in your browser at `http://127.0.0.1:8000`. Older Electron DMG/DEB packages remain under [all releases](https://github.com/JienWeng/videoflow-go/releases).
 3. In **Settings**, add an [OpenRouter API key](https://openrouter.ai/keys). AI generation requires internet access and account credits.
 4. Create a project and start making a video.
 
@@ -15,7 +15,7 @@ New to VideoFlow? Follow the [desktop quick start](docs/DESKTOP-QUICKSTART.txt),
 
 [Download llms.txt](https://raw.githubusercontent.com/JienWeng/videoflow-go/main/llms.txt) for local installation, updates, data storage and a staged test checklist. Future native ZIPs include the guide; it is documentation, not an installer.
 
-Existing desktop releases predate the November browser fixes. To use the repaired source now, run `docker compose up --build -d` and open `http://127.0.0.1:8080`, or use the repaired browser-launcher preview when its checked packages are published. See the [character-to-export workflow](docs/BROWSER-WORKFLOW.md).
+The v0.3.2 browser-launcher preview includes the November fixes and passed native checks on all four platforms. Older Electron releases predate those fixes. To run from source instead, use `docker compose up --build -d` and open `http://127.0.0.1:8080`. See the [character-to-export workflow](docs/BROWSER-WORKFLOW.md).
 
 ## Run from source
 
