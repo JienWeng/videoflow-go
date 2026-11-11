@@ -284,11 +284,11 @@ func voiceMediaFixtures(t *testing.T) ([]byte, []byte) {
 	}
 	dir := t.TempDir()
 	clip := filepath.Join(dir, "clip.mp4")
-	audio := filepath.Join(dir, "speech.mp3")
+	audio := filepath.Join(dir, "speech.wav")
 	if raw, err := exec.Command("ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=blue:s=160x120:d=2", "-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", clip).CombinedOutput(); err != nil {
 		t.Fatalf("video fixture %v %s", err, raw)
 	}
-	if raw, err := exec.Command("ffmpeg", "-v", "error", "-y", "-i", clip, "-vn", audio).CombinedOutput(); err != nil {
+	if raw, err := exec.Command("ffmpeg", "-v", "error", "-y", "-i", clip, "-vn", "-c:a", "pcm_s16le", audio).CombinedOutput(); err != nil {
 		t.Fatalf("audio fixture %v %s", err, raw)
 	}
 	v, _ := os.ReadFile(clip)
@@ -315,7 +315,7 @@ func TestScriptCaptionFinalAudioAlignmentApplyExportAndStaleness(t *testing.T) {
 			submits.Add(1)
 			var input map[string]any
 			json.NewDecoder(r.Body).Decode(&input)
-			if input["text"] != "Hello, world!" || !strings.HasPrefix(input["audio_url"].(string), "data:audio/mpeg;base64,") {
+			if input["text"] != "Hello, world!" || !strings.HasPrefix(input["audio_url"].(string), "data:audio/wav;base64,") {
 				t.Error("alignment did not receive approved words and final audio")
 			}
 			w.Write([]byte(`{"request_id":"alignment-receipt"}`))

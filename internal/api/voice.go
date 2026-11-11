@@ -479,7 +479,7 @@ func (s *Server) prepareVoice(ctx context.Context, project string, p voicePrepar
 			if duration > 600 {
 				return nil, fmt.Errorf("local alignment supports final outputs up to 10 minutes")
 			}
-			temp, err := os.CreateTemp("", "videoflow-align-*.mp3")
+			temp, err := os.CreateTemp("", "videoflow-align-*.wav")
 			if err != nil {
 				return nil, err
 			}
@@ -488,7 +488,7 @@ func (s *Server) prepareVoice(ctx context.Context, project string, p voicePrepar
 			defer os.Remove(name)
 			bounded, cancel := context.WithTimeout(ctx, time.Minute)
 			defer cancel()
-			if raw, err := exec.CommandContext(bounded, "ffmpeg", "-v", "error", "-nostdin", "-y", "-protocol_whitelist", "file,pipe", "-format_whitelist", "wav,mp3,flac,mov,matroska,webm", "-i", path, "-vn", "-ac", "1", "-ar", "24000", "-b:a", "64k", name).CombinedOutput(); err != nil {
+			if raw, err := exec.CommandContext(bounded, "ffmpeg", "-v", "error", "-nostdin", "-y", "-protocol_whitelist", "file,pipe", "-format_whitelist", "wav,mp3,flac,mov,matroska,webm", "-i", path, "-vn", "-ac", "1", "-ar", "24000", "-c:a", "pcm_s16le", name).CombinedOutput(); err != nil {
 				return nil, fmt.Errorf("extract final spoken audio: %v %s", err, raw)
 			}
 			audio, err := os.ReadFile(name)
@@ -500,7 +500,7 @@ func (s *Server) prepareVoice(ctx context.Context, project string, p voicePrepar
 				texts = append(texts, l.Text)
 			}
 			task.Model = providers.FalAlignmentModel
-			input = map[string]any{"audio_url": voiceDataURI(audio, "audio/mpeg"), "text": strings.Join(texts, "\n")}
+			input = map[string]any{"audio_url": voiceDataURI(audio, "audio/wav"), "text": strings.Join(texts, "\n")}
 		} else {
 			a, audio, err := bindAsset(p.AudioAssetID)
 			if err != nil {
