@@ -95,7 +95,7 @@ func (c *FalClient) result(ctx context.Context, model, id string) (string, []byt
 		data, err := c.request(ctx, "GET", path, nil)
 		if err != nil {
 			var rejected *HTTPError
-			if errors.As(err, &rejected) && rejected.Status >= 400 && rejected.Status < 500 && rejected.Status != 408 && rejected.Status != 429 {
+			if errors.As(err, &rejected) && rejected.Status == 422 {
 				return "failed", nil, err
 			}
 			return "", nil, err
@@ -144,7 +144,7 @@ func (c *FalClient) GetVideo(ctx context.Context, id string) (string, []string, 
 		} `json:"video"`
 	}
 	if json.Unmarshal(data, &result) != nil || result.Video.URL == "" {
-		return "failed", nil, fmt.Errorf("fal result contains no video")
+		return "", nil, fmt.Errorf("fal completed task result could not be retrieved: missing or invalid video URL")
 	}
 	return status, []string{result.Video.URL}, nil
 }

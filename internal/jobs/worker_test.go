@@ -247,3 +247,82 @@ func TestBytePlusJobKeepsItsProviderAfterDefaultChanges(t *testing.T) {
 		t.Fatal(saved, posts)
 	}
 }
+
+func TestCompletedProviderRetrievalFailureKeepsRetryFence(t *testing.T) {
+	for _, scenario := range []string{"fal-401", "fal-403", "fal-404", "fal-malformed", "fal-missing-url", "byteplus-missing-url"} {
+		t.Run(scenario, func(t *testing.T) {
+			posts := 0
+			provider := "fal"
+			model := "bytedance/seedance-2.0/fast/text-to-video"
+			if strings.HasPrefix(scenario, "byteplus") {
+				provider = "byteplus"
+				model = "dreamina-seedance-2-0-260128"
+			}
+			remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == "POST" {
+					posts++
+					if provider == "fal" {
+						w.Write([]byte(`{"request_id":"accepted-task"}`))
+					} else {
+						w.Write([]byte(`{"id":"accepted-task"}`))
+					}
+					return
+				}
+				if provider == "byteplus" {
+					w.Write([]byte(`{"status":"succeeded","content":{}}`))
+					return
+				}
+				if strings.HasSuffix(r.URL.Path, "/status") {
+					w.Write([]byte(`{"status":"COMPLETED"}`))
+					return
+				}
+				switch scenario {
+				case "fal-401":
+					w.WriteHeader(401)
+				case "fal-403":
+					w.WriteHeader(403)
+				case "fal-404":
+					w.WriteHeader(404)
+				case "fal-malformed":
+					w.Write([]byte(`not-json`))
+				case "fal-missing-url":
+					w.Write([]byte(`{"video":{}}`))
+				}
+			}))
+			defer remote.Close()
+			cfg := config.Load()
+			cfg.StorageRoot = t.TempDir()
+			cfg.FalAPIKey = "fal-key"
+			cfg.FalBaseURL = remote.URL
+			cfg.BytePlusAPIKey = "ark-key"
+			cfg.BytePlusBaseURL = remote.URL
+			d, err := db.Open(filepath.Join(t.TempDir(), "db.sqlite"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer d.Close()
+			job := &models.RenderJob{Provider: provider, ProviderEndpoint: remote.URL, Model: model, Status: "pending", RequestJSON: json.RawMessage(`{"prompt":"Cat","duration":5,"aspect_ratio":"16:9"}`)}
+			if err = d.CreateRenderJob(job); err != nil {
+				t.Fatal(err)
+			}
+			pool := NewWorkerPool(cfg, d, events.NewBroker(), media.NewMediaEngine())
+			defer pool.Stop()
+			pool.pollInterval = time.Millisecond
+			if err = pool.processJob(job.ID); err == nil {
+				t.Fatal("retrieval anomaly was treated as success")
+			}
+			saved, _ := d.GetRenderJob(job.ID)
+			if saved.Status != "reconciliation_required" || saved.ProviderJobID == nil || *saved.ProviderJobID != "accepted-task" {
+				t.Fatalf("completed paid task lost its recovery fence: %+v", saved)
+			}
+			fresh := &models.RenderJob{Provider: provider, Model: model, Status: "pending"}
+			if _, err = d.CreateRenderRetry(job.ID, fresh); err == nil {
+				t.Fatal("uncertain completed job permitted new paid retry")
+			}
+			pool.processJob(job.ID)
+			if posts != 1 {
+				t.Fatal("worker resubmitted existing task", posts)
+			}
+		})
+	}
+}

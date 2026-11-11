@@ -83,7 +83,7 @@ func (c *BytePlusClient) GetVideo(ctx context.Context, id string) (string, []str
 		return "running", nil, nil
 	case "succeeded":
 		if res.Content.URL == "" {
-			return "failed", nil, fmt.Errorf("BytePlus result contains no video")
+			return "", nil, fmt.Errorf("BytePlus succeeded task result could not be retrieved: missing video URL")
 		}
 		return "completed", []string{res.Content.URL}, nil
 	case "failed", "expired", "cancelled", "canceled":
