@@ -54,6 +54,7 @@
     return item.kind === 'render' ? 'Re-render' : 'Retry';
   }
 
+  let {compact=false}:{compact?:boolean}=$props();
   let open = $state(false);
   let root: HTMLDivElement | undefined = $state();
 
@@ -135,7 +136,7 @@
               <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75"></span>
               <span class="relative inline-flex size-2 rounded-full bg-primary"></span>
             </span>
-            {activity.runningCount} running
+            <span class={compact?'sr-only':''}>{activity.runningCount} running</span>
           </span>
         {/if}
       </div>
@@ -192,16 +193,18 @@
   <button
     type="button"
     onclick={() => (open = !open)}
-    class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent
+    aria-label={hasRunning?`Activity, ${activity.runningCount} running`:'Activity'}
+    title={compact?(hasRunning?`Activity, ${activity.runningCount} running`:'Activity'):undefined}
+    class="relative flex min-h-11 w-full items-center gap-2 rounded-md py-1.5 text-sm hover:bg-accent {compact?'justify-center px-0':'px-2'}
            {hasRunning ? 'text-primary font-medium' : 'text-muted-foreground'}"
     aria-expanded={open}
   >
     {#if hasRunning}
       <Loader2 class="size-4 animate-spin" />
-      {activity.runningCount} running
+      <span class={compact?'sr-only':''}>{activity.runningCount} running</span>
     {:else}
       <History class="size-4" />
-      Activity
+      <span class={compact?'sr-only':''}>Activity</span>
     {/if}
   </button>
 </div>
