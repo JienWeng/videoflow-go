@@ -12,3 +12,5 @@
 - [x] Record checklist evidence and limits, commit and update PR.
 
 Verification: production build and Svelte check passed; 26 populated-canvas checks, 10 chat-state checks and 14 application regression checks passed with zero browser page errors. Unit tests: 21 passed. The near-bottom scrolling regression failed before tightening the library threshold and passed afterward. Evidence and item coverage: docs/audits/2026-11-12-integrated-assistant.md.
+
+Additional regression: completed-reply following failed when content growth was mistaken for manual history scrolling. The fix tracks movement into history separately and follows through content/composer resizing. Both ordinary following and manually paused reading are verified.

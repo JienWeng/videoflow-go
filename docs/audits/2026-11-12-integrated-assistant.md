@@ -42,14 +42,14 @@ Expected 13 items; reported 13: 8 Present, 1 Partial, 1 Missing, 3 Not applicabl
 | Chat / Sender identification | ChatPanel previously exposed author names only to assistive technology. Source and populated fixture. | Medium | Visible role labels; populated desktop/mobile screenshots and retained accessible log. |
 | Empty state / Clear heading, Primary action | Fake greeting occupied the first message position with no task-starting action. Source and supplied screenshot. | Medium | Dedicated empty state with prompt-filling action; first actual send removes the synthetic greeting from conversation history. |
 | Empty state / Error state variant | Failed history load appeared as an ordinary assistant message; missing session guidance shared the thread styling. | Medium | Separate setup/loading/error states, disabled submission and retry. Browser checks each state and recovery. |
-| Chat / Message thread | Existing AI Elements scroll context used a 200px bottom threshold. A browser regression reproduced a forced jump while reading 80px above the bottom. | Medium | Follow only within a 4px rounding tolerance of the bottom; preserve position above it. Browser checks reading at the start and near the end, plus explicit jump-to-latest. |
+| Chat / Message thread | Existing AI Elements scroll context used a 200px bottom threshold. A browser regression reproduced a forced jump while reading 80px above the bottom. | Medium | Follow only within a 4px rounding tolerance of the bottom; preserve position above it. Track movement into history separately from content growth, retain following through composer/content resizing, and move directly when following so animation positions are not misread as manual scrolling. Browser checks reading at the start and near the end, plus explicit jump-to-latest. |
 | Chat / Message input | Failed sends gave text errors without a way to restore the cleared multiline prompt. | Medium | Edit and retry restores the original text and requires another send. Browser verifies both lines and subsequent success. |
 
 ## Verification and limitations
 
 - Production build passed; Svelte check found zero errors and warnings.
 - Populated canvas/browser suite: 26 checks across desktop 1440px and mobile 390px, including existing scene edits, dirty guards, selection payload, layout undo, and new assistant controls; zero page errors.
-- Chat state suite: 10 checks across desktop/mobile, covering setup, failed history/retry, multiline failed sends/retry, preserved reading position (including 80px above the bottom), jump-to-latest, and retained proposals that never run automatically. Mobile uses reduced-motion emulation; zero page errors.
+- Chat state suite: 10 checks across desktop/mobile, covering setup, failed history/retry, multiline failed sends/retry, automatic following to the completed reply, preserved reading position (including 80px above the bottom), jump-to-latest, and retained proposals that never run automatically. Mobile uses reduced-motion emulation; zero page errors.
 - Existing application regression suite: 14 checks; unit suite: 21 tests.
 - Live application inspected with the collaborative browser. All browser test writes were intercepted fixtures, with no paid generation or real credential changes.
 
