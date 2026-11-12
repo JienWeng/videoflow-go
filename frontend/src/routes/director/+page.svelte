@@ -99,7 +99,7 @@
 
 <div class="mx-auto w-full max-w-4xl px-4 py-6 sm:px-8 sm:py-8">
   <header class="mb-8 flex items-start justify-between gap-4">
-    <div><h1 class="text-2xl font-semibold tracking-tight">AI sessions</h1><p class="mt-1 text-sm text-muted-foreground">Choose who helps plan your story.</p></div>
+    <div><h1 class="text-2xl font-semibold tracking-tight">AI sessions</h1></div>
     <Button variant="ghost" class="min-h-11 shrink-0" disabled={busy || dirty} onclick={() => run(refresh)} aria-label="Refresh sessions"><RefreshCw class="size-4" /><span class="hidden sm:inline">Refresh</span></Button>
   </header>
   {#if error}<p role="alert" class="mb-5 rounded-lg border border-destructive p-3 text-sm text-destructive">{error}</p>{/if}

@@ -609,9 +609,6 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
 <div class="settings-page mx-auto max-w-6xl p-4 sm:p-8">
   <div class="mb-4">
     <h1 class="text-2xl font-semibold tracking-tight">Settings</h1>
-    <p class="text-sm text-muted-foreground">
-      Manage your workspace preferences and AI connections in one place.
-    </p>
   </div>
 
   {#if error}

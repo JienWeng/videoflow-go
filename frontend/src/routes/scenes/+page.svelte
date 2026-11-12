@@ -785,7 +785,6 @@
   <!-- Page header (unchanged copy) -->
   <div class="px-6 pt-6 pb-3 shrink-0">
     <h1 class="text-lg font-semibold">Scenes</h1>
-    <p class="text-sm text-muted-foreground">Turn a story idea into scenes, then walk each one through Expand, Shots, Storyboard and Render.</p>
     <div class="mt-2 flex flex-wrap items-center gap-2">
       <input
         bind:value={conversationInstruction}

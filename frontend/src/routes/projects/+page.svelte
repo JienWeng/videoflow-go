@@ -146,9 +146,6 @@
   <div class="mb-4 flex items-start justify-between gap-3">
     <div>
       <h1 class="text-lg font-semibold">Projects</h1>
-      <p class="text-sm text-muted-foreground">
-        Each project is a separate workspace — its own scenes, characters, assets and renders.
-      </p>
     </div>
     <div>
       <input
@@ -183,7 +180,7 @@
     </div>
     <p class="mt-2 text-xs text-muted-foreground">Creating switches you to the new project.</p>
   </form>
-  <p class="mb-4 text-xs text-muted-foreground">JSON exports include story data and media references. Media files, render history, voices and AI sessions are not bundled; keep your data volume for a full backup.</p>
+  <details class="mb-4 text-xs text-muted-foreground"><summary class="cursor-pointer py-2">About project files</summary><p class="mt-1 max-w-prose">JSON includes story data and media references. Media files, render history, voices and AI sessions are not included. Keep your data volume for a full backup.</p></details>
 
   {#if !loaded}
     <div class="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">

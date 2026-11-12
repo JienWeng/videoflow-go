@@ -78,7 +78,7 @@
 <svelte:head><title>{workspace==='overview'?'Project overview · VideoFlow':'VideoFlow Studio'}</title></svelte:head>
 <div class="flex h-full min-h-0 flex-col">
   <header class="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
-    <div><h1 class="text-base font-semibold">{workspace==='overview'?'Project overview':'Story studio'}</h1><p class="text-xs text-muted-foreground">{workspace==='overview'?'Your project at a glance. Pick your next step.':'Select an item. Shape the story. Review before generating.'}</p></div>
+    <div><h1 class="text-base font-semibold">{workspace==='overview'?'Project overview':'Story studio'}</h1></div>
     <div role="group" aria-label="Workspace view" class="flex rounded-lg border border-border p-1">
       <button class="min-h-10 rounded-md px-3 text-sm {workspace==='overview'?'bg-accent font-semibold':'text-muted-foreground hover:text-foreground'}" aria-pressed={workspace==='overview'} onclick={()=>setWorkspace('overview')}>Overview</button>
       <button class="min-h-10 rounded-md px-3 text-sm {workspace==='studio'?'bg-accent font-semibold':'text-muted-foreground hover:text-foreground'}" aria-pressed={workspace==='studio'} onclick={()=>setWorkspace('studio')}>Canvas &amp; chat</button>

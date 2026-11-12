@@ -32,7 +32,7 @@
 </script>
 <svelte:head><title>Compositions · VideoFlow</title></svelte:head>
 <main>
- <a href="/render">← Back to renders</a><header><div><h1>Edit a composition</h1><p>Combine existing clips, sound and approved captions. Your original media stays intact.</p></div><span class="runtime">{runtime?.ready?'Local renderer ready':'Local renderer needs setup'}</span></header>
+ <a href="/render">← Back to renders</a><header><div><h1>Edit a composition</h1></div><span class="runtime">{runtime?.ready?'Local renderer ready':'Local renderer needs setup'}</span></header>
  {#if error}<p class="error" role="alert">{error}</p>{/if}
  <section aria-label="Saved composition edits"><h2>Saved edits</h2>{#if indexError}<p role="alert">{indexError}</p><button onclick={refreshIndex}>Try again</button>{:else if savedEdits.length}<ul>{#each savedEdits as edit}<li><a data-sveltekit-reload href={`/compositions?revision=${encodeURIComponent(edit.revision)}`} aria-label={`Open saved edit ${edit.revision}`}>{edit.revision.slice(0,12)} · {edit.duration}s</a><span class="saved-date"> · {new Date(edit.created_at).toLocaleString()}</span></li>{/each}</ul>{:else}<p>No saved edits yet. Save a composition below to return to it later.</p>{/if}</section>
  <fieldset disabled={busy}>

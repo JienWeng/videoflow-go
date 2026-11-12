@@ -207,7 +207,7 @@
       </div>
       <h1 class="text-2xl font-semibold tracking-tight">Create a video</h1>
       <p class="mt-2 max-w-xl text-muted-foreground">
-        Describe the story. VideoFlow builds scenes, dialogue and visuals for your review. Provider calls may incur charges.
+        Provider calls may incur charges.
       </p>
     </div>
 

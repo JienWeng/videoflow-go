@@ -299,7 +299,6 @@
 <div class="p-6">
   <div class="mb-4">
     <h1 class="text-lg font-semibold">Assets</h1>
-    <p class="text-sm text-muted-foreground">Set the project look and manage generated media.</p>
   </div>
 
   <Card class="mb-4">

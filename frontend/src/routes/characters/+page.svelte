@@ -220,7 +220,6 @@
 <div class="p-6">
   <div class="mb-4">
     <div class="flex items-center gap-4"><h1 class="text-lg font-semibold">Characters</h1><a href="/voices" class="text-xs text-muted-foreground underline underline-offset-4">Voices &amp; script captions</a></div>
-    <p class="text-sm text-muted-foreground">Add reference images for consistent characters.</p>
   </div>
 
   {#if loadError}<div role="alert" class="mb-4 space-y-2 rounded-lg border border-destructive p-4 text-sm"><p>Could not load characters: {loadError}</p>{#if characters.length}<p>Showing the last loaded characters.</p>{/if}<Button variant="outline" disabled={refreshing} onclick={retryCharacters}>{refreshing ? 'Loading…' : 'Try again'}</Button></div>{/if}

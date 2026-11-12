@@ -367,7 +367,6 @@
   <!-- Page header -->
   <div class="px-6 pt-6 pb-3 shrink-0">
     <h1 class="text-lg font-semibold">Render</h1>
-    <p class="text-sm text-muted-foreground">Browse finished renders by scene, then open a take in the editor to caption, fine-tune and export.</p>
   </div>
 
   <div class="mx-4 my-2 flex flex-wrap items-center gap-3 rounded-md border p-3 text-xs">
