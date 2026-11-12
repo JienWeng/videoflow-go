@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { get, post } from '$lib/api';
+  import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+  import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import { Button } from '$lib/components/ui/button';
   let {compact=false}:{compact?:boolean}=$props();
   let sessions:any[]=$state([]), engines:any[]=$state([]), selected=$state(''), engine=$state('codex'), busy=$state(false), error=$state(''), loaded=$state(false);
@@ -11,11 +13,18 @@
 </script>
 <div class="space-y-2" data-testid="session-selector">
   <div class="flex flex-wrap items-center gap-2">
-    <label for="workspace-session" class={compact?'sr-only':'text-xs font-medium text-muted-foreground'}>AI session</label>
-    <select id="workspace-session" aria-label="AI session" class="min-h-10 max-w-full flex-1 rounded-lg border border-input bg-background px-2 text-sm" value={selected} disabled={busy||!loaded} onchange={e=>run(async()=>{await post(`/director/sessions/${e.currentTarget.value}/select`,{});await refresh()})}>
-      <option value="" disabled>{loaded?'Choose a session':'Loading sessions…'}</option>
-      {#each sessions as s}<option value={s.id}>{s.title||'Untitled'} · {s.engine} · {s.status}</option>{/each}
-    </select>
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger class="flex min-h-10 min-w-0 flex-1 items-center justify-between gap-2 rounded-lg border border-input bg-background px-3 text-left text-sm focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50" aria-label="AI session" disabled={busy||!loaded}>
+        <span class="truncate">{!loaded?'Loading sessions…':sessions.find(s=>s.id===selected)?`${sessions.find(s=>s.id===selected).title||'Untitled'} · ${sessions.find(s=>s.id===selected).engine}`:'Choose AI session'}</span><ChevronDown class="size-4 shrink-0" />
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Content align="start" class="max-w-[min(420px,90vw)]">
+        <DropdownMenu.RadioGroup value={selected} onValueChange={id=>{if(id!==selected)void run(async()=>{await post(`/director/sessions/${id}/select`,{});await refresh();});}}>
+          {#each sessions as session}<DropdownMenu.RadioItem value={session.id} closeOnSelect><span class="min-w-0"><span class="block truncate">{session.title||'Untitled'}</span><span class="block text-xs text-muted-foreground">{session.engine} · {session.status}</span></span></DropdownMenu.RadioItem>{/each}
+        </DropdownMenu.RadioGroup>
+        {#if !sessions.length}<p class="px-2 py-2 text-sm text-muted-foreground">No saved AI sessions</p>{/if}
+        <DropdownMenu.Separator /><DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/director">Manage AI sessions</a>{/snippet}</DropdownMenu.Item>
+      </DropdownMenu.Content>
+    </DropdownMenu.Root>
     {#if !compact}<a href="/director" class="text-xs underline underline-offset-4">Manage</a>{/if}
   </div>
   {#if loaded&&!selected}

@@ -13,7 +13,7 @@ import (
 func (s *Server) requestReplay(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := r.Header.Get("Idempotency-Key")
-		paid := r.Method == "POST" && (r.URL.Path == "/chat" || r.URL.Path == "/ideas/develop" || r.URL.Path == "/scripts/generate" || r.URL.Path == "/videos/generate" || r.URL.Path == "/render" || r.URL.Path == "/render/from-shot" || (strings.HasPrefix(r.URL.Path, "/render-jobs/") && strings.HasSuffix(r.URL.Path, "/resubmit")) || strings.HasPrefix(r.URL.Path, "/scenes/") || strings.HasPrefix(r.URL.Path, "/characters/") || strings.HasPrefix(r.URL.Path, "/outputs/"))
+		paid := r.Method == "POST" && (r.URL.Path == "/chat" || r.URL.Path == "/chat/review" || r.URL.Path == "/ideas/develop" || r.URL.Path == "/scripts/generate" || r.URL.Path == "/videos/generate" || r.URL.Path == "/render" || r.URL.Path == "/render/from-shot" || (strings.HasPrefix(r.URL.Path, "/render-jobs/") && strings.HasSuffix(r.URL.Path, "/resubmit")) || strings.HasPrefix(r.URL.Path, "/scenes/") || strings.HasPrefix(r.URL.Path, "/characters/") || strings.HasPrefix(r.URL.Path, "/outputs/"))
 		if paid {
 			select {
 			case s.paidRequests <- struct{}{}:

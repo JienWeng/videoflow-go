@@ -4,37 +4,20 @@
   import ActionCard from '$lib/chat/ActionCard.svelte';
   import { Button } from '$lib/components/ui/button';
   import * as Tooltip from '$lib/components/ui/tooltip';
-  import {
-    Task,
-    TaskContent,
-    TaskItem,
-    TaskTrigger
-  } from '$lib/components/ai-elements/task';
-  import {
-    Conversation,
-    ConversationContent,
-    ConversationScrollButton
-  } from '$lib/components/ai-elements/conversation';
-  import { Message, MessageContent } from '$lib/components/ai-elements/message';
-  import { Loader } from '$lib/components/ai-elements/loader';
-  import {
-    Reasoning,
-    ReasoningContent,
-    ReasoningTrigger
-  } from '$lib/components/ai-elements/reasoning';
-  import {
-    PromptInput,
-    PromptInputBody,
-    PromptInputSubmit,
-    PromptInputTextarea,
-    PromptInputToolbar,
-    PromptInputTools
-  } from '$lib/components/ai-elements/prompt-input';
+  import * as Message from '$lib/components/ui/message';
+  import * as Attachment from '$lib/components/ui/attachment';
+  import * as Bubble from '$lib/components/ui/bubble';
+  import * as MessageScroller from '$lib/components/ui/message-scroller';
+  import * as InputGroup from '$lib/components/ui/input-group';
+  import * as Trace from '$lib/components/ui/trace';
+  import * as Marker from '$lib/components/ui/marker';
+  import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+  import ActivityView from './ActivityView.svelte';
+  import { normalizeActivity } from './activity.mjs';
+  import ArrowUp from '@lucide/svelte/icons/arrow-up';
+  import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
-  import Brain from '@lucide/svelte/icons/brain';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
-  import CircleCheck from '@lucide/svelte/icons/circle-check';
-  import CircleX from '@lucide/svelte/icons/circle-x';
   import Eraser from '@lucide/svelte/icons/eraser';
   import MessageSquare from '@lucide/svelte/icons/message-square';
   import Maximize2 from '@lucide/svelte/icons/maximize-2';
@@ -68,6 +51,8 @@
   interface Msg {
     role: 'user' | 'assistant';
     retry?: string;
+    activity?: unknown[];
+    dismissed?: boolean;
     text: string;
     intent?: any;
     options?: any;
@@ -118,6 +103,20 @@
   const isEmpty=$derived(messages.length===1&&messages[0].text===greeting().text);
   let input = $state('');
   let busy = $state(false);
+  let reviewMode=$state(false), capabilities=$state<any>(null), activeSessionId=$state('');
+  let cancelling=$state(false), cancelError=$state('');
+  async function stopPlanning(){if(!busy||!activeSessionId||cancelling)return;const generation=conversationGeneration;const id=activeSessionId;cancelling=true;cancelError='';try{await post(`/director/sessions/${id}/cancel`,{});}catch(e){if(generation===conversationGeneration){cancelling=false;cancelError=`Could not request cancellation: ${String(e)}`;}}}
+  let checkpointPrompts=$state<string[]>([]);
+  const pendingOps=$derived(messages.filter(m=>m.op?.status==='running'));
+  function loadCheckpoints(key:string){try{const values=JSON.parse(sessionStorage.getItem(key+'.checkpoints')??'[]');checkpointPrompts=Array.isArray(values)?values.filter(v=>typeof v==='string').slice(-20):[];}catch{checkpointPrompts=[];}}
+  function toggleCheckpoint(m:Msg){checkpointPrompts=checkpointPrompts.includes(m.text)?checkpointPrompts.filter(t=>t!==m.text):[...checkpointPrompts,m.text].slice(-20);const key=activeSessionId?'videoflow.chat.'+activeSessionId:storageKey;if(key)try{sessionStorage.setItem(key+'.checkpoints',JSON.stringify(checkpointPrompts))}catch{/* checkpoints remain usable for this visit */}}
+  const specialistSupported=$derived(capabilities?.subagents?.supported===true);
+  async function refreshCapabilities(){const generation=conversationGeneration;try{const result=await get('/chat/capabilities');if(generation!==conversationGeneration)return;capabilities=result;if(!result?.subagents?.supported)reviewMode=false;}catch{if(generation===conversationGeneration){capabilities=null;reviewMode=false;}}}
+  function subagentEvents(list:any[]){return normalizeActivity((list??[]).map(a=>({kind:'subagent',id:a.id,title:a.name??a.role??'Specialist',status:a.status,detail:[a.summary,a.error].filter(Boolean).join('\n'),suggestions:a.suggestions})));}
+  function messageActivity(m:Msg){return normalizeActivity([...(m.activity??[]),...(m.op?[{kind:'tool',id:m.op.id,title:m.op.label,status:m.op.status,detail:m.op.detail}]:[])]);}
+  function reusePrompt(text:string){if(input.trim()&&!window.confirm('Replace your current prompt draft?'))return false;input=text;focusComposer();return true;}
+  function prepareReviewChanges(m:Msg){const notes=normalizeActivity(m.activity).filter(e=>e.kind==='subagent'&&e.status==='done').map(e=>[e.title,e.detail,...e.suggestions].filter(Boolean).join('\n')).join('\n\n');if(notes&&reusePrompt('Prepare a proposal using this advisory review. Do not run changes yet.\n\n'+notes))reviewMode=false;}
+
 
   /**
    * Follow the user's language for our canned UI copy (hints, the new-story
@@ -143,27 +142,27 @@
   /** Drop the non-serializable / refetched parts (state, callbacks live in
    * the template anyway — cards re-render fine from intent + options). */
   function serializableMsg(m: Msg) {
-    const { role, text, intent, options, warnings, chips, op, thumbs } = m;
-    return { role, text, intent, options, warnings, chips, op, thumbs };
+    const { role, text, intent, options, warnings, chips, op, thumbs, retry, activity, dismissed } = m;
+    return { role, text, intent, options, warnings, chips, op, thumbs, retry, activity:normalizeActivity(activity), dismissed };
   }
 
   let conversationGeneration=0;
   let historyLoading=$state(true), historyError=$state(''), sessionRequired=$state(false);
   async function initPersistence() {
     const generation=++conversationGeneration;
-    historyLoading=true;historyError='';sessionRequired=false;busy=false;storageKey=null;
+    historyLoading=true;historyError='';sessionRequired=false;busy=false;storageKey=null;activeSessionId='';checkpointPrompts=[];cancelling=false;cancelError='';void refreshCapabilities();
     try {
       const status=await get('/director/status');if(generation!==conversationGeneration)return;
       if(status.all_text_local){
         const sessions=await get('/director/sessions');if(generation!==conversationGeneration)return;
         const session=sessions.find((item:any)=>item.selected);
         if(!session){sessionRequired=true;messages=[greeting()];return;}
-        localSessionLabel=`${session.engine} · ${session.title}`;
+        activeSessionId=session.id;loadCheckpoints('videoflow.chat.'+session.id);localSessionLabel=`${session.engine} · ${session.title}`;
         const turns=await get(`/director/sessions/${session.id}/turns`);if(generation!==conversationGeneration)return;
         const restored:Msg[]=[];
-        for(const turn of turns.filter((item:any)=>item.kind==='chat')){
+        for(const turn of turns.filter((item:any)=>item.kind==='chat'||item.kind==='specialist_review')){
           if(turn.request_json?.user_message)restored.push({role:'user',text:turn.request_json.user_message});
-          if(turn.result_json?.reply)restored.push({role:'assistant',text:turn.result_json.reply});
+          if(turn.result_json?.reply)restored.push({role:'assistant',text:turn.result_json.reply,activity:subagentEvents(turn.result_json.subagents??[])});
           else if(turn.error)restored.push({role:'assistant',text:turn.error});
         }
         messages=restored.length?restored:[greeting()];return;
@@ -171,7 +170,7 @@
       const project=await get('/projects/active');if(generation!==conversationGeneration)return;
       const key=`videoflow.chat.${project?.id??'default'}`;
       try{const saved=JSON.parse(sessionStorage.getItem(key)??'null');messages=Array.isArray(saved)&&saved.length?saved.slice(-30).map((m:Msg)=>m.op?.status==='running'?{...m,op:{...m.op,status:'failed',detail:'interrupted — check Activity'}}:m):[greeting()];}catch{messages=[greeting()];}
-      storageKey=key;
+      storageKey=key;loadCheckpoints(key);
     }catch(e){if(generation===conversationGeneration)historyError=String(e);}
     finally{if(generation===conversationGeneration)historyLoading=false;}
   }
@@ -557,22 +556,22 @@
   }
 
   function intentSummary(intent: any, options: any): string {
-    const lines: string[] = [`action: ${intent.action}`];
+    const lines: string[] = [`Proposed action: ${String(intent.action).replaceAll('_',' ')}`];
     if (intent.scene_id) {
       const s = options?.scenes?.find((x: any) => x.id === intent.scene_id);
-      lines.push(`scene: ${s?.title ? `${s.title} (${intent.scene_id})` : intent.scene_id}`);
+      lines.push(`Scene: ${s?.title ?? 'Selected scene'}`);
     }
     if (intent.character_id) {
       const c = options?.characters?.find((x: any) => x.id === intent.character_id);
       lines.push(
-        `character: ${c?.name ? `${c.name} (${intent.character_id})` : intent.character_id}`
+        `Character: ${c?.name ?? 'Selected character'}`
       );
     }
-    if (intent.shot_id) lines.push(`shot: ${intent.shot_id}`);
+    if (intent.shot_id) lines.push('Shot: selected shot');
     if (intent.output_id) {
       const o = options?.outputs?.find((x: any) => x.id === intent.output_id);
       const file = o?.video?.split('/').pop();
-      lines.push(`output: ${file ? `${file} (${intent.output_id})` : intent.output_id}`);
+      lines.push(`Output: ${file??'Selected output'}`);
     }
     if (intent.style) lines.push(`style: ${intent.style}`);
     if (intent.language) lines.push(`language: ${intent.language}`);
@@ -598,10 +597,14 @@
     // Conversation memory: the last 6 turns (text only — no cards/state).
     const history = messages.slice(-6).map((m) => ({ role: m.role, text: m.text }));
     messages.push({ role: 'user', text: message });
-    busy = true;
+    busy = true;cancelling=false;cancelError='';
+    const useSpecialists=reviewMode&&specialistSupported;
+    const reviewIndex=messages.length;
+    if(useSpecialists)messages.push({role:'assistant',text:'Specialist review requested. No story changes will run.',activity:normalizeActivity((capabilities.subagents.roles??[]).map((role:any)=>({kind:'subagent',title:role.name,status:'pending'})))});
     try {
-      const r = await post('/chat', { message, history, selected: selected ? {id:selected.id,kind:selected.kind} : null });
+      const r = await post(useSpecialists?'/chat/review':'/chat', { message, ...(useSpecialists?{}:{history}), selected: selected ? {id:selected.id,kind:selected.kind} : null });
       if(generation!==conversationGeneration)return;
+      if(useSpecialists){messages[reviewIndex]={role:'assistant',text:r.reply,activity:subagentEvents(r.subagents??[])};void refreshCapabilities();return;}
       const intent = { ...r.intent };
       messages.push({
         role: 'assistant',
@@ -609,10 +612,12 @@
         intent,
         options: r.options,
         warnings: r.warnings ?? [],
-        state: r.state
+        state: r.state,
+        activity: normalizeActivity(r.activity)
       });
     } catch (e) {
       if(generation!==conversationGeneration)return;
+      if(useSpecialists){messages.splice(reviewIndex,1);void refreshCapabilities();}
       messages.push({
         role: 'assistant',
         text: `Could not send your message. ${(e as Error).message}`,
@@ -728,9 +733,12 @@
   </div>
 
   {/if}
-  <Conversation aria-label="Story conversation" class="flex-1 min-h-0">
-    <ConversationContent class="min-h-0 flex-1 gap-5 overflow-y-auto">
-      {#if historyLoading}<div role="status" class="flex items-center gap-2 text-sm text-muted-foreground"><Loader size={14} />Loading conversation…</div>
+  <MessageScroller.Provider autoScroll>
+  <MessageScroller.Root class="flex-1 min-h-0">
+    <MessageScroller.Viewport role="log" aria-label="Story conversation" class="motion-reduce:scroll-auto">
+    <MessageScroller.Content class="gap-5 p-4">
+      {#if pendingOps.length}<ActivityView events={[{kind:'queue',title:'Work in progress',status:'running',items:pendingOps.map(m=>({title:m.op!.label,status:'running'}))}]} />{/if}
+      {#if historyLoading}<div role="status" class="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />Loading conversation…</div>
       {:else if historyError}<div role="alert" class="space-y-3 py-4"><h3 class="font-semibold">Could not load conversation</h3><p class="text-sm text-muted-foreground">Your saved history has not been replaced. {historyError}</p><Button variant="outline" onclick={initPersistence}>Retry conversation</Button></div>
       {:else if sessionRequired}<div class="space-y-3 py-4"><MessageSquare class="size-7 text-muted-foreground" /><h3 class="font-semibold">Connect your story assistant</h3><p class="text-sm text-muted-foreground">Choose a session above, or set up Codex or Claude Code to start planning.</p><Button variant="outline" href="/director">Set up AI session</Button></div>
       {:else if isEmpty}
@@ -742,52 +750,20 @@
         </div>
       {:else}
       {#each messages as m, i (i)}
-        <Message from={m.role}>
-          <MessageContent>
-            <p class="mb-1.5 text-xs font-medium text-muted-foreground">{m.role === 'user' ? 'You' : 'Story assistant'}</p>
-            {#if m.intent && m.intent.action !== 'unknown'}
-              <Reasoning class="mb-0" defaultOpen={false}>
-                <ReasoningTrigger class="text-xs">
-                  <Brain class="size-3.5" />
-                  <span>Why this card is pre-filled</span>
-                  <ChevronDown class="size-3.5" />
-                </ReasoningTrigger>
-                <ReasoningContent class="mt-2 text-xs" content={intentSummary(m.intent, m.options)} />
-              </Reasoning>
+        <MessageScroller.Item messageId={'turn-'+i}>
+        <Message.Root align={m.role==='user'?'end':'start'}>
+          <Message.Content>
+            <Message.Header class="text-xs font-medium text-muted-foreground">{m.role === 'user' ? 'You' : 'Story assistant'}</Message.Header>
+            {#if m.intent && m.intent.action !== 'unknown' && !m.dismissed}
+              <ActivityView events={[{kind:'plan',title:'Proposed workflow',status:'pending',detail:intentSummary(m.intent,m.options),items:[{title:'Review the proposal',status:'pending'},{title:'Choose its Run action to approve',status:'pending'},{title:'Review the result',status:'pending'}]}]} />
             {/if}
             {#if m.text}
-              <p class="whitespace-pre-wrap break-words leading-relaxed">{m.text}</p>
+              <Bubble.Root align={m.role==='user'?'end':'start'} variant={m.role==='user'?'muted':'ghost'}><Bubble.Content class="whitespace-pre-wrap break-words leading-relaxed">{m.text}</Bubble.Content></Bubble.Root>
             {/if}
             {#if m.intent?.action==='unknown' && m.state?.next_steps?.length}<ol class="list-decimal space-y-1 pl-5 text-sm">{#each m.state.next_steps as step}<li>{step}</li>{/each}</ol>{/if}
-            {#if m.retry}<Button variant="outline" size="sm" class="mt-2" disabled={busy} onclick={()=>{input=m.retry??'';focusComposer();}}>Edit and retry</Button>{/if}
-            {#if m.op}
-              <Task class="w-full">
-                <TaskTrigger title={m.op.label}>
-                  <div class="flex w-full items-center gap-2 text-sm">
-                    {#if m.op.status === 'running'}
-                      <Loader size={14} />
-                    {:else if m.op.status === 'done'}
-                      <CircleCheck class="size-4 text-emerald-500" />
-                    {:else}
-                      <CircleX class="size-4 text-destructive" />
-                    {/if}
-                    <span>
-                      {m.op.label}
-                      {m.op.status === 'running'
-                        ? '— running…'
-                        : m.op.status === 'done'
-                          ? '— done'
-                          : '— failed'}
-                    </span>
-                  </div>
-                </TaskTrigger>
-                {#if m.op.detail}
-                  <TaskContent>
-                    <TaskItem class="text-xs">{m.op.detail}</TaskItem>
-                  </TaskContent>
-                {/if}
-              </Task>
-            {/if}
+            {#if m.retry}<Button variant="outline" size="sm" class="mt-2" disabled={busy} onclick={()=>reusePrompt(m.retry??'')}>Edit and retry</Button>{/if}
+            <ActivityView events={messageActivity(m)} />
+            {#if normalizeActivity(m.activity).some(e=>e.kind==='subagent'&&e.status==='done')}<Button variant="outline" size="sm" class="self-start" disabled={busy} onclick={()=>prepareReviewChanges(m)}>Prepare changes from review</Button>{/if}
             {#if m.thumbs?.length}
               <div class="mt-2 flex flex-wrap gap-1.5">
                 {#each m.thumbs as t (t.src)}
@@ -817,7 +793,7 @@
                 {/each}
               </div>
             {/if}
-            {#if m.intent && m.intent.action !== 'unknown'}
+            {#if m.intent && m.intent.action !== 'unknown' && !m.dismissed}
               <ActionCard
                 intent={m.intent}
                 options={m.options}
@@ -827,48 +803,43 @@
                 onop={handleOpStart}
                 onsuggest={(text) => { input=text; focusComposer(); }}
               />
-            {/if}
-          </MessageContent>
-        </Message>
+              <Button variant="ghost" size="sm" class="self-start" onclick={()=>m.dismissed=true}>Dismiss proposal</Button>
+            {:else if m.dismissed}<p class="text-xs text-muted-foreground">Proposal dismissed from this view.</p>{/if}
+            {#if m.role==='user'}<Message.Footer><Button size="sm" variant="ghost" disabled={busy} onclick={()=>reusePrompt(m.text)}>Reuse prompt</Button><Button size="sm" variant="ghost" disabled={busy} aria-pressed={checkpointPrompts.includes(m.text)} onclick={()=>toggleCheckpoint(m)}>{checkpointPrompts.includes(m.text)?'Remove prompt checkpoint':'Save prompt checkpoint'}</Button></Message.Footer>{/if}
+          </Message.Content>
+        </Message.Root>
+        {#if m.role==='user'&&checkpointPrompts.includes(m.text)}<Marker.Root variant="separator"><Marker.Content class="flex flex-wrap items-center gap-2">Prompt checkpoint<Button variant="outline" size="sm" onclick={()=>reusePrompt(m.text)}>Use prompt</Button><span class="text-xs text-muted-foreground">Restores text only; saved work and conversation stay unchanged.</span></Marker.Content></Marker.Root>{/if}
+        </MessageScroller.Item>
       {/each}
       {/if}
-      {#if busy}
-        <Message from="assistant">
-          <MessageContent>
-            <div class="flex items-center gap-2 text-muted-foreground">
-              <Loader size={14} />
-              <span role="status" class="text-sm">Working on your story…</span>
-            </div>
-          </MessageContent>
-        </Message>
+      {#if busy&&!reviewMode}
+        <MessageScroller.Item messageId="working"><Message.Root><Message.Content><div role="status" class="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />Working on your story…</div></Message.Content></Message.Root></MessageScroller.Item>
       {/if}
-    </ConversationContent>
-    <ConversationScrollButton aria-label="Jump to latest message" />
-  </Conversation>
+    </MessageScroller.Content>
+    </MessageScroller.Viewport>
+    <MessageScroller.Button aria-label="Jump to latest message" class="motion-reduce:transition-none" />
+  </MessageScroller.Root>
+  </MessageScroller.Provider>
 
   <div class="border-t border-border p-3" bind:this={inputWrapper}>
     <div class="mb-2 flex min-w-0 items-center justify-between gap-2">
-      {#if selected}<div class="flex min-w-0 items-center gap-1 rounded-md bg-muted px-2 text-xs"><span class="truncate" title={selected.label}>{selected.kind.replace('_',' ')}: {selected.label}</span>{#if onclear}<Button variant="ghost" size="icon" class="size-9 shrink-0" aria-label="Clear selection" onclick={onclear}><X class="size-3.5" /></Button>{/if}</div>{:else}<span class="text-xs text-muted-foreground">Project context</span>{/if}
+      {#if selected}<Attachment.Root size="sm" class="min-w-0 max-w-full"><Attachment.Content class="min-w-0"><Attachment.Title class="truncate" title={selected.label}>{selected.kind.replace('_',' ')}: {selected.label}</Attachment.Title></Attachment.Content>{#if onclear}<Attachment.Actions><Attachment.Action aria-label="Clear selection" class="size-9 shrink-0" onclick={onclear}><X class="size-3.5" /></Attachment.Action></Attachment.Actions>{/if}</Attachment.Root>{:else}<span class="text-xs text-muted-foreground">Project context</span>{/if}
       {#if embedded}<Button variant="ghost" size="icon" class="size-9 shrink-0 text-muted-foreground" aria-label="Clear chat" title="Clear visible chat; saved session history is kept" disabled={busy||historyLoading||isEmpty} onclick={clearChat}><Eraser class="size-4" /></Button>{/if}
     </div>
     {#if chips.length}<div aria-label="Suggested prompts" class="mb-2 flex flex-wrap items-center gap-2">{@render chipRow(chips)}</div>{/if}
-    <PromptInput class="rounded-xl border border-input bg-background shadow-xs" onSubmit={(m) => send(m.text)}>
-      <PromptInputBody>
-        <PromptInputTextarea
-          aria-label="Message story assistant"
-          bind:value={input}
-          class="min-h-12 border-0 bg-transparent shadow-none focus-visible:ring-0"
-          placeholder={selected ? `What should change in ${selected.label}?` : "Describe your story or select an item…"}
-        />
-      </PromptInputBody>
-      <PromptInputToolbar>
-        <PromptInputTools />
-        <PromptInputSubmit
-          disabled={busy || historyLoading || sessionRequired || !!historyError || !input.trim()}
-          status='ready'
-        />
-      </PromptInputToolbar>
-    </PromptInput>
+    <form onsubmit={e=>{e.preventDefault();void send();}}>
+      <InputGroup.Root class="rounded-xl bg-background has-disabled:opacity-100 has-disabled:bg-background dark:has-disabled:bg-background">
+        <InputGroup.Textarea aria-label="Message story assistant" bind:value={input} class="min-h-16 max-h-40" placeholder={selected ? `What should change in ${selected.label}?` : 'Describe your story or select an item…'} onkeydown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();void send();}}} />
+        <InputGroup.Addon align="block-end" class="gap-2">
+          <DropdownMenu.Root><DropdownMenu.Trigger>{#snippet child({props})}<InputGroup.Button {...props} type="button" size="sm" aria-label="Assistant mode" disabled={busy}>{reviewMode?'Specialist review':'Story assistant'}<ChevronDown class="size-3.5" /></InputGroup.Button>{/snippet}</DropdownMenu.Trigger>
+            <DropdownMenu.Content align="start" side="top" class="max-w-[min(360px,90vw)]"><DropdownMenu.RadioGroup value={reviewMode?'specialists':'assistant'} onValueChange={value=>reviewMode=value==='specialists'}><DropdownMenu.RadioItem value="assistant">Story assistant</DropdownMenu.RadioItem><DropdownMenu.RadioItem value="specialists" disabled={!specialistSupported}>Two specialist reviewers</DropdownMenu.RadioItem></DropdownMenu.RadioGroup><DropdownMenu.Separator /><p class="px-2 py-1.5 text-xs text-muted-foreground">{specialistSupported?'Specialist review uses two independent local planning calls. Results are advisory.':capabilities?.subagents?.reason??'Specialist review requires an available local AI session.'}</p><p class="px-2 py-1.5 text-xs text-muted-foreground">Model and effort use the local CLI defaults. Native shell and tool execution are disabled.</p><DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/director">Manage local AI sessions</a>{/snippet}</DropdownMenu.Item></DropdownMenu.Content>
+          </DropdownMenu.Root>
+          <!-- Stop is offered only when the backend has a concrete local session to cancel. -->
+          {#if busy&&activeSessionId}<InputGroup.Button type="button" size="sm" variant="outline" class="ml-auto" aria-label="Stop planning" disabled={cancelling} onclick={stopPlanning}>{cancelling?'Stopping…':'Stop'}</InputGroup.Button>{:else}<InputGroup.Button type="submit" size="icon-sm" variant="default" class="ml-auto" aria-label="Send message" disabled={busy||historyLoading||sessionRequired||!!historyError||!input.trim()}>{#if busy}<LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />{:else}<ArrowUp class="size-4" />{/if}</InputGroup.Button>{/if}
+        </InputGroup.Addon>
+      </InputGroup.Root>
+    </form>
+    {#if cancelError}<p role="alert" class="mt-2 text-xs text-destructive">{cancelError}</p>{/if}
     <p class="mt-2 text-xs text-muted-foreground">Enter to send · Shift + Enter for a new line</p>
   </div>
 </div>
