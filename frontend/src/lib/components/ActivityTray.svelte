@@ -119,7 +119,9 @@
   {#if open}
     <div
       transition:fade={{ duration: 120 }}
-      class="absolute bottom-full left-0 z-50 mb-2 w-80 rounded-lg border border-border bg-popover shadow-lg text-popover-foreground"
+      role="region"
+      aria-label="Background activity"
+      class="fixed inset-x-3 top-16 z-50 mb-2 rounded-lg border border-border bg-popover shadow-lg text-popover-foreground md:absolute md:inset-x-auto md:bottom-full md:left-0 md:top-auto md:w-80"
     >
       <!-- Header row -->
       <div class="flex items-center gap-2 px-3 py-2 border-b border-border">

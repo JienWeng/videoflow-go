@@ -9,12 +9,12 @@
    * opens the command palette so the user lands somewhere actionable.
    */
   import { Button } from '$lib/components/ui/button';
+  import * as Dialog from '$lib/components/ui/dialog';
   import {
     LayoutGrid,
     PanelLeft,
     Sparkles,
     Command,
-    X
   } from '@lucide/svelte';
 
   const STORAGE_KEY = 'videoflow.onboarded';
@@ -59,52 +59,29 @@
     },
     {
       icon: PanelLeft,
-      title: 'Advanced tools are always available',
-      body: 'Start with Create video. Use Scenes, Characters, Assets and Render when you need manual control.'
+      title: 'Guided or hands-on',
+      body: 'Use the guided creator for a first story, or work directly in Characters, Assets and Scenes & shots.'
     }
   ];
 
   const steps = [
-    'Describe your story and choose a visual style.',
-    'VideoFlow builds the scenes, dialogue, visuals, and render.',
-    'Open the advanced workspace only when you want manual control.'
+    'Set up your AI session and media providers in Settings.',
+    'Describe your story and review the scenes and storyboard images.',
+    'Approve the references, render each scene, then assemble clips in Videos.'
   ];
 </script>
 
 <svelte:window onkeydown={onKeydown} />
 
-{#if open}
-  <!-- Backdrop: click outside the card to dismiss. -->
-  <div
-    class="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4"
-    role="presentation"
-    onclick={(e) => e.target === e.currentTarget && dismiss()}
-  >
-    <div
-      class="relative w-full max-w-xl rounded-2xl border border-border bg-popover p-6 text-popover-foreground shadow-2xl"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="onboarding-title"
-    >
-      <Button
-        variant="ghost"
-        size="icon"
-        class="absolute right-2 top-2 size-7 text-muted-foreground"
-        aria-label="Dismiss"
-        onclick={dismiss}
-      >
-        <X class="size-4" />
-      </Button>
-
+<Dialog.Root {open} onOpenChange={(value) => { if (!value) dismiss(); }}>
+    <Dialog.Content class="max-h-[calc(100dvh-2rem)] overflow-y-auto p-6 sm:max-w-xl" aria-describedby="onboarding-description">
       <div class="mb-1 flex items-center gap-2">
         <Sparkles class="size-5 text-primary" />
-        <h2 id="onboarding-title" class="text-lg font-semibold">Welcome to VideoFlow</h2>
+        <Dialog.Title class="text-lg font-semibold">Welcome to VideoFlow</Dialog.Title>
       </div>
-      <p class="mb-5 text-sm text-muted-foreground">
-        Start with one story prompt. The rest is automatic.
-      </p>
+      <Dialog.Description id="onboarding-description" class="mb-5 text-sm text-muted-foreground">Build a story, review the references, then choose what to render.</Dialog.Description>
 
-      <div class="mb-5 grid gap-3 sm:grid-cols-3">
+      <div class="mb-5 grid gap-3 sm:grid-cols-2">
         {#each surfaces as s (s.title)}
           <div class="rounded-lg border border-border bg-card/50 p-3">
             <s.icon class="mb-1.5 size-4 text-primary" />
@@ -128,7 +105,7 @@
         </ol>
       </div>
 
-      <div class="flex items-center justify-between gap-3">
+      <div class="flex flex-wrap items-center justify-between gap-3">
         <p class="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Command class="size-3.5" />
           Press
@@ -140,6 +117,5 @@
           <Button size="sm" onclick={showAround}>Show me around</Button>
         </div>
       </div>
-    </div>
-  </div>
-{/if}
+    </Dialog.Content>
+</Dialog.Root>

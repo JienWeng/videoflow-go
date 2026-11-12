@@ -456,7 +456,9 @@ func (d *DB) GetCharacter(id string) (*models.Character, error) {
 	return &c, nil
 }
 
-func (d *DB) CreateCharacter(c *models.Character) error {
+func (d *DB) CreateCharacter(c *models.Character) error { return insertCharacter(d.conn, c) }
+
+func insertCharacter(conn sqlExecutor, c *models.Character) error {
 	if c.ID == "" {
 		c.ID = "char_" + uuid.New().String()[:8]
 	}
@@ -477,7 +479,7 @@ func (d *DB) CreateCharacter(c *models.Character) error {
 		ra = "[]"
 	}
 
-	_, err := d.conn.Exec(`
+	_, err := conn.Exec(`
 		INSERT INTO characters (id, project_id, name, description, appearance, personality, visual_rules_json, voice_rules_json, sample_dialogue, reference_asset_ids_json, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, c.ID, c.ProjectID, c.Name, c.Description, c.Appearance, c.Personality, vr, vor, c.SampleDialogue, ra, now, now)
@@ -967,7 +969,9 @@ func (d *DB) GetStyleGuide(projectID string) (*models.StyleGuide, error) {
 	return &s, nil
 }
 
-func (d *DB) UpsertStyleGuide(s *models.StyleGuide) error {
+func (d *DB) UpsertStyleGuide(s *models.StyleGuide) error { return upsertStyleGuide(d.conn, s) }
+
+func upsertStyleGuide(conn sqlExecutor, s *models.StyleGuide) error {
 	now := time.Now().UTC()
 	if s.ID == "" {
 		s.ID = "style_" + uuid.New().String()[:8]
@@ -975,7 +979,7 @@ func (d *DB) UpsertStyleGuide(s *models.StyleGuide) error {
 	}
 	s.UpdatedAt = now
 
-	_, err := d.conn.Exec(`
+	_, err := conn.Exec(`
 		INSERT INTO style_guides (id, project_id, name, style_prompt, palette, lighting, audience, tone, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
@@ -1213,7 +1217,7 @@ func (d *DB) ListOps(projectID string, limit int) ([]models.Op, error) {
 }
 
 func (d *DB) ListOpsFiltered(projectID, kind string, limit int) ([]models.Op, error) {
-	if limit <= 0 {
+	if limit <= 0 && limit != -1 {
 		limit = 20
 	}
 	query := "SELECT id, kind, status, scene_id, output_id, project_id, error, result_json, created_at, updated_at FROM ops WHERE 1=1"

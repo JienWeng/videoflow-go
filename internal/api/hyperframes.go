@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"videoflow-go/internal/composition"
 	"videoflow-go/internal/models"
@@ -184,9 +185,10 @@ func (s *Server) handleCompositionRun(w http.ResponseWriter, r *http.Request) {
 // compositionSources only resolves database-owned sources through the shared
 // storage resolver; client-supplied paths never enter the source map.
 type compositionSource struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Type string `json:"type"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Type      string `json:"type"`
+	MediaKind string `json:"media_kind"`
 }
 
 func (s *Server) compositionSources(project string) (map[string]string, []compositionSource, error) {
@@ -202,7 +204,16 @@ func (s *Server) compositionSources(project string) (map[string]string, []compos
 			return
 		}
 		paths[id] = full
-		items = append(items, compositionSource{ID: id, Name: name, Type: kind})
+		mediaKind := "unknown"
+		switch strings.ToLower(filepath.Ext(full)) {
+		case ".png", ".jpg", ".jpeg", ".webp", ".gif":
+			mediaKind = "image"
+		case ".mp4", ".webm", ".mov", ".mkv":
+			mediaKind = "video"
+		case ".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus":
+			mediaKind = "audio"
+		}
+		items = append(items, compositionSource{ID: id, Name: name, Type: kind, MediaKind: mediaKind})
 	}
 	assets, e := s.database.ListAssets(project)
 	if e != nil {

@@ -108,7 +108,7 @@
       label: 'Go to Studio',
       group: 'Go to',
       icon: Clapperboard,
-      href: '/'
+      href: '/?view=studio'
     });
     out.push({
       id: 'nav-scenes',

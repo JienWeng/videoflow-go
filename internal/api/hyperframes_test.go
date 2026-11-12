@@ -63,6 +63,16 @@ func TestCompositionSourcesResolvePublicPathsAndOwnedOutputs(t *testing.T) {
 	if paths[a.ID] != filepath.Join(s.cfg.StorageRoot, "assets", "existing.mp4") || paths["output-"+out.ID] == "" || len(items) != 2 {
 		t.Fatalf("sources: %#v %#v", paths, items)
 	}
+	response := call(t, s, "GET", "/compositions/sources", "")
+	var sources []map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &sources); err != nil {
+		t.Fatal(err)
+	}
+	for _, source := range sources {
+		if source["media_kind"] != "video" {
+			t.Fatalf("UI cannot distinguish visual and audio sources: %v", source)
+		}
+	}
 	other, _ := s.database.CreateProject("Other", "isolation")
 	paths, items, e = s.compositionSources(other.ID)
 	if e != nil || len(paths) != 0 || len(items) != 0 {

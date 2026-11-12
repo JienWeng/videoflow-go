@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 
 	"videoflow-go/internal/models"
 
@@ -62,18 +63,29 @@ func (s *Server) handleActivateProject(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var body struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
+		Name        *string `json:"name"`
+		Description *string `json:"description"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if err := s.database.UpdateProject(id, body.Name, body.Description); err != nil {
+	p, err := s.database.GetProject(id)
+	if err != nil {
+		http.Error(w, "project not found", http.StatusNotFound)
+		return
+	}
+	if body.Name != nil {
+		p.Name = *body.Name
+	}
+	if body.Description != nil {
+		p.Description = *body.Description
+	}
+	if err := s.database.UpdateProject(id, p.Name, p.Description); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	p, err := s.database.GetProject(id)
+	p, err = s.database.GetProject(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -97,43 +109,65 @@ func (s *Server) handleExportProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "project not found", http.StatusNotFound)
 		return
 	}
-	chars, _ := s.database.ListCharacters(id)
-	scenes, _ := s.database.ListScenes(id)
-	assets, _ := s.database.ListAssets(id)
-	style, _ := s.database.GetStyleGuide(id)
-
-	exportData := map[string]interface{}{
-		"project":    p,
-		"characters": chars,
-		"scenes":     scenes,
-		"assets":     assets,
-		"style":      style,
+	bundle := models.ProjectBundle{Project: *p}
+	bundle.Characters, err = s.database.ListCharacters(id)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
 	}
-	writeJSON(w, http.StatusOK, exportData)
+	bundle.Scenes, err = s.database.ListScenes(id)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	bundle.Assets, err = s.database.ListAssets(id)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	bundle.Scripts, err = s.database.ListScripts(id)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	bundle.Style, _ = s.database.GetStyleGuide(id)
+	for _, scene := range bundle.Scenes {
+		shots, err := s.database.ListShots(scene.ID)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		bundle.Shots = append(bundle.Shots, shots...)
+	}
+	writeJSON(w, http.StatusOK, bundle)
 }
 
 func (s *Server) handleImportProject(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Project    models.Project     `json:"project"`
-		Characters []models.Character `json:"characters"`
-		Scenes     []models.Scene     `json:"scenes"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid import payload", http.StatusBadRequest)
+	var bundle models.ProjectBundle
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<20)
+	if err := json.NewDecoder(r.Body).Decode(&bundle); err != nil {
+		http.Error(w, "Choose a VideoFlow project JSON export (ZIP files are not supported)", http.StatusBadRequest)
 		return
 	}
-	newProj, err := s.database.CreateProject(body.Project.Name, body.Project.Description)
+	// JSON references media already on this backend; never import paths outside
+	// its storage root or pretend that missing media was included in the JSON.
+	for _, asset := range bundle.Assets {
+		path, err := s.storagePath(asset.FilePath)
+		if err != nil {
+			http.Error(w, "Imported media must reference files in this backend's storage folder", 400)
+			return
+		}
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			http.Error(w, "Referenced media is missing; restore the data volume on this host before importing", 400)
+			return
+		}
+	}
+
+	project, err := s.database.ImportProject(bundle)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	for _, c := range body.Characters {
-		c.ProjectID = &newProj.ID
-		_ = s.database.CreateCharacter(&c)
-	}
-	for _, sc := range body.Scenes {
-		sc.ProjectID = &newProj.ID
-		_ = s.database.CreateScene(&sc)
-	}
-	writeJSON(w, http.StatusOK, newProj)
+	writeJSON(w, http.StatusOK, project)
 }

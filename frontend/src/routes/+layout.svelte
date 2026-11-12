@@ -105,6 +105,10 @@
       <Dialog.Trigger><span class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border" aria-label="Open navigation"><Menu class="size-5" /><span class="sr-only">Open navigation</span></span></Dialog.Trigger>
       <Dialog.Content class="max-h-[90dvh] overflow-y-auto"><Dialog.Header><Dialog.Title>Navigation</Dialog.Title><Dialog.Description>Switch workspace or open your project tools.</Dialog.Description></Dialog.Header>{@render navigation()}</Dialog.Content>
     </Dialog.Root>
+    <div class="flex items-center gap-1">
+      <Button variant="ghost" size="icon" aria-label="Search" onclick={() => palette.toggle()}><Search class="size-4" /></Button>
+      <ActivityTray />
+    </div>
   </header>
   <aside class="hidden w-56 shrink-0 flex-col border-r border-border bg-sidebar p-4 md:flex">
     <a href="/" class="px-3 pt-2 pb-6 text-lg font-semibold tracking-tight">VideoFlow</a>

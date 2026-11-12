@@ -1,87 +1,211 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
+  import { beforeNavigate } from '$app/navigation';
   import { get, post, put } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
-  import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
-  type Session = {id:string; engine:string; native_id?:string; title:string; status:string; selected:boolean};
-  type Turn = {id:string;kind:string;status:string;request_json:unknown;result_json:unknown;error?:string;created_at:string};
-  let status:any=$state(null), sessions:Session[]=$state([]), turns:Turn[]=$state([]);
-  let characters:any[]=$state([]), assets:any[]=$state([]), characterIDs:string[]=$state([]), assetIDs:string[]=$state([]);
-  let engine=$state('codex'), title=$state(''), busy=$state(false), loaded=$state(false), error=$state(''), notice=$state('');
-  let warnings:string[]=$state([]);
-  const selected=$derived(sessions.find(s=>s.selected));
-  const json=(value:unknown)=>typeof value==='string'?value:JSON.stringify(value,null,2);
-  async function detail(id:string){
-    const [history,selection]=await Promise.all([get(`/director/sessions/${id}/turns`),get(`/director/sessions/${id}/selection`)]);
-    turns=history??[];characterIDs=selection?.character_ids??[];assetIDs=selection?.asset_ids??[];warnings=[];
+  import { ArrowRight, Check, ChevronDown, Plus, RefreshCw } from '@lucide/svelte';
+  import { sessionState } from '$lib/director/session-state.mjs';
+
+  type Session = { id: string; engine: string; native_id?: string; title: string; status: string; selected: boolean };
+  type Turn = { id: string; kind: string; status: string; request_json: unknown; result_json: unknown; error?: string; created_at: string };
+  let status: any = $state(null);
+  let sessions: Session[] = $state([]), turns: Turn[] = $state([]);
+  let characters: any[] = $state([]), assets: any[] = $state([]);
+  let characterIDs: string[] = $state([]), assetIDs: string[] = $state([]);
+  let savedCharacters: string[] = $state([]), savedAssets: string[] = $state([]);
+  let engine = $state('codex'), title = $state('');
+  let busy = $state(false), loaded = $state(false), error = $state(''), notice = $state('');
+  let showCreate = $state(false), setupOpen = $state(false), referencesOpen = $state(false), historyOpen = $state(false);
+  let warnings: string[] = $state([]);
+  let detailReady = $state(false);
+  let titleInput: HTMLInputElement | undefined = $state();
+  let setupSummary: HTMLElement | undefined = $state(), historySummary: HTMLElement | undefined = $state();
+
+  const selected = $derived(sessions.find(s => s.selected));
+  const selectedState = $derived(sessionState(selected, status));
+  const engineName = (value: string) => value === 'claude' ? 'Claude Code' : 'Codex';
+  const selectionKey = (cast: string[], media: string[]) => JSON.stringify([[...cast].sort(), [...media].sort()]);
+  const dirty = $derived(selectionKey(characterIDs, assetIDs) !== selectionKey(savedCharacters, savedAssets));
+  const selectedNames = $derived([
+    ...characters.filter(c => characterIDs.includes(c.id)).map(c => c.name || c.id),
+    ...assets.filter(a => assetIDs.includes(a.id)).map(a => a.name || a.id)
+  ]);
+  const json = (value: unknown) => typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+  const date = (value: string) => new Date(value).toLocaleString();
+
+  async function detail(id: string) {
+    detailReady = false;
+    const [history, selection] = await Promise.all([get(`/director/sessions/${id}/turns`), get(`/director/sessions/${id}/selection`)]);
+    turns = history ?? []; characterIDs = selection?.character_ids ?? []; assetIDs = selection?.asset_ids ?? [];
+    savedCharacters = [...characterIDs]; savedAssets = [...assetIDs]; warnings = []; detailReady = true;
   }
-  async function refresh(){
-    const [health,list,cast,media]=await Promise.all([get('/director/status'),get('/director/sessions'),get('/characters'),get('/assets')]);
-    status=health;sessions=list??[];characters=cast??[];assets=media??[];
-    const current=sessions.find(s=>s.selected);if(current)await detail(current.id);else{turns=[];characterIDs=[];assetIDs=[];}
+  async function refresh() {
+    const [health, list, cast, media] = await Promise.all([get('/director/status'), get('/director/sessions'), get('/characters'), get('/assets')]);
+    status = health; sessions = list ?? []; characters = cast ?? []; assets = media ?? [];
+    if (!loaded) engine = health.engines?.find((item: any) => item.installed)?.engine ?? 'codex';
+    const current = sessions.find(s => s.selected);
+    if (current) await detail(current.id);
+    else { turns = []; characterIDs = []; assetIDs = []; savedCharacters = []; savedAssets = []; detailReady = false; }
   }
-  async function run(fn:()=>Promise<void>){busy=true;error='';notice='';try{await fn();}catch(e:any){error=e.message??String(e);}finally{busy=false;}}
-  onMount(()=>{void run(refresh).finally(()=>loaded=true);});
-  async function create(event:SubmitEvent){event.preventDefault();await run(async()=>{await post('/director/sessions',{engine,title:title.trim()});title='';await refresh();notice='Local session created. Its native conversation starts with the first planning or writing turn.';});}
-  async function choose(session:Session){await run(async()=>{await post(`/director/sessions/${session.id}/select`,{});await refresh();});}
-  async function saveContext(){if(!selected)return;const id=selected.id;await run(async()=>{const snapshot=await put(`/director/sessions/${id}/selection`,{character_ids:characterIDs,asset_ids:assetIDs});warnings=snapshot.warnings??[];notice='Context selection saved for future turns.';});}
-  async function cancel(){if(!selected)return;const id=selected.id;await run(async()=>{await post(`/director/sessions/${id}/cancel`,{});notice='Cancellation requested. Refresh to review the final turn status.';});}
-  async function acknowledge(){if(!selected)return;const id=selected.id;await run(async()=>{await post(`/director/sessions/${id}/acknowledge`,{});await refresh();notice='Review acknowledged. This session can continue.';});}
+  async function run(fn: () => Promise<void>) {
+    if (busy) return;
+    busy = true; error = ''; notice = '';
+    try { await fn(); } catch (e: any) { error = e.message ?? String(e); } finally { busy = false; }
+  }
+  onMount(() => { void run(refresh).finally(() => { loaded = true; showCreate = sessions.length === 0; }); });
+  beforeNavigate(nav => {
+    if (dirty && !window.confirm('Leave without saving your reference changes?')) nav.cancel();
+  });
+  async function newSession() { showCreate = true; await tick(); titleInput?.focus(); }
+  async function create(event: SubmitEvent) {
+    event.preventDefault(); if (dirty) return;
+    await run(async () => {
+      await post('/director/sessions', { engine, title: title.trim() || 'Story planning' });
+      title = ''; await refresh(); showCreate = false; referencesOpen = false; historyOpen = false; notice = 'Session saved.';
+    });
+  }
+  async function choose(id: string) {
+    if (!id || dirty) return;
+    await run(async () => {
+      await post(`/director/sessions/${id}/select`, {}); await refresh();
+      showCreate = false; referencesOpen = false; historyOpen = false;
+    });
+  }
+  async function saveContext() {
+    if (!selected || !detailReady) return;
+    const id = selected.id;
+    await run(async () => {
+      const snapshot = await put(`/director/sessions/${id}/selection`, { character_ids: characterIDs, asset_ids: assetIDs });
+      savedCharacters = [...characterIDs]; savedAssets = [...assetIDs];
+      warnings = snapshot.warnings ?? []; notice = 'References saved for your next prompt.';
+    });
+  }
+  function discardReferences() { characterIDs = [...savedCharacters]; assetIDs = [...savedAssets]; warnings = []; }
+  async function showSetup() { setupOpen = true; await tick(); setupSummary?.focus(); setupSummary?.scrollIntoView({ block: 'nearest' }); }
+  async function showHistory() { historyOpen = true; await tick(); historySummary?.focus(); historySummary?.scrollIntoView({ block: 'nearest' }); }
+  async function cancel() {
+    if (!selected) return;
+    const id = selected.id;
+    await run(async () => { await post(`/director/sessions/${id}/cancel`, {}); await refresh(); notice = 'Stop requested. Refresh to check the final status.'; });
+  }
+  async function acknowledge() {
+    if (!selected || dirty) return;
+    const id = selected.id;
+    await run(async () => { await post(`/director/sessions/${id}/acknowledge`, {}); await refresh(); notice = 'Review saved. You can continue this session.'; });
+  }
 </script>
 
-<div class="mx-auto w-full max-w-6xl space-y-5 p-4 sm:p-6">
-  <div class="flex flex-wrap items-start justify-between gap-3">
-    <div><h1 class="text-lg font-semibold">Local sessions</h1><p class="text-sm text-muted-foreground">Plan and write through Claude Code or Codex on your backend host.</p></div>
-    <Button variant="outline" disabled={busy} onclick={()=>run(refresh)}>Refresh sessions</Button>
-  </div>
-  {#if error}<p role="alert" class="rounded-lg border border-destructive p-3 text-sm text-destructive">{error}</p>{/if}
-  {#if notice}<p role="status" class="rounded-lg border p-3 text-sm">{notice}</p>{/if}
-  {#if !loaded}<p class="text-sm text-muted-foreground">Loading local sessions…</p>{/if}
-  {#if status}
-    <Card><CardHeader><CardTitle>Backend host setup</CardTitle></CardHeader><CardContent class="space-y-3 text-sm">
-      <p>{status.host_requirement}</p>
-      <p>Install the official Claude Code or Codex CLI on that host, then sign in from its terminal using your own account. VideoFlow does not install software or sign in for you. In a container, configure access to the host CLI and its credentials explicitly.</p>
-      <p>CLI detection checks the executable only. It does not verify account authentication, subscription access, or model availability.</p>
-      <div class="grid gap-2 sm:grid-cols-2">{#each status.engines??[] as item(item.engine)}<div class="rounded-lg border p-3"><strong>{item.engine==='claude'?'Claude Code':'Codex'}</strong>: {item.installed?'CLI detected':'CLI unavailable'}{#if item.reason}<p class="mt-1 break-words text-muted-foreground">{item.reason}</p>{/if}</div>{/each}</div>
-      <p>Text routing: {status.all_text_local?'local sessions enabled':'local sessions disabled; check backend configuration'}. Voice default: saved character voice.</p>
-    </CardContent></Card>
-  {/if}
-  <div class="grid gap-5 lg:grid-cols-[minmax(240px,1fr)_minmax(0,2fr)]">
-    <div class="space-y-4">
-      <Card><CardHeader><CardTitle>Create local session</CardTitle></CardHeader><CardContent>
-        <form class="space-y-3" onsubmit={create}>
-          <label class="block text-sm" for="session-engine">Engine</label><select id="session-engine" class="w-full rounded-md border bg-background p-2" bind:value={engine} disabled={busy}><option value="codex">Codex</option><option value="claude">Claude Code</option></select>
-          <label class="block text-sm" for="session-title">Session title</label><input id="session-title" class="w-full rounded-md border bg-background p-2" bind:value={title} placeholder="Story planning" maxlength="120" disabled={busy}/>
-          <Button type="submit" disabled={busy}>Create session</Button>
-          <p class="text-xs text-muted-foreground">Creates a project session and selects it. A native conversation ID is assigned after its first CLI turn.</p>
+<svelte:head><title>AI sessions · VideoFlow</title></svelte:head>
+
+<div class="mx-auto w-full max-w-4xl px-4 py-6 sm:px-8 sm:py-8">
+  <header class="mb-8 flex items-start justify-between gap-4">
+    <div><h1 class="text-2xl font-semibold tracking-tight">AI sessions</h1><p class="mt-1 text-sm text-muted-foreground">Choose who helps plan your story.</p></div>
+    <Button variant="ghost" class="min-h-11 shrink-0" disabled={busy || dirty} onclick={() => run(refresh)} aria-label="Refresh sessions"><RefreshCw class="size-4" /><span class="hidden sm:inline">Refresh</span></Button>
+  </header>
+  {#if error}<p role="alert" class="mb-5 rounded-lg border border-destructive p-3 text-sm text-destructive">{error}</p>{/if}
+  {#if notice}<p role="status" class="mb-5 flex items-center gap-2 text-sm"><Check class="size-4 shrink-0 text-muted-foreground" />{notice}</p>{/if}
+  {#if !loaded}
+    <p role="status" class="py-8 text-sm text-muted-foreground">Loading your sessions…</p>
+  {:else}
+    <section aria-label="Your sessions" class="mb-8">
+      {#if sessions.length}
+        <div class="flex flex-wrap items-end gap-3">
+          <label class="grid min-w-0 flex-1 gap-2 text-sm font-medium" for="project-session">Your sessions
+            <select id="project-session" class="min-h-11 w-full min-w-0 rounded-lg border border-input bg-background px-3 text-sm font-normal" value={selected?.id ?? ''} disabled={busy || dirty} onchange={e => choose(e.currentTarget.value)}>
+              <option value="" disabled>Choose a session</option>
+              {#each sessions as session (session.id)}<option value={session.id}>{session.title || 'Untitled session'} · {engineName(session.engine)}</option>{/each}
+            </select>
+          </label>
+          <Button variant="outline" class="min-h-11" disabled={busy || dirty} onclick={newSession} aria-expanded={showCreate} aria-controls="new-session-form"><Plus class="size-4" />New session</Button>
+        </div>
+      {/if}
+      {#if showCreate}
+        <form id="new-session-form" class="mt-5 space-y-4 rounded-lg bg-muted/30 p-4 sm:p-5" onsubmit={create}>
+          <div><h2 class="font-medium">{sessions.length ? 'New session' : 'Start your first session'}</h2>{#if !sessions.length}<p class="mt-1 text-sm text-muted-foreground">Keep each story’s planning and references together.</p>{/if}</div>
+          <div class="grid gap-4 sm:grid-cols-[minmax(140px,1fr)_minmax(0,2fr)]">
+            <label class="grid gap-2 text-sm" for="session-engine">AI assistant<select id="session-engine" class="min-h-11 w-full rounded-lg border border-input bg-background px-3" bind:value={engine} disabled={busy}><option value="codex">Codex</option><option value="claude">Claude Code</option></select></label>
+            <label class="grid gap-2 text-sm" for="session-title">Session name <span class="sr-only">(optional)</span><input id="session-title" bind:this={titleInput} class="min-h-11 w-full min-w-0 rounded-lg border border-input bg-background px-3" bind:value={title} placeholder="Story planning" maxlength="120" disabled={busy} /></label>
+          </div>
+          {#if !status?.engines?.some((item: any) => item.engine === engine && item.installed)}<p class="text-sm text-muted-foreground">{engineName(engine)} needs setup. You can save a session now and set it up next.</p>{/if}
+          <div class="flex flex-wrap gap-2"><Button type="submit" class="min-h-11" disabled={busy || dirty}>{busy ? 'Saving…' : 'Create session'}</Button>{#if sessions.length}<Button variant="ghost" class="min-h-11" disabled={busy} onclick={() => showCreate = false}>Cancel</Button>{/if}</div>
         </form>
-      </CardContent></Card>
-      <section aria-label="Project sessions" class="space-y-2">
-        <h2 class="text-sm font-semibold">Project sessions</h2>
-        {#if loaded&&!sessions.length}<p class="text-sm text-muted-foreground">No local sessions yet.</p>{/if}
-        {#each sessions as session(session.id)}<button type="button" class="w-full rounded-lg border p-3 text-left hover:bg-accent disabled:opacity-50" aria-pressed={session.selected} disabled={busy} onclick={()=>choose(session)}><span class="block break-words font-medium">{session.title||'Untitled session'}{session.selected?' · Selected':''}</span><span class="text-xs text-muted-foreground">{session.engine} · {session.status}</span></button>{/each}
-      </section>
-    </div>
+      {/if}
+    </section>
+
     {#if selected}
-      <div class="min-w-0 space-y-4">
-        <Card><CardHeader><CardTitle>{selected.title||'Selected session'}</CardTitle></CardHeader><CardContent class="space-y-3 text-sm">
-          <p>Status: <strong>{selected.status}</strong></p>
-          <p class="break-all">Native conversation: {selected.native_id||'Not started — assigned after the first CLI turn.'}</p>
-          {#if selected.status==='running'}<Button variant="destructive" disabled={busy} onclick={cancel}>Cancel active turn</Button>{/if}
-          {#if selected.status==='review_required'}<div class="space-y-2 rounded-lg border p-3"><p>Review the latest request, result and error below before continuing. Cancellation or interruption may leave partial work in the native conversation.</p><Button disabled={busy} onclick={acknowledge}>I reviewed the turn — allow continuation</Button></div>{/if}
-          <p>Start planning or writing from Studio or Scenes. History below is read-only and cannot replay old actions.</p>
-        </CardContent></Card>
-        <Card><CardHeader><CardTitle>Context for future turns</CardTitle></CardHeader><CardContent class="space-y-3">
-          <p class="text-sm text-muted-foreground">Choose project characters and assets, then save. Existing turns keep their recorded context.</p>
-          <fieldset class="space-y-2" disabled={busy||selected.status==='running'}><legend class="mb-2 text-sm font-medium">Characters</legend>{#if !characters.length}<p class="text-sm text-muted-foreground">No characters in this project.</p>{/if}{#each characters as character(character.id)}<label class="flex items-start gap-2 text-sm"><input type="checkbox" class="mt-1" bind:group={characterIDs} value={character.id}/><span class="break-words">{character.name||character.id}</span></label>{/each}</fieldset>
-          <fieldset class="space-y-2" disabled={busy||selected.status==='running'}><legend class="mb-2 text-sm font-medium">Assets</legend>{#if !assets.length}<p class="text-sm text-muted-foreground">No assets in this project.</p>{/if}{#each assets as asset(asset.id)}<label class="flex items-start gap-2 text-sm"><input type="checkbox" class="mt-1" bind:group={assetIDs} value={asset.id}/><span class="break-words">{asset.name||asset.id} <span class="text-muted-foreground">({asset.type})</span></span></label>{/each}</fieldset>
-          <Button disabled={busy||selected.status==='running'} onclick={saveContext}>Save context selection</Button>
-          {#each warnings as warning}<p class="text-sm text-amber-700">{warning}</p>{/each}
-        </CardContent></Card>
-        <section aria-label="Native turn history" class="space-y-2"><h2 class="text-sm font-semibold">Native turn history</h2>{#if !turns.length}<p class="text-sm text-muted-foreground">No turns yet. Planning and writing will appear here.</p>{/if}
-          {#each turns as turn(turn.id)}<details class="rounded-lg border p-3"><summary class="cursor-pointer break-words text-sm font-medium">{turn.kind} · {turn.status} · {turn.created_at}</summary><div class="mt-3 space-y-3 text-sm">{#if turn.error}<p role="alert" class="break-words text-destructive">{turn.error}</p>{/if}<h3 class="font-medium">Recorded request and context</h3><pre class="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-3 text-xs">{json(turn.request_json)}</pre><h3 class="font-medium">Recorded result</h3><pre class="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-3 text-xs">{json(turn.result_json)}</pre></div></details>{/each}
-        </section>
-      </div>
-    {:else if loaded}<p class="text-sm text-muted-foreground">Create or select a session to review its history and context.</p>{/if}
-  </div>
+      <section aria-label="Selected session" class="mb-8 flex flex-wrap items-start justify-between gap-5">
+        <div class="min-w-0 flex-1 basis-64">
+          <h2 class="break-words text-xl font-semibold">{selected.title || 'Untitled session'}</h2>
+          <p class="mt-1 text-sm text-muted-foreground">{engineName(selected.engine)}<span aria-hidden="true" class="mx-1">·</span><span class="font-medium text-foreground">{selectedState.label}</span></p>
+          <p class="mt-3 max-w-prose text-sm text-muted-foreground">{selectedState.help}</p>
+        </div>
+        {#if !showCreate}
+          {#if selected.status === 'running'}<Button variant="outline" class="min-h-11" disabled={busy} onclick={cancel}>Stop request</Button>
+          {:else if selected.status === 'review_required'}<Button class="min-h-11" onclick={showHistory}>Review history<ArrowRight class="size-4" /></Button>
+          {:else if selectedState.needsSetup}<Button class="min-h-11" onclick={showSetup}>Set up AI<ArrowRight class="size-4" /></Button>
+          {:else if selectedState.canContinue}<Button href="/?view=studio" class="min-h-11" disabled={busy || dirty || !detailReady || !!error}>Continue in Studio<ArrowRight class="size-4" /></Button>{/if}
+        {/if}
+      </section>
+      {#if dirty}<p role="status" class="mb-4 text-sm">You have unsaved reference changes. Save or discard them before switching sessions or continuing.</p>{/if}
+    {/if}
+
+    <div class="divide-y divide-border border-y border-border">
+      <details id="ai-setup" bind:open={setupOpen} class="group">
+        <summary bind:this={setupSummary} class="flex min-h-16 cursor-pointer list-none items-center justify-between gap-3 py-4 text-sm font-medium">AI setup<ChevronDown class="size-4 shrink-0 transition-transform group-open:rotate-180" /></summary>
+        <div class="space-y-4 pb-6 text-sm">
+          <ul class="divide-y divide-border">{#each status?.engines ?? [] as item (item.engine)}<li class="flex items-center justify-between gap-4 py-3"><span>{engineName(item.engine)}</span><span class="text-muted-foreground">{item.installed ? 'Detected' : 'Not installed'}</span></li>{/each}</ul>
+          <p class="max-w-prose text-muted-foreground">Install Codex or Claude Code on the computer running VideoFlow’s backend, then sign in there. Use Refresh above to check again.</p>
+          <p class="max-w-prose text-muted-foreground">Using Docker? A CLI installed on your computer is not available inside the container. Use a native backend or configure a host integration.</p>
+          <p class="max-w-prose text-muted-foreground">Detection only checks installation. Sign-in and account access are checked on your first prompt.</p>
+          {#if status?.all_text_local === false}<p role="alert" class="text-destructive">Local planning is disabled in the backend configuration.</p>{/if}
+        </div>
+      </details>
+      {#if selected && detailReady}
+        <details bind:open={referencesOpen} class="group">
+          <summary class="flex min-h-16 cursor-pointer list-none items-center justify-between gap-3 py-4">
+            <span class="min-w-0"><span class="block text-sm font-medium">Characters &amp; references{dirty ? ' · Unsaved changes' : ''}</span><span class="mt-1 block break-words text-xs text-muted-foreground">{characterIDs.length} {characterIDs.length === 1 ? 'character' : 'characters'} · {assetIDs.length} {assetIDs.length === 1 ? 'reference' : 'references'}{#if selectedNames.length}{' · '}{selectedNames.slice(0, 3).join(', ')}{selectedNames.length > 3 ? '…' : ''}{/if}</span></span>
+            <ChevronDown class="size-4 shrink-0 transition-transform group-open:rotate-180" />
+          </summary>
+          <div class="space-y-5 pb-6">
+            <p class="text-sm text-muted-foreground">Choose what this session uses in future prompts.</p>
+            <div class="grid gap-6 sm:grid-cols-2">
+              <fieldset class="min-w-0 space-y-1" disabled={busy || selected.status === 'running'}><legend class="mb-2 text-sm font-medium">Characters</legend>
+                {#if !characters.length}<p class="text-sm text-muted-foreground">No characters yet. <a href="/characters" class="underline underline-offset-4">Add a character</a></p>{/if}
+                {#each characters as character (character.id)}<label class="flex min-h-11 cursor-pointer items-center gap-3 text-sm"><input type="checkbox" bind:group={characterIDs} value={character.id} /><span class="min-w-0 break-words">{character.name || character.id}</span></label>{/each}
+              </fieldset>
+              <fieldset class="min-w-0 space-y-1" disabled={busy || selected.status === 'running'}><legend class="mb-2 text-sm font-medium">Reference assets</legend>
+                {#if !assets.length}<p class="text-sm text-muted-foreground">No assets yet. <a href="/assets" class="underline underline-offset-4">Upload references</a></p>{/if}
+                {#each assets as asset (asset.id)}<label class="flex min-h-11 cursor-pointer items-center gap-3 text-sm"><input type="checkbox" bind:group={assetIDs} value={asset.id} /><span class="min-w-0 break-words">{asset.name || asset.id}</span></label>{/each}
+              </fieldset>
+            </div>
+            {#if selected.status === 'running'}<p class="text-sm text-muted-foreground">References can be changed after the current request finishes.</p>{/if}
+            <div class="flex flex-wrap gap-2"><Button class="min-h-11" disabled={busy || !dirty || selected.status === 'running'} onclick={saveContext}>Save references</Button>{#if dirty}<Button variant="ghost" class="min-h-11" disabled={busy} onclick={discardReferences}>Discard changes</Button>{/if}</div>
+            {#each warnings as warning}<p class="text-sm text-muted-foreground">{warning}</p>{/each}
+          </div>
+        </details>
+        <details bind:open={historyOpen} class="group">
+          <summary bind:this={historySummary} class="flex min-h-16 cursor-pointer list-none items-center justify-between gap-3 py-4 text-sm font-medium"><span>History <span class="ml-2 font-normal text-muted-foreground">{turns.length} {turns.length === 1 ? 'request' : 'requests'}</span></span><ChevronDown class="size-4 shrink-0 transition-transform group-open:rotate-180" /></summary>
+          <div class="space-y-4 pb-6">
+            {#if !turns.length}<p class="text-sm text-muted-foreground">Your planning and writing requests will appear here.</p>{/if}
+            {#each turns as turn (turn.id)}
+              <details class="rounded-lg border border-border px-3"><summary class="min-h-11 cursor-pointer break-words py-3 text-sm">{turn.kind.replaceAll('_', ' ')} · {turn.status} <span class="text-muted-foreground">· {date(turn.created_at)}</span></summary>
+                <div class="space-y-3 pb-4 text-sm">{#if turn.error}<p role="alert" class="break-words text-destructive">{turn.error}</p>{/if}<h3 class="font-medium">Request &amp; references</h3><pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-3 text-xs">{json(turn.request_json)}</pre><h3 class="font-medium">Result</h3><pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-3 text-xs">{json(turn.result_json)}</pre></div>
+              </details>
+            {/each}
+            {#if selected.status === 'review_required'}<div class="space-y-3 pt-2 text-sm"><p>Review the interrupted request above before continuing. It may have left partial work in the AI conversation.</p>{#if dirty}<p class="text-muted-foreground">Save or discard your reference changes first.</p>{/if}<Button class="min-h-11 max-w-full whitespace-normal text-left" disabled={busy || dirty || !turns.length} onclick={acknowledge}>I reviewed this request — continue</Button></div>{/if}
+          </div>
+        </details>
+      {/if}
+      <details class="group">
+        <summary class="flex min-h-16 cursor-pointer list-none items-center justify-between gap-3 py-4 text-sm font-medium">Technical details<ChevronDown class="size-4 shrink-0 transition-transform group-open:rotate-180" /></summary>
+        <div class="space-y-3 pb-6 text-sm text-muted-foreground">{#if selected}<p class="break-all">Conversation ID: {selected.native_id || 'Assigned after your first prompt.'}</p>{/if}<p>{status?.host_requirement}</p>{#each status?.engines ?? [] as item (item.engine)}{#if item.reason}<p class="break-words">{engineName(item.engine)}: {item.reason}</p>{/if}{/each}</div>
+      </details>
+    </div>
+  {/if}
 </div>
+
+<style>
+  summary::-webkit-details-marker { display: none; }
+  summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; border-radius: 4px; }
+  @media (prefers-reduced-motion: reduce) { summary :global(svg) { transition: none; } }
+</style>

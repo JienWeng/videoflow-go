@@ -116,11 +116,14 @@
   }
 
   async function restoreOperation() {
+    const requested = new URL(window.location.href).searchParams.get('op_id');
     try {
       activeProject = await get('/projects/active');
-      const ops = await get(`/ops?project_id=${encodeURIComponent(activeProject.id)}&kind=video_generation&limit=1`);
-      const op = ops?.[0];
+      const op = requested
+        ? await get(`/ops/${encodeURIComponent(requested)}`)
+        : (await get(`/ops?project_id=${encodeURIComponent(activeProject.id)}&kind=video_generation&limit=1`))?.[0];
       if (!op) return;
+      if (op.kind !== 'video_generation' || (op.project_id && op.project_id !== activeProject.id)) throw new Error('That generation does not belong to this project.');
       opId = op.id;
       opStatus = op.status;
       stages = op.result_json?.stages ?? [];
@@ -137,7 +140,7 @@
       } else if ((op.status === 'failed' || op.status === 'reconciliation_required')) {
         opError = op.error || 'The generation failed.';
       }
-    } catch { /* Create remains usable if project history is unavailable. */ }
+    } catch (e: any) { if(requested)opError=`Could not restore this generation: ${e.message}`; }
   }
 
   onMount(() => { void restoreOperation(); get('/characters').then(result=>characters=result).catch(()=>{}); });
@@ -273,15 +276,19 @@
         {:else if !preflight}
           <p class="mt-2 text-muted-foreground">Checking configured models and supported video settings…</p>
         {:else}
-          <p class="mt-2">Effective project style: <strong>{preflight.effective_style}</strong></p>
-          <p class="mt-1 text-muted-foreground">This request creates a story, shots and storyboard images. Review and approve the generated references before starting separate scene clips. Images: {preflight.effective_routes.image_provider} / {preflight.effective_routes.image_model}. Video: {preflight.effective_routes.video_provider} / {preflight.effective_routes.video_model}. Supported clip durations: {(preflight.video_durations ?? []).join(', ')} seconds. Assemble approved clips in My videos after rendering.</p>
+          <p class="mt-2 text-muted-foreground">This request creates a story, shots and storyboard images. Review and approve references before rendering each scene clip. Assemble approved clips in Videos.</p>
+          <details class="mt-3">
+            <summary class="cursor-pointer font-medium">Models &amp; clip limits</summary>
+            <p class="mt-2 break-words text-muted-foreground">Images: {preflight.effective_routes.image_provider} / {preflight.effective_routes.image_model}. Video: {preflight.effective_routes.video_provider} / {preflight.effective_routes.video_model}.</p>
+            <p class="mt-1 text-muted-foreground">{#if preflight.video_durations?.length}Supported clip durations: {preflight.video_durations.join(', ')} seconds.{:else}Clip durations are unavailable until the video provider is configured.{/if}</p>
+          </details>
           {#each preflight.warnings ?? [] as warning}
             <p class="mt-2 text-amber-700 dark:text-amber-300">Unverified route: {warning.reason}</p>
           {/each}
           {#if preflight.missing.length}
             <ul class="mt-2 list-disc space-y-1 pl-5 text-destructive">
               {#each preflight.missing as item}
-                <li>{item.reason} <a class="underline" href={item.setting}>Open settings</a></li>
+                <li>{item.reason} <a class="underline" href={item.setting}>{item.setting?.startsWith('/director') ? 'Open AI sessions' : 'Open settings'}</a></li>
               {/each}
             </ul>
           {:else}
