@@ -2,8 +2,9 @@
 import {pathToFileURL} from 'node:url';
 const {chromium}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE||'/tmp/videoflow-browser-runner/node_modules/playwright/index.mjs'));
 import {mkdir,writeFile} from 'node:fs/promises';
-const out='/tmp/videoflow-canvas-audit';await mkdir(out,{recursive:true});
-const browser=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox']});
+const base=process.env.E2E_BASE_URL||'http://127.0.0.1:8080';
+const out=process.env.E2E_OUTPUT||'/tmp/videoflow-canvas-audit';await mkdir(out,{recursive:true});
+const browser=await chromium.launch({executablePath:process.env.CHROME_BIN||'/usr/bin/google-chrome',headless:true,args:['--no-sandbox']});
 const report={checks:[],errors:[]};
 try {
 for(const width of [1440,390]) {
@@ -23,25 +24,39 @@ for(const width of [1440,390]) {
   else if(p==='/events')return r.fulfill({contentType:'text/event-stream',body:': ok\n\n'});
   await r.fulfill({json:body});
  });
- await page.goto('http://127.0.0.1:5196');
+ await page.goto(base+'/?view=studio');
  const node=id=>page.locator(`.svelte-flow__node[data-id="${id}"]`);
  await node('s').waitFor();await page.waitForTimeout(800);
+ await page.getByRole('button',{name:'Find canvas items',exact:true}).click();
+ await page.getByRole('searchbox',{name:'Find canvas items',exact:true}).fill('Alice');await page.screenshot({path:`${out}/finder-${width}.png`});
+ await page.getByRole('button',{name:'Alice · Character',exact:true}).focus();await page.keyboard.press('Enter');
+ if(width===390)await page.getByRole('button',{name:'Canvas',exact:true}).click();
+ await page.getByRole('button',{name:'Find canvas items',exact:true}).click();
+ await page.getByRole('searchbox',{name:'Find canvas items',exact:true}).fill('not-present');await page.getByText('No matching items.',{exact:true}).waitFor();
+ await page.getByRole('button',{name:'Clear search',exact:true}).click();await page.getByLabel('Canvas item type').selectOption('scene');
+ if(await page.getByRole('button',{name:'Alice · Character',exact:true}).count())throw Error('Type filter ignored');
+ await page.getByRole('button',{name:'Park · Scene',exact:true}).waitFor();await page.keyboard.press('Escape');
+ await page.getByRole('button',{name:'Fit all',exact:true}).click();await page.waitForTimeout(350);const pin=await node('s').boundingBox();await page.mouse.move(pin.x+pin.width/2,pin.y+pin.height/2);await page.mouse.down();await page.mouse.move(pin.x+pin.width/2+45,pin.y+pin.height/2+30,{steps:8});await page.mouse.up();
+ const original=await page.evaluate(()=>JSON.parse(localStorage.getItem('videoflow.canvas.positions')).s);await page.getByRole('button',{name:'Arrange',exact:true}).click();const arranged=await page.evaluate(()=>JSON.parse(localStorage.getItem('videoflow.canvas.positions')).s);if(JSON.stringify(arranged)===JSON.stringify(original))throw Error('Arrange did not change pinned position');await page.getByRole('button',{name:'Undo arrange',exact:true}).click();await page.waitForTimeout(350);
+ const restored=await page.evaluate(()=>JSON.parse(localStorage.getItem('videoflow.canvas.positions')).s);if(JSON.stringify(restored)!==JSON.stringify(original))throw Error('Arrange undo changed saved position');
+ report.checks.push(`${width}: finder, type filter, empty search and undo arrange`);
  // On mobile Studio deliberately offers a focused canvas view.
  const canvasToggle=page.getByRole('button',{name:'Canvas',exact:true});if(await canvasToggle.isVisible())await canvasToggle.click();
 
- await node('s').click({force:true});await page.locator('#np-title').fill('Edited park');if(width===390)await page.getByRole('button',{name:'Canvas',exact:true}).click();page.once('dialog',d=>d.dismiss());await node('t').click({force:true});if(width===390)await page.getByRole('button',{name:/Workbench/}).click();if(await page.locator('#np-title').inputValue()!=='Edited park')throw Error('Dirty draft lost after cancelled switch');report.checks.push(`${width}: cancelled selection preserves dirty draft`);await page.getByTestId('node-panel').getByRole('button',{name:'Save',exact:true}).click();
+ await node('s').click({force:true});await page.locator('#np-title').fill('Edited park');if(width===390)await page.getByRole('button',{name:'Canvas',exact:true}).click();await page.getByRole('button',{name:'Find canvas items',exact:true}).click();await page.getByLabel('Canvas item type').selectOption('');await page.getByRole('searchbox',{name:'Find canvas items',exact:true}).fill('Closeup');await page.waitForTimeout(350);const viewportBefore=await page.locator('.svelte-flow__viewport').getAttribute('style');page.once('dialog',d=>d.dismiss());await page.getByRole('button',{name:'Closeup · Shot',exact:true}).click();if(await page.locator('.svelte-flow__viewport').getAttribute('style')!==viewportBefore)throw Error('Cancelled finder selection moved viewport');await page.keyboard.press('Escape');page.once('dialog',d=>d.dismiss());await node('t').click({force:true});if(width===390)await page.getByRole('button',{name:/Workbench/}).click();if(await page.locator('#np-title').inputValue()!=='Edited park')throw Error('Dirty draft lost after cancelled switch');report.checks.push(`${width}: cancelled selection preserves dirty draft`);await page.getByTestId('node-panel').getByRole('button',{name:'Save',exact:true}).click();
  await page.getByText('Saved',{exact:true}).waitFor();await page.locator('#np-title').fill('Unsaved revision');await page.getByTestId('node-panel').getByRole('button',{name:'Cancel',exact:true}).click();if(await page.locator('#np-title').inputValue()!=='Edited park')throw Error('Cancel restored stale pre-save value');report.checks.push(`${width}: Cancel restores latest saved baseline`);
  if(patches!==1)throw Error('Scene edit not saved');report.checks.push(`${width}: scene edit/save`);
  await page.getByTestId('node-panel').getByRole('button',{name:'Close',exact:true}).click();if(width===390)await page.getByRole('button',{name:'Canvas',exact:true}).click();
- await page.getByRole('button',{name:'fit view',exact:false}).click();await page.waitForTimeout(400);await node('t').click();await page.locator('#np-prompt').waitFor();report.checks.push(`${width}: shot editor opens`);
+ await page.getByRole('button',{name:'Fit all',exact:true}).click();await page.waitForTimeout(400);await node('t').click();await page.locator('#np-prompt').waitFor();report.checks.push(`${width}: shot editor opens`);
  await page.getByRole('tab',{name:'Chat',exact:true}).click();const composer=page.locator('textarea[placeholder="What should change in Closeup?"]');await composer.fill('Keep this draft');await page.getByRole('tab',{name:'Details',exact:true}).click();await page.getByRole('tab',{name:'Chat',exact:true}).click();if(await composer.inputValue()!=='Keep this draft')throw Error('Chat draft overwritten');await page.getByRole('button',{name:'Refine this shot…',exact:true}).click();if(chatRequests.length)throw Error('Suggestion auto-submitted');await composer.fill('Keep the red car');await composer.press('Enter');await page.waitForFunction(()=>document.body.innerText.includes('Review your selected item'));if(chatRequests[0]?.selected?.id!=='t')throw Error('Chat lost selected shot');report.checks.push(`${width}: chat draft persists, chips fill only, selected ID sent`);await page.getByRole('tab',{name:'Details',exact:true}).click();
  await page.getByTestId('node-panel').getByRole('button',{name:'Close',exact:true}).click();if(width===390)await page.getByRole('button',{name:'Canvas',exact:true}).click();
- await page.getByRole('button',{name:'fit view',exact:false}).click();await page.waitForTimeout(400);await node('c').click();await page.locator('#np-character-appearance').waitFor();if(await page.locator('#np-character-appearance').inputValue()!=='Red coat')throw Error('Character deep link lost data');report.checks.push(`${width}: character edits inline with correct data`);
- await page.goto('http://127.0.0.1:5196');if(await canvasToggle.isVisible())await canvasToggle.click();await page.getByRole('button',{name:'fit view',exact:false}).click();await page.waitForTimeout(500);await node('a').click({force:true});
+ await page.getByRole('button',{name:'Fit all',exact:true}).click();await page.waitForTimeout(400);await node('c').click();await page.locator('#np-character-appearance').waitFor();if(await page.locator('#np-character-appearance').inputValue()!=='Red coat')throw Error('Character deep link lost data');report.checks.push(`${width}: character edits inline with correct data`);
+ await page.goto(base+'/?view=studio');if(await canvasToggle.isVisible())await canvasToggle.click();await page.getByRole('button',{name:'Fit all',exact:true}).click();await page.waitForTimeout(500);await node('a').click({force:true});
  if(await page.getByRole('link',{name:'Edit asset identity & review'}).getAttribute('href')!=='/assets?asset_id=a')throw Error('Wrong asset editor');report.checks.push(`${width}: asset identity editor link`);
  await page.getByTestId('node-panel').getByRole('button',{name:'Close',exact:true}).click();if(width===390)await page.getByRole('button',{name:'Canvas',exact:true}).click();
  await node('s').click({button:'right',force:true});const menu=page.getByTestId('canvas-context-menu');await menu.waitFor();const b=await menu.boundingBox();if(b.x<0||b.y<0||b.y+b.height>900)throw Error('Context menu offscreen');await page.keyboard.press('Escape');report.checks.push(`${width}: context menu visible and Escape closes`);
  const before=await node('s').boundingBox();await page.mouse.move(before.x+before.width/2,before.y+before.height/2);await page.mouse.down();await page.mouse.move(before.x+before.width/2+35,before.y+before.height/2+25,{steps:8});await page.mouse.up();const positions=await page.evaluate(()=>JSON.parse(localStorage.getItem('videoflow.canvas.positions')||'{}'));if(!positions.s)throw Error('Drag position not saved');report.checks.push(`${width}: node drag persists position`);
+ await page.evaluate(()=>document.documentElement.classList.remove('dark'));await page.waitForFunction(()=>document.querySelector('.svelte-flow')?.classList.contains('light'));report.checks.push(`${width}: canvas follows application theme`);await page.evaluate(()=>document.documentElement.classList.add('dark'));await page.waitForFunction(()=>document.querySelector('.svelte-flow')?.classList.contains('dark'));
  await page.screenshot({path:`${out}/canvas-${width}.png`});await context.close();
 }
 }finally{await browser.close();await writeFile(out+'/report.json',JSON.stringify(report,null,2));}
