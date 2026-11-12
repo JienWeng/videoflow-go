@@ -682,31 +682,6 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
             </CardDescription>
           </CardHeader>
           <CardContent class="space-y-5">
-            <details class="rounded-lg border p-4">
-              <summary class="cursor-pointer text-sm font-medium">Add another OpenRouter connection</summary>
-              <div class="mt-3 space-y-3">
-              <p class="settings-help">Named connections use OpenRouter Chat Completions.</p>
-              <div class="grid gap-3 sm:grid-cols-2">
-                <label class="text-xs">Name<Input bind:value={newLabel} placeholder="My OpenRouter" /></label>
-                <label class="text-xs">Provider<select class="block w-full rounded border p-2 bg-background" bind:value={newPreset} onchange={choosePreset}>
-                  {#each selectablePresets as [id, p]}<option value={id}>{p.label}</option>{/each}
-                </select></label>
-                <label class="text-xs">Protocol<select class="block w-full rounded border p-2 bg-background" bind:value={newProtocol}>
-                  <option value="chat">OpenRouter Chat Completions</option>
-
-                </select></label>
-                <label class="text-xs">Default model<Input bind:value={newModel} placeholder="Model ID from your provider" /></label>
-                {#if newProtocol !== 'codex'}
-                  <label class="text-xs">Base URL<Input bind:value={newUrl} /></label>
-                  <label class="text-xs">Chat Completions output mode<select class="block w-full rounded border p-2 bg-background" bind:value={newMode} disabled={newProtocol !== 'chat'}>
-                    <option value="auto">Provider default</option><option value="prompt">JSON in prompt</option>
-                  </select></label>
-                {/if}
-              </div>
-              <label class="flex items-center gap-2 text-xs"><input type="checkbox" bind:checked={newVision} />Models on this connection accept images</label>
-              <Button size="sm" disabled={!newLabel.trim() || busy === 'add-connection'} onclick={addConnection}>Add connection</Button>
-              </div>
-            </details>
             {#each orderedProviders as p (p.name)}
               {@const cfg = provCfg[p.name]}
               {@const test = provTest[p.name]}
@@ -716,20 +691,9 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                   <span class="ml-2 text-xs font-normal text-muted-foreground">{cfg?.configured ? 'Configured' : 'Not configured'}</span>
                 </summary>
               <div data-provider={p.name}>
-                <div class="mb-2 flex items-center gap-2">
-                  {#if cfg?.configured}
-                    <Badge class="gap-1 text-xs">
-                      <CircleCheck class="size-3" />Configured
-                    </Badge>
-                    {#if cfg.from_db}
-                      <span class="settings-help">{cfg.masked_key}</span>
-                    {:else}
-                      <span class="settings-help">from environment</span>
-                    {/if}
-                  {:else}
-                    <Badge variant="outline" class="text-xs">Not configured</Badge>
-                  {/if}
-                </div>
+                {#if cfg?.configured}
+                  <p class="settings-help mb-2">{cfg.from_db ? cfg.masked_key : 'Provided by the server environment'}</p>
+                {/if}
 
                 <div class="grid gap-2 sm:grid-cols-2">
                   <div>
@@ -860,6 +824,32 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
               {/if}
               </details>
             {/each}
+            <details class="rounded-lg border p-4">
+              <summary class="cursor-pointer text-sm font-medium">Additional connections</summary>
+              <div class="mt-3 space-y-3">
+              <p class="settings-help">Only add a named OpenRouter connection if you need a separate account or configuration. To set up your primary account, use OpenRouter above.</p>
+              <div class="grid gap-3 sm:grid-cols-2">
+                <label class="text-xs">Name<Input bind:value={newLabel} placeholder="My OpenRouter" /></label>
+                <label class="text-xs">Provider<select class="block w-full rounded border p-2 bg-background" bind:value={newPreset} onchange={choosePreset}>
+                  {#each selectablePresets as [id, p]}<option value={id}>{p.label}</option>{/each}
+                </select></label>
+                <label class="text-xs">Protocol<select class="block w-full rounded border p-2 bg-background" bind:value={newProtocol}>
+                  <option value="chat">OpenRouter Chat Completions</option>
+
+                </select></label>
+                <label class="text-xs">Default model<Input bind:value={newModel} placeholder="Model ID from your provider" /></label>
+                {#if newProtocol !== 'codex'}
+                  <label class="text-xs">Base URL<Input bind:value={newUrl} /></label>
+                  <label class="text-xs">Chat Completions output mode<select class="block w-full rounded border p-2 bg-background" bind:value={newMode} disabled={newProtocol !== 'chat'}>
+                    <option value="auto">Provider default</option><option value="prompt">JSON in prompt</option>
+                  </select></label>
+                {/if}
+              </div>
+              <label class="flex items-center gap-2 text-xs"><input type="checkbox" bind:checked={newVision} />Models on this connection accept images</label>
+              <Button size="sm" disabled={!newLabel.trim() || busy === 'add-connection'} onclick={addConnection}>Add connection</Button>
+              </div>
+            </details>
+
           </CardContent>
         </Card>
       </section>
