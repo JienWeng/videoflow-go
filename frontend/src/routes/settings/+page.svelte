@@ -1,4 +1,5 @@
 <script lang="ts">
+ import { protectDraft } from '$lib/protect-draft';
  import GenerationRecovery from '$lib/GenerationRecovery.svelte';
   import { replaceState } from '$app/navigation';
   import { page } from '$app/state';
@@ -93,6 +94,9 @@ media_model_preferences:Record<string,Record<string,string>>;
   let saveStatus = $state('');
   let confirmClear = $state('');
   let confirmReset = $state(false);
+  let durationError = $state('');
+  const providerDirty = (name:string) => !!provKeyInput[name]?.trim() || (provUrlInput[name] ?? '').trim() !== (provCfg[name]?.base_url ?? '');
+  protectDraft(() => Object.keys(provKeyInput).some(providerDirty), 'You have unsaved provider credentials. Discard them and leave?');
   async function retryLoad() { error = ''; loaded = false; try { await refresh(); } catch (e: any) { error = e.message; } finally { loaded = true; } }
   let presets = $state<Record<string, any>>({});
   let newLabel = $state('');
@@ -249,7 +253,7 @@ media_model_preferences:Record<string,Record<string,string>>;
     const urlMap: Record<string, string> = {};
     for (const c of cfgs) {
       cfgMap[c.name] = c;
-      keyMap[c.name] = '';
+      keyMap[c.name] = provKeyInput[c.name] ?? '';
       urlMap[c.name] = c.base_url ?? '';
     }
     provCfg = cfgMap;
@@ -617,10 +621,10 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
   {/if}
 
   {#if !loaded}
-    <div class="space-y-3">
-      {#each Array(6) as _, i (i)}
-        <Skeleton class="h-16 w-full" />
-      {/each}
+    <div role="status" aria-busy="true" aria-label="Loading settings" class="grid gap-6 md:grid-cols-[200px_minmax(0,1fr)]">
+
+      <div aria-hidden="true" class="grid grid-cols-2 gap-2 self-start md:block md:space-y-2">{#each Array(4) as _, i (i)}<Skeleton aria-hidden="true" class="h-12 motion-reduce:animate-none" />{/each}</div>
+      <div class="space-y-6"><p class="settings-help">Loading settings…</p><Skeleton aria-hidden="true" class="h-8 w-36 motion-reduce:animate-none" /><Skeleton aria-hidden="true" class="h-24 w-full motion-reduce:animate-none" /><Skeleton aria-hidden="true" class="h-8 w-44 motion-reduce:animate-none" /><Skeleton aria-hidden="true" class="h-40 w-full motion-reduce:animate-none" /></div>
     </div>
   {:else if !error}
     <div class="grid gap-6 md:grid-cols-[200px_minmax(0,1fr)]">
@@ -633,7 +637,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
         <div class="space-y-1 text-sm text-muted-foreground"><p>{tab === 'connections' ? 'Save each provider key before checking its connection.' : 'Preferences save automatically when changed.'}</p><p role="status" aria-live="polite" class="min-h-5 text-foreground">{saveStatus}</p></div>
       <!-- ============================================ APPEARANCE -->
       {#if tab === 'general'}
-      <section id="appearance" class="space-y-4">
+      <section id="appearance" class="settings-section">
         <Card>
           <CardHeader>
             <CardTitle role="heading" aria-level={2} class="flex items-center gap-2 text-base">
@@ -667,7 +671,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
       {/if}
       <!-- ============================================ PROVIDERS -->
       {#if tab === 'connections'}
-      <section id="providers" class="space-y-4">
+      <section id="providers" class="settings-section">
         <Card>
           <CardHeader>
             <CardTitle role="heading" aria-level={2} class="flex items-center gap-2 text-base">
@@ -679,8 +683,9 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
           </CardHeader>
           <CardContent class="space-y-5">
             <details class="rounded-lg border p-4">
-              <summary class="cursor-pointer text-sm font-medium">Advanced · Add a named connection or custom protocol</summary>
+              <summary class="cursor-pointer text-sm font-medium">Add another OpenRouter connection</summary>
               <div class="mt-3 space-y-3">
+              <p class="settings-help">Named connections use OpenRouter Chat Completions.</p>
               <div class="grid gap-3 sm:grid-cols-2">
                 <label class="text-xs">Name<Input bind:value={newLabel} placeholder="My OpenRouter" /></label>
                 <label class="text-xs">Provider<select class="block w-full rounded border p-2 bg-background" bind:value={newPreset} onchange={choosePreset}>
@@ -713,16 +718,16 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
               <div data-provider={p.name}>
                 <div class="mb-2 flex items-center gap-2">
                   {#if cfg?.configured}
-                    <Badge class="gap-1 text-[10px]">
+                    <Badge class="gap-1 text-xs">
                       <CircleCheck class="size-3" />Configured
                     </Badge>
                     {#if cfg.from_db}
-                      <span class="text-[10px] text-muted-foreground">{cfg.masked_key}</span>
+                      <span class="settings-help">{cfg.masked_key}</span>
                     {:else}
-                      <span class="text-[10px] text-muted-foreground">from environment</span>
+                      <span class="settings-help">from environment</span>
                     {/if}
                   {:else}
-                    <Badge variant="outline" class="text-[10px]">Not configured</Badge>
+                    <Badge variant="outline" class="text-xs">Not configured</Badge>
                   {/if}
                 </div>
 
@@ -752,6 +757,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                   <Input id="url-{p.name}" readonly value={cfg?.base_url ?? ''} />
                 </details>
 
+                <p class="settings-help mt-2" role="status">{providerDirty(p.name) ? 'Unsaved credential changes' : 'No unsaved credential changes'}</p>
                 <div class="mt-2 flex flex-wrap items-center gap-2">
                   {#if providerModelInput[p.name]}
                     <Input
@@ -798,10 +804,10 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                       Verify
                     </Button>
                   {/if}
-                  <span class="text-xs text-muted-foreground">{p.protocol === 'chat' ? 'Text model tests consume provider usage.' : 'Catalog checks do not submit generation or verify account/model access.'}</span>
+                  <span class="settings-help">{p.protocol === 'chat' ? 'Text model tests consume provider usage.' : 'Catalog checks do not submit generation or verify account/model access.'}</span>
                   <Button
                     size="sm"
-                    disabled={busy === `prov-${p.name}`}
+                    disabled={!!busy || !providerDirty(p.name)}
                     onclick={() => saveProvider(p.name)}
                   >
                     {busy === `prov-${p.name}` ? 'Saving…' : 'Save'}
@@ -861,7 +867,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
 
       <!-- ============================================ ENGINES -->
       {#if tab === 'models'}
-      <section id="engines" class="space-y-4">
+      <section id="engines" class="settings-section">
         <Card>
           <CardHeader>
             <CardTitle role="heading" aria-level={2} class="flex items-center gap-2 text-base">
@@ -871,7 +877,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
               Choose defaults for new media. Provider keys are managed in AI connections; planning and writing use local AI sessions.
             </CardDescription>
           </CardHeader>
-          <CardContent class="space-y-4">
+          <CardContent class="settings-section">
             <Button size="sm" variant="outline" disabled={catalogBusy} onclick={loadEngineCatalogs}>{catalogBusy ? 'Loading catalogs…' : 'Refresh model catalogs'}</Button>
             {#if catalogError}<p class="text-sm text-destructive">{catalogError}</p>{/if}
             {#if app}
@@ -885,8 +891,8 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                 {@const cur = app[eng.key] as string}
                 <div class="flex flex-wrap items-center gap-3">
                   <div class="min-w-[180px] flex-1">
-                    <div class="text-sm font-medium">{eng.label}</div>
-                    <div class="text-[11px] text-muted-foreground">{eng.hint}</div>
+                    <div class="settings-label">{eng.label}</div>
+                    <div class="settings-help">{eng.hint}</div>
                   </div>
                   <div class="flex items-center gap-2">
                     {#if engineCustomOpen[eng.key]}
@@ -927,8 +933,8 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
 
               <div class="flex flex-wrap items-center gap-3">
                 <div class="min-w-[180px] flex-1">
-                  <div class="text-sm font-medium">Video provider</div>
-                  <div class="text-[11px] text-muted-foreground">Used by one-click renders.</div>
+                  <div class="settings-label">Video provider</div>
+                  <div class="settings-help">Used by one-click renders.</div>
                 </div>
                 <select
                   aria-label="Video provider"
@@ -944,8 +950,8 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
 
               <div class="flex flex-wrap items-center gap-3">
                 <div class="min-w-[180px] flex-1">
-                  <div class="text-sm font-medium">Image provider</div>
-                  <div class="text-[11px] text-muted-foreground">Used for storyboard keyframes.</div>
+                  <div class="settings-label">Image provider</div>
+                  <div class="settings-help">Used for storyboard keyframes.</div>
                 </div>
                 <select
                   aria-label="Image provider"
@@ -963,8 +969,8 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
 
               <div class="flex flex-wrap items-center gap-3">
               <div class="min-w-[180px] flex-1">
-                  <div class="text-sm font-medium">Image references accepted by the selected video route</div>
-                  <div class="text-[11px] text-muted-foreground">
+                  <div class="settings-label">Image references accepted by the selected video route</div>
+                  <div class="settings-help">
                     {videoImageInputDescription()}
                   </div>
                 </div>
@@ -978,13 +984,13 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
 
       <!-- ============================================ DEFAULTS -->
       {#if tab === 'general'}
-      <section id="defaults" class="space-y-4">
+      <section id="defaults" class="settings-section">
         <Card>
           <CardHeader>
             <CardTitle role="heading" aria-level={2} class="text-base">Scene defaults</CardTitle>
             <CardDescription>Applied to new scenes and renders.</CardDescription>
           </CardHeader>
-          <CardContent class="space-y-4">
+          <CardContent class="settings-section">
             {#if app}
               <div class="flex flex-wrap items-center gap-3">
                 <div class="min-w-[180px] flex-1 text-sm font-medium">Default aspect ratio</div>
@@ -1002,26 +1008,13 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                 </select>
               </div>
 
-              <div class="flex flex-wrap items-center gap-3">
-                <div class="min-w-[180px] flex-1 text-sm font-medium">Default scene duration (s)</div>
-                <Input
-                  type="number"
-                  aria-label="Default scene duration (seconds)"
-                  min="0.5"
-                  step="0.5"
-                  class="h-8 w-24 text-sm"
-                  disabled={busy === 'app'}
-                  value={app.default_scene_duration}
-                  onchange={(e) => {
-                    const n = parseFloat((e.currentTarget as HTMLInputElement).value);
-                    if (Number.isFinite(n) && n >= 0.5 && (e.currentTarget as HTMLInputElement).validity.valid && n !== app!.default_scene_duration)
-                      saveApp({ default_scene_duration: n });
-                    else if (!(e.currentTarget as HTMLInputElement).validity.valid || !Number.isFinite(n)) {
-                      (e.currentTarget as HTMLInputElement).value = String(app!.default_scene_duration);
-                      saveStatus = 'Enter a duration of at least 0.5 seconds, in half-second steps.';
-                    }
-                  }}
-                />
+              <div class="flex flex-wrap items-start gap-3">
+                <div class="min-w-[180px] flex-1"><label class="settings-label" for="scene-duration">Default scene duration (s)</label><p id="duration-hint" class="settings-help">1–120 whole seconds.</p></div>
+                <div><Input id="scene-duration" aria-label="Default scene duration (seconds)" aria-invalid={durationError ? 'true' : undefined} aria-describedby={durationError ? 'duration-hint duration-error' : 'duration-hint'} type="number" min="1" max="120" step="1" class="h-8 w-24 text-sm" disabled={busy === 'app'} value={app.default_scene_duration}
+                  onfocus={() => durationError = ''}
+                  oninput={() => durationError = ''}
+                  onchange={(e) => { const input=e.currentTarget as HTMLInputElement;const n=Number(input.value);if(!input.value || !Number.isInteger(n) || n<1 || n>120) {durationError='Enter a scene duration from 1 to 120 in whole seconds.';return;}durationError='';if(n!==app!.default_scene_duration)void saveApp({default_scene_duration:n}); }} />
+                {#if durationError}<p id="duration-error" role="alert" class="mt-2 max-w-xs text-sm text-destructive">{durationError}</p>{/if}</div>
               </div>
 
               <div class="flex flex-wrap items-center gap-3">
@@ -1049,7 +1042,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
             <CardTitle role="heading" aria-level={2} class="text-base">Captions</CardTitle>
             <CardDescription>Auto-caption style, language and transcription model.</CardDescription>
           </CardHeader>
-          <CardContent class="space-y-4">
+          <CardContent class="settings-section">
             {#if app}
               <div class="flex flex-wrap items-center gap-3">
                 <div class="min-w-[180px] flex-1 text-sm font-medium">Caption style</div>
@@ -1138,7 +1131,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                   {/each}
                 </div>
               {:else}
-                <p class="text-xs text-muted-foreground">No negative prompts yet.</p>
+                <p class="settings-help">No negative prompts yet.</p>
               {/if}
               <form
                 class="flex items-center gap-2"
@@ -1165,7 +1158,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
 
       <!-- ============================================ AGENTS -->
       {#if tab === 'advanced'}
-      <section id="agents" class="space-y-4">
+      <section id="agents" class="settings-section">
         <Card>
           <CardHeader>
             <CardTitle role="heading" aria-level={2} class="text-base">Agent routing</CardTitle>
@@ -1215,12 +1208,12 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
               >
                 <div class="min-w-[160px] flex-1">
                   <div class="flex items-center gap-2">
-                    <span class="text-sm font-medium" title={agentDesc[a.agent] ?? ''}>{a.label}</span>
+                    <span class="settings-label" title={agentDesc[a.agent] ?? ''}>{a.label}</span>
                     {#if isDefault(a)}
-                      <Badge variant="outline" class="text-[10px]">default</Badge>
+                      <Badge variant="outline" class="text-xs">default</Badge>
                     {/if}
                   </div>
-                  <div class="text-[11px] text-muted-foreground">
+                  <div class="settings-help">
                     {agentDesc[a.agent] ?? ''}
                     {#if !isDefault(a)}
                       <span class="block">
@@ -1327,6 +1320,11 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
 <svelte:window onhashchange={settingsHash} />
 
 <style>
+  .settings-page { --settings-label-size: .875rem; --settings-help-size: .75rem; --settings-section-gap: 1rem; }
+  .settings-page :global(.settings-label) { font-size:var(--settings-label-size); line-height:1.25rem; font-weight:500; }
+  .settings-page :global(.settings-help) { font-size:var(--settings-help-size); line-height:1rem; color:var(--muted-foreground); }
+  .settings-page :global(.settings-section > :not(:last-child)) { margin-bottom:var(--settings-section-gap); }
+
   .settings-page :global([data-slot="card"]) { border-radius: 0; box-shadow: none; border-width: 0 0 1px; border-color: var(--border); background: transparent; padding-bottom: 1.5rem; }
   .settings-page :global([data-slot="card-header"]), .settings-page :global([data-slot="card-content"]) { padding-left: 0; padding-right: 0; }
   .settings-page :global(select) { max-width: 100%; }

@@ -44,7 +44,7 @@
   function beforeSelect(next:Node|null){return next?.id===selected?.id || details?.canLeave()!==false;}
   function select(next:Node|null){const changed=next?.id!==selected?.id;selected=next;if(next&&changed){setWorkspace('studio');tab='details';mobileView='workbench';}}
   function clear(){canvas?.clearSelection();}
-  onMount(()=>{palette.setHandlers({onfocus:focusNode,onnewstory:startStory});const stop=subscribeJobs(refresh,refresh);return()=>{stop();palette.clearHandlers()}});
+  onMount(()=>{palette.setHandlers({onfocus:focusNode,onnewstory:startStory});if(page.url.searchParams.has('new_story'))void tick().then(async()=>{await startStory();const url=new URL(window.location.href);url.searchParams.delete('new_story');replaceState(url,page.state);});const stop=subscribeJobs(refresh,refresh);return()=>{stop();palette.clearHandlers()}});
 </script>
 <svelte:head><title>{workspace==='overview'?'Project overview · VideoFlow':'VideoFlow Studio'}</title></svelte:head>
 <div class="flex h-full min-h-0 flex-col">

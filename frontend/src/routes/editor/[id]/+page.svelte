@@ -356,7 +356,7 @@
     </div>
   {:else}
     <!-- Header -->
-    <header class="flex items-center gap-3 border-b border-border px-4 py-2">
+    <header class="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2">
       <Button variant="ghost" size="icon-sm" href="/render" title="Back to renders">
         <ArrowLeft />
       </Button>
@@ -376,10 +376,10 @@
       {/if}
       <!-- Auto-transcribe: whisper -> editable caption segments (no burn).
            The editor is the single place to transcribe -> edit -> re-burn. -->
-      <div class="flex items-center gap-1.5">
+      <div class="flex min-w-0 flex-wrap items-center gap-1.5">
         {#if models.length}
           <select
-            class="h-8 rounded-md border border-input bg-background px-2 text-xs"
+            class="h-8 max-w-full rounded-md border border-input bg-background px-2 text-xs"
             bind:value={model}
             disabled={transcribing}
             title="Whisper model (larger = more accurate, slower)"
@@ -388,7 +388,7 @@
           </select>
         {/if}
         <select
-          class="h-8 rounded-md border border-input bg-background px-2 text-xs"
+          class="h-8 max-w-full rounded-md border border-input bg-background px-2 text-xs"
           bind:value={language}
           disabled={transcribing}
           title="Spoken language for transcription"

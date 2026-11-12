@@ -1,6 +1,6 @@
 <script lang="ts">
   import '../app.css';
-  import { afterNavigate } from '$app/navigation';
+  import { afterNavigate, goto } from '$app/navigation';
   import { Button } from '$lib/components/ui/button';
   import * as Dialog from '$lib/components/ui/dialog';
   import { Menu, Search } from '@lucide/svelte';
@@ -128,7 +128,7 @@
 <CommandPalette
   bind:open={palette.open}
   onfocus={(id) => palette.handlers.onfocus?.(id)}
-  onnewstory={() => palette.handlers.onnewstory?.()}
+  onnewstory={() => { if(palette.handlers.onnewstory)palette.handlers.onnewstory();else void goto('/?view=studio&new_story=1'); }}
 />
 
 <Toaster richColors />

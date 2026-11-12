@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 	"videoflow-go/internal/composition"
 	"videoflow-go/internal/models"
 )
@@ -20,6 +22,7 @@ func (s *Server) registerCompositionRoutes() {
 	s.router.Post("/compositions/captions/import", s.handleCompositionCaptionImport)
 	s.router.Get("/compositions/sources", s.handleCompositionSources)
 	s.router.Get("/compositions/runtime", s.handleCompositionRuntime)
+	s.router.Get("/compositions", s.handleCompositionList)
 	s.router.Post("/compositions", s.handleCompositionSave)
 	s.router.Get("/compositions/{revision}", s.handleCompositionGet)
 	s.router.Post("/compositions/{revision}/run", s.handleCompositionRun)
@@ -33,6 +36,56 @@ func (s *Server) handleCompositionRuntime(w http.ResponseWriter, r *http.Request
 	}
 	writeJSON(w, 200, map[string]interface{}{"ready": e == nil, "version": composition.RuntimeVersion, "source_commit": composition.SourceCommit, "message": message, "opencut": "Not integrated: adapter round-trip validation required"})
 }
+
+// handleCompositionList exposes only the active project's revision metadata.
+func (s *Server) handleCompositionList(w http.ResponseWriter, r *http.Request) {
+	project, err := s.activeProjectID(r.Context())
+	if err != nil || !composition.ValidID(project) {
+		http.Error(w, "no active project", 400)
+		return
+	}
+	type entry struct {
+		Revision     string    `json:"revision"`
+		CreatedAt    time.Time `json:"created_at"`
+		Duration     float64   `json:"duration"`
+		ClipCount    int       `json:"clip_count"`
+		CaptionCount int       `json:"caption_count"`
+	}
+	result := []entry{}
+	directory := filepath.Join(s.compositionRoot(), project)
+	files, err := os.ReadDir(directory)
+	if os.IsNotExist(err) {
+		writeJSON(w, 200, result)
+		return
+	}
+	if err != nil {
+		http.Error(w, "could not list saved edits", 500)
+		return
+	}
+	for _, file := range files {
+		if !file.IsDir() || !composition.ValidID(file.Name()) || file.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		path := filepath.Join(directory, file.Name(), "manifest.json")
+		info, err := os.Lstat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		manifest, err := composition.Load(s.compositionRoot(), project, file.Name())
+		if err != nil {
+			continue
+		}
+		result = append(result, entry{file.Name(), info.ModTime().UTC(), manifest.Duration, len(manifest.Clips), len(manifest.Captions)})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].CreatedAt.Equal(result[j].CreatedAt) {
+			return result[i].Revision < result[j].Revision
+		}
+		return result[i].CreatedAt.After(result[j].CreatedAt)
+	})
+	writeJSON(w, 200, result)
+}
+
 func (s *Server) handleCompositionSave(w http.ResponseWriter, r *http.Request) {
 	project, e := s.activeProjectID(r.Context())
 	if e != nil {

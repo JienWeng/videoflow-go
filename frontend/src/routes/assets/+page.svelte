@@ -7,6 +7,7 @@
  function openDetail(asset:any){detail=asset;identityTraits=Object.entries(asset.metadata_json?.locked_traits??{}).map(([name,value])=>({name,value:String(value)}));}
  async function saveIdentity(){if(!detail)return;identityBusy=true;try{const traits:Record<string,string>={};for(const row of identityTraits){if(!row.name.trim()||!row.value.trim())throw new Error('Each identity trait needs a name and value');if(traits[row.name.trim()])throw new Error('Trait names must be unique');traits[row.name.trim()]=row.value.trim()}const updated=await put(`/assets/${detail.id}/identity`,{expected_updated_at:detail.updated_at,locked_traits:traits});assets=assets.map((a:any)=>a.id===updated.id?updated:a);detail=updated;toast.success('Identity locks saved');}catch(e){toast.error((e as Error).message)}finally{identityBusy=false}}
 
+  import { UPLOAD_LIMIT_HINT, uploadProblem } from '$lib/upload-limits';
   import { onMount } from 'svelte';
   import { get, post, put, patch, del, upload, mediaUrl, isImage, isVideo } from '$lib/api';
   import { runBackgroundOp } from '$lib/ops';
@@ -235,6 +236,7 @@
   async function doUpload(e: Event) {
     e.preventDefault();
     if (!files?.length) return;
+    const problem=uploadProblem(Array.from(files));if(problem){error=problem;toast.error(problem);return;}
     busy = true;
     error = '';
     try {
@@ -291,6 +293,8 @@
     return sorted;
   });
 </script>
+
+<svelte:head><title>Assets · VideoFlow</title></svelte:head>
 
 <div class="p-6">
   <div class="mb-4">
@@ -403,7 +407,8 @@
     <div class="flex flex-wrap gap-4 items-end">
       <div class="flex-1 min-w-[160px]">
         <label class="block text-xs text-muted-foreground mb-1" for="file">File(s)</label>
-        <input id="file" type="file" multiple bind:files
+        <p id="upload-limit" class="mb-2 text-xs text-muted-foreground">Images, video, audio and other reference files. {UPLOAD_LIMIT_HINT}</p>
+        <input id="file" aria-describedby="upload-limit" type="file" multiple bind:files
           class="block w-full text-sm rounded-md border border-input bg-background px-2 py-1.5" />
       </div>
       <div class="flex-1 min-w-[160px]">

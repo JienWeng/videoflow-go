@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { page } from '$app/state';
   import { onMount } from 'svelte';
-  import { goto, invalidateAll } from '$app/navigation';
+  import { goto, invalidateAll, replaceState } from '$app/navigation';
   import { get, post, patch, del } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
@@ -66,6 +67,16 @@
       await goto('/');
     });
 
+  $effect(() => {
+    const target = (page.state as {activateProject?: string}).activateProject;
+    if (!loaded || !target || busy) return;
+    // Consume before submitting: browser back or a failed request must not replay it.
+    replaceState(page.url, {...page.state, activateProject: undefined});
+    const project = projects.find(p => p.id === target);
+    if (project) void activate(project);
+    else toast.error('That project is no longer available. Choose a project to continue.');
+  });
+
   function exportProject(p: any) {
     run(`export-${p.id}`, async () => {
       const data = await get(`/projects/${p.id}/export`);
@@ -128,6 +139,8 @@
   const fmtDate = (s: string) =>
     new Date(s).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 </script>
+
+<svelte:head><title>Projects · VideoFlow</title></svelte:head>
 
 <div class="p-6">
   <div class="mb-4 flex items-start justify-between gap-3">

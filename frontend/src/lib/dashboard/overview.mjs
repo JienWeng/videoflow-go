@@ -74,6 +74,7 @@ export function makeOverview(snapshot, now = Date.now()) {
   for (const op of ops) addRecent('op', op, kindLabel(op.kind), 'Project task', operationHref(op));
   for (const asset of assets.filter(item => item.type !== 'output_video')) addRecent('asset', asset, asset.name || 'Untitled asset', 'Asset', '/assets', 'Saved');
   for (const session of sessions) addRecent('session', session, session.title || 'Untitled session', 'AI session', '/director', sessionState(session, snapshot.aiHealth).label);
+  for (const edit of Array.isArray(snapshot.compositions) ? snapshot.compositions : []) addRecent('composition', {...edit,id:edit.revision}, `Saved composition · ${edit.duration}s`, 'Composition', `/compositions?revision=${encodeURIComponent(edit.revision)}`, 'Saved');
   recent.sort((a, b) => b.time - a.time || a.id.localeCompare(b.id));
   return { metrics, storyEmpty, primary, attention, recent: recent.slice(0, 5), runningCount: [...jobs, ...ops].filter(item => ['running', 'pending'].includes(item.status)).length };
 }

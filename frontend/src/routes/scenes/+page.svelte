@@ -779,6 +779,8 @@
   ];
 </script>
 
+<svelte:head><title>Scenes & shots · VideoFlow</title></svelte:head>
+
 <div class="flex h-full flex-col">
   <!-- Page header (unchanged copy) -->
   <div class="px-6 pt-6 pb-3 shrink-0">

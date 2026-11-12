@@ -23,11 +23,11 @@
     if (busy) return;
     busy = true; error = '';
     try {
-      const [active, graph, assets, ops, jobs, sessions, aiHealth, appHealth] = await Promise.all([
+      const [active, graph, assets, ops, jobs, sessions, aiHealth, appHealth, compositions] = await Promise.all([
         get('/projects/active'), get('/graph'), get('/assets'), get('/ops?limit=all'), get('/render-jobs'),
-        get('/director/sessions').catch(() => null), get('/director/status').catch(() => null), get('/health').catch(() => null)
+        get('/director/sessions').catch(() => null), get('/director/status').catch(() => null), get('/health').catch(() => null), get('/compositions').catch(() => null)
       ]);
-      const next = makeOverview({ graph, assets, ops, jobs, sessions, aiHealth, appHealth });
+      const next = makeOverview({ graph, assets, ops, jobs, sessions, aiHealth, appHealth, compositions });
       project = active; model = next; updatedAt = new Date().toISOString();
     } catch (e: any) { error = e.message ?? String(e); }
     finally { busy = false; }

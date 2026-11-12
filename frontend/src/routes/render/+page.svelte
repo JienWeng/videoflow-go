@@ -315,6 +315,8 @@
   }
 </script>
 
+<svelte:head><title>Videos · VideoFlow</title></svelte:head>
+
 {#snippet jobRow(j: any)}
   <div class="py-1 text-xs">
     <div class="flex flex-wrap items-center gap-2">

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { REFERENCE_IMAGE_HINT, uploadProblem } from '$lib/upload-limits';
   import { onMount } from 'svelte';
   import { get, post, patch, del, upload, mediaUrl, isImage } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
@@ -29,6 +30,9 @@
   let error = $state('');
   let busy = $state('');
   let loaded = $state(false);
+  let loadError = $state('');
+  let refreshing = $state(false);
+  async function retryCharacters() { refreshing=true; try { await refresh(); loadError=''; } catch(e:any) { loadError=e.message; } finally { refreshing=false; } }
   let expanded: Record<string, boolean> = $state({});
 
   let name = $state('');
@@ -53,8 +57,8 @@
   let lightbox: { items: any[]; index: number; charName: string } | null = $state(null);
 
   async function refresh() {
-    characters = await get('/characters');
-    const all = await get('/assets');
+    const [nextCharacters,all] = await Promise.all([get('/characters'),get('/assets')]);
+    characters = nextCharacters;
     assets = Object.fromEntries(all.map((a: any) => [a.id, a]));
   }
   onMount(() =>
@@ -63,7 +67,7 @@
       const character = characters.find((c: any) => c.id === id);
       if (character) startEdit(character);
     })
-      .catch((e) => (error = e.message))
+      .catch((e) => (loadError = e.message))
       .finally(() => (loaded = true))
   );
 
@@ -103,6 +107,7 @@
     const input = e.target as HTMLInputElement;
     if (!input.files?.length) return;
     const files = Array.from(input.files);
+    const problem=uploadProblem(files,true);if(problem){toast.error(problem);input.value='';return;}
     run(`photo-${c.id}`, async () => {
       let uploaded = 0;
       try {
@@ -208,6 +213,8 @@
   }
 </script>
 
+<svelte:head><title>Characters · VideoFlow</title></svelte:head>
+
 <svelte:window onkeydown={onLightboxKey} />
 
 <div class="p-6">
@@ -216,7 +223,9 @@
     <p class="text-sm text-muted-foreground">Add reference images for consistent characters.</p>
   </div>
 
-  {#if loaded && !characters.length}
+  {#if loadError}<div role="alert" class="mb-4 space-y-2 rounded-lg border border-destructive p-4 text-sm"><p>Could not load characters: {loadError}</p>{#if characters.length}<p>Showing the last loaded characters.</p>{/if}<Button variant="outline" disabled={refreshing} onclick={retryCharacters}>{refreshing ? 'Loading…' : 'Try again'}</Button></div>{/if}
+
+  {#if loaded && !loadError && !characters.length}
     <Card class="mb-4">
       <CardContent class="p-4">
         <div class="flex items-center gap-2 mb-1">
@@ -386,8 +395,9 @@
                   </Button>
                   <label class="inline-flex items-center gap-1 cursor-pointer rounded-md border border-border px-2 py-1 text-xs hover:bg-accent">
                     <Upload class="size-3" />{busy === `photo-${c.id}` ? 'Uploading…' : 'Upload reference photo'}
-                    <input type="file" class="hidden" multiple disabled={!!busy} accept="image/*" onchange={(e) => uploadPhoto(c, e)} />
+                    <input type="file" aria-describedby={`reference-limit-${c.id}`} class="hidden" multiple disabled={!!busy} accept=".jpg,.jpeg,.png,.gif,.webp" onchange={(e) => uploadPhoto(c, e)} />
                   </label>
+                  <p id={`reference-limit-${c.id}`} class="text-xs text-muted-foreground">{REFERENCE_IMAGE_HINT}</p>
                   <Button variant="ghost" size="sm" class="text-destructive hover:text-destructive"
                     disabled={!!busy} onclick={() => (deleteTarget = c)}>
                     <Trash2 class="size-3 mr-1" />Delete

@@ -69,3 +69,10 @@ test('an older running story opens its own progress instead of the newest story'
 test('missing required graph data fails instead of showing false zero totals', () => {
   assert.throws(() => makeOverview(snapshot({ graph: null }), now), /project data/i);
 });
+
+test('saved composition revisions appear in recent work with exact reopen links', () => {
+ const snapshot={graph:{nodes:[]},assets:[],ops:[],jobs:[],sessions:[],aiHealth:{engines:[]},appHealth:{missing_keys:[]},compositions:[{revision:'saved-revision',created_at:'2026-11-12T09:00:00Z',duration:4}]};
+ const overview=makeOverview(snapshot);
+ assert.equal(overview.recent[0].kind,'Composition');
+ assert.equal(overview.recent[0].href,'/compositions?revision=saved-revision');
+});

@@ -193,6 +193,8 @@
   onDestroy(() => { stopPolling(); stopRenderPolling(); });
 </script>
 
+<svelte:head><title>Guided creator · VideoFlow</title></svelte:head>
+
 <div class="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 py-10">
   {#if busy}
     <div class="mx-auto w-full max-w-xl">

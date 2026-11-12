@@ -725,6 +725,7 @@
       {#each messages as m, i (i)}
         <Message from={m.role}>
           <MessageContent>
+            <span class="sr-only">{m.role === 'user' ? 'You' : 'Story assistant'}</span>
             {#if m.intent}
               <Reasoning class="mb-0" defaultOpen={false}>
                 <ReasoningTrigger class="text-xs">

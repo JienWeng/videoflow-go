@@ -128,3 +128,42 @@ func TestCompositionPublicSourceRenderIntegration(t *testing.T) {
 		}
 	}
 }
+
+func TestCompositionListIsProjectScoped(t *testing.T) {
+	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("unexpected provider call") })
+	for _, duration := range []int{2, 3} {
+		saved := call(t, s, "POST", "/compositions", fmt.Sprintf(`{"version":1,"width":640,"height":360,"fps":24,"duration":%d,"clips":[],"audio":[],"captions":[]}`, duration))
+		if saved.Code != http.StatusCreated {
+			t.Fatal(saved.Code, saved.Body.String())
+		}
+	}
+	response := call(t, s, "GET", "/compositions", "")
+	if response.Code != http.StatusOK {
+		t.Fatal(response.Code, response.Body.String())
+	}
+	var entries []struct {
+		Revision  string `json:"revision"`
+		CreatedAt string `json:"created_at"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &entries); err != nil || len(entries) != 2 {
+		t.Fatalf("list: %s, %v", response.Body.String(), err)
+	}
+	for _, entry := range entries {
+		if entry.Revision == "" || entry.CreatedAt == "" {
+			t.Fatal("missing revision/time", entry)
+		}
+		loaded := call(t, s, "GET", "/compositions/"+entry.Revision, "")
+		if loaded.Code != 200 {
+			t.Fatal(loaded.Body.String())
+		}
+	}
+	other, err := s.database.CreateProject("Separate edits", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.database.ActivateProject(other.ID)
+	isolated := call(t, s, "GET", "/compositions", "")
+	if isolated.Code != 200 || strings.TrimSpace(isolated.Body.String()) != "[]" {
+		t.Fatal(isolated.Code, isolated.Body.String())
+	}
+}
