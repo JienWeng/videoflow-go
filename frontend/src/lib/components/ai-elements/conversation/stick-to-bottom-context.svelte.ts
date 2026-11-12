@@ -51,7 +51,7 @@ class StickToBottomContext {
 		this.#userHasScrolled = false; // Reset user scroll flag when programmatically scrolling
 		this.#element.scrollTo({
 			top: this.#element.scrollHeight,
-			behavior,
+			behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : behavior,
 		});
 	};
 
@@ -60,7 +60,7 @@ class StickToBottomContext {
 
 		// Detect if user has scrolled up from bottom
 		const { scrollTop, scrollHeight, clientHeight } = this.#element;
-		const threshold = 200; // Increased threshold for better UX
+		const threshold = 4; // Follow only at the bottom; reading nearby messages must keep its position.
 		const isAtBottom = scrollTop + clientHeight >= scrollHeight - threshold;
 
 		// Update the isAtBottom state based on scroll position
@@ -162,7 +162,7 @@ class StickToBottomContext {
 		if (!this.#element) return;
 
 		const { scrollTop, scrollHeight, clientHeight } = this.#element;
-		const threshold = 200; // Increased threshold for better UX
+		const threshold = 4; // Follow only at the bottom; reading nearby messages must keep its position.
 		const isAtBottom = scrollTop + clientHeight >= scrollHeight - threshold;
 
 		this.#isAtBottom = isAtBottom;

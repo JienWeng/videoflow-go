@@ -6,6 +6,7 @@
 	import { getPromptInputTextRegistration } from "../context/text-registration.svelte.js";
 
 	interface Props {
+		"aria-label"?: string;
 		ref?: HTMLTextAreaElement | null;
 		class?: string;
 		placeholder?: string;

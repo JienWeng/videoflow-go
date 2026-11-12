@@ -17,8 +17,9 @@ for(const width of [1440,390]) {
  let patches=0;let chatRequests=[];
  await context.route('**/api/**',async r=>{
   const p=new URL(r.request().url()).pathname.replace('/api','');let body={};
-  if(p==='/chat'){chatRequests.push(r.request().postDataJSON());body={intent:{action:'unknown',reply:'Review your selected item'},options:{},state:{}};}else if(p==='/characters/c')body=char;else if(p==='/assets/a')body={id:'a',updated_at:'2026-01-01',metadata_json:{locked_traits:{color:'red'}}};else if(p==='/graph')body=graph();else if(p==='/characters')body=[char];else if(p==='/assets'||p==='/scenes'||p==='/ops'||p==='/director/sessions')body=[];
+  if(p==='/chat'){chatRequests.push(r.request().postDataJSON());body={intent:{action:'unknown',reply:'Review your selected item'},options:{},state:{}};}else if(p==='/characters/c')body=char;else if(p==='/assets/a')body={id:'a',updated_at:'2026-01-01',metadata_json:{locked_traits:{color:'red'}}};else if(p==='/graph')body=graph();else if(p==='/characters')body=[char];else if(p==='/assets'||p==='/scenes'||p==='/ops')body=[];
   else if(p==='/projects/active')body={id:'p',name:'Canvas QA'};else if(p==='/projects')body=[];
+  else if(p==='/director/sessions')body=[{id:'qa',selected:true,title:'Story planning',engine:'codex',status:'ready'}];else if(p==='/director/sessions/qa/turns')body=[];
   else if(p==='/director/status')body={all_text_local:true,engines:[]};
   else if(p==='/scenes/s'&&r.request().method()==='PATCH'){scene={...scene,...r.request().postDataJSON()};patches++;}
   else if(p==='/events')return r.fulfill({contentType:'text/event-stream',body:': ok\n\n'});
@@ -27,6 +28,17 @@ for(const width of [1440,390]) {
  await page.goto(base+'/?view=studio');
  const node=id=>page.locator(`.svelte-flow__node[data-id="${id}"]`);
  await node('s').waitFor();await page.waitForTimeout(800);
+ if(width===390)await page.getByRole('button',{name:/Workbench/}).click();
+ await page.getByRole('heading',{name:'What would you like to create?',exact:true}).waitFor();
+ await page.getByRole('button',{name:'Start a story',exact:true}).click();
+ if(!await page.getByRole('textbox',{name:'Message story assistant'}).inputValue())throw Error('Start story did not fill composer');
+ await page.getByRole('textbox',{name:'Message story assistant'}).fill('Draft to preserve');
+ if(width===1440){const resize=page.getByRole('separator',{name:'Resize assistant panel'});await resize.focus();const before=Number(await resize.getAttribute('aria-valuenow'));await page.keyboard.press('ArrowLeft');if(Number(await resize.getAttribute('aria-valuenow'))!==before+32)throw Error('Keyboard resize failed');const box=await resize.boundingBox();const pointerBefore=Number(await resize.getAttribute('aria-valuenow'));await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x-30,box.y+box.height/2,{steps:5});await page.mouse.up();if(Number(await resize.getAttribute('aria-valuenow'))<=pointerBefore)throw Error('Pointer resize failed');await page.getByRole('button',{name:'Expand assistant',exact:true}).click();await page.getByRole('button',{name:'Restore assistant size',exact:true}).click();}
+ await page.getByRole('button',{name:'Studio tools',exact:true}).click();await page.getByRole('menuitem',{name:'Review references',exact:true}).waitFor();await page.keyboard.press('Escape');
+ if(await page.getByRole('textbox',{name:'Message story assistant'}).inputValue()!=='Draft to preserve')throw Error('Layout change lost draft');
+ await page.screenshot({path:`${out}/assistant-empty-${width}.png`});report.checks.push(`${width}: assistant empty action, tools menu, draft-safe layout controls`);
+ if(width===390)await page.getByRole('button',{name:'Canvas',exact:true}).click();
+
  await page.getByRole('button',{name:'Find canvas items',exact:true}).click();
  await page.getByRole('searchbox',{name:'Find canvas items',exact:true}).fill('Alice');await page.screenshot({path:`${out}/finder-${width}.png`});
  await page.getByRole('button',{name:'Alice · Character',exact:true}).focus();await page.keyboard.press('Enter');
@@ -48,7 +60,7 @@ for(const width of [1440,390]) {
  if(patches!==1)throw Error('Scene edit not saved');report.checks.push(`${width}: scene edit/save`);
  await page.getByTestId('node-panel').getByRole('button',{name:'Close',exact:true}).click();if(width===390)await page.getByRole('button',{name:'Canvas',exact:true}).click();
  await page.getByRole('button',{name:'Fit all',exact:true}).click();await page.waitForTimeout(400);await node('t').click();await page.locator('#np-prompt').waitFor();report.checks.push(`${width}: shot editor opens`);
- await page.getByRole('tab',{name:'Chat',exact:true}).click();const composer=page.locator('textarea[placeholder="What should change in Closeup?"]');await composer.fill('Keep this draft');await page.getByRole('tab',{name:'Details',exact:true}).click();await page.getByRole('tab',{name:'Chat',exact:true}).click();if(await composer.inputValue()!=='Keep this draft')throw Error('Chat draft overwritten');await page.getByRole('button',{name:'Refine this shot…',exact:true}).click();if(chatRequests.length)throw Error('Suggestion auto-submitted');await composer.fill('Keep the red car');await composer.press('Enter');await page.waitForFunction(()=>document.body.innerText.includes('Review your selected item'));if(chatRequests[0]?.selected?.id!=='t')throw Error('Chat lost selected shot');report.checks.push(`${width}: chat draft persists, chips fill only, selected ID sent`);await page.getByRole('tab',{name:'Details',exact:true}).click();
+ await page.getByRole('tab',{name:'Chat',exact:true}).click();const composer=page.locator('textarea[placeholder="What should change in Closeup?"]');await composer.fill('Keep this draft');await page.getByRole('tab',{name:'Details',exact:true}).click();await page.getByRole('tab',{name:'Chat',exact:true}).click();if(await composer.inputValue()!=='Keep this draft')throw Error('Chat draft overwritten');await page.getByRole('button',{name:'Refine this shot…',exact:true}).click();if(chatRequests.length)throw Error('Suggestion auto-submitted');await composer.fill('Keep the red car');await composer.press('Enter');await page.waitForFunction(()=>document.body.innerText.includes('Review your selected item'));if(chatRequests[0]?.selected?.id!=='t')throw Error('Chat lost selected shot');await page.getByRole('button',{name:'Clear selection',exact:true}).waitFor();await page.screenshot({path:`${out}/assistant-chat-${width}.png`});report.checks.push(`${width}: chat draft persists, chips fill only, selected ID sent`);await page.getByRole('tab',{name:'Details',exact:true}).click();
  await page.getByTestId('node-panel').getByRole('button',{name:'Close',exact:true}).click();if(width===390)await page.getByRole('button',{name:'Canvas',exact:true}).click();
  await page.getByRole('button',{name:'Fit all',exact:true}).click();await page.waitForTimeout(400);await node('c').click();await page.locator('#np-character-appearance').waitFor();if(await page.locator('#np-character-appearance').inputValue()!=='Red coat')throw Error('Character deep link lost data');report.checks.push(`${width}: character edits inline with correct data`);
  await page.goto(base+'/?view=studio');if(await canvasToggle.isVisible())await canvasToggle.click();await page.getByRole('button',{name:'Fit all',exact:true}).click();await page.waitForTimeout(500);await node('a').click({force:true});
@@ -57,7 +69,8 @@ for(const width of [1440,390]) {
  await node('s').click({button:'right',force:true});const menu=page.getByTestId('canvas-context-menu');await menu.waitFor();const b=await menu.boundingBox();if(b.x<0||b.y<0||b.y+b.height>900)throw Error('Context menu offscreen');await page.keyboard.press('Escape');report.checks.push(`${width}: context menu visible and Escape closes`);
  const before=await node('s').boundingBox();await page.mouse.move(before.x+before.width/2,before.y+before.height/2);await page.mouse.down();await page.mouse.move(before.x+before.width/2+35,before.y+before.height/2+25,{steps:8});await page.mouse.up();const positions=await page.evaluate(()=>JSON.parse(localStorage.getItem('videoflow.canvas.positions')||'{}'));if(!positions.s)throw Error('Drag position not saved');report.checks.push(`${width}: node drag persists position`);
  await page.evaluate(()=>document.documentElement.classList.remove('dark'));await page.waitForFunction(()=>document.querySelector('.svelte-flow')?.classList.contains('light'));report.checks.push(`${width}: canvas follows application theme`);await page.evaluate(()=>document.documentElement.classList.add('dark'));await page.waitForFunction(()=>document.querySelector('.svelte-flow')?.classList.contains('dark'));
- await page.screenshot({path:`${out}/canvas-${width}.png`});await context.close();
+ await page.screenshot({path:`${out}/canvas-${width}.png`});
+ await node('c').click({force:true});await page.getByRole('tab',{name:'Chat',exact:true}).click();await page.getByRole('button',{name:'Clear selection',exact:true}).click();await page.locator('textarea[placeholder="Describe your story or select an item…"]').waitFor();if(await page.getByRole('button',{name:'Clear selection',exact:true}).count())throw Error('Context chip did not clear');report.checks.push(`${width}: removable composer context clears canvas selection`);await context.close();
 }
 }finally{await browser.close();await writeFile(out+'/report.json',JSON.stringify(report,null,2));}
 console.log(report);if(report.errors.length)process.exitCode=1;

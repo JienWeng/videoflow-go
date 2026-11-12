@@ -12,7 +12,8 @@
   } from '$lib/components/ai-elements/task';
   import {
     Conversation,
-    ConversationContent
+    ConversationContent,
+    ConversationScrollButton
   } from '$lib/components/ai-elements/conversation';
   import { Message, MessageContent } from '$lib/components/ai-elements/message';
   import { Loader } from '$lib/components/ai-elements/loader';
@@ -39,7 +40,7 @@
   import Maximize2 from '@lucide/svelte/icons/maximize-2';
   import Minimize2 from '@lucide/svelte/icons/minimize-2';
   import PanelRightClose from '@lucide/svelte/icons/panel-right-close';
-  import MousePointerClick from '@lucide/svelte/icons/mouse-pointer-click';
+  import X from '@lucide/svelte/icons/x';
   import PenLine from '@lucide/svelte/icons/pen-line';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 
@@ -66,6 +67,7 @@
 
   interface Msg {
     role: 'user' | 'assistant';
+    retry?: string;
     text: string;
     intent?: any;
     options?: any;
@@ -91,6 +93,7 @@
     onfocus,
     onmutate,
     onhide,
+    onclear,
     onresize,
     embedded = false,
     expanded = false,
@@ -99,6 +102,7 @@
     onfocus?: (id: string) => void;
     onmutate?: () => void | Promise<void>;
     onhide?: () => void;
+    onclear?: () => void;
     onresize?: () => void;
     embedded?: boolean;
     expanded?: boolean;
@@ -111,6 +115,7 @@
   });
 
   let messages = $state<Msg[]>([greeting()]);
+  const isEmpty=$derived(messages.length===1&&messages[0].text===greeting().text);
   let input = $state('');
   let busy = $state(false);
 
@@ -143,16 +148,16 @@
   }
 
   let conversationGeneration=0;
-  let historyLoading=$state(true);
+  let historyLoading=$state(true), historyError=$state(''), sessionRequired=$state(false);
   async function initPersistence() {
     const generation=++conversationGeneration;
-    historyLoading=true;busy=false;storageKey=null;
+    historyLoading=true;historyError='';sessionRequired=false;busy=false;storageKey=null;
     try {
       const status=await get('/director/status');if(generation!==conversationGeneration)return;
       if(status.all_text_local){
         const sessions=await get('/director/sessions');if(generation!==conversationGeneration)return;
         const session=sessions.find((item:any)=>item.selected);
-        if(!session){messages=[{role:'assistant',text:'Choose an AI session above to start planning your story.'}];return;}
+        if(!session){sessionRequired=true;messages=[greeting()];return;}
         localSessionLabel=`${session.engine} · ${session.title}`;
         const turns=await get(`/director/sessions/${session.id}/turns`);if(generation!==conversationGeneration)return;
         const restored:Msg[]=[];
@@ -167,7 +172,7 @@
       const key=`videoflow.chat.${project?.id??'default'}`;
       try{const saved=JSON.parse(sessionStorage.getItem(key)??'null');messages=Array.isArray(saved)&&saved.length?saved.slice(-30).map((m:Msg)=>m.op?.status==='running'?{...m,op:{...m.op,status:'failed',detail:'interrupted — check Activity'}}:m):[greeting()];}catch{messages=[greeting()];}
       storageKey=key;
-    }catch(e){if(generation===conversationGeneration)messages=[{role:'assistant',text:`Could not load conversation. Check the backend and refresh your session. ${String(e)}`}];}
+    }catch(e){if(generation===conversationGeneration)historyError=String(e);}
     finally{if(generation===conversationGeneration)historyLoading=false;}
   }
 
@@ -184,7 +189,7 @@
 
   function clearChat() {
     messages = [greeting()];
-    if (storageKey) sessionStorage.removeItem(storageKey);
+    if (storageKey) {try{sessionStorage.removeItem(storageKey)}catch{/* in-memory clear still works */}}
   }
 
   /**
@@ -586,9 +591,10 @@
 
   async function send(text?: string) {
     const message = (text ?? input).trim();
-    if (!message || busy || historyLoading) return;
+    if (!message || busy || historyLoading || sessionRequired || historyError) return;
     const generation=conversationGeneration;
     input = '';
+    if(isEmpty)messages=[];
     // Conversation memory: the last 6 turns (text only — no cards/state).
     const history = messages.slice(-6).map((m) => ({ role: m.role, text: m.text }));
     messages.push({ role: 'user', text: message });
@@ -609,7 +615,8 @@
       if(generation!==conversationGeneration)return;
       messages.push({
         role: 'assistant',
-        text: `Something went wrong: ${(e as Error).message}`
+        text: `Could not send your message. ${(e as Error).message}`,
+        retry: message
       });
     } finally {
       if(generation===conversationGeneration){busy = false;
@@ -627,7 +634,7 @@
         variant="secondary"
         size="sm"
         href={c.href}
-        class="h-7 shrink-0 rounded-full px-3 text-xs font-normal"
+        class="min-h-9 h-auto whitespace-normal text-left shrink-0 rounded-full px-3 text-xs font-normal"
       >
         {c.label}
         <ArrowUpRight class="size-3" />
@@ -638,7 +645,7 @@
       <Button
         variant="outline"
         size="sm"
-        class="h-7 shrink-0 rounded-full border-dashed px-3 text-xs font-normal text-muted-foreground"
+        class="min-h-9 h-auto whitespace-normal text-left shrink-0 rounded-full border-dashed px-3 text-xs font-normal text-muted-foreground"
         disabled={busy}
         onclick={() => applyChip(c)}
       >
@@ -650,7 +657,7 @@
       <Button
         variant="secondary"
         size="sm"
-        class="h-7 shrink-0 rounded-full px-3 text-xs font-normal"
+        class="min-h-9 h-auto whitespace-normal text-left shrink-0 rounded-full px-3 text-xs font-normal"
         disabled={busy}
         onclick={() => applyChip(c)}
       >
@@ -663,7 +670,7 @@
 
 
 <div class="h-full flex flex-col">
-  <div class="flex items-center gap-2 border-b border-border px-4 py-2">
+  {#if !embedded}<div class="flex items-center gap-2 border-b border-border px-4 py-2">
     {#if !embedded}
     <MessageSquare class="size-4 shrink-0 text-muted-foreground" />
     <div class="min-w-0">
@@ -720,13 +727,25 @@
     </div>
   </div>
 
-  <Conversation class="flex-1 min-h-0">
-    <ConversationContent class="gap-4 overflow-y-auto">
+  {/if}
+  <Conversation aria-label="Story conversation" class="flex-1 min-h-0">
+    <ConversationContent class="min-h-0 flex-1 gap-5 overflow-y-auto">
+      {#if historyLoading}<div role="status" class="flex items-center gap-2 text-sm text-muted-foreground"><Loader size={14} />Loading conversation…</div>
+      {:else if historyError}<div role="alert" class="space-y-3 py-4"><h3 class="font-semibold">Could not load conversation</h3><p class="text-sm text-muted-foreground">Your saved history has not been replaced. {historyError}</p><Button variant="outline" onclick={initPersistence}>Retry conversation</Button></div>
+      {:else if sessionRequired}<div class="space-y-3 py-4"><MessageSquare class="size-7 text-muted-foreground" /><h3 class="font-semibold">Connect your story assistant</h3><p class="text-sm text-muted-foreground">Choose a session above, or set up Codex or Claude Code to start planning.</p><Button variant="outline" href="/director">Set up AI session</Button></div>
+      {:else if isEmpty}
+        <div class="flex flex-1 flex-col justify-center py-6">
+          <MessageSquare class="mb-4 size-7 text-muted-foreground" />
+          <h3 class="text-lg font-semibold">{selected?`Let’s work on ${selected.label}`:'What would you like to create?'}</h3>
+          <p class="mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">{selected?'Describe a change, or use a suggestion below to get started.':'Describe your idea. We’ll shape the characters, scenes and shots together.'} You review proposals before anything runs.</p>
+          <Button variant="outline" class="mt-5 h-auto min-h-11 justify-start whitespace-normal text-left" onclick={()=>{input=selected?`Help me develop ${selected.label}: `:'Help me plan a story about ';focusComposer();}}>{selected?'Develop this idea':'Start a story'}</Button>
+        </div>
+      {:else}
       {#each messages as m, i (i)}
         <Message from={m.role}>
           <MessageContent>
-            <span class="sr-only">{m.role === 'user' ? 'You' : 'Story assistant'}</span>
-            {#if m.intent}
+            <p class="mb-1.5 text-xs font-medium text-muted-foreground">{m.role === 'user' ? 'You' : 'Story assistant'}</p>
+            {#if m.intent && m.intent.action !== 'unknown'}
               <Reasoning class="mb-0" defaultOpen={false}>
                 <ReasoningTrigger class="text-xs">
                   <Brain class="size-3.5" />
@@ -737,8 +756,10 @@
               </Reasoning>
             {/if}
             {#if m.text}
-              <p class="whitespace-pre-wrap">{m.text}</p>
+              <p class="whitespace-pre-wrap break-words leading-relaxed">{m.text}</p>
             {/if}
+            {#if m.intent?.action==='unknown' && m.state?.next_steps?.length}<ol class="list-decimal space-y-1 pl-5 text-sm">{#each m.state.next_steps as step}<li>{step}</li>{/each}</ol>{/if}
+            {#if m.retry}<Button variant="outline" size="sm" class="mt-2" disabled={busy} onclick={()=>{input=m.retry??'';focusComposer();}}>Edit and retry</Button>{/if}
             {#if m.op}
               <Task class="w-full">
                 <TaskTrigger title={m.op.label}>
@@ -796,7 +817,7 @@
                 {/each}
               </div>
             {/if}
-            {#if m.intent}
+            {#if m.intent && m.intent.action !== 'unknown'}
               <ActionCard
                 intent={m.intent}
                 options={m.options}
@@ -810,40 +831,31 @@
           </MessageContent>
         </Message>
       {/each}
+      {/if}
       {#if busy}
         <Message from="assistant">
           <MessageContent>
             <div class="flex items-center gap-2 text-muted-foreground">
               <Loader size={14} />
-              <span class="text-sm">Thinking…</span>
+              <span role="status" class="text-sm">Working on your story…</span>
             </div>
           </MessageContent>
         </Message>
       {/if}
     </ConversationContent>
+    <ConversationScrollButton aria-label="Jump to latest message" />
   </Conversation>
 
   <div class="border-t border-border p-3" bind:this={inputWrapper}>
-    {#if chips.length}
-      <!-- The suggestion strip is selection-aware: clicking a canvas node
-           retargets these chips at that node. -->
-      <p class="mb-1.5 flex items-center gap-1 text-[11px] text-muted-foreground">
-        <MousePointerClick class="size-3 shrink-0" />
-        {#if selected}
-          {userPrefersZh
-            ? `下面的操作针对《${selected.label}》`
-            : `Suggestions now target 《${selected.label}》`}
-        {:else}
-          {userPrefersZh ? '点击画布节点可切换下面的操作' : 'Click a node to retarget these'}
-        {/if}
-      </p>
-      <div class="mb-2 flex flex-wrap items-center gap-1.5 pb-0.5">
-        {@render chipRow(chips)}
-      </div>
-    {/if}
+    <div class="mb-2 flex min-w-0 items-center justify-between gap-2">
+      {#if selected}<div class="flex min-w-0 items-center gap-1 rounded-md bg-muted px-2 text-xs"><span class="truncate" title={selected.label}>{selected.kind.replace('_',' ')}: {selected.label}</span>{#if onclear}<Button variant="ghost" size="icon" class="size-9 shrink-0" aria-label="Clear selection" onclick={onclear}><X class="size-3.5" /></Button>{/if}</div>{:else}<span class="text-xs text-muted-foreground">Project context</span>{/if}
+      {#if embedded}<Button variant="ghost" size="icon" class="size-9 shrink-0 text-muted-foreground" aria-label="Clear chat" title="Clear visible chat; saved session history is kept" disabled={busy||historyLoading||isEmpty} onclick={clearChat}><Eraser class="size-4" /></Button>{/if}
+    </div>
+    {#if chips.length}<div aria-label="Suggested prompts" class="mb-2 flex flex-wrap items-center gap-2">{@render chipRow(chips)}</div>{/if}
     <PromptInput class="rounded-xl border border-input bg-background shadow-xs" onSubmit={(m) => send(m.text)}>
       <PromptInputBody>
         <PromptInputTextarea
+          aria-label="Message story assistant"
           bind:value={input}
           class="min-h-12 border-0 bg-transparent shadow-none focus-visible:ring-0"
           placeholder={selected ? `What should change in ${selected.label}?` : "Describe your story or select an item…"}
@@ -852,10 +864,11 @@
       <PromptInputToolbar>
         <PromptInputTools />
         <PromptInputSubmit
-          disabled={busy || historyLoading || !input.trim()}
-          status={busy ? 'submitted' : 'ready'}
+          disabled={busy || historyLoading || sessionRequired || !!historyError || !input.trim()}
+          status='ready'
         />
       </PromptInputToolbar>
     </PromptInput>
+    <p class="mt-2 text-xs text-muted-foreground">Enter to send · Shift + Enter for a new line</p>
   </div>
 </div>
