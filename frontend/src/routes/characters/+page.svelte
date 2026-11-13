@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { protectDraft } from '$lib/protect-draft';
   import { REFERENCE_IMAGE_HINT, uploadProblem } from '$lib/upload-limits';
   import { onMount } from 'svelte';
   import { get, post, patch, del, upload, mediaUrl, isImage } from '$lib/api';
@@ -35,6 +36,9 @@
   async function retryCharacters() { refreshing=true; try { await refresh(); loadError=''; } catch(e:any) { loadError=e.message; } finally { refreshing=false; } }
   let expanded: Record<string, boolean> = $state({});
 
+  let createOpen=$state(false);
+  function changeCreateOpen(value:boolean){if(!value&&(busy==='create'||((name.trim()||description.trim())&&!window.confirm('Discard this character draft?'))))return;if(value&&!createOpen)error='';createOpen=value;if(!value){name='';description='';}}
+  protectDraft(()=>createOpen&&!!(name.trim()||description.trim()),'Discard this character draft and leave?');
   let name = $state('');
   let description = $state('');
 
@@ -79,7 +83,7 @@
       await refresh();
     } catch (e: any) {
       error = e.message;
-      toast.error(e.message);
+      if(key!=='create'||!createOpen)toast.error(e.message);
     } finally {
       busy = '';
     }
@@ -87,8 +91,11 @@
 
   const createCharacter = (e: Event) => {
     e.preventDefault();
+    if(!name.trim()||busy)return;
     run('create', async () => {
-      await post('/characters', { name, description });
+      await post('/characters', { name:name.trim(), description:description.trim() });
+      createOpen=false;
+      toast.success('Character created');
       name = '';
       description = '';
     });
@@ -218,8 +225,35 @@
 <svelte:window onkeydown={onLightboxKey} />
 
 <div class="p-6">
-  <div class="mb-4">
-    <div class="flex items-center gap-4"><h1 class="text-lg font-semibold">Characters</h1><a href="/voices" class="text-xs text-muted-foreground underline underline-offset-4">Voices &amp; script captions</a></div>
+  <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex flex-wrap items-center gap-4"><h1 class="text-lg font-semibold">Characters</h1><a href="/voices" class="text-xs text-muted-foreground underline underline-offset-4">Voices &amp; script captions</a></div>
+    <Dialog.Root open={createOpen} onOpenChange={changeCreateOpen}>
+      <Dialog.Trigger>{#snippet child({props})}<Button {...props} disabled={!loaded||!!loadError}>Create character</Button>{/snippet}</Dialog.Trigger>
+      <Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-md" showCloseButton={false} overlayClass="bg-black/55 supports-backdrop-filter:backdrop-blur-none" onEscapeKeydown={e=>{e.preventDefault();changeCreateOpen(false);}} onInteractOutside={e=>{e.preventDefault();changeCreateOpen(false);}}>
+<Dialog.Header><Dialog.Title>Create character</Dialog.Title><Dialog.Description class="sr-only">Add a named character to this project.</Dialog.Description></Dialog.Header>
+  <form class="space-y-4" onsubmit={createCharacter}>
+    {#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}
+    <div class="grid gap-4">
+      <div class="flex-1 min-w-[160px]">
+        <label class="block text-xs text-muted-foreground mb-1" for="name">Name</label>
+        <input id="name" bind:value={name} required disabled={busy==='create'}
+          class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
+      </div>
+      <div class="flex-1 min-w-[160px]">
+        <label class="block text-xs text-muted-foreground mb-1" for="desc">Description (optional)</label>
+        <Textarea id="desc" rows={3} bind:value={description} disabled={busy==='create'} />
+      </div>
+      <div class="flex justify-end gap-2">
+        <Button type="button" variant="outline" disabled={busy==='create'} onclick={()=>changeCreateOpen(false)}>Cancel</Button>
+        <Button type="submit" disabled={!!busy || !name.trim()} size="sm">
+          {busy==='create'?'Creating…':'Create character'}
+        </Button>
+      </div>
+    </div>
+  </form>
+        <Button type="button" variant="ghost" size="icon-sm" class="absolute right-2 top-2" aria-label="Close" disabled={busy==='create'} onclick={()=>changeCreateOpen(false)}><X class="size-4" /></Button>
+      </Dialog.Content>
+    </Dialog.Root>
   </div>
 
   {#if loadError}<div role="alert" class="mb-4 space-y-2 rounded-lg border border-destructive p-4 text-sm"><p>Could not load characters: {loadError}</p>{#if characters.length}<p>Showing the last loaded characters.</p>{/if}<Button variant="outline" disabled={refreshing} onclick={retryCharacters}>{refreshing ? 'Loading…' : 'Try again'}</Button></div>{/if}
@@ -232,31 +266,13 @@
           <span class="font-medium text-sm">Add your first character</span>
         </div>
         <p class="text-sm text-muted-foreground">
-          Enter a name below, then add 2–4 reference images.
+          Create a character, then add reference images.
         </p>
       </CardContent>
     </Card>
   {/if}
 
-  <form class="mb-4 rounded-lg border border-border bg-card p-4" onsubmit={createCharacter}>
-    <div class="flex flex-wrap gap-4 items-end">
-      <div class="flex-1 min-w-[160px]">
-        <label class="block text-xs text-muted-foreground mb-1" for="name">Name</label>
-        <input id="name" bind:value={name} required
-          class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
-      </div>
-      <div class="flex-1 min-w-[160px]">
-        <label class="block text-xs text-muted-foreground mb-1" for="desc">Description</label>
-        <input id="desc" bind:value={description}
-          class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
-      </div>
-      <div>
-        <Button type="submit" disabled={busy === 'create' || !name} size="sm">
-          <UserPlus class="size-4 mr-1" />Create character
-        </Button>
-      </div>
-    </div>
-  </form>
+
 
   {#if !loaded}
     <div class="grid grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-4">

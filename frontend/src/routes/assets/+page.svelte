@@ -7,6 +7,7 @@
  function openDetail(asset:any){detail=asset;identityTraits=Object.entries(asset.metadata_json?.locked_traits??{}).map(([name,value])=>({name,value:String(value)}));}
  async function saveIdentity(){if(!detail)return;identityBusy=true;try{const traits:Record<string,string>={};for(const row of identityTraits){if(!row.name.trim()||!row.value.trim())throw new Error('Each identity trait needs a name and value');if(traits[row.name.trim()])throw new Error('Trait names must be unique');traits[row.name.trim()]=row.value.trim()}const updated=await put(`/assets/${detail.id}/identity`,{expected_updated_at:detail.updated_at,locked_traits:traits});assets=assets.map((a:any)=>a.id===updated.id?updated:a);detail=updated;toast.success('Identity locks saved');}catch(e){toast.error((e as Error).message)}finally{identityBusy=false}}
 
+  import { protectDraft } from '$lib/protect-draft';
   import { UPLOAD_LIMIT_HINT, uploadProblem } from '$lib/upload-limits';
   import { onMount } from 'svelte';
   import { get, post, put, patch, del, upload, mediaUrl, isImage, isVideo } from '$lib/api';
@@ -217,6 +218,10 @@
     }
   }
 
+  let createError=$state('');
+  let createOpen=$state(false);
+  function changeCreateOpen(value:boolean){if(!value&&(busy||((files?.length||assetType||characterId)&&!window.confirm('Discard this asset draft?'))))return;if(value&&!createOpen)createError='';createOpen=value;if(!value){files=null;assetType='';characterId='';}}
+  protectDraft(()=>createOpen&&!!(files?.length||assetType||characterId),'Discard this asset draft and leave?');
   let files: FileList | null = $state(null);
   let assetType = $state('');
   let characterId = $state('');
@@ -235,10 +240,10 @@
 
   async function doUpload(e: Event) {
     e.preventDefault();
-    if (!files?.length) return;
-    const problem=uploadProblem(Array.from(files));if(problem){error=problem;toast.error(problem);return;}
+    if (!files?.length || busy) return;
+    const problem=uploadProblem(Array.from(files));if(problem){createError=problem;return;}
     busy = true;
-    error = '';
+    createError = '';
     try {
       const form = new FormData();
       for (const f of Array.from(files)) form.append('file', f);
@@ -246,11 +251,11 @@
       if (characterId) form.append('character_id', characterId);
       const r = await upload('/assets/upload', form);
       const n = Array.isArray(r) ? r.length : 1;
-      files = null;
+      files = null;assetType='';characterId='';createOpen=false;
       toast.success(`Uploaded ${n} file${n === 1 ? '' : 's'}.`);
       await refresh();
     } catch (e: any) {
-      toast.error(e.message);
+      createError=e.message;if(!createOpen)toast.error(e.message);
     } finally {
       busy = false;
     }
@@ -297,19 +302,54 @@
 <svelte:head><title>Assets · VideoFlow</title></svelte:head>
 
 <div class="p-6">
-  <div class="mb-4">
+  <div class="mb-4 flex items-center justify-between gap-3">
     <h1 class="text-lg font-semibold">Assets</h1>
+    <Dialog.Root open={createOpen} onOpenChange={changeCreateOpen}>
+      <Dialog.Trigger>{#snippet child({props})}<Button {...props} disabled={!loaded||busy}>Add assets</Button>{/snippet}</Dialog.Trigger>
+      <Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-lg" showCloseButton={false} overlayClass="bg-black/55 supports-backdrop-filter:backdrop-blur-none" onEscapeKeydown={e=>{e.preventDefault();changeCreateOpen(false);}} onInteractOutside={e=>{e.preventDefault();changeCreateOpen(false);}}>
+<Dialog.Header><Dialog.Title>Add assets</Dialog.Title><Dialog.Description class="sr-only">Upload files and optionally link them to a character.</Dialog.Description></Dialog.Header>
+  <form class="space-y-4" onsubmit={doUpload}>
+    {#if createError}<p role="alert" class="text-sm text-destructive">{createError}</p>{/if}
+    <div class="grid gap-4">
+      <div class="flex-1 min-w-[160px]">
+        <label class="block text-xs text-muted-foreground mb-1" for="file">Files</label>
+        <p id="upload-limit" class="mb-2 text-xs text-muted-foreground">Images, video, audio and other reference files. {UPLOAD_LIMIT_HINT}</p>
+        <input id="file" aria-describedby="upload-limit" type="file" multiple bind:files disabled={busy}
+          class="block w-full text-sm rounded-md border border-input bg-background px-2 py-1.5" />
+      </div>
+      <div class="flex-1 min-w-[160px]">
+        <label class="block text-xs text-muted-foreground mb-1" for="type">Asset type</label>
+        <select id="type" bind:value={assetType} disabled={busy}
+          class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+          <option value="">Detect automatically</option>
+          {#each canonicalTypes as t}<option value={t}>{t}</option>{/each}
+        </select>
+      </div>
+      <div class="flex-1 min-w-[160px]">
+        <label class="block text-xs text-muted-foreground mb-1" for="char">Character (optional)</label>
+        <select id="char" bind:value={characterId} disabled={busy}
+          class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+          <option value="">No character</option>
+          {#each characters as c}<option value={c.id}>{c.name}</option>{/each}
+        </select>
+      </div>
+      <div class="flex justify-end gap-2">
+        <Button type="button" variant="outline" disabled={busy} onclick={()=>changeCreateOpen(false)}>Cancel</Button>
+        <Button type="submit" disabled={busy || !files?.length} size="sm">
+          {busy?'Uploading…':'Add assets'}
+        </Button>
+      </div>
+    </div>
+  </form>
+        <Button type="button" variant="ghost" size="icon-sm" class="absolute right-2 top-2" aria-label="Close" disabled={busy} onclick={()=>changeCreateOpen(false)}><X class="size-4" /></Button>
+      </Dialog.Content>
+    </Dialog.Root>
   </div>
 
-  <Card class="mb-4">
-    <CardContent class="p-4">
-      <div class="flex items-center gap-2 mb-1">
-        <Palette class="size-4" />
-        <span class="font-medium text-sm">Project style</span>
-      </div>
-      <p class="text-xs text-muted-foreground mb-3">
-        Used for asset, storyboard, and video generation.
-      </p>
+  <details class="mb-4 rounded-lg border border-border p-3"><summary class="cursor-pointer text-sm font-medium">Project style</summary>
+  <div class="pt-3">
+    <div class="space-y-3">
+
 
       {#if !styleLoaded}
         <p class="text-sm text-muted-foreground">Loading…</p>
@@ -399,40 +439,11 @@
           </div>
         </div>
       {/if}
-    </CardContent>
-  </Card>
-
-  <form class="mb-4 rounded-lg border border-border bg-card p-4" onsubmit={doUpload}>
-    <div class="flex flex-wrap gap-4 items-end">
-      <div class="flex-1 min-w-[160px]">
-        <label class="block text-xs text-muted-foreground mb-1" for="file">File(s)</label>
-        <p id="upload-limit" class="mb-2 text-xs text-muted-foreground">Images, video, audio and other reference files. {UPLOAD_LIMIT_HINT}</p>
-        <input id="file" aria-describedby="upload-limit" type="file" multiple bind:files
-          class="block w-full text-sm rounded-md border border-input bg-background px-2 py-1.5" />
-      </div>
-      <div class="flex-1 min-w-[160px]">
-        <label class="block text-xs text-muted-foreground mb-1" for="type">Type (auto if blank)</label>
-        <select id="type" bind:value={assetType}
-          class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm">
-          <option value="">auto</option>
-          {#each canonicalTypes as t}<option value={t}>{t}</option>{/each}
-        </select>
-      </div>
-      <div class="flex-1 min-w-[160px]">
-        <label class="block text-xs text-muted-foreground mb-1" for="char">Link to character</label>
-        <select id="char" bind:value={characterId}
-          class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm">
-          <option value="">none</option>
-          {#each characters as c}<option value={c.id}>{c.name}</option>{/each}
-        </select>
-      </div>
-      <div>
-        <Button type="submit" disabled={busy || !files?.length} size="sm">
-          <Upload class="size-4 mr-1" />Upload{files && files.length > 1 ? ` (${files.length})` : ''}
-        </Button>
-      </div>
     </div>
-  </form>
+  </div>
+  </details>
+
+
 
   <!-- search + filter + sort -->
   <div class="mb-4 flex flex-wrap items-center gap-3">

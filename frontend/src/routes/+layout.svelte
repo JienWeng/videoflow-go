@@ -1,5 +1,6 @@
 <script lang="ts">
   import '../app.css';
+  import BrandLogo from '$lib/shell/BrandLogo.svelte';
   import { afterNavigate, goto } from '$app/navigation';
   import { Button } from '$lib/components/ui/button';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
@@ -111,7 +112,7 @@
     <a href="/settings" aria-label="Settings" title={compact?'Settings':undefined} aria-current={isActive('/settings',page.url.pathname)?'page':undefined} class="mt-6 flex min-h-11 items-center gap-3 rounded-lg text-sm hover:bg-accent {compact?'justify-center px-0':'px-3'} {isActive('/settings',page.url.pathname)?'bg-accent font-semibold':'text-muted-foreground'}"><SlidersHorizontal class="size-4 shrink-0" /><span class={compact?'sr-only':''}>Settings</span></a>
   {/snippet}
   <header class="flex h-14 shrink-0 items-center justify-between border-b border-border px-3 md:hidden">
-    <a href="/" class="font-semibold">VideoFlow</a>
+    <a href="/" aria-label="VideoFlow" class="inline-flex min-h-11 items-center"><BrandLogo class="h-7 w-[112px] min-[360px]:w-[132px]" /></a>
     <Dialog.Root bind:open={navigationOpen}>
       <Dialog.Trigger><span class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border" aria-label="Open navigation"><Menu class="size-5" /><span class="sr-only">Open navigation</span></span></Dialog.Trigger>
       <Dialog.Content class="max-h-[90dvh] overflow-y-auto"><Dialog.Header><Dialog.Title>Navigation</Dialog.Title><Dialog.Description>Switch workspace or open your project tools.</Dialog.Description></Dialog.Header>{@render navigation()}</Dialog.Content>
@@ -122,8 +123,8 @@
     </div>
   </header>
   <aside aria-label="Sidebar" class="hidden shrink-0 flex-col border-r border-border bg-sidebar transition-[width,padding] duration-150 motion-reduce:transition-none md:flex {sidebarCollapsed?'w-16 p-2':'w-56 p-4'}">
-    <div class="mb-5 flex min-h-11 items-center gap-1">
-      {#if !sidebarCollapsed}<a href="/" class="min-w-0 flex-1 truncate px-3 text-lg font-semibold tracking-tight">VideoFlow</a>{/if}
+    <div class="mb-5 flex min-h-11 items-center gap-1 {sidebarCollapsed?'flex-col':''}">
+      <a href="/" aria-label="VideoFlow" title="VideoFlow" class="flex min-h-11 min-w-0 items-center {sidebarCollapsed?'w-full justify-center':'flex-1 px-1'}"><BrandLogo compact={sidebarCollapsed} class={sidebarCollapsed?'size-8':'h-7 w-full max-w-[132px]'} /></a>
       <Button variant="ghost" size="icon" class="size-11 shrink-0" aria-label={sidebarCollapsed?'Expand sidebar':'Collapse sidebar'} title={sidebarCollapsed?'Expand sidebar':'Collapse sidebar'} aria-expanded={!sidebarCollapsed} aria-controls="desktop-sidebar-navigation" onclick={toggleSidebar}>{#if sidebarCollapsed}<PanelLeftOpen class="size-4" />{:else}<PanelLeftClose class="size-4" />{/if}</Button>
     </div>
     <div id="desktop-sidebar-navigation" class="min-h-0 flex-1 overflow-y-auto">{@render navigation(sidebarCollapsed)}</div>

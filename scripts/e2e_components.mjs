@@ -84,7 +84,7 @@ for(const mode of ['desktop','mobile']){
  });
  await check(`${mode} create and character: empty validation`,async()=>{
   await page.goto(base+'/create',{waitUntil:'domcontentloaded'});await page.getByRole('button',{name:'Create video',exact:true}).waitFor();assert(await page.getByRole('button',{name:'Create video',exact:true}).isDisabled(),'Empty video allowed');
-  await page.goto(base+'/characters',{waitUntil:'domcontentloaded'});await page.getByRole('button',{name:'Create character',exact:true}).waitFor();assert(await page.getByRole('button',{name:'Create character',exact:true}).isDisabled(),'Empty character allowed');
+  await page.goto(base+'/characters',{waitUntil:'domcontentloaded'});await page.getByRole('button',{name:'Create character',exact:true}).click();const characterDialog=page.getByRole('dialog',{name:'Create character',exact:true});assert(await characterDialog.getByRole('button',{name:'Create character',exact:true}).isDisabled(),'Empty character allowed');await page.keyboard.press('Escape');
  });
  await check(`${mode} theme: light, dark, system and persistence`,async()=>{
   await page.goto(base+'/settings',{waitUntil:'domcontentloaded'});await page.getByRole('button',{name:'General',exact:true}).click();

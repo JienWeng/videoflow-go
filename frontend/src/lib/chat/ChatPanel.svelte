@@ -742,11 +742,10 @@
       {:else if historyError}<div role="alert" class="space-y-3 py-4"><h3 class="font-semibold">Could not load conversation</h3><p class="text-sm text-muted-foreground">Your saved history has not been replaced. {historyError}</p><Button variant="outline" onclick={initPersistence}>Retry conversation</Button></div>
       {:else if sessionRequired}<div class="space-y-3 py-4"><MessageSquare class="size-7 text-muted-foreground" /><h3 class="font-semibold">Connect your story assistant</h3><p class="text-sm text-muted-foreground">Choose a session above, or set up Codex or Claude Code to start planning.</p><Button variant="outline" href="/director">Set up AI session</Button></div>
       {:else if isEmpty}
-        <div class="flex flex-1 flex-col justify-center py-6">
-          <MessageSquare class="mb-4 size-7 text-muted-foreground" />
+        <div class="flex flex-1 flex-col justify-end gap-3 py-4">
           <h3 class="text-lg font-semibold">{selected?`Let’s work on ${selected.label}`:'What would you like to create?'}</h3>
-          <p class="mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">{selected?'Describe a change, or use a suggestion below to get started.':'Describe your idea. We’ll shape the characters, scenes and shots together.'} You review proposals before anything runs.</p>
-          <Button variant="outline" class="mt-5 h-auto min-h-11 justify-start whitespace-normal text-left" onclick={()=>{input=selected?`Help me develop ${selected.label}: `:'Help me plan a story about ';focusComposer();}}>{selected?'Develop this idea':'Start a story'}</Button>
+
+          {#if !selected}<Button variant="outline" class="h-auto min-h-11 self-start whitespace-normal text-left" onclick={()=>reusePrompt('Help me plan a story about ')}>Start a story</Button>{/if}
         </div>
       {:else}
       {#each messages as m, i (i)}
@@ -822,11 +821,11 @@
   </MessageScroller.Provider>
 
   <div class="border-t border-border p-3" bind:this={inputWrapper}>
-    <div class="mb-2 flex min-w-0 items-center justify-between gap-2">
-      {#if selected}<Attachment.Root size="sm" class="min-w-0 max-w-full"><Attachment.Content class="min-w-0"><Attachment.Title class="truncate" title={selected.label}>{selected.kind.replace('_',' ')}: {selected.label}</Attachment.Title></Attachment.Content>{#if onclear}<Attachment.Actions><Attachment.Action aria-label="Clear selection" class="size-9 shrink-0" onclick={onclear}><X class="size-3.5" /></Attachment.Action></Attachment.Actions>{/if}</Attachment.Root>{:else}<span class="text-xs text-muted-foreground">Project context</span>{/if}
-      {#if embedded}<Button variant="ghost" size="icon" class="size-9 shrink-0 text-muted-foreground" aria-label="Clear chat" title="Clear visible chat; saved session history is kept" disabled={busy||historyLoading||isEmpty} onclick={clearChat}><Eraser class="size-4" /></Button>{/if}
-    </div>
-    {#if chips.length}<div aria-label="Suggested prompts" class="mb-2 flex flex-wrap items-center gap-2">{@render chipRow(chips)}</div>{/if}
+    {#if selected||!isEmpty}<div class="mb-2 flex min-w-0 items-center justify-between gap-2">
+      {#if selected}<Attachment.Root size="sm" class="min-w-0 max-w-full"><Attachment.Content class="min-w-0"><Attachment.Title class="truncate" title={selected.label}>{selected.kind.replace('_',' ')}: {selected.label}</Attachment.Title></Attachment.Content>{#if onclear}<Attachment.Actions><Attachment.Action aria-label="Clear selection" class="size-9 shrink-0" onclick={onclear}><X class="size-3.5" /></Attachment.Action></Attachment.Actions>{/if}</Attachment.Root>{:else}<span></span>{/if}
+      {#if embedded&&!isEmpty}<Button variant="ghost" size="icon" class="size-9 shrink-0 text-muted-foreground" aria-label="Clear chat" title="Clear visible chat; saved session history is kept" disabled={busy||historyLoading||isEmpty} onclick={clearChat}><Eraser class="size-4" /></Button>{/if}
+    </div>{/if}
+    {#if chips.length&&(!isEmpty||selected)}<div aria-label="Suggested prompts" class="mb-2 flex flex-wrap items-center gap-2">{@render chipRow(chips)}</div>{/if}
     <form onsubmit={e=>{e.preventDefault();void send();}}>
       <InputGroup.Root class="rounded-xl bg-background has-disabled:opacity-100 has-disabled:bg-background dark:has-disabled:bg-background">
         <InputGroup.Textarea aria-label="Message story assistant" bind:value={input} class="min-h-16 max-h-40" placeholder={selected ? `What should change in ${selected.label}?` : 'Describe your story or select an item…'} onkeydown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();void send();}}} />
