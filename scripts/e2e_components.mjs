@@ -35,7 +35,8 @@ for(const mode of ['desktop','mobile']){
   else if(p==='/projects')body=projects;
   else if(p.startsWith('/projects/')&&req.method()==='PATCH'){const value=req.postDataJSON();projects=projects.map(x=>x.id===p.split('/')[2]?{...x,...value}:x);body={};}
   else if(p.startsWith('/projects/')&&req.method()==='DELETE'){projects=projects.filter(x=>x.id!==p.split('/')[2]);body={};}
-  else if(['/characters','/scenes','/assets','/scripts','/render-jobs','/ops','/settings/agents','/settings/providers','/settings/connection-presets'].includes(p))body=[];
+  else if(['/characters','/scenes','/assets','/scripts','/render-jobs','/ops','/settings/agents','/settings/providers','/settings/connection-presets','/compositions'].includes(p))body=[];
+  else if(p==='/health')body={status:'ok'};
   else if(p==='/settings/app')body={default_video_provider:'openrouter',default_image_provider:'openrouter',render_negatives:[],default_negatives:[],default_aspect_ratio:'16:9',engines:{}};
   else if(p==='/assets/types')body={types:[]};
   else if(p==='/director/status')body={all_text_local:true,engines:[],host_requirement:'Fixture backend host'};

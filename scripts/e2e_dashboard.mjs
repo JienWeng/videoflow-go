@@ -130,7 +130,7 @@ try {
     await check('node editing draft survives refresh on returning to canvas', async () => {
       await page.getByRole('button', { name: 'Canvas & chat', exact: true }).click();
       if (mode === 'mobile') await page.getByRole('button', { name: 'Canvas', exact: true }).click();
-      await page.getByRole('button', { name: 'Fit View', exact: true }).click();
+      await page.getByRole('button', { name: 'Fit all', exact: true }).click();
       await page.locator('.svelte-flow__node[data-id="fox"]').click();
       const name = page.locator('#np-character-name');
       await name.fill('Mimi draft');
@@ -140,7 +140,7 @@ try {
       await page.getByText('Your editing draft is kept. Save or discard it before refreshing the canvas.', { exact: true }).waitFor();
       assert.equal(await name.inputValue(), 'Mimi draft');
       page.once('dialog', dialog => dialog.accept());
-      await page.getByRole('button', { name: 'Clear selection', exact: true }).click();
+      await page.getByRole('tabpanel', { name: 'Details', exact: true }).getByRole('button', { name: 'Close', exact: true }).click();
       await page.getByRole('button', { name: 'Refresh canvas', exact: true }).click();
       await page.getByRole('button', { name: 'Overview', exact: true }).click();
       assert.equal(mutations.length, 0);
