@@ -1,0 +1,16 @@
+// Linux WebKit compatibility, not a claim of testing Safari/iOS hardware.
+import {mkdir,writeFile,readFile} from 'node:fs/promises';
+import {pathToFileURL} from 'node:url';
+import assert from 'node:assert/strict';
+const {webkit}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE||'/tmp/videoflow-risk-tools/node_modules/playwright/index.mjs'));
+const base=process.env.E2E_BASE_URL||'http://127.0.0.1:5195',out=process.env.E2E_OUTPUT||'/tmp/videoflow-webkit';await mkdir(out,{recursive:true});
+const media=await readFile(process.env.E2E_TEST_VIDEO||'/tmp/videoflow-deep-e2e/media_editor-final/original-output-output_07ab23b6.mp4');
+const browser=await webkit.launch({headless:true}),report={checks:[],errors:[]};
+try{for(const width of [1440,390]){
+ const context=await browser.newContext({viewport:{width,height:900}});await context.addInitScript(()=>localStorage.setItem('videoflow.onboarded','1'));const page=await context.newPage();page.setDefaultTimeout(15000);page.on('pageerror',e=>report.errors.push(e.message));
+ const check=async(name,fn)=>{await fn();report.checks.push({name:width+': '+name,status:'pass'});console.log('PASS',width,name)};
+ await check('Project export downloads valid JSON in WebKit',async()=>{await page.goto(base+'/projects');const next=page.waitForEvent('download');await page.getByRole('button',{name:'Export',exact:true}).first().click();const d=await next;assert.equal(await d.failure(),null);const path=out+'/project-'+width+'.json';await d.saveAs(path);assert(JSON.parse(await readFile(path,'utf8')).project.id);});
+ await check('Dialog keyboard focus, Escape and mobile reflow',async()=>{await page.goto(base+'/characters');const trigger=page.getByRole('button',{name:'Create character',exact:true}).first();await trigger.click();const d=page.getByRole('dialog');await d.waitFor();for(let i=0;i<8;i++){await page.keyboard.press('Tab');assert(await d.evaluate(n=>n.contains(document.activeElement)));}await page.keyboard.press('Escape');await d.waitFor({state:'hidden'});assert(await trigger.evaluate(n=>n===document.activeElement));assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);});
+ await check('H264/AAC video decodes, plays and seeks',async()=>{await context.route('**/compatibility-video.mp4',r=>r.fulfill({contentType:'video/mp4',body:media}));await page.evaluate(()=>{const v=document.createElement('video');v.id='compatibility-video';v.muted=true;v.controls=true;v.src='/compatibility-video.mp4';document.body.append(v)});await page.waitForFunction(()=>document.querySelector('#compatibility-video').readyState>=2);const v=page.locator('#compatibility-video');await v.scrollIntoViewIfNeeded();await v.evaluate(n=>n.play());await page.waitForFunction(()=>document.querySelector('#compatibility-video').currentTime>0.1);await v.evaluate(n=>{n.pause();n.currentTime=1});await page.waitForFunction(()=>{const n=document.querySelector('#compatibility-video');return !n.seeking&&n.currentTime>=0.9});assert.equal(await v.evaluate(n=>n.videoWidth),1280);});
+ await context.close();
+}}catch(e){report.failure=e.stack;process.exitCode=1;console.error(e)}finally{await browser.close();await writeFile(out+'/report.json',JSON.stringify(report,null,2));}if(report.errors.length)process.exitCode=1;

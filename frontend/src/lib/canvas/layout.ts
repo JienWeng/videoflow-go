@@ -2,7 +2,7 @@ import dagre from '@dagrejs/dagre';
 import type { Node, Edge } from '@xyflow/svelte';
 
 const W = 180,
-  H = 36;
+  H = 60;
 
 // Orphan grid: cell size and nodes per row for entities with no edges.
 const GRID_COLS = 6,
@@ -20,7 +20,7 @@ const VIEW_W = 810,
 const IMG_RE = /\.(png|jpe?g|webp|gif)$/i;
 
 /** Honest per-node size estimate matching EntityNode.svelte rendering:
- * base row ~30px, image preview adds ~68px (h-16 + margin), render_job
+ * base card ~56px, image preview adds ~68px (h-16 + margin), render_job
  * status badge adds ~24px. Slightly padded so dagre never under-reserves. */
 export function nodeSize(n: Node): { w: number; h: number } {
   const d = (n.data ?? {}) as Record<string, unknown>;
@@ -31,7 +31,7 @@ export function nodeSize(n: Node): { w: number; h: number } {
     (kind === 'output' && !!d.thumbnail_path);
   if (hasPreview) h += 70;
   if (kind === 'render_job') h += 26;
-  return { w: W, h };
+  return { w: kind === 'scene' ? 190 : W, h };
 }
 
 type Pos = { x: number; y: number };
@@ -234,6 +234,12 @@ export function layout(nodes: Node[], edges: Edge[]): Node[] {
   // Place orphans (no edges) in a tidy grid to the right of the main graph
   // so they don't stretch the layout vertically.
   const gridLeft = main.length ? mainW + CLUSTER_GAP : 0;
+  const orphans = nodes.filter(n => !positions.has(n.id));
+  const rowTops: number[] = [0];
+  for(let start=0;start<orphans.length;start+=GRID_COLS){
+    const height=Math.max(CELL_H,...orphans.slice(start,start+GRID_COLS).map(n=>sizes.get(n.id)!.h+24));
+    rowTops.push(rowTops[rowTops.length-1]+height);
+  }
   let i = 0;
   return nodes.map((n) => {
     const p = positions.get(n.id);
@@ -241,7 +247,7 @@ export function layout(nodes: Node[], edges: Edge[]): Node[] {
     const col = i % GRID_COLS;
     const row = Math.floor(i / GRID_COLS);
     i += 1;
-    return { ...n, position: { x: gridLeft + col * CELL_W, y: row * CELL_H } };
+    return { ...n, position: { x: gridLeft + col * CELL_W, y: rowTops[row] } };
   });
 }
 

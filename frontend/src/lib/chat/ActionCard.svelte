@@ -5,10 +5,10 @@
   import { del as apiDel, get, post as apiPost } from '$lib/api';
   import { normalizeChatIntent } from './intent.mjs';
   import { runBackgroundOp, type Op } from '$lib/ops';
-  import { Suggestion, Suggestions } from '$lib/components/ai-elements/suggestion';
+
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
-  import * as Card from '$lib/components/ui/card';
+  import * as Item from '$lib/components/ui/item';
   import { Textarea } from '$lib/components/ui/textarea';
   import Lightbulb from '@lucide/svelte/icons/lightbulb';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
@@ -398,8 +398,9 @@
   const labelClass = 'block text-xs text-muted-foreground mb-1';
 </script>
 
-<Card.Root class="mt-2 max-w-sm gap-3 py-4">
-  <Card.Content class="space-y-3 px-4">
+<Item.Root variant="outline" class="mt-2 w-full items-start"><Item.Content class="min-w-0">
+  <Item.Title>Review proposal</Item.Title><Item.Description>Choose an action below to approve it. Editing these fields does not run generation.</Item.Description>
+  <div class="mt-3 space-y-3">
     {#if intent.action === 'unknown'}
       {#if projectState?.next_steps?.length}
         <div class="text-sm space-y-1">
@@ -429,11 +430,11 @@
           <li>suggest assets without generating — 建议道具但不生成</li>
         </ul>
       </details>
-      <Suggestions>
+      <div class="flex flex-wrap gap-2">
         {#each exampleChips as s (s)}
-          <Suggestion suggestion={s} onclick={(text) => onsuggest?.(text)} />
+          <Button variant="outline" size="sm" onclick={()=>onsuggest?.(s)}>{s}</Button>
         {/each}
-      </Suggestions>
+      </div>
     {:else}
       {#if intent.action === 'generate_script'}
         {#if !ideaOptions}
@@ -658,5 +659,5 @@
         {/if}
       </div>
     {/if}
-  </Card.Content>
-</Card.Root>
+  </div>
+</Item.Content></Item.Root>

@@ -11,6 +11,7 @@ class StickToBottomContext {
 	#intersectionObserver: IntersectionObserver | null = null;
 	#sentinel: HTMLElement | null = null;
 	#userHasScrolled = $state(false);
+	#lastScrollTop = 0;
 
 	isAtBottom = $derived(this.#isAtBottom);
 
@@ -45,13 +46,14 @@ class StickToBottomContext {
 		this.#element = element;
 	}
 
-	scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
+	scrollToBottom = (_behavior: ScrollBehavior = "instant") => {
 		if (!this.#element) return;
 
 		this.#userHasScrolled = false; // Reset user scroll flag when programmatically scrolling
 		this.#element.scrollTo({
 			top: this.#element.scrollHeight,
-			behavior,
+			// Move directly: animated intermediate positions look like scrolling into history.
+			behavior: "instant",
 		});
 	};
 
@@ -60,18 +62,19 @@ class StickToBottomContext {
 
 		// Detect if user has scrolled up from bottom
 		const { scrollTop, scrollHeight, clientHeight } = this.#element;
-		const threshold = 200; // Increased threshold for better UX
+		const threshold = 4; // Follow only at the bottom; reading nearby messages must keep its position.
 		const isAtBottom = scrollTop + clientHeight >= scrollHeight - threshold;
 
 		// Update the isAtBottom state based on scroll position
 		this.#isAtBottom = isAtBottom;
 
-		if (!isAtBottom) {
-			this.#userHasScrolled = true;
-		} else if (isAtBottom && this.#userHasScrolled) {
-			// User scrolled back to bottom, reset flag
+		if (isAtBottom) {
 			this.#userHasScrolled = false;
+		} else if (scrollTop < this.#lastScrollTop - 1) {
+			// Moving into history pauses following. Content growth alone must not.
+			this.#userHasScrolled = true;
 		}
+		this.#lastScrollTop = scrollTop;
 	};
 
 	#setupObservers() {
@@ -108,8 +111,9 @@ class StickToBottomContext {
 		// Setup resize observer for smooth scrolling on resize
 		this.#resizeObserver = new ResizeObserver(() => {
 			// Check position after resize
+			const wasFollowing = !this.#userHasScrolled;
 			this.#checkScrollPosition();
-			if (this.#isAtBottom && !this.#userHasScrolled) {
+			if (wasFollowing) {
 				this.scrollToBottom("auto");
 			}
 		});
@@ -122,7 +126,7 @@ class StickToBottomContext {
 			requestAnimationFrame(() => {
 				// Check if we should auto-scroll BEFORE updating the position
 				// Only auto-scroll if user was at bottom and hasn't manually scrolled
-				const shouldAutoScroll = this.#isAtBottom && !this.#userHasScrolled;
+				const shouldAutoScroll = !this.#userHasScrolled;
 
 				// Now update the scroll position after content changes
 				this.#checkScrollPosition();
@@ -162,7 +166,7 @@ class StickToBottomContext {
 		if (!this.#element) return;
 
 		const { scrollTop, scrollHeight, clientHeight } = this.#element;
-		const threshold = 200; // Increased threshold for better UX
+		const threshold = 4; // Follow only at the bottom; reading nearby messages must keep its position.
 		const isAtBottom = scrollTop + clientHeight >= scrollHeight - threshold;
 
 		this.#isAtBottom = isAtBottom;

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { protectDraft } from '$lib/protect-draft';
   import { onMount } from 'svelte';
   import { API_BASE, get, post, put, upload, mediaUrl, isImage } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
@@ -26,6 +27,11 @@
   let error = $state('');
   let notice = $state('');
   let loaded = $state(false);
+  let profileBaselines = $state<Record<string,string>>({});
+  let scriptBaseline = $state('');
+  const scriptSnapshot = () => JSON.stringify({id:scriptID,approved,lines});
+  const hasDraft = () => (!!scriptBaseline && scriptSnapshot() !== scriptBaseline) || Object.keys(profileForms).some(id => profileBaselines[id] !== undefined && JSON.stringify(profileForms[id]) !== profileBaselines[id]);
+  protectDraft(hasDraft, 'You have unsaved voice or script changes. Discard them and leave?');
   let selectedOutput = $state('');
   let selectedAudio = $state('');
   let selectedImages = $state<string[]>([]);
@@ -41,11 +47,13 @@
   const imageAssets = $derived(assets.filter(a => isImage(a.file_path)));
 
   function loadScript(id: string) {
+    if(scriptBaseline && scriptSnapshot() !== scriptBaseline && !confirm('Discard the unsaved spoken-line changes and load another script?'))return;
     scriptID = id;
     const doc = scripts.find(s => s.id === id);
     scriptRevision = doc?.revision ?? 0;
     approved = doc?.data.approved ?? false;
     lines = structuredClone(doc?.data.lines ?? []);
+    scriptBaseline = scriptSnapshot();
   }
   async function refresh(reset = false) {
     const state = await get(project ? scoped('/voice/state') : '/voice/state');
@@ -60,6 +68,7 @@
     outputs = details.flatMap((d: any) => d.outputs.map((o: any) => ({ ...o, model: d.job.model })));
     if (reset) {
       profileForms = Object.fromEntries(characters.map(c => [c.id, structuredClone(profileFor(c.id)?.data ?? { mode: 'saved', sample_asset_id: '', voice_id: '', approved: false })]));
+      profileBaselines = Object.fromEntries(Object.entries(profileForms).map(([id,value]) => [id,JSON.stringify(value)]));
       loadScript(scriptID);
     }
   }
@@ -70,7 +79,9 @@
     try { await fn(); await refresh(reset); } catch (e: any) { error = e.message; } finally { busy = ''; }
   }
   async function saveProfile(id: string) {
-    await put(scoped(`/voice/profiles/${id}`), { revision: profileFor(id)?.revision ?? 0, data: profileForms[id] });
+    const submitted=JSON.parse(JSON.stringify(profileForms[id]));
+    await put(scoped(`/voice/profiles/${id}`), { revision: profileFor(id)?.revision ?? 0, data: submitted });
+    profileBaselines[id]=JSON.stringify(submitted);
     notice = 'Character voice revision saved. Prepared actions using older revisions require a new review.';
   }
   async function uploadSample(id: string, event: Event) {
@@ -86,7 +97,9 @@
     input.value = '';
   }
   async function saveScript() {
-    const saved = await put(scoped(`/voice/scripts/${encodeURIComponent(scriptID)}`), { revision: scriptRevision, data: { approved, lines } });
+    const submitted={approved,lines:JSON.parse(JSON.stringify(lines))};
+    const saved = await put(scoped(`/voice/scripts/${encodeURIComponent(scriptID)}`), { revision: scriptRevision, data: submitted });
+    scriptBaseline=JSON.stringify({id:scriptID,...submitted});
     scriptRevision = saved.revision;
     notice = 'Exact spoken lines saved. Captions and speech from older script revisions are stale.';
   }
@@ -148,7 +161,7 @@
   <section aria-labelledby="script-heading">
     <div class="section-head"><div><p class="eyebrow">02 / EXACT WORDING</p><h2 id="script-heading">Approved spoken lines</h2></div><p>Untimed lines are drafts. Final audio supplies timing; the script supplies every word.</p></div>
     <div class="panel">
-      <div class="row"><label>Spoken script<select value={scriptID} onchange={e => loadScript(e.currentTarget.value)}><option value="main">Main dialogue</option>{#each scripts.filter(s => s.id !== 'main') as doc}<option value={doc.id}>{doc.id}</option>{/each}</select></label><span class="muted">revision {scriptRevision}</span><Button variant="outline" disabled={!!busy} onclick={importDialogue}>Import scene dialogue draft</Button></div>
+      <div class="row"><label>Spoken script<select value={scriptID} disabled={!!busy} onchange={e => { loadScript(e.currentTarget.value); e.currentTarget.value=scriptID; }}><option value="main">Main dialogue</option>{#each scripts.filter(s => s.id !== 'main') as doc}<option value={doc.id}>{doc.id}</option>{/each}</select></label><span class="muted">revision {scriptRevision}</span><Button variant="outline" disabled={!!busy} onclick={importDialogue}>Import scene dialogue draft</Button></div>
       {#each lines as line, i (line.id)}
         <div class="utterance">
           <div class="line-meta"><label>Speaker<select bind:value={line.character_id} onchange={() => approved = false}><option value="">Select character</option>{#each characters as c}<option value={c.id}>{c.name}</option>{/each}</select></label><label>Language<input bind:value={line.language} oninput={() => approved = false} placeholder="en" /></label><label class="check"><input type="checkbox" bind:checked={line.visible} onchange={() => approved = false} /> Visible speaker (lip sync needed)</label><button class="icon-button" aria-label={`Remove spoken line ${i + 1}`} onclick={() => { lines = lines.filter(l => l.id !== line.id); approved = false; }}><Trash2 size={16} /></button></div>
@@ -156,6 +169,7 @@
           <div class="actions"><Button variant="outline" disabled={!!busy || !scripts.find(s => s.id === scriptID)?.data.approved} onclick={() => action(`speech-${line.id}`, () => prepare('speech', { line_id: line.id }))}>Prepare saved-voice speech</Button><Button variant="outline" disabled={!!busy || !selectedOutput || !selectedAudio} onclick={() => action(`lip-${line.id}`, () => prepare('lipsync', { line_id: line.id, output_id: selectedOutput, audio_asset_id: selectedAudio }))}>Prepare lip sync</Button>{#if profileFor(line.character_id)?.data.mode === 'native_reference'}<Button variant="outline" disabled={!!busy} onclick={() => action(`native-${line.id}`, () => prepare('native_reference', { line_id: line.id, prompt: nativePrompt, duration: nativeDuration, aspect_ratio: nativeAspect, image_asset_ids: selectedImages }))}>Prepare native reference video</Button>{/if}</div>
         </div>
       {/each}
+      <p role="status" class="hint">{hasDraft() ? 'Unsaved voice or script changes' : 'No unsaved voice or script changes'}</p>
       <div class="actions"><Button variant="outline" disabled={!!busy || !characters.length} onclick={addLine}><Plus size={15} /> Add spoken line</Button><label class="check"><input type="checkbox" bind:checked={approved} /> I approve the exact wording, speaker and language.</label><Button disabled={!!busy || !lines.length} onclick={() => action('script', saveScript)}>Save script revision</Button></div>
     </div>
   </section>

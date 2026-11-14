@@ -315,6 +315,8 @@
   }
 </script>
 
+<svelte:head><title>Videos · VideoFlow</title></svelte:head>
+
 {#snippet jobRow(j: any)}
   <div class="py-1 text-xs">
     <div class="flex flex-wrap items-center gap-2">
@@ -365,7 +367,6 @@
   <!-- Page header -->
   <div class="px-6 pt-6 pb-3 shrink-0">
     <h1 class="text-lg font-semibold">Render</h1>
-    <p class="text-sm text-muted-foreground">Browse finished renders by scene, then open a take in the editor to caption, fine-tune and export.</p>
   </div>
 
   <div class="mx-4 my-2 flex flex-wrap items-center gap-3 rounded-md border p-3 text-xs">
@@ -427,9 +428,10 @@
         </div>
 
         <!-- The list itself -->
-        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-        <div class="min-h-0 flex-1 overflow-y-auto p-2 space-y-1.5 focus:outline-none"
-          tabindex="0" role="listbox" aria-label="Scenes with renders" onkeydown={listKeydown}>
+        <!-- Named button group also supports arrow-key selection from its container. -->
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+        <div class="min-h-0 flex-1 overflow-y-auto p-2 space-y-1.5 focus:outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2"
+          tabindex="0" role="group" aria-label="Scenes with renders" onkeydown={listKeydown}>
           {#if !loaded}
             {#each Array(5) as _, i (i)}
               <div class="flex items-start gap-2.5 rounded-lg border border-transparent px-2.5 py-2">
@@ -462,6 +464,7 @@
               <button
                 type="button"
                 data-scene-row={g.sceneId}
+                aria-pressed={g.sceneId === selectedId}
                 onclick={() => selectGroup(g.sceneId)}
                 class="group flex w-full items-start gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors
                   {g.sceneId === selectedId

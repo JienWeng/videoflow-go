@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { page } from '$app/state';
   import { onMount } from 'svelte';
-  import { goto, invalidateAll } from '$app/navigation';
-  import { get, post, patch, del, upload, API_BASE } from '$lib/api';
+  import { goto, invalidateAll, replaceState } from '$app/navigation';
+  import { get, post, patch, del } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
   import { Card, CardContent } from '$lib/components/ui/card';
@@ -50,7 +51,8 @@
   const createProject = (e: Event) => {
     e.preventDefault();
     run('create', async () => {
-      await post('/projects', { name, description });
+      const project = await post('/projects', { name: name.trim(), description });
+      await post(`/projects/${project.id}/activate`);
       name = '';
       description = '';
       await invalidateAll();
@@ -65,15 +67,28 @@
       await goto('/');
     });
 
-  // Export downloads a portable bundle of the project. The endpoint is being
-  // added by another workstream; the link 404s gracefully until then.
+  $effect(() => {
+    const target = (page.state as {activateProject?: string}).activateProject;
+    if (!loaded || !target || busy) return;
+    // Consume before submitting: browser back or a failed request must not replay it.
+    replaceState(page.url, {...page.state, activateProject: undefined});
+    const project = projects.find(p => p.id === target);
+    if (project) void activate(project);
+    else toast.error('That project is no longer available. Choose a project to continue.');
+  });
+
   function exportProject(p: any) {
-    const a = document.createElement('a');
-    a.href = `${API_BASE}/projects/${p.id}/export`;
-    a.download = '';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    run(`export-${p.id}`, async () => {
+      const data = await get(`/projects/${p.id}/export`);
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${p.name.replace(/[^a-z0-9_-]/gi, '_') || 'project'}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
   }
 
   const importProject = (e: Event) => {
@@ -81,9 +96,10 @@
     const file = input.files?.[0];
     if (!file) return;
     run('import', async () => {
-      const form = new FormData();
-      form.append('file', file);
-      await upload('/projects/import', form);
+      let data: unknown;
+      try { data = JSON.parse(await file.text()); }
+      catch { throw new Error('Choose a VideoFlow project JSON export. ZIP files are not supported.'); }
+      await post('/projects/import', data);
       input.value = '';
       await refresh();
       toast.success('Project imported');
@@ -124,19 +140,18 @@
     new Date(s).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 </script>
 
+<svelte:head><title>Projects · VideoFlow</title></svelte:head>
+
 <div class="p-6">
   <div class="mb-4 flex items-start justify-between gap-3">
     <div>
       <h1 class="text-lg font-semibold">Projects</h1>
-      <p class="text-sm text-muted-foreground">
-        Each project is a separate workspace — its own scenes, characters, assets and renders.
-      </p>
     </div>
     <div>
       <input
         bind:this={importInput}
         type="file"
-        accept=".zip,.json,application/zip,application/json"
+        accept=".json,application/json"
         class="hidden"
         onchange={importProject}
       />
@@ -158,13 +173,14 @@
         <Input id="proj-desc" bind:value={description} />
       </div>
       <div>
-        <Button type="submit" size="sm" disabled={busy === 'create' || !name}>
+        <Button type="submit" size="sm" disabled={!!busy || !name.trim()}>
           <FolderPlus class="size-4 mr-1" />Create project
         </Button>
       </div>
     </div>
     <p class="mt-2 text-xs text-muted-foreground">Creating switches you to the new project.</p>
   </form>
+  <details class="mb-4 text-xs text-muted-foreground"><summary class="cursor-pointer py-2">About project files</summary><p class="mt-1 max-w-prose">JSON includes story data and media references. Media files, render history, voices and AI sessions are not included. Keep your data volume for a full backup.</p></details>
 
   {#if !loaded}
     <div class="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
@@ -219,7 +235,7 @@
             {#if p.description}
               <p class="text-sm text-muted-foreground mb-1">{p.description}</p>
             {/if}
-            <p class="text-xs text-muted-foreground mb-0.5">{countsLine(p.counts)}</p>
+            {#if p.counts}<p class="text-xs text-muted-foreground mb-0.5">{countsLine(p.counts)}</p>{/if}
             <p class="text-xs text-muted-foreground mb-3">Created {fmtDate(p.created_at)}</p>
             <div class="flex flex-wrap gap-1.5">
               {#if !p.is_active}

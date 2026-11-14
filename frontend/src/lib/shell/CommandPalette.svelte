@@ -13,7 +13,7 @@
    * focuses the node via the onfocus callback instead of navigating.
    */
   import { goto } from '$app/navigation';
-  import { get, post } from '$lib/api';
+  import { get } from '$lib/api';
   import * as Dialog from '$lib/components/ui/dialog';
   import {
     Search,
@@ -108,7 +108,7 @@
       label: 'Go to Studio',
       group: 'Go to',
       icon: Clapperboard,
-      href: '/'
+      href: '/?view=studio'
     });
     out.push({
       id: 'nav-scenes',
@@ -234,14 +234,9 @@
 
   async function switchProject(id: string) {
     open = false;
-    try {
-      // Same flow as /projects: activate then hard-reload so every surface
-      // refetches under the new scope.
-      await post(`/projects/${id}/activate`);
-      window.location.href = '/';
-    } catch {
-      /* toast lives on the projects page; silent failure here is acceptable */
-    }
+    // Let the current screen's navigation guard run before changing backend scope.
+    // The Projects page consumes this navigation intent once, after departure succeeds.
+    await goto('/projects', {state: {activateProject: id}});
   }
 
   function choose(it: Item | undefined) {
@@ -264,7 +259,7 @@
   function onKeydown(e: KeyboardEvent) {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      active = Math.min(active + 1, filtered.length - 1);
+      active = Math.max(0,Math.min(active + 1, filtered.length - 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       active = Math.max(active - 1, 0);
@@ -272,6 +267,7 @@
       e.preventDefault();
       choose(filtered[active]);
     }
+    requestAnimationFrame(() => document.getElementById(`command-result-${active}`)?.scrollIntoView({block:'nearest'}));
   }
 
   // Group the visible items in stable catalogue order for section headers.
@@ -310,10 +306,15 @@
         placeholder="Search or jump to… / 搜索"
         class="h-11 w-full border-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         aria-label="Search commands"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded="true"
+        aria-controls="command-results"
+        aria-activedescendant={filtered[active] ? `command-result-${active}` : undefined}
       />
     </div>
 
-    <div class="max-h-80 overflow-y-auto py-1.5">
+    <div id="command-results" role="listbox" aria-label="Commands and project items" class="max-h-80 overflow-y-auto py-1.5">
       {#if !loaded && !graph}
         <p class="px-3 py-6 text-center text-sm text-muted-foreground">Loading…</p>
       {:else if filtered.length === 0}
@@ -329,6 +330,10 @@
             {@const Icon = row.item.icon}
             <button
               type="button"
+              id={`command-result-${row.index}`}
+              role="option"
+              tabindex="-1"
+              aria-selected={row.index === active}
               class="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm
                      {row.index === active ? 'bg-accent' : 'hover:bg-accent/60'}"
               onmousemove={() => (active = row.index)}

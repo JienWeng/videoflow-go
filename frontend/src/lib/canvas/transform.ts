@@ -86,9 +86,9 @@ export function loadPositions(): Record<string, { x: number; y: number }> {
 
 export function savePositions(nodes: Node[]) {
   const pos = Object.fromEntries(nodes.map((n) => [n.id, n.position]));
-  localStorage.setItem(POS_KEY, JSON.stringify(pos));
+  try { localStorage.setItem(POS_KEY, JSON.stringify(pos)); } catch { /* Layout still works when browser storage is unavailable. */ }
 }
 
 export function clearPositions() {
-  localStorage.removeItem(POS_KEY);
+  try { localStorage.removeItem(POS_KEY); } catch { /* Arrangement still works for this visit. */ }
 }

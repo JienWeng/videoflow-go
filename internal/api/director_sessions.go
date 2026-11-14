@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 	"videoflow-go/internal/composition"
 	"videoflow-go/internal/db"
@@ -134,7 +135,9 @@ func (s *Server) localTextJSON(ctx context.Context, kind, system, prompt string,
 	}
 	turnCtx, cancel := context.WithTimeout(ctx, 8*time.Minute)
 	s.directorCancels.Store(session.ID, cancel)
-	defer func() { cancel(); s.directorCancels.Delete(session.ID) }()
+	var cleanupOnce sync.Once
+	cleanup := func() { cleanupOnce.Do(func() { cancel(); s.directorCancels.Delete(session.ID) }) }
+	defer cleanup()
 	instruction := "You are VideoFlow's production planner. Prepare proposals only; no tools or side effects. Preserve selected identity rules.\n" + composition.SkillOverride + "\n" + system + "\nReturn only JSON matching this shape: " + string(shape) + "\nSelected project context: " + string(contextJSON) + "\nRequest: " + prompt
 	raw, runErr := s.directorRunner.Run(turnCtx, director.Request{Engine: session.Engine, Workspace: workspace, NativeID: session.NativeID, Prompt: instruction}, func(id string) error { return s.database.SetDirectorNativeID(session.ID, id) })
 	if runErr == nil {
@@ -154,6 +157,8 @@ func (s *Server) localTextJSON(ctx context.Context, kind, system, prompt string,
 			status = "interrupted"
 		}
 	}
+	// Remove this turn's cancellation handle before releasing the database session lock.
+	cleanup()
 	if err = s.database.FinishDirectorTurn(turn.ID, status, raw, message); err != nil {
 		return fmt.Errorf("could not record native turn; review Local sessions before continuing: %w", err)
 	}
@@ -164,6 +169,7 @@ func (s *Server) localTextJSON(ctx context.Context, kind, system, prompt string,
 type directorUserMessageKey struct{}
 
 func (s *Server) registerDirectorRoutes() {
+	s.registerChatReviewRoutes()
 	s.router.Post("/director/composition-plan", s.handleDirectorCompositionPlan)
 	s.router.Put("/assets/{id}/identity", s.handleAssetIdentity)
 	s.router.Post("/assets/{id}/review", s.handleAssetReview)

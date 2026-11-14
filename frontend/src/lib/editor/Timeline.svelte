@@ -221,9 +221,21 @@
       <!-- Captions track -->
       <div class="relative h-14">
         {#each segments as seg, i (i)}
-          <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
           <div
-            class="absolute inset-y-1 cursor-grab overflow-hidden rounded-md border px-2 py-1
+            role="button"
+            tabindex="0"
+            aria-label={`Caption ${i + 1}: ${seg.text || 'Empty caption'}. ${Number(seg.start).toFixed(1)} to ${Number(seg.end).toFixed(1)} seconds`}
+            aria-pressed={selection?.kind === 'caption' && selection.index === i}
+            onkeydown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onselect({kind: 'caption', index: i}); }
+              else if (['ArrowLeft','ArrowRight','Home','End'].includes(e.key)) {
+                e.preventDefault(); e.stopPropagation();
+                const next = e.key === 'Home' ? 0 : e.key === 'End' ? segments.length - 1 : Math.max(0,Math.min(segments.length-1,i+(e.key==='ArrowRight'?1:-1)));
+                onselect({kind: 'caption', index: next});
+                (e.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="button"]')[next])?.focus();
+              }
+            }}
+            class="absolute inset-y-1 cursor-grab overflow-hidden rounded-md border px-2 py-1 focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2
               {selection?.kind === 'caption' && selection.index === i
               ? 'border-primary bg-primary/20 ring-1 ring-primary'
               : i === activeCaption

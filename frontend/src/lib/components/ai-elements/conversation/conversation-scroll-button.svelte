@@ -11,6 +11,7 @@
 	import { getStickToBottomContext } from "./stick-to-bottom-context.svelte.js";
 	import { fly } from "svelte/transition";
 	import { backOut } from "svelte/easing";
+	import { prefersReducedMotion } from "svelte/motion";
 
 	let { class: className, onclick, ...restProps }: ConversationScrollButtonProps = $props();
 
@@ -31,12 +32,12 @@
 {#if !context.isAtBottom}
 	<div
 		in:fly={{
-			duration: 300,
+			duration: prefersReducedMotion.current ? 0 : 300,
 			y: 10,
 			easing: backOut,
 		}}
 		out:fly={{
-			duration: 200,
+			duration: prefersReducedMotion.current ? 0 : 200,
 			y: 10,
 			easing: backOut,
 		}}

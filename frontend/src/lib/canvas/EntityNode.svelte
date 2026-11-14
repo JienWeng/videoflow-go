@@ -3,9 +3,9 @@
   import { Users, Image, Clapperboard, ListVideo, Film } from '@lucide/svelte';
   import { Badge } from '$lib/components/ui/badge';
   import { mediaUrl, isImage } from '$lib/api';
-  import { kindColor } from './transform';
+  import { kindColor, KIND_LABELS } from './transform';
 
-  let { data }: NodeProps = $props();
+  let { data, selected }: NodeProps = $props();
 
   const icons: Record<string, typeof Users> = {
     character: Users,
@@ -41,7 +41,8 @@
   (machine-derived) get a dashed border + muted background so the authored vs
   generated hierarchy reads at a glance. -->
 <div
-  class="rounded-md border border-l-2 px-2 py-1.5 text-xs shadow-sm
+  class="rounded-lg border border-l-2 px-3 py-2 text-xs
+    {selected ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : ''}
     {isScene
       ? 'w-[190px] border-primary/60 bg-card ring-1 ring-primary/30'
       : isDerived
@@ -62,12 +63,12 @@
     class="entity-handle"
     title="Drag to connect"
   />
+  <div class="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground"><Icon class="size-3 shrink-0" /><span>{KIND_LABELS[kind] ?? kind}</span>{#if data.duration}<span class="ml-auto">{data.duration}s</span>{/if}</div>
   <div class="flex items-center gap-1.5">
-    <Icon class="size-3.5 shrink-0 text-muted-foreground" />
-    <span class="truncate font-medium" title={String(data.label ?? '')}>{data.label}</span>
+    <span class="truncate text-[13px] font-semibold" title={String(data.label ?? '')}>{data.label}</span>
   </div>
   {#if preview}
-    <img src={preview} alt={String(data.label ?? '')} class="mt-1 h-16 w-full rounded object-cover" />
+    <img src={preview} alt={String(data.label ?? '')} loading="lazy" class="mt-1 h-16 w-full rounded object-cover" />
   {/if}
   {#if status}
     <div class="mt-1">
