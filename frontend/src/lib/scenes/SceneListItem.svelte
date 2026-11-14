@@ -32,6 +32,7 @@
 
 <button
   type="button"
+  aria-pressed={selected}
   onclick={onselect}
   class="group flex w-full items-start gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors
          {selected
@@ -59,7 +60,7 @@
         {scene.title || 'Untitled scene'}
       </span>
       {#if dirty}
-        <span class="ml-auto shrink-0 rounded-sm bg-amber-500/15 px-1 text-[10px] font-medium text-amber-600"
+        <span class="ml-auto shrink-0 rounded-sm bg-amber-500/15 px-1 text-[10px] font-medium text-amber-800 dark:text-amber-300"
           title="Unsaved edits">unsaved</span>
       {/if}
     </div>
@@ -76,7 +77,7 @@
         {/each}
       </div>
       {#if nextStep}
-        <span class="truncate text-[10px] text-muted-foreground/70">Next: {nextStep.label}</span>
+        <span class="truncate text-[10px] text-muted-foreground">Next: {nextStep.label}</span>
       {:else}
         <span class="truncate text-[10px] text-emerald-600/80">Complete</span>
       {/if}

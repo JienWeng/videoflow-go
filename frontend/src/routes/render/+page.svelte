@@ -428,9 +428,10 @@
         </div>
 
         <!-- The list itself -->
-        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-        <div class="min-h-0 flex-1 overflow-y-auto p-2 space-y-1.5 focus:outline-none"
-          tabindex="0" role="listbox" aria-label="Scenes with renders" onkeydown={listKeydown}>
+        <!-- Named button group also supports arrow-key selection from its container. -->
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+        <div class="min-h-0 flex-1 overflow-y-auto p-2 space-y-1.5 focus:outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2"
+          tabindex="0" role="group" aria-label="Scenes with renders" onkeydown={listKeydown}>
           {#if !loaded}
             {#each Array(5) as _, i (i)}
               <div class="flex items-start gap-2.5 rounded-lg border border-transparent px-2.5 py-2">
@@ -463,6 +464,7 @@
               <button
                 type="button"
                 data-scene-row={g.sceneId}
+                aria-pressed={g.sceneId === selectedId}
                 onclick={() => selectGroup(g.sceneId)}
                 class="group flex w-full items-start gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors
                   {g.sceneId === selectedId

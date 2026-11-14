@@ -86,9 +86,9 @@
         <h2 class="font-semibold text-base truncate" title={s.title}>{s.title || 'Untitled scene'}</h2>
         <Badge variant="secondary" class="shrink-0 gap-1"><Clock class="size-3" />{s.duration}s</Badge>
         {#if sceneDirty}
-          <Badge variant="outline" class="shrink-0 border-amber-500/50 text-amber-600">Unsaved</Badge>
+          <Badge variant="outline" class="shrink-0 border-amber-500/50 text-amber-800 dark:text-amber-300">Unsaved</Badge>
         {/if}
-        <span class="ml-auto font-mono text-[10px] text-muted-foreground/40">{s.id}</span>
+        <span class="ml-auto font-mono text-[10px] text-muted-foreground">{s.id}</span>
       </div>
 
       <!-- Pipeline stepper: connected segments, primary visual element -->
@@ -115,7 +115,7 @@
               <st.icon class="size-3" />{st.busy ? st.busyLabel : st.label}
             </button>
           {:else}
-            <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs text-muted-foreground/50">
+            <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs text-muted-foreground">
               <st.icon class="size-3" />{st.label}
             </span>
           {/if}
