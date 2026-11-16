@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {creationProgress as progress,creationSteps} from './progress.mjs';
+import {creationProgress as progress,creationSteps,stepsForCreation} from './progress.mjs';
 assert.equal(creationSteps.length,6);
 assert.equal(progress('running',[]).current,'story');
 assert.equal(progress('running',['story','scenes']).current,'shots');
@@ -12,4 +12,10 @@ assert.equal(progress('completed',['render']).completed.has('render'),true);
 assert.equal(progress('completed',[]).title,'Your story is ready');
 assert.equal(progress('failed',['story']).stopped,true);
 assert.equal(progress('reconciliation_required',['story']).current,'scenes');
-console.log('PASS 12 story-progress assertions');
+assert.equal(stepsForCreation(true).length,8);
+assert.equal(progress('running',['story','scenes','shots'],true).current,'characters');
+assert.equal(progress('awaiting_character_review',['story','scenes','shots','characters'],true).current,'character_review');
+assert.equal(progress('awaiting_character_review',[],true).review,true);
+assert.equal(progress('awaiting_character_review',[],true).characterReview,true);
+assert.equal(progress('running',['story','scenes','shots','characters','character_review'],true).current,'visuals');
+console.log('PASS 18 story-progress assertions');

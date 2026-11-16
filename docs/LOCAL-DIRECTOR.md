@@ -53,3 +53,7 @@ OpenCut is **not integrated**. Its current repository is being rewritten and the
 ### Canvas workspace
 
 Studio includes an AI session selector. Start a Codex/Claude session there or use More tools → AI sessions for history and recovery. Select a canvas node to edit Details or open Chat with that item's scope. Suggestions fill a draft; review and submit it yourself. Settings groups preferences under General, credentials/models under AI connections, and routing/recovery under Advanced.
+
+## Automatic character sheets in guided creation
+
+Create story plans the cast and shots, then uses the configured reference-image route to create sheets for cast members without reference images. Codex or Claude Code prepares the prompts; the image provider draws the sheets. Existing bindings and identities are reused. Generated candidates remain pending, and the saved operation pauses at character review. Approve each design in Library, refresh approvals, then Continue storyboarding. The same operation resumes using current approved bindings and its captured media routes, without redoing character sheets. Storyboard approval and explicit video rendering remain later gates. Missing character sheets and storyboard images are separate image calls and can incur charges. Voices are configured separately.

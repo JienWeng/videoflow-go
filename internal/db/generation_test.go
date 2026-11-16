@@ -2,6 +2,8 @@ package db
 
 import (
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"videoflow-go/internal/models"
 )
@@ -189,5 +191,41 @@ func TestEndpointPinPreservesSubmissionFence(t *testing.T) {
 	endpoint, err = d.PinRenderEndpoint(job.ID, "https://different.invalid")
 	if err != nil || endpoint != "https://queue.fal.run" {
 		t.Fatal("endpoint was redirected", endpoint, err)
+	}
+}
+
+func TestStoryContinuationHasOneAtomicOwner(t *testing.T) {
+	d, err := Open(filepath.Join(t.TempDir(), "claims.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	project, _ := d.GetActiveProjectID()
+	op := &models.Op{ProjectID: &project, Kind: "video_generation", Status: "succeeded", ResultJSON: []byte(`{"status":"awaiting_character_review"}`)}
+	if err = d.CreateOp(op); err != nil {
+		t.Fatal(err)
+	}
+	if claimed, err := d.ClaimStoryContinuation(op.ID, "wrong-project", op.ResultJSON); err != nil || claimed {
+		t.Fatal("cross-project claim", claimed, err)
+	}
+	if claimed, err := d.ClaimStoryContinuation(op.ID, project, []byte(`{}`)); err != nil || claimed {
+		t.Fatal("changed snapshot claim", claimed, err)
+	}
+	var wg sync.WaitGroup
+	var claimed atomic.Int32
+	for range 8 {
+		wg.Go(func() {
+			ok, err := d.ClaimStoryContinuation(op.ID, project, op.ResultJSON)
+			if err != nil {
+				t.Error(err)
+			}
+			if ok {
+				claimed.Add(1)
+			}
+		})
+	}
+	wg.Wait()
+	if claimed.Load() != 1 {
+		t.Fatal("multiple continuation owners", claimed.Load())
 	}
 }

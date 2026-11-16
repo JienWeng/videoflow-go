@@ -181,3 +181,14 @@ func (d *DB) SaveOperationJobs(opID string, jobs []models.RenderJob, result map[
 	}
 	return tx.Commit()
 }
+
+// ClaimStoryContinuation fences concurrent/replayed continuation clicks before
+// any paid work; the exact saved snapshot must still be waiting for review.
+func (d *DB) ClaimStoryContinuation(id, project string, expected json.RawMessage) (bool, error) {
+	result, err := d.conn.Exec(`UPDATE ops SET status='running',error=NULL,updated_at=? WHERE id=? AND project_id=? AND kind='video_generation' AND status='succeeded' AND result_json=?`, time.Now().UTC(), id, project, string(expected))
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows == 1, err
+}

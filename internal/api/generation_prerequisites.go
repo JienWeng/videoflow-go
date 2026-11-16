@@ -30,6 +30,26 @@ func (s *Server) generationPrerequisites(ctx context.Context, brief generationBr
 			}
 		}
 	}
+	needsSheets := s.cfg.UseLocalText && brief.CreateCharacters
+	if s.cfg.UseLocalText {
+		for _, id := range brief.CharacterIDs {
+			c, e := s.database.GetCharacter(id)
+			if e != nil {
+				continue
+			}
+			var refs []string
+			json.Unmarshal(c.ReferenceAssetIDsJSON, &refs)
+			needsSheets = needsSheets || len(refs) == 0
+		}
+	}
+	if needsSheets {
+		client, _, model, e := s.selectedMedia(ctx, "reference")
+		if e != nil {
+			add("reference", e.Error())
+		} else if e = client.ValidateImage(ctx, map[string]any{"model": model, "prompt": "preflight", "aspect_ratio": "1:1"}); e != nil {
+			add("reference", e.Error())
+		}
+	}
 	client, _, imageModel, err := s.selectedMedia(ctx, "image")
 	if err != nil {
 		add("image", err.Error())
@@ -38,7 +58,7 @@ func (s *Server) generationPrerequisites(ctx context.Context, brief generationBr
 	image, err := client.Model(ctx, imageModel, "image")
 	if err != nil {
 		add("image", err.Error())
-	} else if len(brief.ReferenceAssetIDs) > 0 {
+	} else if len(brief.ReferenceAssetIDs) > 0 || needsSheets {
 		var caps map[string]json.RawMessage
 		json.Unmarshal(image.SupportedParameters, &caps)
 		if caps["input_references"] == nil {
@@ -46,9 +66,9 @@ func (s *Server) generationPrerequisites(ctx context.Context, brief generationBr
 		}
 	}
 	imagePayload := map[string]any{"model": imageModel, "prompt": "preflight", "aspect_ratio": brief.AspectRatio}
-	if len(brief.ReferenceAssetIDs) > 0 {
+	if len(brief.ReferenceAssetIDs) > 0 || needsSheets {
 		refs := []map[string]any{}
-		for range brief.ReferenceAssetIDs {
+		for range max(1, len(brief.ReferenceAssetIDs)) {
 			refs = append(refs, map[string]any{"type": "image_url", "image_url": map[string]string{"url": "data:image/png;base64,iVBORw0KGgo="}})
 		}
 		imagePayload["input_references"] = refs
@@ -85,7 +105,7 @@ func (s *Server) generationPrerequisites(ctx context.Context, brief generationBr
 			add("duration", "Planned average scene length exceeds this model's supported clip duration; shorten the target, add scenes, or select a suitable model")
 		}
 	}
-	if len(brief.ReferenceAssetIDs) > 0 {
+	if len(brief.ReferenceAssetIDs) > 0 || needsSheets {
 		conditioned := false
 		for _, f := range video.FrameImages {
 			conditioned = conditioned || f == "first_frame"

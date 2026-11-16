@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -180,21 +181,43 @@ func TestStoryCharacterPlanningMustBeExplicitAndRejectUnknownBindings(t *testing
 	}
 }
 
-func runGuidedStoryCharacterPipeline(t *testing.T, imageFailure bool, fractional ...bool) {
+type storyPipelineTestOptions struct{ fractional, replaceReference, failReference bool }
+
+func runGuidedStoryCharacterPipeline(t *testing.T, imageFailure bool, options ...storyPipelineTestOptions) {
+	opts := storyPipelineTestOptions{}
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	var storyboardPayload atomic.Value
+	replacementURL := ""
 	var images, videos atomic.Int32
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/images/models":
-			w.Write([]byte(`{"data":[{"id":"openai/gpt-image-2","supported_parameters":{"aspect_ratio":{"type":"enum","values":["16:9"]}}}]}`))
+			w.Write([]byte(`{"data":[{"id":"openai/gpt-image-2","supported_parameters":{"input_references":{"type":"array"},"aspect_ratio":{"type":"enum","values":["16:9","1:1"]}}}]}`))
 		case "/videos/models":
 			w.Write([]byte(`{"data":[{"id":"google/veo-3.1-lite","supported_durations":[1,4],"supported_aspect_ratios":["16:9"],"supported_frame_images":["first_frame"]}]}`))
 		case "/images":
 			images.Add(1)
-			if imageFailure {
+			if (imageFailure && images.Load() == 3) || (opts.failReference && images.Load() == 2) {
 				http.Error(w, "fixture image failure", 500)
 				return
 			}
-			w.Write([]byte(`{"data":[{"b64_json":"iVBORw0KGgo=","media_type":"image/png"}]}`))
+			var payload map[string]any
+			json.NewDecoder(r.Body).Decode(&payload)
+			refs, _ := payload["input_references"].([]any)
+			if images.Load() <= 2 && len(refs) != 0 {
+				t.Error("character sheet inherited another actor's references")
+			}
+			if images.Load() == 3 {
+				if len(refs) != 2 {
+					t.Error("storyboard lost cast sheets", payload)
+				}
+				raw, _ := json.Marshal(payload)
+				storyboardPayload.Store(string(raw))
+			}
+			data := []byte{137, 80, 78, 71, 13, 10, 26, 10, byte(images.Load())}
+			json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"b64_json": base64.StdEncoding.EncodeToString(data), "media_type": "image/png"}}})
 		case "/videos":
 			videos.Add(1)
 			w.WriteHeader(500)
@@ -214,12 +237,12 @@ p=sys.stdin.read()
 result={'prompt':'Pip, a small golden puppy, meets his cream-colored mother'}
 if 'scriptwriter' in p: result=json.loads(` + fmt.Sprintf("%q", dogStoryDraft) + `)
 elif 'cinematographer' in p: result={'shots':[{'shot_order':1,'duration':1,'prompt':'Pip and mother','camera':'wide','movement':'still'}]}
-if 'precise image-generation prompt' in p and 'small golden puppy' not in p: sys.exit(2)
+if 'precise image-generation prompt' in p and 'Character reference sheet' not in p and 'small golden puppy' not in p: sys.exit(2)
 print(json.dumps({'type':'thread.started','thread_id':'dog-native'}))
 print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':json.dumps(result)}}))
 print(json.dumps({'type':'turn.completed'}))
 `
-	if len(fractional) > 0 && fractional[0] {
+	if opts.fractional {
 		program = strings.Replace(program, "'duration':1,'prompt':'Pip and mother'", "'duration':1.2,'prompt':'Pip and mother'", 1)
 		if !strings.Contains(program, "'duration':1.2") {
 			t.Fatal("fractional fixture was not installed")
@@ -235,11 +258,12 @@ print(json.dumps({'type':'turn.completed'}))
 		ID string `json:"op_id"`
 	}
 	json.Unmarshal(w.Body.Bytes(), &start)
-	deadline := time.Now().Add(8 * time.Second)
+	resumed := false
+	deadline := time.Now().Add(12 * time.Second)
 	for time.Now().Before(deadline) {
 		op, _ := s.database.GetOp(start.ID)
 		if op.Status == "failed" {
-			if imageFailure {
+			if imageFailure || opts.failReference {
 				var saved struct {
 					Characters []string `json:"created_character_ids"`
 					Scenes     []string `json:"scene_ids"`
@@ -247,7 +271,22 @@ print(json.dumps({'type':'turn.completed'}))
 				}
 				json.Unmarshal(op.ResultJSON, &saved)
 				chars, _ := s.database.ListCharacters(project)
-				if len(chars) != 2 || len(saved.Characters) != 2 || len(saved.Scenes) != 1 || saved.Script == "" || images.Load() != 1 || videos.Load() != 0 {
+				expectedImages := int32(3)
+				if opts.failReference {
+					expectedImages = 2
+				}
+				if opts.failReference {
+					bound := 0
+					for _, c := range chars {
+						var ids []string
+						json.Unmarshal(c.ReferenceAssetIDsJSON, &ids)
+						bound += len(ids)
+					}
+					if bound != 1 {
+						t.Fatal("earlier sheet lost after later failure", bound)
+					}
+				}
+				if len(chars) != 2 || len(saved.Characters) != 2 || len(saved.Scenes) != 1 || saved.Script == "" || images.Load() != expectedImages || videos.Load() != 0 {
 					t.Fatal("late failure lost saved work", string(op.ResultJSON))
 				}
 				return
@@ -255,11 +294,88 @@ print(json.dumps({'type':'turn.completed'}))
 			t.Fatal("pipeline failed:", *op.Error)
 		}
 		if op.Status == "succeeded" {
+
+			if !resumed {
+				if !strings.Contains(string(op.ResultJSON), "awaiting_character_review") {
+					t.Fatal("missing automatic character reference review checkpoint", string(op.ResultJSON))
+				}
+				chars, _ := s.database.ListCharacters(project)
+				if images.Load() != 2 || videos.Load() != 0 || len(chars) != 2 {
+					t.Fatal("unexpected calls before character approval", images.Load(), videos.Load())
+				}
+
+				other, _ := s.database.CreateProject("Other", " ")
+				s.database.ActivateProject(other.ID)
+				cross := call(t, s, "POST", "/videos/generate/"+start.ID+"/continue", `{}`)
+				if cross.Code != 404 {
+					t.Fatal("cross-project continuation accepted", cross.Code)
+				}
+				s.database.ActivateProject(project)
+				if opts.replaceReference {
+					c := &chars[0]
+					var old []string
+					json.Unmarshal(c.ReferenceAssetIDsJSON, &old)
+					path := filepath.Join(s.cfg.StorageRoot, "replacement.png")
+					os.WriteFile(path, []byte{137, 80, 78, 71, 13, 10, 26, 10, 99}, 0600)
+					asset := &models.Asset{ProjectID: &project, CharacterID: &c.ID, Type: "character_reference", Name: "Approved replacement", FilePath: "storage/replacement.png", MetadataJSON: []byte(`{"consistency_review":"approved"}`)}
+					s.database.CreateAsset(asset)
+					replacementURL, _ = s.imageURL(asset)
+					c.ReferenceAssetIDsJSON, _ = json.Marshal([]string{asset.ID})
+					s.database.UpdateCharacter(c)
+					scenes, _ := s.database.ListScenes(project)
+					brief := sceneBrief(&scenes[0])
+					brief.ReferenceAssetIDs = old
+					var document map[string]any
+					json.Unmarshal(scenes[0].SceneJSON, &document)
+					document["generation_brief"] = brief
+					scenes[0].SceneJSON, _ = json.Marshal(document)
+					s.database.UpdateScene(&scenes[0])
+				}
+				blocked := call(t, s, "POST", "/videos/generate/"+start.ID+"/continue", `{}`)
+				if blocked.Code != 409 || images.Load() != 2 {
+					t.Fatal("unapproved characters reached storyboarding", blocked.Code, blocked.Body.String())
+				}
+				for _, c := range chars {
+					var refs []string
+					json.Unmarshal(c.ReferenceAssetIDsJSON, &refs)
+					if len(refs) != 1 {
+						t.Fatal("reference sheet not bound", c.Name, string(c.ReferenceAssetIDsJSON))
+					}
+					asset, _ := s.database.GetAsset(refs[0])
+					if asset.CharacterID == nil || *asset.CharacterID != c.ID || asset.Type != "character_reference" || (models.ReferenceApproved(asset.MetadataJSON) && asset.Name != "Approved replacement") {
+						t.Fatal("invalid generated character binding or premature approval")
+					}
+					body, _ := json.Marshal(map[string]any{"approved": true, "expected_updated_at": asset.UpdatedAt})
+					review := call(t, s, "POST", "/assets/"+asset.ID+"/review", string(body))
+					if review.Code != 200 {
+						t.Fatal(review.Code, review.Body.String())
+					}
+				}
+
+				ids := []string{}
+				for _, c := range chars {
+					ids = append(ids, c.ID)
+				}
+				reused, approved, e := s.storyCharacterReferences(guidedStoryContext(context.Background(), project, ids), project, ids, "same style")
+				if e != nil || !approved || len(reused) != 2 || images.Load() != 2 {
+					t.Fatal("existing sheets were regenerated or not reused", e, reused, images.Load())
+				}
+				continued := call(t, s, "POST", "/videos/generate/"+start.ID+"/continue", `{}`)
+				if continued.Code != 202 {
+					t.Fatal(continued.Code, continued.Body.String())
+				}
+				duplicate := call(t, s, "POST", "/videos/generate/"+start.ID+"/continue", `{}`)
+				if duplicate.Code != 409 {
+					t.Fatal("duplicate continuation accepted", duplicate.Code, duplicate.Body.String())
+				}
+				resumed = true
+				continue
+			}
 			if imageFailure {
 				t.Fatal("expected image-stage failure")
 			}
 			chars, _ := s.database.ListCharacters(project)
-			if len(chars) != 2 || images.Load() != 1 || videos.Load() != 0 || !strings.Contains(string(op.ResultJSON), "awaiting_reference_review") {
+			if len(chars) != 2 || images.Load() != 3 || videos.Load() != 0 || !strings.Contains(string(op.ResultJSON), "awaiting_reference_review") {
 				t.Fatal("cast/approval gate lost", len(chars), images.Load(), videos.Load(), string(op.ResultJSON))
 			}
 			scenes, err := s.database.ListScenes(project)
@@ -280,6 +396,12 @@ print(json.dumps({'type':'turn.completed'}))
 				}
 				if total != scene.Duration {
 					t.Fatalf("shot timing %d does not match scene %d", total, scene.Duration)
+				}
+			}
+			if opts.replaceReference {
+				payload, _ := storyboardPayload.Load().(string)
+				if !strings.Contains(payload, replacementURL) {
+					t.Fatal("replacement sheet not used", payload)
 				}
 			}
 			selection, _ := s.database.GetDirectorSelection(session.ID)
@@ -317,5 +439,12 @@ func TestGuidedStoryLateImageFailureRetainsCreatedProfilesAndScenes(t *testing.T
 }
 
 func TestGuidedStoryAcceptsFractionalShotTimingWithoutRendering(t *testing.T) {
-	runGuidedStoryCharacterPipeline(t, false, true)
+	runGuidedStoryCharacterPipeline(t, false, storyPipelineTestOptions{fractional: true})
+}
+
+func TestGuidedStoryUsesCurrentReplacementReferences(t *testing.T) {
+	runGuidedStoryCharacterPipeline(t, false, storyPipelineTestOptions{replaceReference: true})
+}
+func TestGuidedStoryReferenceFailurePreservesEarlierSheet(t *testing.T) {
+	runGuidedStoryCharacterPipeline(t, false, storyPipelineTestOptions{failReference: true})
 }

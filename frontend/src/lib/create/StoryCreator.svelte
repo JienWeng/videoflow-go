@@ -6,7 +6,7 @@
   import { Clapperboard, Sparkles } from '@lucide/svelte';
   import { Button } from '$lib/components/ui/button';
   import GenerationProgress from '$lib/create/GenerationProgress.svelte';
-  import { get, post } from '$lib/api';
+  import { get, post, mediaUrl } from '$lib/api';
 
   let idea = $state('');
   let submitted=$state(false);
@@ -28,12 +28,17 @@
   let opStatus = $state('');
   let opError = $state('');
   let stages = $state<string[]>([]);
+  let automaticReferences=$state(false),continuingStory=$state(false);
+  const characterReferenceIds=()=>lastResult?.cast_character_ids?.length?lastResult.cast_character_ids.flatMap((id:string)=>characters.find(c=>c.id===id)?.reference_asset_ids_json??[]):lastResult?.character_reference_ids??[];
+  const missingCharacterReferences=()=>lastResult?.cast_character_ids?.some((id:string)=>!characters.find(c=>c.id===id)?.reference_asset_ids_json?.length);
+  const charactersApproved=()=>!missingCharacterReferences()&&!!characterReferenceIds().length&&characterReferenceIds().every((id:string)=>{const a=reviewAssets.find(a=>a.id===id);const review=a?.metadata_json?.consistency_review;return !!a&&(!review||review==='approved')});
+  async function continueStory(){if(continuingStory||busy)return;continuingStory=true;opError='';try{if(!await refreshReviewAssets())return;if(!charactersApproved())throw Error('Approve each character sheet before continuing.');await post(`/videos/generate/${opId}/continue`,{});busy=true;opStatus='running';stopPolling();poller=setInterval(()=>void checkOperation(),2500);await checkOperation()}catch(e){opError=String(e)}finally{continuingStory=false}}
   let preflight: any = $state(null);
   let preflightError = $state('');
   let activeProject: any = $state(null);
   let lastResult: any = $state(null);
  let reviewAssets:any[]=$state([]);let reviewLoading=$state(false);let renderingScene=$state('');
- async function refreshReviewAssets(){reviewLoading=true;try{reviewAssets=await get('/assets')}catch(e){opError=String(e)}finally{reviewLoading=false}}
+ async function refreshReviewAssets(){reviewLoading=true;try{const [assets,cast]=await Promise.all([get('/assets'),get('/characters')]);reviewAssets=assets;characters=cast;return true}catch(e){opError=String(e);return false}finally{reviewLoading=false}}
  function sceneReferencesApproved(id:string){const refs=reviewAssets.filter(a=>a.metadata_json?.scene_id===id&&a.metadata_json?.consistency_review);return refs.length>0&&refs.every(a=>a.metadata_json.consistency_review==='approved')}
  async function renderReviewedScene(id:string){renderingScene=id;try{await refreshReviewAssets();if(!sceneReferencesApproved(id))throw Error('Approve the generated references before rendering this scene.');await post(`/scenes/${id}/render`, {use_scene_cast:true});await goto('/render')}catch(e){opError=String(e)}finally{renderingScene=''}}
 
@@ -51,7 +56,7 @@
   }
 
   async function checkRenderJobs() {
-    if(lastResult?.status==='awaiting_reference_review'){busy=false;opStatus='awaiting_reference_review';stopRenderPolling();await refreshReviewAssets();return}
+    if(['awaiting_reference_review','awaiting_character_review'].includes(lastResult?.status)){busy=false;opStatus=lastResult.status;stopRenderPolling();await refreshReviewAssets();return}
     const ids: string[] = lastResult?.render_job_ids ?? [];
     if (!ids.length) {
       busy = false;
@@ -87,6 +92,7 @@
       opError = '';
       opStatus = op.status;
       stages = op.result_json?.stages ?? stages;
+      automaticReferences=op.result_json?.character_references??automaticReferences;
       if (op.status === 'succeeded') {
         stopPolling();
         lastResult = op.result_json;
@@ -114,7 +120,7 @@
     try {
       const params = new URLSearchParams({ aspect_ratio: ratio });
       params.set('style', styleChoice);
-      params.set('scene_count',String(sceneCount));params.set('target_duration',duration||'0');params.set('character_ids',selectedCharacters.join(','));
+      params.set('create_characters',String(createCharacters));params.set('scene_count',String(sceneCount));params.set('target_duration',duration||'0');params.set('character_ids',selectedCharacters.join(','));
       const result=await get(`/videos/preflight?${params}`);if(sequence!==preflightSequence)return null;preflight=result;
       return preflight;
     } catch (e: any) {
@@ -137,6 +143,7 @@
       opId = op.id;
       opStatus = op.status;
       stages = op.result_json?.stages ?? [];
+      automaticReferences=op.result_json?.character_references??false;
       lastResult = op.result_json;
       if (op.status === 'running') {
         busy = true;
@@ -189,6 +196,7 @@
       submitted=true;
       opId = response.op_id;
       opStatus = response.status;
+      automaticReferences=response.character_references??false;
       activeProject = activeProject ?? await get('/projects/active');
       poller = setInterval(() => void checkOperation(), 2500);
       await checkOperation();
@@ -212,13 +220,17 @@
       <div class="mt-6 space-y-4">
         {#if lastResult.created_character_ids?.length}<div class="space-y-1 text-sm"><p>{lastResult.created_character_ids.length} new character {lastResult.created_character_ids.length===1?'profile saved':'profiles saved'}. <a class="underline underline-offset-4" href="/library?tab=characters">Review characters</a></p><p class="text-muted-foreground">For spoken dialogue, choose approved voices in <a class="underline underline-offset-4" href="/voices">Voice &amp; dialogue</a> before rendering.</p></div>{/if}
         <div class="rounded-lg border border-border p-4 text-sm">
-          {#if lastResult.status==='awaiting_reference_review'}
+          {#if lastResult.status==='awaiting_character_review'}
+            <h3 class="font-semibold">Review the character designs</h3><p class="mt-2 text-muted-foreground">Reference sheets are saved in Library. Approve each design before continuing with scene images. Existing reference images are reused.</p>
+            {#if missingCharacterReferences()}<p role="alert" class="mt-3 text-sm">Some story characters need reference images. <a class="underline underline-offset-4" href="/library?tab=characters">Open Characters</a> to add or generate them, then refresh here.</p>{/if}<ul class="mt-4 space-y-3">{#each [...new Set<string>(characterReferenceIds())] as id}{@const asset=reviewAssets.find(a=>a.id===id)}{@const character=characters.find(c=>c.id===asset?.character_id)}<li class="flex items-center justify-between gap-3"><a class="inline-flex min-h-11 items-center gap-3 underline underline-offset-4" href={`/library?tab=media&asset_id=${encodeURIComponent(id)}`}>{#if asset?.file_path}<img class="size-12 rounded-md object-cover" src={mediaUrl(asset.file_path)??''} alt=""/>{/if}Review {character?.name??asset?.name??'character sheet'}</a><span class="text-xs text-muted-foreground">{asset&&(!asset.metadata_json?.consistency_review||asset.metadata_json.consistency_review==='approved')?'Approved':'Needs review'}</span></li>{/each}</ul>
+            <div class="mt-4 flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={reviewLoading||continuingStory} onclick={refreshReviewAssets}>{reviewLoading?'Checking…':'Refresh character approvals'}</Button><Button type="button" disabled={!charactersApproved()||reviewLoading||continuingStory} onclick={continueStory}>{continuingStory?'Continuing…':'Continue storyboarding'}</Button></div><p class="mt-2 text-xs leading-relaxed text-muted-foreground">Continuing generates scene images and may incur provider charges. Video rendering stays separate.</p>
+          {:else if lastResult.status==='awaiting_reference_review'}
  <p class="font-medium">Your keyframes are ready for review.</p><p class="mt-1 text-muted-foreground">Compare the generated images with your character and asset references, then approve each reference. Video generation starts only when you choose Render scene.</p><div class="mt-3 space-y-3">{#each lastResult.scene_ids??[] as sceneID,i}<div class="flex flex-wrap items-center gap-2"><span>Scene {i+1}</span><a class="underline" href={`/library?tab=media&scene_id=${encodeURIComponent(sceneID)}`}>Review references</a><Button type="button" size="sm" disabled={reviewLoading||!!renderingScene||!sceneReferencesApproved(sceneID)} onclick={()=>renderReviewedScene(sceneID)}>Render scene {i+1}</Button><span class="text-muted-foreground">{sceneReferencesApproved(sceneID)?'References approved':'Waiting for reference approval'}</span></div>{/each}<Button type="button" variant="outline" size="sm" disabled={reviewLoading} onclick={refreshReviewAssets}>Refresh approvals</Button></div>
  {:else}
  <p class="font-medium">{['failed','reconciliation_required'].includes(opStatus) ? 'Existing work is preserved.' : opStatus === 'completed' ? 'Video complete.' : 'Render jobs submitted.'}</p>
           <p class="mt-1 text-muted-foreground">Open existing scenes to inspect completed work. Creating again starts a new pipeline and may repeat paid stages.</p>
           {/if}
-          {#if lastResult.status!=='awaiting_reference_review'}<div class="mt-3 flex flex-wrap gap-2">
+          {#if !['awaiting_reference_review','awaiting_character_review'].includes(lastResult.status)}<div class="mt-3 flex flex-wrap gap-2">
             <Button type="button" variant="secondary" onclick={() => goto('/scenes')}>Open existing scenes</Button>
             {#if lastResult.render_job_ids?.length}<Button type="button" variant="outline" onclick={() => goto('/render')}>Open render jobs</Button>{/if}
 
@@ -230,8 +242,8 @@
 <div class="mx-auto flex min-h-full w-full max-w-3xl flex-col {embedded?'py-2':'px-6 py-10'}">
   {#if busy || opId}
     <div class="w-full">
-      <GenerationProgress reviewHref={lastResult?.scene_ids?.[0]?`/library?tab=media&scene_id=${encodeURIComponent(lastResult.scene_ids[0])}`:undefined} status={opStatus} {stages} error={opError} onopen={lastResult?undefined:() => goto('/?view=story')} />
-      {#if !busy}{@render resultSummary()}<Button variant="ghost" class="mt-4" onclick={()=>{opId='';opStatus='';lastResult=null;stages=[];submitted=false;}}>{['failed','reconciliation_required'].includes(opStatus)?'Edit brief & try again':'Create another story'}</Button>{/if}
+      <GenerationProgress characterReferences={automaticReferences} referenceCount={lastResult?.status==='awaiting_character_review'?characterReferenceIds().length:lastResult?.character_reference_ids?.length??null} reviewHref={lastResult?.status==='awaiting_character_review'?(characterReferenceIds()[0]?`/library?tab=media&asset_id=${encodeURIComponent(characterReferenceIds()[0])}`:'/library?tab=characters'):lastResult?.scene_ids?.[0]?`/library?tab=media&scene_id=${encodeURIComponent(lastResult.scene_ids[0])}`:undefined} status={opStatus} {stages} error={opError} onopen={lastResult?undefined:() => goto('/?view=story')} />
+      {#if !busy}{@render resultSummary()}<Button variant="ghost" class="mt-4" onclick={()=>{opId='';opStatus='';lastResult=null;stages=[];submitted=false;automaticReferences=false;}}>{['failed','reconciliation_required'].includes(opStatus)?'Edit brief & try again':'Create another story'}</Button>{/if}
     </div>
   {:else}
     <div class="mb-6">
@@ -259,7 +271,7 @@
       <label class="grid gap-1 text-sm"><span class="font-medium">Number of scene clips</span><input type="number" min="1" max="20" bind:value={sceneCount} class="rounded-lg border bg-background px-3 py-2"/><span class="text-xs text-muted-foreground">Each scene generates its own image and video. Start with one clip to test your setup.</span></label>
       <fieldset class="space-y-2 rounded-lg border p-3"><legend class="text-sm font-medium">Characters in this story</legend>
        <label class="flex items-start gap-2 text-sm"><input class="mt-1" type="checkbox" bind:checked={createCharacters}/><span>Create missing characters from the story</span></label>
-       <p class="text-xs leading-relaxed text-muted-foreground">New character profiles are saved with the story when needed. Review their designs in the storyboard before rendering; this does not generate separate portraits or set up voices.</p>
+       <p class="text-xs leading-relaxed text-muted-foreground">{#if preflight?.character_references===false}New character profiles are saved when needed. Add reference images in Library to guide their appearance. Voice setup is separate.{:else}New character profiles are saved when needed. Reference sheets are generated automatically for story characters without images and may incur provider charges. Review them before continuing to scene images. Voice setup is separate.{/if}</p>
        {#if characters.length}
        {#each characters as character(character.id)}<label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:group={selectedCharacters} value={character.id}/>{character.name}</label>{/each}
        <p class="text-xs text-muted-foreground">Select existing characters to reuse them. Their saved identities stay unchanged.</p>
@@ -313,7 +325,7 @@
         {:else if !preflight}
           <p class="mt-2 text-muted-foreground">Checking configured models and supported video settings…</p>
         {:else}
-          <p class="mt-2 text-muted-foreground">This request creates a story, shots and storyboard images. Review and approve references before rendering each scene clip. Assemble approved clips in Videos.</p>
+          <p class="mt-2 text-muted-foreground">{#if preflight?.character_references===false}This request creates a story, shots and storyboard images. Review references before rendering each scene clip.{:else}This request creates a story, shots and any missing character reference sheets. Review character designs, then continue to storyboard images. Review and approve scene references before rendering each clip.{/if}</p>
           <details class="mt-3">
             <summary class="cursor-pointer font-medium">Models &amp; clip limits</summary>
             <p class="mt-2 break-words text-muted-foreground">Images: {preflight.effective_routes.image_provider} / {preflight.effective_routes.image_model}. Video: {preflight.effective_routes.video_provider} / {preflight.effective_routes.video_model}.</p>

@@ -38,6 +38,7 @@ type Server struct {
 	tasks           sync.WaitGroup
 	activeRequests  sync.Map
 	recoveryMu      sync.Mutex
+	referenceLocks  sync.Map
 	paidRequests    chan struct{}
 	operationSlots  chan struct{}
 }
@@ -270,6 +271,7 @@ func (s *Server) setupRoutes() {
 	// Videos (Guided Pipeline)
 	s.router.Get("/videos/preflight", s.handleVideoPreflight)
 	s.router.Post("/videos/generate", s.handleGenerateVideo)
+	s.router.Post("/videos/generate/{id}/continue", s.handleContinueStory)
 
 	// Ops
 	s.router.Get("/ops/{id}", s.handleGetOp)

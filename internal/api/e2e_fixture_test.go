@@ -54,7 +54,7 @@ func TestE2EBrowserFixture(t *testing.T) {
 		case r.URL.Path == "/audio/transcriptions":
 			w.Write([]byte(`{"text":"Mimi plays.","segments":[{"start":0,"end":0.8,"text":"Mimi plays."}]}`))
 		case r.URL.Path == "/images/models":
-			w.Write([]byte(`{"data":[{"id":"openai/gpt-image-2","supported_parameters":{"aspect_ratio":{"type":"enum","values":["16:9"]},"input_references":{"type":"array","min":0,"max":8}}}]}`))
+			w.Write([]byte(`{"data":[{"id":"openai/gpt-image-2","supported_parameters":{"aspect_ratio":{"type":"enum","values":["16:9","1:1"]},"input_references":{"type":"array","min":0,"max":8}}}]}`))
 		case r.URL.Path == "/images":
 			var body map[string]any
 			json.NewDecoder(r.Body).Decode(&body)
@@ -142,7 +142,7 @@ elif 'scriptwriter' in prompt:
 elif 'cinematographer' in prompt:
  result={'shots':[{'shot_order':1,'duration':1,'prompt':'Pip finds mother' if 'small golden puppy' in prompt else 'Mimi plays','camera':'wide','movement':'still'}]}
 else:
- result={'prompt':'A small golden puppy finds his cream-colored mother' if 'small golden puppy' in prompt else 'Mimi the cat, cinematic framing'}
+ result={'prompt':'A small golden puppy finds his cream-colored mother' if 'small golden puppy' in prompt else ('A cream-colored mother dog' if 'large cream dog' in prompt else 'Mimi the cat, cinematic framing')}
 print(json.dumps({'type':'thread.started','thread_id':'native-browser-fixture'}))
 print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':json.dumps(result)}}))
 print(json.dumps({'type':'turn.completed'}))

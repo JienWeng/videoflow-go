@@ -24,13 +24,20 @@ try{for(const width of [1440,390]){
   await page.getByText('Your keyframes are ready for review.',{exact:true}).waitFor({timeout:45000});assert.equal((await read('/characters')).length,0);assert.equal(submissions[0].create_characters,false);assert.equal((await read('/e2e/counters')).videos,before.videos);
  });
  await check('Needed profiles, cast and dialogue persist despite stale session references',async()=>{
-  await page.getByRole('checkbox',{name:'Create missing characters from the story',exact:true}).check();await page.getByRole('button',{name:'Create video',exact:true}).click();await page.getByRole('link',{name:'Review characters',exact:true}).waitFor({timeout:45000});
+  await page.getByRole('button',{name:'Create another story',exact:true}).click();await page.getByRole('checkbox',{name:'Create missing characters from the story',exact:true}).check();await page.getByRole('button',{name:'Create video',exact:true}).click();await page.getByRole('link',{name:'Review characters',exact:true}).waitFor({timeout:45000});
   const characters=await read('/characters');assert.deepEqual(characters.map(c=>c.name).sort(),['Mother dog','Pip']);assert.equal(submissions[1].create_characters,true);assert.deepEqual(submissions[1].character_ids,[]);
   const scenes=await read('/scenes');const scene=scenes.find(s=>s.scene_json?.spoken_lines?.length);assert(scene);assert.equal(scene.character_ids_json.length,2);assert(characters.some(c=>c.id===scene.scene_json.spoken_lines[0].character_id));assert(scene.scene_json.generation_brief.character_notes.includes('small golden puppy'));
   assert((await read('/director/sessions/'+session.id+'/selection')).character_ids.includes(stale.id),'Saved session selection was silently rewritten');
  });
- await check('Profile review and rendering remain gated, with no automatic videos',async()=>{
-  assert(await page.getByRole('button',{name:'Render scene 1',exact:true}).isDisabled());const counters=await read('/e2e/counters');assert.equal(counters.videos,before.videos);assert.equal(counters.images,before.images+2);assert.equal(await page.getByRole('link',{name:'Review characters',exact:true}).getAttribute('href'),'/characters');assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);await page.screenshot({path:out+'/review-'+width+'.png',fullPage:true});
+ await check('Character sheets generate automatically and block storyboarding until approved',async()=>{
+  await page.getByRole('heading',{name:'Your character references are ready',exact:true}).waitFor();assert(await page.getByRole('button',{name:'Continue storyboarding',exact:true}).isDisabled());
+  const characters=await read('/characters');const assets=await read('/assets');assert.equal((await read('/e2e/counters')).images,before.images+3);
+  for(const character of characters){assert.equal(character.reference_asset_ids_json.length,1);const asset=assets.find(a=>a.id===character.reference_asset_ids_json[0]);assert.equal(asset.character_id,character.id);assert.equal(asset.type,'character_reference');assert.equal(asset.metadata_json.consistency_review,'pending');const response=await page.request.post(api+'/assets/'+asset.id+'/review',{data:{approved:true,expected_updated_at:asset.updated_at}});assert(response.ok(),await response.text())}
+  await page.getByRole('button',{name:'Refresh character approvals',exact:true}).click();await page.waitForFunction(()=>Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Continue storyboarding'&&!b.disabled));await page.getByRole('button',{name:'Continue storyboarding',exact:true}).click();await page.getByText('Your keyframes are ready for review.',{exact:true}).waitFor({timeout:45000});
+  assert.equal((await read('/e2e/counters')).images,before.images+4);assert.equal((await read('/characters')).length,2);
+ });
+ await check('Scene review and rendering remain gated with no automatic videos',async()=>{
+  assert(await page.getByRole('button',{name:'Render scene 1',exact:true}).isDisabled());const counters=await read('/e2e/counters');assert.equal(counters.videos,before.videos);assert.equal(counters.images,before.images+4);assert.equal(await page.getByRole('link',{name:'Review characters',exact:true}).getAttribute('href'),'/library?tab=characters');assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);await page.screenshot({path:out+'/review-'+width+'.png',fullPage:true});
  });
  await context.close();
 }}catch(e){report.failure=e.stack;process.exitCode=1;console.error(e)}finally{await browser.close();await writeFile(out+'/report.json',JSON.stringify(report,null,2));}if(report.errors.length)process.exitCode=1;
