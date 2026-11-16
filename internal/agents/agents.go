@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 
 	"videoflow-go/internal/providers"
@@ -233,25 +234,75 @@ type ShotsListDraft struct {
 	Shots []ShotDraft `json:"shots"`
 }
 
-func (a *AgentEngine) GenerateShots(ctx context.Context, title, summary string, duration int) ([]ShotDraft, error) {
-	system := "You are a cinematographer. Break down the scene into 2 to 4 detailed camera shots (angles, movements, and visual prompts for video generation AI)."
-	prompt := fmt.Sprintf("Scene Title: %s\nSummary: %s\nTotal Duration: %d seconds", title, summary, duration)
+// shotProposal accepts numeric AI timings without changing the integer timing
+// contract used by saved shots, the editor and video providers.
+type shotProposal struct {
+	Order    int     `json:"shot_order"`
+	Duration float64 `json:"duration"`
+	Prompt   string  `json:"prompt"`
+	Camera   string  `json:"camera"`
+	Movement string  `json:"movement"`
+}
 
-	var res ShotsListDraft
-	err := a.structured(ctx, "shot_agent", system, prompt, &res)
-	if err != nil {
+func (a *AgentEngine) GenerateShots(ctx context.Context, title, summary string, duration int) ([]ShotDraft, error) {
+	if duration <= 0 {
+		return nil, fmt.Errorf("scene duration must be positive")
+	}
+	system := fmt.Sprintf("You are a cinematographer. Break down the scene into %d to %d detailed camera shots (angles, movements, and visual prompts for video generation AI). Use positive whole-second shot durations totaling exactly %d seconds.", min(2, duration), min(4, duration), duration)
+	prompt := fmt.Sprintf("Scene Title: %s\nSummary: %s\nTotal Duration: %d seconds", title, summary, duration)
+	var res struct {
+		Shots []shotProposal `json:"shots"`
+	}
+	if err := a.structured(ctx, "shot_agent", system, prompt, &res); err != nil {
 		return nil, err
 	}
-
 	if len(res.Shots) == 0 {
 		return nil, fmt.Errorf("Text engine returned no shots")
 	}
-	for _, shot := range res.Shots {
-		if shot.Order <= 0 || shot.Duration <= 0 || shot.Prompt == "" {
-			return nil, fmt.Errorf("Text engine returned an incomplete shot")
-		}
+	if len(res.Shots) > duration {
+		return nil, fmt.Errorf("Text engine returned more shots than fit in the scene's whole-second duration")
 	}
-	return res.Shots, nil
+	total := 0.0
+	for _, shot := range res.Shots {
+		if shot.Order <= 0 || shot.Duration <= 0 || math.IsNaN(shot.Duration) || math.IsInf(shot.Duration, 0) || strings.TrimSpace(shot.Prompt) == "" {
+			return nil, fmt.Errorf("Text engine returned an incomplete shot or invalid duration")
+		}
+		total += shot.Duration
+	}
+	if math.IsInf(total, 0) {
+		return nil, fmt.Errorf("Text engine returned invalid shot durations")
+	}
+	shots := make([]ShotDraft, len(res.Shots))
+	ideal := make([]float64, len(shots))
+	used := 0
+	for i, shot := range res.Shots {
+		ideal[i] = (shot.Duration / total) * float64(duration)
+		// Reserve a second for every remaining shot before accumulating, so
+		// minimum durations cannot push the total past the scene or overflow.
+		seconds := duration
+		if ideal[i] < float64(duration) {
+			seconds = max(1, int(math.Floor(ideal[i])))
+		}
+		seconds = min(seconds, duration-used-(len(res.Shots)-i-1))
+		shots[i] = ShotDraft{Order: shot.Order, Duration: seconds, Prompt: shot.Prompt, Camera: shot.Camera, Movement: shot.Movement}
+		used += seconds
+	}
+	// Largest-deficit rounding keeps the exact scene total, gives each shot at
+	// least one second, and resolves equal remainders in original shot order.
+	for used < duration {
+		best := 0
+		gap := math.Inf(-1)
+		for i, shot := range shots {
+			candidate := ideal[i] - float64(shot.Duration)
+			if candidate > gap {
+				best = i
+				gap = candidate
+			}
+		}
+		shots[best].Duration++
+		used++
+	}
+	return shots, nil
 }
 
 // --- Classify Chat Intent ---

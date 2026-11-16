@@ -180,7 +180,7 @@ func TestStoryCharacterPlanningMustBeExplicitAndRejectUnknownBindings(t *testing
 	}
 }
 
-func runGuidedStoryCharacterPipeline(t *testing.T, imageFailure bool) {
+func runGuidedStoryCharacterPipeline(t *testing.T, imageFailure bool, fractional ...bool) {
 	var images, videos atomic.Int32
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -219,6 +219,12 @@ print(json.dumps({'type':'thread.started','thread_id':'dog-native'}))
 print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':json.dumps(result)}}))
 print(json.dumps({'type':'turn.completed'}))
 `
+	if len(fractional) > 0 && fractional[0] {
+		program = strings.Replace(program, "'duration':1,'prompt':'Pip and mother'", "'duration':1.2,'prompt':'Pip and mother'", 1)
+		if !strings.Contains(program, "'duration':1.2") {
+			t.Fatal("fractional fixture was not installed")
+		}
+	}
 	os.WriteFile(fake, []byte(program), 0700)
 	s.directorRunner.Codex = fake
 	w := call(t, s, "POST", "/videos/generate", `{"idea":"A puppy finds his mother","scene_count":1,"target_duration":1,"aspect_ratio":"16:9","create_characters":true,"character_ids":[]}`)
@@ -256,6 +262,26 @@ print(json.dumps({'type':'turn.completed'}))
 			if len(chars) != 2 || images.Load() != 1 || videos.Load() != 0 || !strings.Contains(string(op.ResultJSON), "awaiting_reference_review") {
 				t.Fatal("cast/approval gate lost", len(chars), images.Load(), videos.Load(), string(op.ResultJSON))
 			}
+			scenes, err := s.database.ListScenes(project)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, scene := range scenes {
+				shots, err := s.database.ListShots(scene.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				total := 0
+				for _, shot := range shots {
+					if shot.Duration <= 0 {
+						t.Fatal("nonpositive persisted shot")
+					}
+					total += shot.Duration
+				}
+				if total != scene.Duration {
+					t.Fatalf("shot timing %d does not match scene %d", total, scene.Duration)
+				}
+			}
 			selection, _ := s.database.GetDirectorSelection(session.ID)
 			if !strings.Contains(string(selection), "char_deleted") {
 				t.Fatal("guided creation rewrote saved session references")
@@ -288,4 +314,8 @@ func TestGuidedStoryIgnoresStaleSessionCastAndCreatesNeededCharacters(t *testing
 }
 func TestGuidedStoryLateImageFailureRetainsCreatedProfilesAndScenes(t *testing.T) {
 	runGuidedStoryCharacterPipeline(t, true)
+}
+
+func TestGuidedStoryAcceptsFractionalShotTimingWithoutRendering(t *testing.T) {
+	runGuidedStoryCharacterPipeline(t, false, true)
 }
