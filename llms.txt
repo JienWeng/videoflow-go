@@ -12,7 +12,7 @@ Latest Electron preview: https://github.com/JienWeng/videoflow-go/releases/tag/v
 
 The older v0.3.2 browser-launcher ZIP remains available at https://github.com/JienWeng/videoflow-go/releases/tag/v0.3.2-browser-preview.1 but does not contain the new local director architecture or redesigned workspace.
 
-Current source uses your fal.ai key/credits for default image/video routes and a selected local Claude Code/Codex session for all text planning/writing and OpenRouter key/credits for vision and transcription, with optional direct BytePlus video. See docs/PROVIDERS.md. The older v0.3.2 download uses OpenRouter only. AI generation and transcription need internet and can incur charges. Local installation and ordinary navigation do not require a paid generation.
+Current source uses signed-in local Codex built-in image generation first when available. Image APIs are the fallback for unavailable/unsupported native generation; native errors pause for review rather than automatically creating a second image. Claude Code sessions use the configured image API. Video generation uses your fal.ai key/credits by default, with optional direct BytePlus video. A selected local Claude Code/Codex session handles text planning/writing; OpenRouter handles vision and transcription. See docs/PROVIDERS.md. The older v0.3.2 download uses OpenRouter only. AI generation and transcription need internet and can incur charges. Local installation and ordinary navigation do not require a paid generation.
 
 ## Install the browser version from source
 

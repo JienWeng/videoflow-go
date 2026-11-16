@@ -7,7 +7,7 @@ This guide describes the provider architecture on current source. The v0.3.2 bro
 | Story, chat, shot/prompt writing | Selected local Claude Code/Codex session | Select a different native session |
 | Vision/QA | OpenRouter | Named OpenRouter connections |
 | Transcription | OpenRouter | — |
-| Characters, props, storyboards | fal.ai | OpenRouter |
+| Characters, props, locations, storyboards | Codex built-in image generation when a capable local Codex session is selected | Configured fal.ai/OpenRouter image route for unavailable or unsupported native input |
 | Scene/shot video | fal.ai | OpenRouter or BytePlus ModelArk international |
 
 ## Set up and switch
@@ -17,6 +17,14 @@ Open Settings → Providers. Set up a local text engine in [Local sessions](LOCA
 In Settings → Engines, select Image provider and Video provider independently, then choose a model from that provider's supported catalog. Switching providers restores its previous model choices. Image/reference model IDs cannot be sent to a video-only provider, and a model ID from one provider is rejected under another. All text planning/writing uses the selected native session; legacy cloud-text route records do not override it.
 
 Media **Check configuration** verifies the locally saved configuration, not the account's permissions or a paid generation. Media **Verify** checks the supported model profile without submitting generation. OpenRouter's text-model verification is a small billable completion. A later small, budgeted generation is needed to verify real account/model access and output quality.
+
+## Codex-first images
+
+A capable selected Codex session uses the CLI's built-in image_gen tool first. Character sheets, props, locations and storyboards share this route. It uses the signed-in native account, not an image API key passed by VideoFlow. The planning turn keeps image generation disabled; a separate restricted image turn receives the current reference images and returns a file for validation/import. Generated assets still require reference approval.
+
+The image API is a fallback only when the backend detects missing native capability or unsupported input before starting the image turn, such as more than five reference images. Once a native turn starts, errors and assistant-reported unsupported results pause for review and never automatically trigger another paid image request. Claude Code sessions use the configured image API. Video still uses the selected video provider.
+
+Create story shows this route and fallback policy. Saved asset metadata identifies the provider actually used. CLI capability detection is not proof of account-level image access: a real native generation is needed to verify that. A session marked review_required must be reviewed by the user before any new native work.
 
 ## Initial supported profiles
 
@@ -36,7 +44,7 @@ The official endpoints are `https://queue.fal.run`, `https://ark.ap-southeast.by
 
 Fresh unselected media routes default to fal. Existing explicit OpenRouter routes remain OpenRouter. Legacy saved image/video model overrides are given an explicit OpenRouter route during migration. Existing jobs retain their original provider, model, endpoint and upstream ID.
 
-Guided creation captures its media routes before beginning paid stages. Later Settings changes affect new requests, not that pipeline or a submitted video job. Provider request IDs are stored before polling. Re-render is an explicit new paid request on the original route. Unknown submission results stay fenced for reconciliation; the app never automatically submits to another provider as a fallback.
+Guided creation captures its media routes before beginning paid stages. Later Settings changes affect new requests, not that pipeline or a submitted video job. Provider request IDs are stored before polling. Re-render is an explicit new paid request on the original route. Unknown video submission results stay fenced for reconciliation; video jobs never automatically submit to another provider as a fallback.
 
 My videos shows the saved job/provider and can resume a verified existing provider ID. This resumes polling only. fal's queue status `COMPLETED` is followed by result retrieval; the result can still report failure. BytePlus task states map to the app's pending/running/completed/failed states. Saved outputs continue through the existing editor, caption burn, assembly and download paths.
 

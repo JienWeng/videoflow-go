@@ -328,9 +328,10 @@
           <p class="mt-2 text-muted-foreground">Checking configured models and supported video settings…</p>
         {:else}
           <p class="mt-2 text-muted-foreground">{#if preflight?.character_references===false}This request creates a story, shots and storyboard images. Review references before rendering each scene clip.{:else}This request creates a story, shots and any missing character, prop and location reference images. Review story references, then continue to storyboard images. Review and approve scene references before rendering each clip.{/if}</p>
+          {#if preflight.native_images}<p class="mt-2 text-muted-foreground">Images use Codex first. The configured image API is used only when native generation is unavailable or the request is unsupported. Native errors pause for review.</p>{/if}
           <details class="mt-3">
             <summary class="cursor-pointer font-medium">Models &amp; clip limits</summary>
-            <p class="mt-2 break-words text-muted-foreground">Images: {preflight.effective_routes.image_provider} / {preflight.effective_routes.image_model}. Video: {preflight.effective_routes.video_provider} / {preflight.effective_routes.video_model}.</p>
+            <p class="mt-2 break-words text-muted-foreground">Images: {#if preflight.native_images}Codex built-in · API fallback: {/if}{preflight.effective_routes.image_provider} / {preflight.effective_routes.image_model}. Video: {preflight.effective_routes.video_provider} / {preflight.effective_routes.video_model}.</p>
             <p class="mt-1 text-muted-foreground">{#if preflight.video_durations?.length}Supported clip durations: {preflight.video_durations.join(', ')} seconds.{:else}Clip durations are unavailable until the video provider is configured.{/if}</p>
           </details>
           {#each preflight.warnings ?? [] as warning}

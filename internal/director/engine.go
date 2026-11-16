@@ -14,7 +14,11 @@ import (
 	"time"
 )
 
-type Request struct{ Engine, Workspace, NativeID, Prompt string }
+type Request struct {
+	Engine, Workspace, NativeID, Prompt string
+	ImageGeneration                     bool
+	Images                              []string
+}
 type Runner struct{ Codex, Claude string }
 
 func SafeEnvironment(environment []string) []string {
@@ -30,7 +34,7 @@ func SafeEnvironment(environment []string) []string {
 	return result
 }
 func CodexArgs(native string) []string {
-	args := []string{"--sandbox", "read-only", "--ask-for-approval", "never", "-c", "features.shell_tool=false", "-c", `web_search="disabled"`, "-c", "features.apps=false", "-c", "features.skill_mcp_dependency_install=false", "exec"}
+	args := []string{"--sandbox", "read-only", "--ask-for-approval", "never", "-c", "features.shell_tool=false", "-c", "features.image_generation=false", "-c", `web_search="disabled"`, "-c", "features.apps=false", "-c", "features.skill_mcp_dependency_install=false", "exec"}
 	if native != "" {
 		args = append(args, "resume", native)
 	}
@@ -58,6 +62,12 @@ func (r *Runner) Run(ctx context.Context, request Request, saveNative func(strin
 		return nil, err
 	}
 	args := CodexArgs(request.NativeID)
+	if request.ImageGeneration {
+		if request.Engine != "codex" || request.NativeID != "" {
+			return nil, fmt.Errorf("image generation requires an isolated Codex turn")
+		}
+		args = CodexImageArgs(request.Images)
+	}
 	if request.Engine == "claude" {
 		args = []string{"--restricted", "-p", "--output-format", "stream-json", "--verbose", "--tools", "", "--disallowedTools", "mcp__*", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--setting-sources", ""}
 		if request.NativeID != "" {
@@ -67,6 +77,16 @@ func (r *Runner) Run(ctx context.Context, request Request, saveNative func(strin
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Dir = request.Workspace
 	cmd.Env = SafeEnvironment(os.Environ())
+	if request.ImageGeneration {
+		filtered := []string{}
+		for _, entry := range cmd.Env {
+			key, _, _ := strings.Cut(entry, "=")
+			if key != "OPENAI_API_KEY" && key != "ANTHROPIC_API_KEY" {
+				filtered = append(filtered, entry)
+			}
+		}
+		cmd.Env = filtered
+	}
 	cmd.Stdin = strings.NewReader(request.Prompt)
 	cmd.WaitDelay = 2 * time.Second
 	stdout, err := cmd.StdoutPipe()

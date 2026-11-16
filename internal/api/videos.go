@@ -51,6 +51,7 @@ func (s *Server) handleVideoPreflight(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ready":            len(missing) == 0,
 		"automatic_assets": s.cfg.UseLocalText, "character_references": s.cfg.UseLocalText,
+		"native_images":   s.preferCodexImages(r.Context()),
 		"effective_style": effective, "has_project_style": hasStyle, "video_durations": durations, "supports_references": supportsReferences,
 		"missing": missing,
 		"effective_routes": map[string]string{
@@ -81,7 +82,7 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 400)
 		return
 	}
-	routes, err := s.captureMediaRoutes()
+	routes, err := s.captureMediaRoutes(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return
@@ -107,7 +108,11 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer s.tasks.Done()
 		defer func() { <-s.operationSlots }()
-		ctx, cancel := context.WithTimeout(s.ctx, 10*time.Minute)
+		timeout := 10 * time.Minute
+		if s.cfg.UseLocalText {
+			timeout = 45 * time.Minute
+		}
+		ctx, cancel := context.WithTimeout(s.ctx, timeout)
 		defer cancel()
 		if binding := r.Context().Value(directorBindingKey{}); binding != nil {
 			ctx = context.WithValue(ctx, directorBindingKey{}, binding)

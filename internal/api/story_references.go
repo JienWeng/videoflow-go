@@ -335,7 +335,11 @@ func (s *Server) handleContinueStory(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer s.tasks.Done()
 		defer func() { <-s.operationSlots }()
-		workCtx, cancel := context.WithTimeout(s.ctx, 10*time.Minute)
+		timeout := 10 * time.Minute
+		if s.cfg.UseLocalText {
+			timeout = 45 * time.Minute
+		}
+		workCtx, cancel := context.WithTimeout(s.ctx, timeout)
 		defer cancel()
 		workCtx = context.WithValue(workCtx, directorBindingKey{}, binding)
 		workCtx = state.Brief.context(guidedStoryContext(workCtx, project, state.Cast))

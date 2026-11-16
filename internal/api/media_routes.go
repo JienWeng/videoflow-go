@@ -13,7 +13,7 @@ type mediaRoute struct {
 }
 type mediaRoutesKey struct{}
 
-func (s *Server) captureMediaRoutes() (map[string]mediaRoute, error) {
+func (s *Server) captureMediaRoutes(ctx context.Context) (map[string]mediaRoute, error) {
 	routes := map[string]mediaRoute{}
 	selections, err := s.routes().MediaSelections()
 	if err != nil {
@@ -23,7 +23,7 @@ func (s *Server) captureMediaRoutes() (map[string]mediaRoute, error) {
 		choice := selections[kind]
 		provider, model := choice.Provider, choice.Model
 		_, endpoint, err := s.routes().Media(provider, model, "")
-		if err != nil {
+		if err != nil && !(kind != "video" && s.preferCodexImages(ctx)) {
 			return nil, err
 		}
 		routes[kind] = mediaRoute{provider, model, endpoint}

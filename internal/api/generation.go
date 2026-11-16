@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"videoflow-go/internal/media"
 	"videoflow-go/internal/models"
+	"videoflow-go/internal/providers"
 )
 
 // operation preserves the existing synchronous/background API contract and records failures.
@@ -44,7 +45,11 @@ func (s *Server) operation(w http.ResponseWriter, r *http.Request, op *models.Op
 	go func() {
 		defer s.tasks.Done()
 		defer func() { <-s.operationSlots }()
-		ctx, cancel := context.WithTimeout(s.ctx, 10*time.Minute)
+		timeout := 10 * time.Minute
+		if s.cfg.UseLocalText {
+			timeout = 45 * time.Minute
+		}
+		ctx, cancel := context.WithTimeout(s.ctx, timeout)
 		if binding := r.Context().Value(directorBindingKey{}); binding != nil {
 			ctx = context.WithValue(ctx, directorBindingKey{}, binding)
 		}
@@ -115,40 +120,57 @@ func (s *Server) generateAssets(ctx context.Context, projectID *string, characte
 	if characterID != nil || kind == "prop" {
 		modelKind = "reference"
 	}
-	client, provider, model, err := s.selectedMedia(ctx, modelKind)
-	if err != nil {
-		return nil, err
-	}
-	payload := map[string]any{"model": model, "prompt": prompt}
-	if aspect != "" {
-		payload["aspect_ratio"] = aspect
-	}
-	if len(references) > 0 {
-		refs := []map[string]any{}
-		for _, image := range references {
-			refs = append(refs, map[string]any{"type": "image_url", "image_url": map[string]string{"url": image}})
-		}
-		payload["input_references"] = refs
-	}
-	if err = client.ValidateImage(ctx, payload); err != nil {
-		return nil, err
-	}
 	if !strings.Contains(prompt, "Visual style:") {
 		prompt += "\nVisual style: " + s.stylePrompt(projectID)
 	}
-	var prepared struct {
-		Prompt string `json:"prompt"`
+	var images []providers.GeneratedImage
+	provider, model := "codex", "native-image-generation"
+	fallbackReason := ""
+	fallback := true
+	if s.cfg.UseLocalText {
+		images, fallback, fallbackReason, err = s.codexImage(ctx, prompt, aspect, references)
+		if err != nil {
+			return nil, err
+		}
 	}
-	if err = s.agentJSON(ctx, "prompt_agent", "Write a precise image-generation prompt from the brief. Preserve the characters, reference consistency, composition and visual style. Return prompt only as JSON.", prompt, nil, &prepared); err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(prepared.Prompt) == "" {
-		return nil, fmt.Errorf("Text provider returned no image prompt")
-	}
-	payload["prompt"] = prepared.Prompt + identityNotes
-	images, err := client.GenerateImages(ctx, payload)
-	if err != nil {
-		return nil, err
+	if fallback {
+		client, apiProvider, apiModel, routeErr := s.selectedMedia(ctx, modelKind)
+		if routeErr != nil {
+			return nil, routeErr
+		}
+		provider, model = apiProvider, apiModel
+		if err != nil {
+			return nil, err
+		}
+		payload := map[string]any{"model": model, "prompt": prompt}
+		if aspect != "" {
+			payload["aspect_ratio"] = aspect
+		}
+		if len(references) > 0 {
+			refs := []map[string]any{}
+			for _, image := range references {
+				refs = append(refs, map[string]any{"type": "image_url", "image_url": map[string]string{"url": image}})
+			}
+			payload["input_references"] = refs
+		}
+		if err = client.ValidateImage(ctx, payload); err != nil {
+			return nil, err
+		}
+		var prepared struct {
+			Prompt string `json:"prompt"`
+		}
+		if err = s.agentJSON(ctx, "prompt_agent", "Write a precise image-generation prompt from the brief. Preserve the characters, reference consistency, composition and visual style. Return prompt only as JSON.", prompt, nil, &prepared); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(prepared.Prompt) == "" {
+			return nil, fmt.Errorf("Text provider returned no image prompt")
+		}
+		payload["prompt"] = prepared.Prompt + identityNotes
+		images, err = client.GenerateImages(ctx, payload)
+		if err != nil {
+			return nil, err
+		}
+
 	}
 	assets := []models.Asset{}
 	for _, image := range images {
@@ -178,7 +200,7 @@ func (s *Server) generateAssets(ctx context.Context, projectID *string, characte
 		if err = os.WriteFile(path, image.Data, 0644); err != nil {
 			return nil, err
 		}
-		metadata, _ := json.Marshal(map[string]any{"scene_id": sceneID, "provider": provider, "model": payload["model"], "media_type": image.MediaType})
+		metadata, _ := json.Marshal(map[string]any{"scene_id": sceneID, "provider": provider, "model": model, "media_type": image.MediaType, "fallback_reason": fallbackReason})
 		if frozenIdentity != nil {
 			var fields map[string]any
 			_ = json.Unmarshal(metadata, &fields)

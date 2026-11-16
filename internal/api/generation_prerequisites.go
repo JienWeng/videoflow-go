@@ -42,7 +42,8 @@ func (s *Server) generationPrerequisites(ctx context.Context, brief generationBr
 			needsSheets = needsSheets || len(refs) == 0
 		}
 	}
-	if needsSheets {
+	nativeImages := s.preferCodexImages(ctx)
+	if needsSheets && !nativeImages {
 		client, _, model, e := s.selectedMedia(ctx, "reference")
 		if e != nil {
 			add("reference", e.Error())
@@ -50,31 +51,33 @@ func (s *Server) generationPrerequisites(ctx context.Context, brief generationBr
 			add("reference", e.Error())
 		}
 	}
-	client, _, imageModel, err := s.selectedMedia(ctx, "image")
-	if err != nil {
-		add("image", err.Error())
-		return missing
-	}
-	image, err := client.Model(ctx, imageModel, "image")
-	if err != nil {
-		add("image", err.Error())
-	} else if len(brief.ReferenceAssetIDs) > 0 || needsSheets {
-		var caps map[string]json.RawMessage
-		json.Unmarshal(image.SupportedParameters, &caps)
-		if caps["input_references"] == nil {
-			add("image", "Selected image model does not support character references; choose a reference-capable image model before generating")
+	if !nativeImages {
+		client, _, imageModel, err := s.selectedMedia(ctx, "image")
+		if err != nil {
+			add("image", err.Error())
+			return missing
 		}
-	}
-	imagePayload := map[string]any{"model": imageModel, "prompt": "preflight", "aspect_ratio": brief.AspectRatio}
-	if len(brief.ReferenceAssetIDs) > 0 || needsSheets {
-		refs := []map[string]any{}
-		for range max(1, len(brief.ReferenceAssetIDs)) {
-			refs = append(refs, map[string]any{"type": "image_url", "image_url": map[string]string{"url": "data:image/png;base64,iVBORw0KGgo="}})
+		image, err := client.Model(ctx, imageModel, "image")
+		if err != nil {
+			add("image", err.Error())
+		} else if len(brief.ReferenceAssetIDs) > 0 || needsSheets {
+			var caps map[string]json.RawMessage
+			json.Unmarshal(image.SupportedParameters, &caps)
+			if caps["input_references"] == nil {
+				add("image", "Selected image model does not support character references; choose a reference-capable image model before generating")
+			}
 		}
-		imagePayload["input_references"] = refs
-	}
-	if err := client.ValidateImage(ctx, imagePayload); err != nil {
-		add("image", err.Error())
+		imagePayload := map[string]any{"model": imageModel, "prompt": "preflight", "aspect_ratio": brief.AspectRatio}
+		if len(brief.ReferenceAssetIDs) > 0 || needsSheets {
+			refs := []map[string]any{}
+			for range max(1, len(brief.ReferenceAssetIDs)) {
+				refs = append(refs, map[string]any{"type": "image_url", "image_url": map[string]string{"url": "data:image/png;base64,iVBORw0KGgo="}})
+			}
+			imagePayload["input_references"] = refs
+		}
+		if err := client.ValidateImage(ctx, imagePayload); err != nil {
+			add("image", err.Error())
+		}
 	}
 	videoClient, _, videoModel, err := s.selectedMedia(ctx, "video")
 	if err != nil {
