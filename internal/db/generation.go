@@ -8,17 +8,45 @@ import (
 )
 
 func (d *DB) SaveScriptScenes(script *models.Script, scenes []models.Scene) error {
+	return d.SaveStorySnapshot(script, scenes, nil)
+}
+
+// SaveStorySnapshot commits the planned cast and story as one unit.
+func (d *DB) SaveStorySnapshot(script *models.Script, scenes []models.Scene, characters []models.Character) error {
 	tx, err := d.conn.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	for i := range characters {
+		if script.ProjectID == nil || characters[i].ProjectID == nil || *characters[i].ProjectID != *script.ProjectID {
+			return fmt.Errorf("story character project mismatch")
+		}
+		if err = insertCharacter(tx, &characters[i]); err != nil {
+			return err
+		}
+	}
 	if err = insertScript(tx, script); err != nil {
 		return err
 	}
 	for i := range scenes {
 		scenes[i].ScriptID = &script.ID
 		scenes[i].ProjectID = script.ProjectID
+		var cast []string
+		if len(scenes[i].CharacterIDsJSON) > 0 {
+			if err = json.Unmarshal(scenes[i].CharacterIDsJSON, &cast); err != nil {
+				return err
+			}
+		}
+		for _, id := range cast {
+			var owner string
+			if err = tx.QueryRow(`SELECT project_id FROM characters WHERE id=?`, id).Scan(&owner); err != nil {
+				return err
+			}
+			if script.ProjectID == nil || owner != *script.ProjectID {
+				return fmt.Errorf("story cast belongs to another project")
+			}
+		}
 		if err = insertScene(tx, &scenes[i]); err != nil {
 			return err
 		}

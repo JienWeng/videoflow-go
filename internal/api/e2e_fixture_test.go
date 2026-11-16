@@ -131,11 +131,18 @@ if 'Plan an editable VideoFlow version-1 composition manifest only' in prompt:
 elif 'VideoFlow Studio assistant' in prompt:
  result={'action':'generate_script','reply':'Review this two-scene story proposal, then run it.','scene_count':2}
 elif 'scriptwriter' in prompt:
- result={'title':'Mimi','summary':'Cat story','scenes':[{'title':'One','summary':'Mimi arrives','duration':1,'aspect_ratio':'16:9'},{'title':'Two','summary':'Mimi plays','duration':1,'aspect_ratio':'16:9'}]}
+ if 'lost puppy' in prompt:
+  result={'title':'Home','summary':'Pip finds his mother','characters':[],'scenes':[{'title':'Reunion','summary':'A lost puppy returns home','duration':1,'aspect_ratio':'16:9','character_ids':[],'spoken_lines':[]}]}
+  if 'Create character profiles only' in prompt:
+   result['characters']=[{'key':'pup','name':'Pip','description':'A lost puppy','appearance':'small golden puppy','personality':'curious'},{'key':'mother','name':'Mother dog','description':'Pip\u0027s mother','appearance':'large cream dog','personality':'gentle'}]
+   result['scenes'][0]['character_ids']=['new:pup','new:mother']
+   result['scenes'][0]['spoken_lines']=[{'id':'dog-line','character_id':'new:pup','language':'English','text':'Mama!','visible':True}]
+ else:
+  result={'title':'Mimi','summary':'Cat story','scenes':[{'title':'One','summary':'Mimi arrives','duration':1,'aspect_ratio':'16:9'},{'title':'Two','summary':'Mimi plays','duration':1,'aspect_ratio':'16:9'}]}
 elif 'cinematographer' in prompt:
- result={'shots':[{'shot_order':1,'duration':1,'prompt':'Mimi plays','camera':'wide','movement':'still'}]}
+ result={'shots':[{'shot_order':1,'duration':1,'prompt':'Pip finds mother' if 'small golden puppy' in prompt else 'Mimi plays','camera':'wide','movement':'still'}]}
 else:
- result={'prompt':'Mimi the cat, cinematic framing'}
+ result={'prompt':'A small golden puppy finds his cream-colored mother' if 'small golden puppy' in prompt else 'Mimi the cat, cinematic framing'}
 print(json.dumps({'type':'thread.started','thread_id':'native-browser-fixture'}))
 print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':json.dumps(result)}}))
 print(json.dumps({'type':'turn.completed'}))

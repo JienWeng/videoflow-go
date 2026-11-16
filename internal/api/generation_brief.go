@@ -19,6 +19,7 @@ type generationBrief struct {
 	ConversationMode  string   `json:"conversation_mode"`
 	Instruction       string   `json:"instruction"`
 	CharacterIDs      []string `json:"character_ids"`
+	CreateCharacters  bool     `json:"create_characters"`
 	CharacterNotes    string   `json:"character_notes,omitempty"`
 	ReferenceAssetIDs []string `json:"reference_asset_ids,omitempty"`
 }
@@ -99,22 +100,36 @@ func (b generationBrief) prompt() string {
 	return fmt.Sprintf("%s\nVisual style: %s\nSpoken language: %s\nMode: %s\nDirection: %s\n%s", b.Idea, b.Style, b.Language, b.ConversationMode, b.Instruction, b.CharacterNotes)
 }
 func (b generationBrief) context(ctx context.Context) context.Context {
-	return agents.WithDialogueLanguage(ctx, b.Language)
+	return agents.WithStoryCharacters(agents.WithDialogueLanguage(ctx, b.Language), b.CreateCharacters)
 }
 func (s *Server) persistDraft(project string, b generationBrief, draft *agents.ScriptDraft) (*models.Script, []models.Scene, error) {
-	raw, _ := json.Marshal(draft)
-	script := &models.Script{ProjectID: &project, Idea: b.Idea, Title: draft.Title, Summary: draft.Summary, DraftJSON: raw}
-	cast, _ := json.Marshal(b.CharacterIDs)
-	if string(cast) == "null" {
-		cast = []byte("[]")
+	characters, bindings, err := s.prepareStoryCharacters(project, b, draft)
+	if err != nil {
+		return nil, nil, err
 	}
+	raw, _ := json.Marshal(draft)
+	if len(bindings) > 0 {
+		var document map[string]any
+		json.Unmarshal(raw, &document)
+		document["character_bindings"] = bindings
+		raw, _ = json.Marshal(document)
+	}
+	script := &models.Script{ProjectID: &project, Idea: b.Idea, Title: draft.Title, Summary: draft.Summary, DraftJSON: raw}
 
 	scenes := []models.Scene{}
 	for i, sc := range draft.Scenes {
-		snapshot, _ := json.Marshal(map[string]any{"generation_brief": b, "spoken_lines": sc.SpokenLines})
+		sceneBrief, err := s.storySceneBrief(project, b, sc.CharacterIDs, characters)
+		if err != nil {
+			return nil, nil, err
+		}
+		cast, _ := json.Marshal(sc.CharacterIDs)
+		if string(cast) == "null" {
+			cast = []byte("[]")
+		}
+		snapshot, _ := json.Marshal(map[string]any{"generation_brief": sceneBrief, "spoken_lines": sc.SpokenLines})
 		scenes = append(scenes, models.Scene{ProjectID: &project, SceneOrder: i + 1, Title: sc.Title, Summary: sc.Summary, Duration: sc.Duration, AspectRatio: sc.AspectRatio, CharacterIDsJSON: cast, SceneJSON: snapshot})
 	}
-	if err := s.database.SaveScriptScenes(script, scenes); err != nil {
+	if err := s.database.SaveStorySnapshot(script, scenes, characters); err != nil {
 		return nil, nil, err
 	}
 	return script, scenes, nil

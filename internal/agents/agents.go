@@ -28,6 +28,11 @@ func NewAgentEngine(openrouter *providers.OpenRouterClient, defaultModel string)
 }
 
 type dialogueLanguageKey struct{}
+type storyCharactersKey struct{}
+
+func WithStoryCharacters(ctx context.Context, enabled bool) context.Context {
+	return context.WithValue(ctx, storyCharactersKey{}, enabled)
+}
 
 func WithDialogueLanguage(ctx context.Context, language string) context.Context {
 	return context.WithValue(ctx, dialogueLanguageKey{}, language)
@@ -147,17 +152,27 @@ type SpokenLine struct {
 	Visible     bool   `json:"visible"`
 }
 type SceneDraft struct {
-	SpokenLines []SpokenLine `json:"spoken_lines"`
-	Title       string       `json:"title"`
-	Summary     string       `json:"summary"`
-	Duration    int          `json:"duration"`
-	AspectRatio string       `json:"aspect_ratio"`
+	CharacterIDs []string     `json:"character_ids"`
+	SpokenLines  []SpokenLine `json:"spoken_lines"`
+	Title        string       `json:"title"`
+	Summary      string       `json:"summary"`
+	Duration     int          `json:"duration"`
+	AspectRatio  string       `json:"aspect_ratio"`
 }
 
 type ScriptDraft struct {
-	Title   string       `json:"title"`
-	Summary string       `json:"summary"`
-	Scenes  []SceneDraft `json:"scenes"`
+	Characters []CharacterDraft `json:"characters"`
+	Title      string           `json:"title"`
+	Summary    string           `json:"summary"`
+	Scenes     []SceneDraft     `json:"scenes"`
+}
+
+type CharacterDraft struct {
+	Key         string `json:"key"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Appearance  string `json:"appearance"`
+	Personality string `json:"personality"`
 }
 
 func (a *AgentEngine) GenerateScript(ctx context.Context, idea string, sceneCount int, targetDuration int, aspectRatio string) (*ScriptDraft, error) {
@@ -174,6 +189,12 @@ func (a *AgentEngine) GenerateScript(ctx context.Context, idea string, sceneCoun
 	system := fmt.Sprintf(`You are a scriptwriter. Break down the story idea into exactly %d structured scenes.
 Total target duration is %d seconds. Aspect ratio is %s.
 Return a title, overall summary, and the list of scenes. For spoken dialogue/narration include spoken_lines with stable unique utterance id, character_id from the selected cast (empty for narrator), language, exact text, and visible indicating on-screen dialogue. Silent scenes have no spoken lines. Never use visual descriptions as spoken text.`, sceneCount, targetDuration, aspectRatio)
+	if enabled, _ := ctx.Value(storyCharactersKey{}).(bool); enabled {
+		system += `
+Create character profiles only for additional actors the story actually needs. Return them in characters with a unique short ASCII key (letters, digits, underscore or hyphen), name, description, consistent visual appearance, and personality. Reuse selected existing characters by their exact IDs; never redefine their appearance. Do not invent database IDs. Refer to a new character as new:key in each scene's character_ids and spoken_lines.character_id. Each scene lists only the characters it uses; the narrator has an empty character_id. Keep the total cast to at most eight. Do not create extra portraits, voice profiles or unrelated characters. If no new characters are needed, characters is empty.`
+	} else {
+		system += "\nDo not create character profiles: characters must be empty. Scene character_ids and spoken_lines.character_id may use only the selected cast's exact IDs, or an empty narrator ID."
+	}
 
 	prompt := fmt.Sprintf("Idea: %s", idea)
 

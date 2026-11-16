@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	"videoflow-go/internal/models"
@@ -365,6 +366,17 @@ func (s *Server) handleRenderScene(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "scene not in active project", 400)
 		return
 	}
+	var options struct {
+		UseSceneCast bool `json:"use_scene_cast"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&options); err != nil && err != io.EOF {
+		http.Error(w, "invalid render options", 400)
+		return
+	}
+	ctx := r.Context()
+	if options.UseSceneCast {
+		ctx = guidedStoryContext(ctx, projectID, nil)
+	}
 	stage := "submitted"
 	progress := "Whole scene render queued"
 	job := &models.RenderJob{
@@ -377,7 +389,7 @@ func (s *Server) handleRenderScene(w http.ResponseWriter, r *http.Request) {
 		Progress:    &progress,
 		RequestJSON: []byte(fmt.Sprintf(`{"scene_id":"%s"}`, scene.ID)),
 	}
-	if err := s.prepareDirectorVideoJob(r.Context(), job); err != nil {
+	if err := s.prepareDirectorVideoJob(ctx, job); err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}

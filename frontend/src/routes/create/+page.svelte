@@ -15,6 +15,7 @@
   const conversationMode = 'dialogue';
   let characters:any[]=$state([]);
   let selectedCharacters:string[]=$state([]);
+  let createCharacters=$state(true);
   let instruction = $state('');
   let busy = $state(false);
   let opId = $state('');
@@ -28,7 +29,7 @@
  let reviewAssets:any[]=$state([]);let reviewLoading=$state(false);let renderingScene=$state('');
  async function refreshReviewAssets(){reviewLoading=true;try{reviewAssets=await get('/assets')}catch(e){opError=String(e)}finally{reviewLoading=false}}
  function sceneReferencesApproved(id:string){const refs=reviewAssets.filter(a=>a.metadata_json?.scene_id===id&&a.metadata_json?.consistency_review);return refs.length>0&&refs.every(a=>a.metadata_json.consistency_review==='approved')}
- async function renderReviewedScene(id:string){renderingScene=id;try{await refreshReviewAssets();if(!sceneReferencesApproved(id))throw Error('Approve the generated references before rendering this scene.');await post(`/scenes/${id}/render`);await goto('/render')}catch(e){opError=String(e)}finally{renderingScene=''}}
+ async function renderReviewedScene(id:string){renderingScene=id;try{await refreshReviewAssets();if(!sceneReferencesApproved(id))throw Error('Approve the generated references before rendering this scene.');await post(`/scenes/${id}/render`, {use_scene_cast:true});await goto('/render')}catch(e){opError=String(e)}finally{renderingScene=''}}
 
   let poller: ReturnType<typeof setInterval> | null = null;
   let renderPoller: ReturnType<typeof setInterval> | null = null;
@@ -83,11 +84,14 @@
       if (op.status === 'succeeded') {
         stopPolling();
         lastResult = op.result_json;
+        if(lastResult?.created_character_ids?.length)void get('/characters').then(result=>characters=result).catch(()=>{});
         opStatus = 'rendering';
         await checkRenderJobs();
         if (opStatus === 'rendering') renderPoller = setInterval(() => void checkRenderJobs(), 4000);
       } else if ((op.status === 'failed' || op.status === 'reconciliation_required')) {
         stopPolling();
+        lastResult=op.result_json;
+        if(lastResult?.created_character_ids?.length)void get('/characters').then(result=>characters=result).catch(()=>{});
         opError = op.error || 'The generation failed.';
         busy = false;
       }
@@ -172,6 +176,7 @@
         language,
         conversation_mode: conversationMode,
         character_ids:selectedCharacters,
+        create_characters:createCharacters,
         ...(duration ? { target_duration: Number(duration) } : {}),
         ...(instruction.trim() ? { instruction: instruction.trim() } : {})
       });
@@ -224,12 +229,14 @@
       </div>
 
       <label class="grid gap-1 text-sm"><span class="font-medium">Number of scene clips</span><input type="number" min="1" max="20" bind:value={sceneCount} class="rounded-lg border bg-background px-3 py-2"/><span class="text-xs text-muted-foreground">Each scene generates its own image and video. Start with one clip to test your setup.</span></label>
-      {#if characters.length}
       <fieldset class="space-y-2 rounded-lg border p-3"><legend class="text-sm font-medium">Characters in this story</legend>
+       <label class="flex items-start gap-2 text-sm"><input class="mt-1" type="checkbox" bind:checked={createCharacters}/><span>Create missing characters from the story</span></label>
+       <p class="text-xs leading-relaxed text-muted-foreground">New character profiles are saved with the story when needed. Review their designs in the storyboard before rendering; this does not generate separate portraits or set up voices.</p>
+       {#if characters.length}
        {#each characters as character(character.id)}<label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:group={selectedCharacters} value={character.id}/>{character.name}</label>{/each}
-       <p class="text-xs text-muted-foreground">Choose the cast explicitly. Upload reference photos first; likeness still depends on the selected models.</p>
+       <p class="text-xs text-muted-foreground">Select existing characters to reuse them. Their saved identities stay unchanged.</p>
+       {/if}
       </fieldset>
-      {/if}
       <div class="grid gap-3 sm:grid-cols-2">
         <label class="grid gap-1.5 text-sm">
           <span class="font-medium">Visual style</span>
@@ -314,10 +321,11 @@
       </details>
 
       {#if opError}
-        <p class="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{opError}</p>
+        <div role="alert" class="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{#if opStatus==='failed'}<p class="mb-1 font-medium">Last attempt failed</p>{/if}<p>{opError}</p></div>
       {/if}
 
       {#if lastResult && opStatus !== 'running'}
+        {#if lastResult.created_character_ids?.length}<div class="space-y-1 text-sm"><p>{lastResult.created_character_ids.length} new character {lastResult.created_character_ids.length===1?'profile saved':'profiles saved'}. <a class="underline underline-offset-4" href="/characters">Review characters</a></p><p class="text-muted-foreground">For spoken dialogue, choose approved voices in <a class="underline underline-offset-4" href="/voices">Voices &amp; captions</a> before rendering.</p></div>{/if}
         <div class="rounded-lg border border-border p-4 text-sm">
           {#if lastResult.status==='awaiting_reference_review'}
  <p class="font-medium">Your keyframes are ready for review.</p><p class="mt-1 text-muted-foreground">Compare the generated images with your character and asset references, then approve each reference. Video generation starts only when you choose Render scene.</p><div class="mt-3 space-y-3">{#each lastResult.scene_ids??[] as sceneID,i}<div class="flex flex-wrap items-center gap-2"><span>Scene {i+1}</span><a class="underline" href={`/assets?scene_id=${encodeURIComponent(sceneID)}`}>Review references</a><Button type="button" size="sm" disabled={reviewLoading||!!renderingScene||!sceneReferencesApproved(sceneID)} onclick={()=>renderReviewedScene(sceneID)}>Render scene {i+1}</Button><span class="text-muted-foreground">{sceneReferencesApproved(sceneID)?'References approved':'Waiting for reference approval'}</span></div>{/each}<Button type="button" variant="outline" size="sm" disabled={reviewLoading} onclick={refreshReviewAssets}>Refresh approvals</Button></div>

@@ -6,6 +6,27 @@ import (
 	"videoflow-go/internal/models"
 )
 
+func TestStorySnapshotFailureRollsBackCharactersAndStory(t *testing.T) {
+	d, err := Open(filepath.Join(t.TempDir(), "test.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	project, _ := d.GetActiveProjectID()
+	script := &models.Script{ProjectID: &project, Title: "Dog story"}
+	characters := []models.Character{{ID: "new-pup", ProjectID: &project, Name: "Pip"}}
+	scenes := []models.Scene{{ID: "duplicate", Title: "One", CharacterIDsJSON: []byte(`["new-pup"]`)}, {ID: "duplicate", Title: "Two"}}
+	if err = d.SaveStorySnapshot(script, scenes, characters); err == nil {
+		t.Fatal("invalid snapshot committed")
+	}
+	chars, _ := d.ListCharacters(project)
+	scripts, _ := d.ListScripts(project)
+	stored, _ := d.ListScenes(project)
+	if len(chars)+len(scripts)+len(stored) != 0 {
+		t.Fatal("partial story or characters left behind")
+	}
+}
+
 func TestScriptSceneFailureRollsBackWholeSnapshot(t *testing.T) {
 	d, err := Open(filepath.Join(t.TempDir(), "test.sqlite"))
 	if err != nil {

@@ -110,12 +110,20 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 		if binding := r.Context().Value(directorBindingKey{}); binding != nil {
 			ctx = context.WithValue(ctx, directorBindingKey{}, binding)
 		}
+		ctx = guidedStoryContext(ctx, project, brief.CharacterIDs)
 		ctx = context.WithValue(brief.context(ctx), mediaRoutesKey{}, routes)
 		stages := []string{}
-		fail := func(err error) { message := err.Error(); s.database.UpdateOp(op.ID, "failed", nil, &message) }
+		createdCharacters := []string{}
+		savedScriptID := ""
+		savedSceneIDs := []string{}
+		fail := func(err error) {
+			message := err.Error()
+			raw, _ := json.Marshal(map[string]any{"stages": stages, "brief": brief, "created_character_ids": createdCharacters, "script_id": savedScriptID, "scene_ids": savedSceneIDs})
+			s.database.UpdateOp(op.ID, "failed", raw, &message)
+		}
 		record := func(stage string) {
 			stages = append(stages, stage)
-			raw, _ := json.Marshal(map[string]any{"stages": stages, "brief": brief, "media_routes": routes})
+			raw, _ := json.Marshal(map[string]any{"stages": stages, "brief": brief, "media_routes": routes, "created_character_ids": createdCharacters})
 			s.database.UpdateOp(op.ID, "running", raw, nil)
 			s.broker.Publish(map[string]any{"type": "pipeline_stage", "op_id": op.ID, "stage": stage, "stages": stages, "project_id": project})
 		}
@@ -129,11 +137,37 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 			fail(err)
 			return
 		}
+		// Persisted scene/speaker references now use real project character IDs.
+		savedScriptID = script.ID
+		cast := []string{}
+		seenCast := map[string]bool{}
+		for _, scene := range scenes {
+			savedSceneIDs = append(savedSceneIDs, scene.ID)
+			var ids []string
+			json.Unmarshal(scene.CharacterIDsJSON, &ids)
+			for _, id := range ids {
+				if !seenCast[id] {
+					cast = append(cast, id)
+					seenCast[id] = true
+				}
+			}
+		}
+		originalCast := map[string]bool{}
+		for _, id := range brief.CharacterIDs {
+			originalCast[id] = true
+		}
+		for _, id := range cast {
+			if !originalCast[id] {
+				createdCharacters = append(createdCharacters, id)
+			}
+		}
 		record("story")
 		record("scenes")
 		for i := range scenes {
 			scene := &scenes[i]
-			drafts, err := s.agents.GenerateShots(ctx, scene.Title, scene.Summary+"\n"+brief.prompt(), scene.Duration)
+			localBrief := sceneBrief(scene)
+			sceneCtx := localBrief.context(guidedStoryContext(ctx, project, localBrief.CharacterIDs))
+			drafts, err := s.agents.GenerateShots(sceneCtx, scene.Title, scene.Summary+"\n"+localBrief.prompt(), scene.Duration)
 			if err != nil {
 				fail(err)
 				return
@@ -156,7 +190,9 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 				fail(err)
 				return
 			}
-			images, err := s.generateAssets(ctx, scene.ProjectID, nil, scene.ID, scene.Title+" keyframe", "storyboard", scene.Title+". "+scene.Summary+"\n"+brief.prompt(), scene.AspectRatio, refs)
+			localBrief := sceneBrief(scene)
+			sceneCtx := localBrief.context(guidedStoryContext(ctx, project, localBrief.CharacterIDs))
+			images, err := s.generateAssets(sceneCtx, scene.ProjectID, nil, scene.ID, scene.Title+" keyframe", "storyboard", scene.Title+". "+scene.Summary+"\n"+localBrief.prompt(), scene.AspectRatio, refs)
 			if err != nil {
 				fail(err)
 				return
@@ -178,7 +214,7 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 			for _, scene := range scenes {
 				sceneIDs = append(sceneIDs, scene.ID)
 			}
-			raw, _ := json.Marshal(map[string]any{"project_id": project, "script_id": script.ID, "scene_ids": sceneIDs, "stages": stages, "status": "awaiting_reference_review", "brief": brief, "media_routes": routes})
+			raw, _ := json.Marshal(map[string]any{"project_id": project, "script_id": script.ID, "scene_ids": sceneIDs, "stages": stages, "status": "awaiting_reference_review", "brief": brief, "media_routes": routes, "created_character_ids": createdCharacters})
 			if err = s.database.UpdateOp(op.ID, "succeeded", raw, nil); err != nil {
 				fail(err)
 			}
@@ -193,7 +229,7 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 			sceneIDs = append(sceneIDs, scene.ID)
 		}
 		stages = append(stages, "render")
-		result := map[string]any{"project_id": project, "script_id": script.ID, "scene_ids": sceneIDs, "stages": stages, "status": "rendering", "brief": brief, "media_routes": routes}
+		result := map[string]any{"project_id": project, "script_id": script.ID, "scene_ids": sceneIDs, "stages": stages, "status": "rendering", "brief": brief, "media_routes": routes, "created_character_ids": createdCharacters}
 		if err = s.database.SaveOperationJobs(op.ID, jobs, result); err != nil {
 			fail(err)
 			return
