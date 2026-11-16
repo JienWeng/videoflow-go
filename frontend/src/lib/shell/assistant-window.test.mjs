@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {clampWindow,readWindowLayout} from './assistant-window.mjs';
+assert.deepEqual(clampWindow({x:-200,y:-10},{width:1000,height:800},420,600),{x:12,y:12});
+assert.deepEqual(clampWindow({x:9999,y:9999},{width:1000,height:800},420,600),{x:568,y:188});
+assert.deepEqual(clampWindow({x:250,y:80},{width:1000,height:800},420,600),{x:250,y:80});
+assert.deepEqual(clampWindow({x:500,y:600},{width:600,height:400},420,376),{x:168,y:12});
+assert.deepEqual(clampWindow({x:NaN,y:Infinity},{width:1000,height:800},420,600),{x:568,y:188});
+assert.equal(readWindowLayout('invalid'),null);
+assert.equal(readWindowLayout('{"mode":"floating","x":-1,"y":90,"width":450}')?.mode,'floating');
+assert.equal(readWindowLayout('{"mode":"bad"}'),null);
+assert.equal(readWindowLayout('{"mode":"floating","x":"9999","y":null}')?.position,null);
+assert.equal(readWindowLayout('{"mode":"docked","width":99999}')?.width,undefined);
+console.log('PASS 10 assistant-window assertions');

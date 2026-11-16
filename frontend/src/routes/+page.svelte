@@ -1,4 +1,8 @@
 <script lang="ts">
+  import {clampWindow,readWindowLayout} from '$lib/shell/assistant-window.mjs';
+  import GripHorizontal from '@lucide/svelte/icons/grip-horizontal';
+  import PanelRight from '@lucide/svelte/icons/panel-right';
+  import PanelsTopLeft from '@lucide/svelte/icons/panels-top-left';
   import { onMount, tick } from 'svelte';
   import { replaceState } from '$app/navigation';
   import { page } from '$app/state';
@@ -26,18 +30,59 @@
   function openAssistant(){assistantOpen=true;mobileView='workbench';void tick().then(()=>{if(tab==='chat')document.querySelector<HTMLTextAreaElement>('[aria-label="Message story assistant"]')?.focus();else document.querySelector<HTMLElement>('#panel-details input, #panel-details textarea')?.focus();});}
   function closeAssistant(){assistantOpen=false;mobileView='canvas';void tick().then(()=>openAssistantButton?.focus());}
   let panelWidth=$state(420), panelExpanded=$state(false), restoreWidth=420;
+  let windowMode=$state<'docked'|'floating'>('docked');
+  let windowPosition=$state<{x:number;y:number}|null>(null);
+  let studioSize=$state({width:1024,height:735});
+  let moveHandle:HTMLButtonElement|null=$state(null);
+  const floatingHeight=$derived(Math.max(0,Math.min(680,Math.floor(studioSize.height*.88),studioSize.height-24)));
+  const floatingPosition=$derived(clampWindow(windowPosition??{x:Infinity,y:Infinity},studioSize,panelWidth,floatingHeight));
+  function saveWindowLayout(){try{localStorage.setItem('videoflow.assistant.window',JSON.stringify({mode:windowMode,...(windowPosition??floatingPosition),width:panelWidth}));}catch{/* Layout remains usable when storage is unavailable. */}}
+  function toggleWindowMode(){windowPosition=floatingPosition;windowMode=windowMode==='docked'?'floating':'docked';saveWindowLayout();if(windowMode==='floating')void tick().then(()=>moveHandle?.focus());}
+  function moveWindow(x:number,y:number){windowPosition=clampWindow({x,y},studioSize,panelWidth,floatingHeight);}
+  function undockAtCurrentPosition(){
+    if(windowMode!=='docked')return;
+    const panel=document.getElementById('assistant-workbench')?.getBoundingClientRect(),area=studioElement?.getBoundingClientRect();
+    if(panel&&area)windowPosition={x:panel.x-area.x,y:panel.y-area.y};
+    windowMode='floating';
+  }
+  function dragWindow(event:PointerEvent){
+    if(event.button!==0||window.innerWidth<768)return;
+    event.preventDefault();undockAtCurrentPosition();
+    const target=event.currentTarget as HTMLElement;
+    target.setPointerCapture(event.pointerId);
+    const start={clientX:event.clientX,clientY:event.clientY,...floatingPosition};
+    const move=(next:PointerEvent)=>moveWindow(start.x+next.clientX-start.clientX,start.y+next.clientY-start.clientY);
+    const end=()=>{target.removeEventListener('pointermove',move);target.removeEventListener('pointerup',end);target.removeEventListener('pointercancel',end);target.removeEventListener('lostpointercapture',end);saveWindowLayout();};
+    target.addEventListener('pointermove',move);target.addEventListener('pointerup',end);target.addEventListener('pointercancel',end);target.addEventListener('lostpointercapture',end);
+  }
+  function draggableTitlebar(node:HTMLElement){
+    const down=(event:PointerEvent)=>{if((event.target as Element).closest('button,a,input,textarea,select,[role="menuitem"]'))return;dragWindow(event);};
+    node.addEventListener('pointerdown',down);
+    return {destroy(){node.removeEventListener('pointerdown',down);}};
+  }
+  function moveWindowWithKeys(event:KeyboardEvent){
+    if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key))return;
+    event.preventDefault();undockAtCurrentPosition();const step=event.shiftKey?64:16;
+    const next={...floatingPosition};
+    if(event.key==='Home'){next.x=12;next.y=12;}else if(event.key==='End'){next.x=Infinity;next.y=Infinity;}else if(event.key==='ArrowLeft')next.x-=step;else if(event.key==='ArrowRight')next.x+=step;else if(event.key==='ArrowUp')next.y-=step;else next.y+=step;
+    moveWindow(next.x,next.y);saveWindowLayout();
+  }
+  onMount(()=>{try{const saved=readWindowLayout(localStorage.getItem('videoflow.assistant.window'));if(saved){windowMode=saved.mode;windowPosition=saved.position;if(saved.width)panelWidth=saved.width;}}catch{/* Use the docked default. */}});
   let studioElement: HTMLDivElement | null=$state(null), maxPanelWidth=$state(760);
   const minPanelWidth=$derived(Math.min(340,maxPanelWidth));
   $effect(()=>{
     if(!studioElement)return;
+    const mode=windowMode;
     const observer=new ResizeObserver(([entry])=>{
-      if(entry.contentRect.width<1)return;
-      maxPanelWidth=Math.max(240,Math.min(760,entry.contentRect.width-248));
+      if(entry.contentRect.width<1||entry.contentRect.height<1)return;
+      studioSize={width:entry.contentRect.width,height:entry.contentRect.height};
+      if(window.innerWidth<768)return;
+      maxPanelWidth=Math.max(240,Math.min(760,entry.contentRect.width-(mode==='floating'?24:248)));
       panelWidth=Math.max(Math.min(340,maxPanelWidth),Math.min(panelWidth,maxPanelWidth));
     });
     observer.observe(studioElement);return()=>observer.disconnect();
   });
-  function resizePanel(value:number){panelWidth=Math.round(Math.max(minPanelWidth,Math.min(value,maxPanelWidth)));panelExpanded=false;}
+  function resizePanel(value:number){const old=panelWidth;const position=floatingPosition;panelWidth=Math.round(Math.max(minPanelWidth,Math.min(value,maxPanelWidth)));if(windowMode==='floating')moveWindow(position.x+old-panelWidth,position.y);panelExpanded=false;saveWindowLayout();}
   function togglePanelSize(){
     if(panelExpanded){resizePanel(restoreWidth);return;}
     restoreWidth=panelWidth;resizePanel(maxPanelWidth);panelExpanded=true;
@@ -47,8 +92,8 @@
     target.setPointerCapture(e.pointerId);
     const start=e.clientX,width=panelWidth;
     const move=(event:PointerEvent)=>resizePanel(width+start-event.clientX);
-    const end=()=>{target.removeEventListener('pointermove',move);target.removeEventListener('pointerup',end);target.removeEventListener('pointercancel',end)};
-    target.addEventListener('pointermove',move);target.addEventListener('pointerup',end);target.addEventListener('pointercancel',end);
+    const end=()=>{target.removeEventListener('pointermove',move);target.removeEventListener('pointerup',end);target.removeEventListener('pointercancel',end);target.removeEventListener('lostpointercapture',end);saveWindowLayout();};
+    target.addEventListener('pointermove',move);target.addEventListener('pointerup',end);target.addEventListener('pointercancel',end);target.addEventListener('lostpointercapture',end);
   }
   let selected=$state<Node|null>(null);
   let overview: ProjectOverview | undefined = $state();
@@ -106,7 +151,7 @@
     <button class="min-h-11 flex-1 text-sm {mobileView==='canvas'?'bg-accent font-semibold':''}" aria-pressed={mobileView==='canvas'} onclick={()=>mobileView='canvas'}>Canvas</button>
     <button class="min-h-11 flex-1 text-sm {mobileView==='workbench'?'bg-accent font-semibold':''}" aria-pressed={mobileView==='workbench'} onclick={openAssistant}>Workbench{context?' · '+context.kind:''}</button>
   </div>
-  <div bind:this={studioElement} style:--panel-width={panelWidth+'px'} class:assistant-visible={assistantOpen} class="studio-area relative min-h-0 flex-1 {workspace==='studio'?'flex':'hidden'}" aria-label="Studio editing workspace">
+  <div bind:this={studioElement} style:--panel-width={panelWidth+'px'} style:--window-x={floatingPosition.x+'px'} style:--window-y={floatingPosition.y+'px'} style:--window-height={floatingHeight+'px'} class:assistant-docked={windowMode==='docked'} class:assistant-floating={windowMode==='floating'} class:assistant-visible={assistantOpen} class="studio-area relative min-h-0 flex-1 {workspace==='studio'?'flex':'hidden'}" aria-label="Studio editing workspace">
     <section aria-label="Story canvas" class="canvas-pane relative min-w-0 flex-1 {mobileView==='canvas'?'block':'hidden'} md:block">
       <EntityCanvas bind:this={canvas} externalPanel oninspect={()=>{tab='details';mobileView='workbench';assistantOpen=true;}} onopenscene={editScene} beforeselect={beforeSelect} onselect={select} />
       {#if error}<div role="alert" class="absolute inset-x-4 top-20 rounded-xl border border-destructive bg-background p-4 text-sm"><p>Could not load your story.</p><p class="mt-1 text-xs text-muted-foreground">{error}</p><Button variant="outline" class="mt-3" onclick={refresh}>Retry</Button></div>
@@ -116,8 +161,11 @@
     <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
     <div role="separator" tabindex="0" aria-label="Resize assistant panel" aria-orientation="vertical" aria-controls="assistant-workbench" aria-valuemin={minPanelWidth} aria-valuemax={maxPanelWidth} aria-valuenow={panelWidth} class="assistant-resizer hidden w-2 cursor-col-resize touch-none items-center justify-center rounded-lg hover:bg-accent focus-visible:bg-accent focus-visible:outline-2 focus-visible:outline-ring {assistantOpen?'md:flex':''}" onpointerdown={dragPanel} onkeydown={e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();resizePanel(e.key==='Home'?minPanelWidth:e.key==='End'?maxPanelWidth:panelWidth+(e.key==='ArrowLeft'?32:-32));}}}><span class="h-8 w-0.5 rounded-full bg-muted-foreground/50"></span></div>
     <aside id="assistant-workbench" aria-label="Contextual workbench" style:--panel-width={panelWidth+'px'} class="assistant-panel min-h-0 w-full shrink-0 flex-col overflow-hidden bg-card {assistantOpen?(mobileView==='workbench'?'flex':'hidden md:flex'):'hidden'}">
-      <div class="flex shrink-0 items-start gap-1 px-3 pt-3 pb-2">
-        <h2 class="sr-only">Story assistant</h2><div class="min-w-0 flex-1"><SessionSelector compact minimal /></div>
+      <div use:draggableTitlebar data-assistant-titlebar class="window-titlebar flex shrink-0 items-start gap-1 px-3 pt-3 pb-2">
+        <h2 class="sr-only">Story assistant</h2>
+        <Button bind:ref={moveHandle} type="button" variant="ghost" size="icon" class="hidden size-9 shrink-0 cursor-grab touch-none active:cursor-grabbing md:inline-flex" aria-label="Move assistant window" aria-describedby="assistant-move-help" title="Drag to float and move; arrow keys also move the window" onpointerdown={dragWindow} onkeydown={moveWindowWithKeys}><GripHorizontal class="size-4" /></Button><span id="assistant-move-help" class="sr-only">Drag to float and move, or use arrow keys. Hold Shift for larger moves. Home and End move to workspace corners.</span>
+        <div class="min-w-0 flex-1"><SessionSelector compact minimal /></div>
+        <Button variant="ghost" size="icon" class="hidden size-9 shrink-0 md:inline-flex" aria-label={windowMode==='docked'?'Float assistant':'Dock assistant to right'} title={windowMode==='docked'?'Float assistant window':'Dock assistant to the right side'} onclick={toggleWindowMode}>{#if windowMode==='floating'}<PanelRight class="size-4" />{:else}<PanelsTopLeft class="size-4" />{/if}</Button>
         <Button variant="ghost" size="icon" class="hidden size-9 shrink-0 md:inline-flex" aria-label={panelExpanded?'Restore assistant size':'Expand assistant'} onclick={togglePanelSize}>{#if panelExpanded}<Minimize2 class="size-4" />{:else}<Maximize2 class="size-4" />{/if}</Button>
         <Button variant="ghost" size="icon" class="size-9 shrink-0" aria-label="Close assistant" title="Close assistant; your draft is kept" onclick={closeAssistant}><X class="size-4" /></Button>
       </div>
@@ -137,9 +185,13 @@
 
 <style>
   @media (min-width:768px) {
+    .window-titlebar {cursor:grab;touch-action:none;}
+    .window-titlebar:active {cursor:grabbing;}
     .studio-area {background-image:radial-gradient(var(--border) .7px,transparent .7px);background-size:20px 20px;}
-    .assistant-visible .canvas-pane {margin-right:calc(var(--panel-width) + 32px);}
-    .assistant-panel {position:absolute;right:16px;top:24px;bottom:16px;width:var(--panel-width);max-width:calc(100% - 248px);border:1px solid var(--border);border-radius:16px;box-shadow:0 12px 36px rgb(0 0 0 / .18);}
-    .assistant-resizer {position:absolute;right:calc(var(--panel-width) + 18px);top:44px;bottom:36px;z-index:10;}
+    .assistant-visible.assistant-docked .canvas-pane {margin-right:calc(var(--panel-width) + 32px);}
+    .assistant-panel {position:absolute;right:16px;top:24px;bottom:16px;width:var(--panel-width);max-width:calc(100% - 248px);border:1px solid var(--border);border-radius:16px;box-shadow:0 12px 36px rgb(0 0 0 / .18);z-index:30;}
+    .assistant-floating .assistant-panel {left:var(--window-x);top:var(--window-y);right:auto;bottom:auto;height:var(--window-height);max-width:calc(100% - 24px);}
+    .assistant-resizer {position:absolute;right:calc(var(--panel-width) + 18px);top:44px;bottom:36px;z-index:31;}
+    .assistant-floating .assistant-resizer {left:calc(var(--window-x) - 10px);right:auto;top:calc(var(--window-y) + 20px);bottom:auto;height:calc(var(--window-height) - 40px);}
   }
 </style>

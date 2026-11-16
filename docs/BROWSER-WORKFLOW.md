@@ -12,6 +12,10 @@ Changing a scene’s cast invalidates its approved keyframes and refreshes the c
 7. For captions, open an output's editor: transcribe or write timed text, edit it, then Save. Save completes only after a new captioned file is produced. A failed burn keeps the previous export. The Canvas caption card burns existing saved captions; transcription model/language settings belong in the editor.
 8. In Videos, select approved outputs in playback order, choose the combined aspect ratio, optionally require captioned versions for every clip, and choose Assemble selected clips. Local FFmpeg normalizes dimensions/audio, adds silent audio where needed, then concatenates without another video encode. The combined output opens in the editor and can be downloaded.
 
+## Assistant window
+
+Drag the assistant header or grip to undock and move it. Float assistant also opens the movable window; Dock assistant to right restores the right-side layout. Position, mode and desktop width are remembered in this browser. The move handle supports arrow keys, Shift for larger moves, and Home/End for corners. Resizing or changing the viewport keeps the window within the workspace. Mobile uses the full-width assistant pane and retains the desktop preference. Closing or switching modes keeps unsent chat and inspector drafts.
+
 ## Failure and recovery
 
 - A browser request keeps its request key after a lost network response. Replaying it does not automatically repeat the same paid action.
