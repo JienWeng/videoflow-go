@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {creationProgress as progress,creationSteps} from './progress.mjs';
+assert.equal(creationSteps.length,6);
+assert.equal(progress('running',[]).current,'story');
+assert.equal(progress('running',['story','scenes']).current,'shots');
+assert.equal(progress('running',['story','scenes','shots','visuals']).current,'review');
+assert.equal(progress('awaiting_reference_review',['story','scenes','shots','visuals']).review,true);
+assert.equal(progress('awaiting_reference_review',['visuals']).completed.has('render'),false);
+assert.equal(progress('rendering',['render']).completed.has('render'),false);
+assert.equal(progress('rendering',['render']).completed.has('review'),false);
+assert.equal(progress('completed',['render']).completed.has('render'),true);
+assert.equal(progress('completed',[]).title,'Your story is ready');
+assert.equal(progress('failed',['story']).stopped,true);
+assert.equal(progress('reconciliation_required',['story']).current,'scenes');
+console.log('PASS 12 story-progress assertions');
