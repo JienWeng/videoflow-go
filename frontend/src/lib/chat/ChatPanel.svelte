@@ -1,4 +1,5 @@
 <script lang="ts">
+  import {protectDraft} from '$lib/protect-draft';
   import BrandLogo from '$lib/shell/BrandLogo.svelte';
   import ArrowRight from '@lucide/svelte/icons/arrow-right';
   import {storyCreation} from '$lib/create/story-creation.svelte';
@@ -105,6 +106,7 @@
   let messages = $state<Msg[]>([greeting()]);
   const isEmpty=$derived(messages.length===1&&messages[0].text===greeting().text);
   let input = $state('');
+  protectDraft(()=>!!input.trim(),'You have an unsent message. Discard it and leave?');
   let busy = $state(false);
   let reviewMode=$state(false), capabilities=$state<any>(null), activeSessionId=$state('');
   let cancelling=$state(false), cancelError=$state('');

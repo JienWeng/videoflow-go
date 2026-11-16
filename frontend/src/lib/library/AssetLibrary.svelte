@@ -1,5 +1,11 @@
 <script lang="ts">
-  let { embedded = false }:{embedded?:boolean}=$props();
+  let { embedded = false,oncounts }:{embedded?:boolean;oncounts?:(characters:number,media:number)=>void}=$props();
+  import LibraryPreview from './LibraryPreview.svelte';
+  import {mediaKind,typeLabel} from './catalog.mjs';
+  import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+  import {Ellipsis,LayoutGrid,List} from '@lucide/svelte';
+  let kindFilter=$state(''),view=$state<'grid'|'list'>('grid'),refreshing=$state(false);
+  async function retryMedia(){refreshing=true;try{await refresh();error='';}catch(e){error=String(e)}finally{refreshing=false}}
  let identityTraits: {name:string;value:string}[] = $state([]);
  let identityBusy = $state(false);
  let reviewBusy=$state(false);let reviewScene=$state('');
@@ -232,8 +238,11 @@
   let assetType = $state('');
   let characterId = $state('');
 
+  let loadSequence=0;
+  export async function reload(){await retryMedia();}
   async function refresh() {
-    [assets, characters] = await Promise.all([get('/assets'), get('/characters')]);
+    const sequence=++loadSequence;
+    try{const [nextAssets,nextCharacters]=await Promise.all([get('/assets'),get('/characters')]);if(sequence!==loadSequence)return;assets=nextAssets;characters=nextCharacters;oncounts?.(characters.length,assets.length);}catch(e){if(sequence===loadSequence)throw e;}
   }
   onMount(() => {
     refresh().then(()=>{const params=new URL(window.location.href).searchParams;reviewScene=params.get('scene_id')??'';const id=params.get('asset_id');if(id){const asset=assets.find((a:any)=>a.id===id);if(asset)openDetail(asset)}})
@@ -257,7 +266,7 @@
       if (characterId) form.append('character_id', characterId);
       const r = await upload('/assets/upload', form);
       const n = Array.isArray(r) ? r.length : 1;
-      files = null;assetType='';characterId='';createOpen=false;
+      files = null;assetType='';characterId='';createOpen=false;search='';typeFilter='';kindFilter='';sortBy='newest';
       toast.success(`Uploaded ${n} file${n === 1 ? '' : 's'}.`);
       await refresh();
     } catch (e: any) {
@@ -281,8 +290,9 @@
 
   let filtered = $derived.by(() => {
     let out = reviewScene?assets.filter((a:any)=>a.metadata_json?.scene_id===reviewScene):assets;
-    if (search) {
-      const q = search.toLowerCase();
+    if (kindFilter) out=out.filter(a=>mediaKind(a)===kindFilter);
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
       out = out.filter((a) =>
         [a.name, a.type, a.description, ...(a.tags_json ?? [])]
           .join(' ')
@@ -307,13 +317,13 @@
 
 <svelte:head>{#if !embedded}<title>Assets · VideoFlow</title>{/if}</svelte:head>
 
-<div class="p-6">
+<div class="px-4 py-6 sm:px-8">
   <div class="mb-4 flex items-center justify-between gap-3">
-    <h1 class="text-lg font-semibold">Assets</h1>
+    <div>{#if embedded}<h2 class="text-lg font-semibold">Media</h2>{:else}<h1 class="text-2xl font-semibold">Assets</h1>{/if}<p class="mt-1 text-sm text-muted-foreground">{error?'Collection unavailable':loaded?`${assets.length} ${assets.length===1?'file':'files'}`:'Loading collection…'}</p></div>
     <Dialog.Root open={createOpen} onOpenChange={changeCreateOpen}>
-      <Dialog.Trigger>{#snippet child({props})}<Button {...props} disabled={!loaded||busy}>Add assets</Button>{/snippet}</Dialog.Trigger>
+      <Dialog.Trigger>{#snippet child({props})}<Button {...props} disabled={!loaded||busy}>{embedded?'Upload media':'Add assets'}</Button>{/snippet}</Dialog.Trigger>
       <Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-lg" showCloseButton={false} overlayClass="bg-black/55 supports-backdrop-filter:backdrop-blur-none" onEscapeKeydown={e=>{e.preventDefault();changeCreateOpen(false);}} onInteractOutside={e=>{e.preventDefault();changeCreateOpen(false);}}>
-<Dialog.Header><Dialog.Title>Add assets</Dialog.Title><Dialog.Description class="sr-only">Upload files and optionally link them to a character.</Dialog.Description></Dialog.Header>
+<Dialog.Header><Dialog.Title>{embedded?'Upload media':'Add assets'}</Dialog.Title><Dialog.Description class="sr-only">Upload files and optionally link them to a character.</Dialog.Description></Dialog.Header>
   <form class="space-y-4" onsubmit={doUpload}>
     {#if createError}<p role="alert" class="text-sm text-destructive">{createError}</p>{/if}
     <div class="grid gap-4">
@@ -342,7 +352,7 @@
       <div class="flex justify-end gap-2">
         <Button type="button" variant="outline" disabled={busy} onclick={()=>changeCreateOpen(false)}>Cancel</Button>
         <Button type="submit" disabled={busy || !files?.length} size="sm">
-          {busy?'Uploading…':'Add assets'}
+          {busy?'Uploading…':embedded?'Upload files':'Add assets'}
         </Button>
       </div>
     </div>
@@ -352,7 +362,40 @@
     </Dialog.Root>
   </div>
 
-  <details class="mb-4 rounded-lg border border-border p-3"><summary class="cursor-pointer text-sm font-medium">Project style</summary>
+
+
+
+
+  <div class="mb-4 flex flex-wrap items-center gap-2" role="group" aria-label="Media kinds">{#each [{value:'',label:'All files'},{value:'image',label:'Images'},{value:'video',label:'Video'},{value:'audio',label:'Audio'},{value:'other',label:'Other'}] as kind}<Button variant={kindFilter===kind.value?'secondary':'ghost'} size="sm" aria-pressed={kindFilter===kind.value} onclick={()=>kindFilter=kind.value}>{kind.label}</Button>{/each}</div>
+  <div class="mb-5 flex flex-wrap items-center gap-3"><input type="search" aria-label="Search media" placeholder="Search files, descriptions or tags…" bind:value={search} class="min-h-11 min-w-0 flex-1 basis-60 rounded-lg border border-input bg-background px-3 text-sm"/>
+    <select aria-label="Asset type" bind:value={typeFilter} class="min-h-11 max-w-full rounded-lg border border-input bg-background px-3 text-sm"><option value="">All asset types</option>{#each presentTypes as type}<option value={type}>{typeLabel(type)}</option>{/each}</select>
+    <select aria-label="Sort media" bind:value={sortBy} class="min-h-11 rounded-lg border border-input bg-background px-3 text-sm"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="name">Name A–Z</option><option value="type">Asset type</option></select>
+    <div role="group" aria-label="Media view" class="flex rounded-lg border border-border p-1"><Button variant={view==='grid'?'secondary':'ghost'} size="icon" class="size-9" aria-label="Grid view" aria-pressed={view==='grid'} onclick={()=>view='grid'}><LayoutGrid class="size-4"/></Button><Button variant={view==='list'?'secondary':'ghost'} size="icon" class="size-9" aria-label="List view" aria-pressed={view==='list'} onclick={()=>view='list'}><List class="size-4"/></Button></div>
+  </div>
+  {#if error}<div role="alert" class="mb-4 space-y-2 rounded-lg border border-destructive p-4 text-sm"><p>Could not load media: {error}</p>{#if assets.length}<p>Showing the last loaded files.</p>{/if}<Button variant="outline" disabled={refreshing} onclick={retryMedia}>{refreshing?'Loading…':'Try again'}</Button></div>{/if}
+  {#if reviewScene}<p class="mb-4 text-sm">References for scene {reviewScene}. <button class="min-h-11 underline" onclick={()=>reviewScene=''}>Show all media</button></p>{/if}
+  {#if !loaded}<div class="grid grid-cols-1 gap-5 min-[480px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{#each Array(4) as _}<Skeleton class="aspect-[4/3] w-full rounded-xl"/>{/each}</div>
+  {:else if !assets.length&&!error}<div class="py-16 text-center"><Upload class="mx-auto size-9 text-muted-foreground"/><h3 class="mt-4 font-semibold">Build your media library</h3><p class="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">Upload reference images, video, audio or documents. Generated media will appear here too.</p></div>
+  {:else if assets.length&&!filtered.length}<div role="status" class="py-16 text-center"><h3 class="font-semibold">No matching media</h3><p class="mt-2 text-sm text-muted-foreground">Try another search or clear the filters.</p><Button variant="outline" class="mt-4" onclick={()=>{search='';typeFilter='';kindFilter='';}}>Clear filters</Button></div>
+  {:else if loaded&&assets.length}<p role="status" class="mb-4 text-xs text-muted-foreground">Showing {filtered.length} of {assets.length} files</p>{/if}
+  <div role="region" aria-label="Media collection" class={view==='grid'?'grid grid-cols-1 gap-5 min-[480px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4':'flex flex-col gap-3'}>
+    {#each filtered as asset (asset.id)}
+      {@const name=asset.name||asset.file_path?.split('/').pop()||'Untitled file'}
+      {@const kind=mediaKind(asset)}
+      <Card class="py-0"><CardContent class={view==='list'?'flex min-w-0 items-center p-0':'p-0'}>
+        <button type="button" class={view==='list'?'block w-28 shrink-0 text-left focus-visible:outline-2 focus-visible:outline-ring':'block w-full text-left focus-visible:outline-2 focus-visible:outline-ring'} aria-label={'Preview '+name} onclick={()=>openDetail(asset)}><LibraryPreview {asset} class="aspect-[4/3]"/></button>
+        <div class="min-w-0 flex-1 p-4"><div class="flex items-start gap-2"><div class="min-w-0 flex-1"><h3 class="truncate text-sm font-semibold" title={name}>{name}</h3><p class="mt-1 text-xs text-muted-foreground">{typeLabel(kind)}{#if canonical(asset.type)!==kind&&canonical(asset.type)!=='other'} · {typeLabel(canonical(asset.type))}{/if}</p></div>
+          <DropdownMenu.Root><DropdownMenu.Trigger class="inline-flex size-9 shrink-0 items-center justify-center rounded-lg hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring" aria-label={'Actions for '+name}><Ellipsis class="size-4"/></DropdownMenu.Trigger><DropdownMenu.Content align="end">
+            <DropdownMenu.Item onclick={()=>openDetail(asset)}>Open detail</DropdownMenu.Item><DropdownMenu.Item disabled={busy} onclick={()=>openDescribe(asset)}>Describe with AI</DropdownMenu.Item>{#if isImage(asset.file_path)}<DropdownMenu.Item disabled={busy||!!styleBusy} onclick={()=>addStyleRef(asset)}>Use as style reference</DropdownMenu.Item>{/if}<DropdownMenu.Separator/><DropdownMenu.Item disabled={busy} onclick={()=>deleteTarget=asset}>Delete asset</DropdownMenu.Item>
+          </DropdownMenu.Content></DropdownMenu.Root>
+        </div>
+        {#if asset.description&&view==='grid'}<p class="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{asset.description}</p>{/if}
+        {#if asset.metadata_json?.consistency_review||asset.tags_json?.length}<div class="mt-3 flex flex-wrap gap-1">{#if asset.metadata_json?.consistency_review}<Badge variant="outline">{asset.metadata_json.consistency_review==='pending'?'Needs review':asset.metadata_json.consistency_review==='approved'?'Approved reference':asset.metadata_json.consistency_review==='rejected'?'Rejected reference':typeLabel(asset.metadata_json.consistency_review)}</Badge>{/if}{#each (asset.tags_json??[]).slice(0,3) as tag}<Badge variant="secondary">{tag}</Badge>{/each}{#if asset.tags_json?.length>3}<span class="px-1 text-xs text-muted-foreground">+{asset.tags_json.length-3}</span>{/if}</div>{/if}
+        </div>
+      </CardContent></Card>
+    {/each}
+  </div>
+  <details class="mt-8 rounded-lg border border-border p-3"><summary class="cursor-pointer text-sm font-medium">Project style</summary>
   <div class="pt-3">
     <div class="space-y-3">
 
@@ -448,118 +491,6 @@
     </div>
   </div>
   </details>
-
-
-
-  <!-- search + filter + sort -->
-  <div class="mb-4 flex flex-wrap items-center gap-3">
-    <input
-      placeholder="Search by name, tag, type…"
-      bind:value={search}
-      class="w-full max-w-sm rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-    />
-    <div class="flex items-center gap-2">
-      <Button variant={typeFilter === '' ? 'default' : 'outline'} size="sm"
-        onclick={() => (typeFilter = '')}>All</Button>
-      {#each presentTypes as t (t)}
-        <Button variant={typeFilter === t ? 'default' : 'outline'} size="sm"
-          onclick={() => (typeFilter = typeFilter === t ? '' : t)}>{t}</Button>
-      {/each}
-    </div>
-    <div class="ml-auto flex items-center gap-1.5">
-      <label class="text-xs text-muted-foreground" for="sort">Sort</label>
-      <select id="sort" bind:value={sortBy}
-        class="rounded-md border border-input bg-background px-2 py-1.5 text-sm">
-        <option value="newest">Newest</option>
-        <option value="oldest">Oldest</option>
-        <option value="name">Name</option>
-        <option value="type">Type</option>
-      </select>
-    </div>
-  </div>
-
-  {#if !loaded}
-    {#if reviewScene}<p class="mb-3 text-sm">References for scene {reviewScene}. <button class="underline" onclick={()=>reviewScene=''}>Show all assets</button></p>{/if}
- <div class="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-4">
-      {#each Array(4) as _, i (i)}
-        <div class="rounded-lg border border-border p-3 space-y-2">
-          <Skeleton class="w-full aspect-square rounded-md" />
-          <Skeleton class="h-4 w-28" />
-          <Skeleton class="h-3 w-36" />
-        </div>
-      {/each}
-    </div>
-  {:else if !assets.length}
-    <p class="text-sm text-muted-foreground">
-      Generated props, reference sheets and rendered videos will appear here.
-    </p>
-  {:else if !filtered.length}
-    <p class="text-sm text-muted-foreground">Clear the filter or add an asset.</p>
-  {/if}
-
-  {#if reviewScene}<p class="mb-3 text-sm">References for scene {reviewScene}. <button class="underline" onclick={()=>reviewScene=''}>Show all assets</button></p>{/if}
- <div class="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-4">
-    {#each filtered as asset (asset.id)}
-      <Card>
-        <CardContent class="p-3">
-          <button type="button" class="block w-full text-left" title="Open"
-            onclick={() => openDetail(asset)}>
-            {#if asset.type === 'video' || isVideo?.(asset.file_path)}
-              <!-- svelte-ignore a11y_media_has_caption -->
-              <video preload="metadata" src={mediaUrl(asset.file_path)}
-                class="w-full rounded-md bg-black mb-2 aspect-video object-contain pointer-events-none"></video>
-            {:else if asset.type === 'audio' || isAudio(asset.file_path)}
-              <div class="mb-2 grid aspect-square w-full place-items-center rounded-md bg-muted text-sm text-muted-foreground">Audio asset</div>
-            {:else if asset.file_path && mediaUrl(asset.file_path) && isImage(asset.file_path)}
-              <img class="w-full aspect-square object-cover rounded-md bg-muted mb-2 cursor-zoom-in"
-                src={mediaUrl(asset.file_path)} alt={asset.name} loading="lazy" />
-            {:else}
-              <div class="w-full aspect-square rounded-md bg-muted mb-2 grid place-items-center text-muted-foreground text-2xl">
-                {asset.type?.includes('video') ? 'V' : 'F'}
-              </div>
-            {/if}
-          </button>
-          <div class="font-medium text-sm mb-0.5">{asset.name || asset.id}</div>
-          <div class="text-xs text-muted-foreground mb-1">{canonical(asset.type)} · {asset.id}</div>
-          {#if asset.description}
-            <div class="text-xs text-muted-foreground mb-1">{asset.description.slice(0, 90)}</div>
-          {/if}
-          <div class="flex flex-wrap gap-1 mb-2">
-            {#if asset.metadata_json?.consistency_review}<Badge variant="outline">Reference {asset.metadata_json.consistency_review}</Badge>{/if}
-            {#if asset.metadata_json?.render_job_id}
-              <Badge variant="secondary">From render</Badge>
-            {/if}
-            {#if asset.metadata_json?.captioned_path}
-              <Badge>captioned</Badge>
-            {/if}
-            {#each asset.tags_json ?? [] as tag}
-              <Badge variant="outline">{tag}</Badge>
-            {/each}
-          </div>
-          <div class="flex items-center gap-1">
-            <Button variant="ghost" size="icon" class="size-8" title="Open detail"
-              onclick={() => openDetail(asset)}>
-              <Maximize2 class="size-3.5" />
-            </Button>
-            <Button variant="ghost" size="icon" class="size-8" title="Describe with AI"
-              disabled={busy} onclick={() => openDescribe(asset)}>
-              <Sparkles class="size-3.5" />
-            </Button>
-            {#if isImage(asset.file_path)}
-              <Button variant="ghost" size="icon" class="size-8" title="Use as style ref"
-                disabled={busy || !!styleBusy} onclick={() => addStyleRef(asset)}>
-                <Pin class="size-3.5" />
-              </Button>
-            {/if}
-            <Button variant="ghost" size="icon" class="size-8 text-destructive hover:text-destructive"
-              title="Delete asset" disabled={busy} onclick={() => (deleteTarget = asset)}>
-              <Trash2 class="size-3.5" />
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    {/each}
-  </div>
 </div>
 
 <!-- Asset detail / lightbox -->
@@ -572,17 +503,17 @@
     {#if detail}
       <div class="grid gap-4 md:grid-cols-[minmax(0,1fr)_260px]">
         <div class="flex items-center justify-center bg-muted rounded-md min-h-[240px]">
-          {#if detail.type === 'video' || isVideo?.(detail.file_path)}
+          {#if mediaKind(detail)==='video'}
             <!-- svelte-ignore a11y_media_has_caption -->
             <video controls preload="metadata" src={mediaUrl(detail.file_path)}
               class="max-h-[70vh] w-full rounded-md bg-black object-contain"></video>
-          {:else if detail.type === 'audio' || isAudio(detail.file_path)}
+          {:else if mediaKind(detail)==='audio'}
             {#if mediaUrl(detail.file_path)}
               <audio controls preload="metadata" src={mediaUrl(detail.file_path)} class="w-full"></audio>
             {:else}
               <p class="p-8 text-sm text-muted-foreground">This audio file has no playable local URL.</p>
             {/if}
-          {:else if mediaUrl(detail.file_path) && isImage(detail.file_path)}
+          {:else if mediaUrl(detail.file_path) && mediaKind(detail)==='image'}
             <img class="max-h-[70vh] w-auto max-w-full rounded-md object-contain"
               src={mediaUrl(detail.file_path)} alt={detail.name || detail.id} />
           {:else}
