@@ -33,19 +33,39 @@ type Manifest struct {
 	Captions        []Cue            `json:"captions"`
 	Revision        string           `json:"revision,omitempty"`
 }
+type Adjustments struct {
+	Fit        string  `json:"fit"`
+	Scale      float64 `json:"scale"`
+	X          float64 `json:"x"`
+	Y          float64 `json:"y"`
+	Brightness float64 `json:"brightness"`
+	Contrast   float64 `json:"contrast"`
+	Saturation float64 `json:"saturation"`
+	Opacity    float64 `json:"opacity"`
+}
+
+func (a Adjustments) Valid() bool {
+	return (a.Fit == "contain" || a.Fit == "cover") && a.Scale >= 1 && a.Scale <= 4 && a.X >= 0 && a.X <= 100 && a.Y >= 0 && a.Y <= 100 && a.Brightness >= 0 && a.Brightness <= 2 && a.Contrast >= 0 && a.Contrast <= 2 && a.Saturation >= 0 && a.Saturation <= 2 && a.Opacity >= 0 && a.Opacity <= 1
+}
+func (a Adjustments) CSS() string {
+	return fmt.Sprintf("object-fit:%s;object-position:%g%% %g%%;transform:scale(%g);transform-origin:%g%% %g%%;filter:brightness(%g) contrast(%g) saturate(%g);opacity:%g", a.Fit, a.X, a.Y, a.Scale, a.X, a.Y, a.Brightness, a.Contrast, a.Saturation, a.Opacity)
+}
+
 type Clip struct {
-	HasAudio         bool    `json:"has_audio"`
-	ID               string  `json:"id"`
-	AssetID          string  `json:"asset_id"`
-	SHA256           string  `json:"sha256,omitempty"`
-	Path             string  `json:"path,omitempty"`
-	Start            float64 `json:"start"`
-	Trim             float64 `json:"trim"`
-	Duration         float64 `json:"duration"`
-	OriginalDuration float64 `json:"original_duration"`
-	Speed            float64 `json:"speed"`
-	Width            int     `json:"width"`
-	Height           int     `json:"height"`
+	Muted            bool         `json:"muted,omitempty"`
+	Adjustments      *Adjustments `json:"adjustments,omitempty"`
+	HasAudio         bool         `json:"has_audio"`
+	ID               string       `json:"id"`
+	AssetID          string       `json:"asset_id"`
+	SHA256           string       `json:"sha256,omitempty"`
+	Path             string       `json:"path,omitempty"`
+	Start            float64      `json:"start"`
+	Trim             float64      `json:"trim"`
+	Duration         float64      `json:"duration"`
+	OriginalDuration float64      `json:"original_duration"`
+	Speed            float64      `json:"speed"`
+	Width            int          `json:"width"`
+	Height           int          `json:"height"`
 }
 type CaptionBinding struct {
 	ClipID         string          `json:"clip_id"`
@@ -101,6 +121,9 @@ func Save(root, project string, m Manifest, sources map[string]string) (string, 
 			c := &clips[i]
 			if !ValidID(c.ID) || seen[c.ID] || !ValidID(c.AssetID) || c.Speed != 1 || !(c.Start >= 0 && c.Trim >= 0 && c.Duration > 0 && c.Start+c.Duration <= m.Duration) {
 				return fmt.Errorf("invalid clip or unsupported speed (only 1 supported)")
+			}
+			if c.Adjustments != nil && !c.Adjustments.Valid() {
+				return fmt.Errorf("invalid framing or color adjustment")
 			}
 			seen[c.ID] = true
 			if c.OriginalDuration == 0 {
@@ -193,10 +216,14 @@ func Document(m Manifest) string {
 				tag = "img"
 			}
 			audioAttribute := "muted"
-			if c.HasAudio {
+			if c.HasAudio && !c.Muted {
 				audioAttribute = `data-has-audio="true"`
 			}
-			fmt.Fprintf(&b, `<%s id="%s" class="clip" src="%s" data-start="%g" data-duration="%g" data-media-start="%g" %s></%s>`, tag, c.ID, c.Path, c.Start, c.Duration, c.Trim, audioAttribute, tag)
+			style := ""
+			if c.Adjustments != nil && c.Adjustments.Valid() {
+				style = ` style="` + c.Adjustments.CSS() + `"`
+			}
+			fmt.Fprintf(&b, `<%s id="%s" class="clip"%s src="%s" data-start="%g" data-duration="%g" data-media-start="%g" %s></%s>`, tag, c.ID, style, c.Path, c.Start, c.Duration, c.Trim, audioAttribute, tag)
 		}
 	}
 	for _, c := range m.Captions {

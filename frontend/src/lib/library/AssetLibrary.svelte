@@ -1,5 +1,6 @@
 <script lang="ts">
   let { embedded = false,oncounts }:{embedded?:boolean;oncounts?:(characters:number,media:number)=>void}=$props();
+  import {nodeTools} from '$lib/canvas/tools.mjs';
   import LibraryPreview from './LibraryPreview.svelte';
   import {mediaKind,typeLabel} from './catalog.mjs';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
@@ -486,6 +487,7 @@
  {#each identityTraits as row,i}<div class="mt-2 flex gap-2"><input aria-label={`Trait ${i+1} name`} class="min-w-0 w-1/3 rounded border p-2" disabled={identityBusy||reviewBusy} bind:value={row.name} placeholder="color"/><input aria-label={`Trait ${i+1} value`} class="min-w-0 flex-1 rounded border p-2" disabled={identityBusy||reviewBusy} bind:value={row.value} placeholder="red"/><button aria-label={`Remove trait ${i+1}`} disabled={identityBusy||reviewBusy} onclick={()=>identityTraits=identityTraits.filter((_,n)=>n!==i)}>Remove</button></div>{/each}
  <Button size="sm" variant="outline" disabled={identityBusy||identityTraits.length>=32} onclick={()=>identityTraits=[...identityTraits,{name:'',value:''}]}>Add trait</Button><Button size="sm" disabled={identityBusy||reviewBusy||!assetDetailsDirty()} onclick={saveIdentity}>{identityBusy?'Saving…':'Save asset details'}</Button></section>
 
+          {#each nodeTools('asset',detail.id,detail).filter((tool:any)=>tool.href.startsWith('/compositions')) as tool}<Button variant="outline" href={tool.href}>{tool.label}</Button>{/each}
           {#if detail.description}
             <div>
               <div class="text-muted-foreground mb-0.5">Description</div>

@@ -20,7 +20,9 @@ var compositionImportMu sync.Mutex
 
 func (s *Server) registerCompositionRoutes() {
 	s.router.Post("/compositions/captions/import", s.handleCompositionCaptionImport)
+	s.router.Get("/scenes/{id}/composition-sources", s.handleSceneCompositionSources)
 	s.router.Get("/compositions/sources", s.handleCompositionSources)
+	s.router.Get("/compositions/sources/{id}", s.handleCompositionSource)
 	s.router.Get("/compositions/runtime", s.handleCompositionRuntime)
 	s.router.Get("/compositions", s.handleCompositionList)
 	s.router.Post("/compositions", s.handleCompositionSave)
@@ -242,6 +244,7 @@ type compositionSource struct {
 	Name      string `json:"name"`
 	Type      string `json:"type"`
 	MediaKind string `json:"media_kind"`
+	URL       string `json:"url"`
 }
 
 func (s *Server) compositionSources(project string) (map[string]string, []compositionSource, error) {
@@ -266,7 +269,7 @@ func (s *Server) compositionSources(project string) (map[string]string, []compos
 		case ".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus":
 			mediaKind = "audio"
 		}
-		items = append(items, compositionSource{ID: id, Name: name, Type: kind, MediaKind: mediaKind})
+		items = append(items, compositionSource{ID: id, Name: name, Type: kind, MediaKind: mediaKind, URL: path})
 	}
 	assets, e := s.database.ListAssets(project)
 	if e != nil {
@@ -307,4 +310,74 @@ func (s *Server) handleCompositionSources(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, 200, items)
+}
+
+// Resolve and probe a single project-owned source for non-destructive editing.
+func (s *Server) handleCompositionSource(w http.ResponseWriter, r *http.Request) {
+	project, err := s.activeProjectID(r.Context())
+	if err != nil {
+		http.Error(w, "no active project", 400)
+		return
+	}
+	paths, items, err := s.compositionSources(project)
+	if err != nil {
+		http.Error(w, "could not load media sources", 500)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	path, ok := paths[id]
+	if !ok {
+		http.Error(w, "source not found in this project", 404)
+		return
+	}
+	duration, width, height, audio, err := composition.Probe(r.Context(), path)
+	if err != nil {
+		http.Error(w, err.Error(), 422)
+		return
+	}
+	for _, item := range items {
+		if item.ID == id {
+			writeJSON(w, 200, map[string]any{"source": item, "duration": duration, "width": width, "height": height, "has_audio": audio})
+			return
+		}
+	}
+}
+
+func (s *Server) handleSceneCompositionSources(w http.ResponseWriter, r *http.Request) {
+	project, err := s.activeProjectID(r.Context())
+	if err != nil {
+		http.Error(w, "no active project", 400)
+		return
+	}
+	scene, err := s.database.GetScene(chi.URLParam(r, "id"))
+	if err != nil || scene.ProjectID == nil || *scene.ProjectID != project {
+		http.Error(w, "scene not found in this project", 404)
+		return
+	}
+	paths, _, err := s.compositionSources(project)
+	if err != nil {
+		http.Error(w, "could not load sources", 500)
+		return
+	}
+	jobs, err := s.database.ListRenderJobs(project)
+	if err != nil {
+		http.Error(w, "could not load renders", 500)
+		return
+	}
+	ids := []string{}
+	for _, job := range jobs {
+		if job.SceneID != nil && *job.SceneID == scene.ID && job.Status == "succeeded" {
+			outputs, e := s.database.ListOutputsForJob(job.ID)
+			if e != nil {
+				http.Error(w, "could not load outputs", 500)
+				return
+			}
+			for _, out := range outputs {
+				if _, ok := paths["output-"+out.ID]; ok {
+					ids = append(ids, "output-"+out.ID)
+				}
+			}
+		}
+	}
+	writeJSON(w, 200, ids)
 }

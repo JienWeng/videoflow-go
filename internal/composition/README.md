@@ -1,6 +1,7 @@
 # Local composition boundary
 
-Optional runtime: Node 22+, local Chrome, FFmpeg/FFprobe. Run
+Docker bundles the pinned HyperFrames runtime, Chromium and FFmpeg/FFprobe.
+For native/source deployments, the optional runtime needs Node 22+ and local Chrome. Run
 `scripts/setup-hyperframes.sh /absolute/app-owned/runtime` explicitly, then set
 `VIDEOFLOW_HYPERFRAMES_BIN=/absolute/app-owned/runtime/node_modules/.bin/hyperframes`
 and `HYPERFRAMES_BROWSER_PATH` to the existing Chrome executable. No runtime
@@ -39,3 +40,8 @@ Caption wording/timing approval remains the script/audio workflow's authority.
 
 Tests: `go test ./internal/composition`; opt-in local lint/snapshot/render uses
 `VIDEOFLOW_HF_TEST_MEDIA=/path/to/two-second.mp4` and the configured runtime.
+
+
+The browser composition editor previews existing media, trims source ranges, splits and duplicates clips, reorders layers, and records undo/redo history. Fit/fill, zoom, focal position, brightness, contrast, saturation, opacity and mute are persisted on each clip. Framing/color are non-destructive composition edits, not mutations of identity reference files. Source metadata is probed locally through a project-scoped endpoint. Saved HTML includes only validated fixed CSS values, never arbitrary authored HTML or JavaScript. Legacy manifests without adjustments retain their original document bytes and revision hashes.
+
+Node editing routes share the existing Library, scene studio, caption editor and composition editor. A scene opens its latest completed render by default; other versions can be added from the source chooser. A render job exposes status and related tools rather than editing immutable output internals. Playback speed remains 1; transitions and arbitrary custom HTML effects are not supported by this adapter.

@@ -27,7 +27,7 @@ Run these commands in a terminal:
 Open http://127.0.0.1:8080 in your browser.
 The frontend proxies the backend; do not use port 8000 for this Docker route.
 
-Docker builds include Codex and Claude Code for local text planning. Sign in to your chosen engine inside the backend container from this project folder:
+Docker builds include the pinned local HyperFrames composition renderer, Chromium and FFmpeg for manual video editing, plus Codex and Claude Code for local text planning. Sign in to your chosen engine inside the backend container from this project folder:
 
     docker compose exec backend codex login --device-auth
     docker compose exec backend claude auth login

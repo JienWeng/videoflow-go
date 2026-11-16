@@ -12,6 +12,7 @@
 </script>
 
 <script lang="ts">
+  import NodeTools from './NodeTools.svelte';
   import CharacterReferences from './CharacterReferences.svelte';
   import {changedFields} from '$lib/scenes/drafts.mjs';
   import { beforeNavigate } from '$app/navigation';
@@ -115,7 +116,7 @@
       };
     } else if(shown && String(d.kind)==='asset'){
       form={};loadingRecord=true;const id=shown.id;
-      get(`/assets/${id}`).then(a=>{if(token!==recordToken)return;form={updated_at:a.updated_at,character_id:a.character_id,traits:Object.entries(a.metadata_json?.locked_traits??{}).map(([name,value])=>({name,value:String(value)})),review:a.metadata_json?.consistency_review};remember();}).catch(e=>{if(token===recordToken)recordError=String(e)}).finally(()=>{if(token===recordToken)loadingRecord=false});
+      get(`/assets/${id}`).then(a=>{if(token!==recordToken)return;form={name:a.name,description:a.description??'',updated_at:a.updated_at,character_id:a.character_id,traits:Object.entries(a.metadata_json?.locked_traits??{}).map(([name,value])=>({name,value:String(value)})),review:a.metadata_json?.consistency_review};remember();}).catch(e=>{if(token===recordToken)recordError=String(e)}).finally(()=>{if(token===recordToken)loadingRecord=false});
     } else if(shown && String(d.kind)==='character'){
       form={};loadingRecord=true;const id=shown.id;
       get(`/characters/${id}`).then(c=>{if(token!==recordToken)return;form={name:c.name,description:c.description??'',appearance:c.appearance??'',personality:c.personality??'',visual_rules:(c.visual_rules_json??[]).join('\n'),voice_rules:(c.voice_rules_json??[]).join('\n'),sample_dialogue:c.sample_dialogue??''};remember();}).catch(e=>{if(token===recordToken)recordError=String(e)}).finally(()=>{if(token===recordToken)loadingRecord=false});
@@ -206,7 +207,7 @@
     try {
       if(kind==='asset'){
         const traits:Record<string,string>={};for(const row of form.traits){const name=row.name.trim(),value=row.value.trim();if(!name||!value)throw Error('Each identity trait needs a name and value');if(Object.hasOwn(traits,name))throw Error('Trait names must be unique');traits[name]=value;}
-        const a=await put(`/assets/${shown.id}/identity`,{expected_updated_at:form.updated_at,locked_traits:traits});form.updated_at=a.updated_at;
+        const a=await patch(`/assets/${shown.id}`,{expected_updated_at:form.updated_at,name:form.name,description:form.description,locked_traits:traits});form.updated_at=a.updated_at;
       } else if(kind==='character'){
         if(!form.name?.trim())throw Error('Character name is required');
         await patch(`/characters/${shown.id}`,{...form,name:form.name.trim(),visual_rules_json:form.visual_rules.split('\n').map((v:string)=>v.trim()).filter(Boolean),voice_rules_json:form.voice_rules.split('\n').map((v:string)=>v.trim()).filter(Boolean)});
@@ -377,8 +378,8 @@
     </Button>
 
     <div class="flex min-h-0 flex-col gap-4 overflow-y-auto px-4 pb-4">
+      {#if shown}<NodeTools {kind} id={shown.id} {data}/>{/if}
       {#if kind === 'scene'}
-        {#if onopenscene}<Button variant="secondary" onclick={()=>onopenscene?.(shown!.id)}>Open scene studio</Button>{/if}
         <div class="grid gap-1.5">
           <Label for="np-title">Title</Label>
           <Input id="np-title" bind:value={form.title} oninput={markFormDirty} />
@@ -454,9 +455,7 @@
         {:else}
           <p class="text-sm text-muted-foreground">No video file available.</p>
         {/if}
-        <Button variant="secondary" class="w-full" href={`/editor/${shown?.id}`}>
-          <Clapperboard class="size-4 mr-1" />Open in editor
-        </Button>
+
 
         <div class="text-xs text-muted-foreground">
           {#if data.captioned_path}<p class="truncate">Captioned: {data.captioned_path}</p>{/if}
@@ -515,12 +514,12 @@
           </div>
         </div>
         {#if loadingRecord}<p role="status">Loading identity…</p>{:else if recordError}<p role="alert" class="text-destructive">{recordError}</p>{:else}
-          <div class="space-y-3"><h3 class="font-medium">Identity locks</h3><p class="text-xs text-muted-foreground">Keep defining details consistent, such as color: red or vehicle: car.</p>
+          <div class="space-y-3"><Label for="np-asset-name">Asset name</Label><Input id="np-asset-name" bind:value={form.name} oninput={markFormDirty}/><Label for="np-asset-description">Asset description</Label><Textarea id="np-asset-description" bind:value={form.description} oninput={markFormDirty}/><h3 class="font-medium">Identity locks</h3><p class="text-xs text-muted-foreground">Keep defining details consistent, such as color: red or vehicle: car.</p>
           {#each form.traits??[] as trait,i}<div class="grid grid-cols-[1fr_1fr_auto] gap-2"><Input aria-label={'Trait name '+(i+1)} bind:value={trait.name} oninput={markFormDirty} placeholder="Color" /><Input aria-label={'Trait value '+(i+1)} bind:value={trait.value} oninput={markFormDirty} placeholder="Red" /><Button variant="ghost" aria-label={'Remove trait '+(i+1)} onclick={()=>{form.traits.splice(i,1);markFormDirty()}}><X class="size-4" /></Button></div>{/each}
           <Button variant="outline" disabled={(form.traits?.length??0)>=32} onclick={()=>{form.traits.push({name:'',value:''});markFormDirty()}}>Add identity trait</Button>
-          <div class="flex gap-2"><Button onclick={save} disabled={saving||!formDirty}>{saving?'Saving…':'Save identity'}</Button><Button variant="outline" onclick={discard} disabled={!formDirty||saving}>Cancel</Button></div></div>
+          <div class="flex gap-2"><Button onclick={save} disabled={saving||!formDirty}>{saving?'Saving…':'Save asset details'}</Button><Button variant="outline" onclick={discard} disabled={!formDirty||saving}>Cancel</Button></div></div>
         {/if}
-        <Button variant="secondary" href={`/library?tab=media&asset_id=${encodeURIComponent(shown?.id ?? '')}`}>Edit asset identity & review</Button>
+
         <Button variant="destructive" onclick={deleteAsset} disabled={deleting}>
           <Trash2 class="size-4 mr-1" />
           {deleting ? 'Deleting…' : confirmingDelete ? 'Confirm delete' : 'Delete asset'}
@@ -544,7 +543,7 @@
           {/each}
           <div class="flex gap-2"><Button class="flex-1" onclick={save} disabled={saving||!formDirty}>{saving?'Saving…':'Save character'}</Button><Button variant="outline" disabled={saving||!formDirty} onclick={discard}>Cancel</Button></div>
         {/if}
-        <Button variant="outline" href={`/voices?character_id=${encodeURIComponent(shown?.id??'')}`}>Voice & dialogue</Button>
+
       {/if}
 
       {#if kind === 'scene' || kind === 'shot'}

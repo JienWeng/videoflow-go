@@ -357,6 +357,7 @@
   {:else}
     <!-- Header -->
     <header class="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2">
+      <Button variant="outline" href={`/compositions?source=${encodeURIComponent('output-'+output.id)}`}>Trim & arrange video</Button>
       <Button variant="ghost" size="icon-sm" href="/render" title="Back to renders">
         <ArrowLeft />
       </Button>

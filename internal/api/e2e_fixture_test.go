@@ -184,7 +184,7 @@ print(json.dumps({'type':'turn.completed'}))
 	defer server.Close()
 	defer server.CloseClientConnections()
 	os.WriteFile("/tmp/videoflow-native-browser-fixture-ready", []byte("ready"), 0600)
-	for i := 0; i < 4800; i++ {
+	for i := 0; i < 18000; i++ {
 		if _, err := os.Stat("/tmp/videoflow-native-browser-fixture-stop"); err == nil {
 			return
 		}

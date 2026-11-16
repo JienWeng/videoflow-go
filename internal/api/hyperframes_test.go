@@ -167,3 +167,13 @@ func TestCompositionListIsProjectScoped(t *testing.T) {
 		t.Fatal(isolated.Code, isolated.Body.String())
 	}
 }
+
+func TestCompositionSourceMetadataScopesToProject(t *testing.T) {
+	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("unexpected provider call") })
+	if r := call(t, s, "GET", "/compositions/sources/not-owned", ""); r.Code != 404 {
+		t.Fatal(r.Code, r.Body.String())
+	}
+	if r := call(t, s, "GET", "/scenes/not-owned/composition-sources", ""); r.Code != 404 {
+		t.Fatal(r.Code, r.Body.String())
+	}
+}

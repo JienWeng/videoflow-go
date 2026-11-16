@@ -1,4 +1,6 @@
 <script lang="ts">
+  import {page} from '$app/state';
+  import {tick} from 'svelte';
   import SceneReferences from './SceneReferences.svelte';
   import {sceneStages} from './stages.mjs';
   import { mediaUrl } from '$lib/api';
@@ -62,6 +64,8 @@
   const sections=$derived(sceneStages({expanded:!!steps.find((st:any)=>st.key==='expand')?.done,shots:shots.length,storyboard:!!storyboard,rendered:!!steps.find((st:any)=>st.key==='render')?.done,assets:(generatedAssets[s.id]??[]).length,all:showAll}));
   const section=(key:string)=>sections.find(st=>st.key===key)!;
   const isOpen=(key:string)=>opened[key]??section(key).open;
+  let focusedShot='';
+  $effect(()=>{const id=page.url.searchParams.get('shot_id');if(id&&shots.some((shot:any)=>shot.id===id)&&focusedShot!==id){focusedShot=id;opened={...opened,shots:true};void tick().then(()=>{const row=document.getElementById('scene-shot-'+id);row?.scrollIntoView({block:'center'});row?.focus()})}});
   const remember=(key:string,event:Event)=>opened[key]=(event.currentTarget as HTMLDetailsElement).open;
 
   const firstNotDone = $derived(steps.findIndex((st: any) => !st.done));
@@ -223,7 +227,7 @@
             </TableHeader>
             <TableBody>
               {#each shots as shot, i (shot.id)}
-                <TableRow>
+                <TableRow id={'scene-shot-'+shot.id} tabindex={-1}>
                   <TableCell>
                     <div class="flex items-center gap-0.5">
                       <span class="w-4 text-right">{shot.shot_order + 1}</span>
@@ -410,6 +414,6 @@
         <p class="text-xs text-muted-foreground">Generate a storyboard after adding shots.</p>
       {/if}
     </div></details>{/if}
-    {#if section('render').visible}<details class="border-t border-border pt-2" open={isOpen('render')} ontoggle={event=>remember('render',event)} data-stage="render"><summary class="min-h-11 cursor-pointer py-3 text-sm font-semibold">Video</summary><div class="space-y-3 pb-4"><p class="text-sm text-muted-foreground">Review references and saved dialogue before submitting. Provider calls may incur charges.</p><div class="flex flex-wrap gap-2"><Button variant="outline" href={`/library?tab=media&scene_id=${encodeURIComponent(s.id)}`}>Review references</Button><Button disabled={referenceInfo?.references_ready===false||referenceInfo?.storyboard_ready===false||!shots.length||busy[`render-${s.id}`]||sceneDirty||shots.some((shot:any)=>shotDirty(shot))} onclick={()=>onRenderScene(s)}>{busy[`render-${s.id}`]?'Submitting…':steps.find((st:any)=>st.key==='render')?.done?'Render another version':'Render scene'}</Button><Button variant="ghost" href="/render">Videos & render history</Button></div>{#if !shots.length}<p class="text-xs text-muted-foreground">Add shots before rendering.</p>{/if}</div></details>{/if}
+    {#if section('render').visible}<details class="border-t border-border pt-2" open={isOpen('render')} ontoggle={event=>remember('render',event)} data-stage="render"><summary class="min-h-11 cursor-pointer py-3 text-sm font-semibold">Video</summary><div class="space-y-3 pb-4"><p class="text-sm text-muted-foreground">Review references and saved dialogue before submitting. Provider calls may incur charges.</p><div class="flex flex-wrap gap-2"><Button variant="outline" href={`/library?tab=media&scene_id=${encodeURIComponent(s.id)}`}>Review references</Button><Button disabled={referenceInfo?.references_ready===false||referenceInfo?.storyboard_ready===false||!shots.length||busy[`render-${s.id}`]||sceneDirty||shots.some((shot:any)=>shotDirty(shot))} onclick={()=>onRenderScene(s)}>{busy[`render-${s.id}`]?'Submitting…':steps.find((st:any)=>st.key==='render')?.done?'Render another version':'Render scene'}</Button><Button variant="ghost" href="/render">Videos & render history</Button><Button variant="outline" href={`/compositions?scene_id=${encodeURIComponent(s.id)}`}>Trim & arrange scene clips</Button></div>{#if !shots.length}<p class="text-xs text-muted-foreground">Add shots before rendering.</p>{/if}</div></details>{/if}
   </div>
 </div>
