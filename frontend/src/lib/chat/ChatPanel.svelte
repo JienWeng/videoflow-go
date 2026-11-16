@@ -1,4 +1,6 @@
 <script lang="ts">
+  import BrandLogo from '$lib/shell/BrandLogo.svelte';
+  import ArrowRight from '@lucide/svelte/icons/arrow-right';
   import {storyCreation} from '$lib/create/story-creation.svelte';
   import { onMount, tick } from 'svelte';
   import { get, mediaUrl, post } from '$lib/api';
@@ -737,16 +739,21 @@
   <MessageScroller.Provider autoScroll>
   <MessageScroller.Root class="flex-1 min-h-0">
     <MessageScroller.Viewport role="log" aria-label="Story conversation" class="motion-reduce:scroll-auto">
-    <MessageScroller.Content class="gap-5 p-4">
+    <MessageScroller.Content class="gap-5 px-4 pt-5 pb-4">
       {#if pendingOps.length}<ActivityView events={[{kind:'queue',title:'Work in progress',status:'running',items:pendingOps.map(m=>({title:m.op!.label,status:'running'}))}]} />{/if}
       {#if historyLoading}<div role="status" class="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />Loading conversation…</div>
       {:else if historyError}<div role="alert" class="space-y-3 py-4"><h3 class="font-semibold">Could not load conversation</h3><p class="text-sm text-muted-foreground">Your saved history has not been replaced. {historyError}</p><Button variant="outline" onclick={initPersistence}>Retry conversation</Button></div>
       {:else if sessionRequired}<div class="space-y-3 py-4"><MessageSquare class="size-7 text-muted-foreground" /><h3 class="font-semibold">Connect your story assistant</h3><p class="text-sm text-muted-foreground">Choose a session above, or set up Codex or Claude Code to start planning.</p><Button variant="outline" href="/director">Set up AI session</Button></div>
       {:else if isEmpty}
-        <div class="flex flex-1 flex-col justify-end gap-3 py-4">
-          <h3 class="text-lg font-semibold">{selected?`Let’s work on ${selected.label}`:'What would you like to create?'}</h3>
-
-          {#if !selected&&!embedded}<Button variant="outline" class="h-auto min-h-11 self-start whitespace-normal text-left" onclick={()=>storyCreation.show()}>Create story</Button>{/if}
+        <div class="flex flex-col gap-4 py-3">
+          <div class="flex items-center gap-3"><div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent"><BrandLogo compact class="size-7" /></div><div><p class="text-xs text-muted-foreground">VideoFlow assistant</p><h3 class="mt-1 text-lg font-semibold">{selected?`Let’s work on ${selected.label}`:'Start with an idea'}</h3></div></div>
+          <p class="text-sm leading-relaxed text-muted-foreground">{selected?'Ask for a change or review this item. You approve proposals before they run.':'Tell me about your story. We’ll shape its characters, scenes and shots together.'}</p>
+          <div class="grid gap-2" aria-label="Conversation starters">
+            {#each (selected?[{title:'Suggest improvements',description:'Review this item before making changes',prompt:`Review ${selected.label} and suggest improvements. Do not run changes yet.`}]:[{title:'Build a story',description:'Turn an idea into characters and scenes',prompt:'Help me plan a story about '},{title:'Plan the storyboard',description:'Work out the shots and visual direction',prompt:'Help me plan storyboard shots for '},{title:'Develop a character',description:'Find their personality and appearance',prompt:'Help me develop a character who '}]) as starter}
+              <button type="button" class="group flex min-h-16 items-center gap-3 rounded-xl bg-muted/60 px-3 py-3 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" onclick={()=>reusePrompt(starter.prompt)}><span class="min-w-0 flex-1"><span class="block text-sm font-medium">{starter.title}</span><span class="mt-1 block text-xs leading-relaxed text-muted-foreground">{starter.description}</span></span><ArrowRight class="size-4 shrink-0 text-muted-foreground" /></button>
+            {/each}
+          </div>
+          {#if !selected&&!embedded}<Button variant="outline" class="self-start" onclick={()=>storyCreation.show()}>Create story</Button>{/if}
         </div>
       {:else}
       {#each messages as m, i (i)}
@@ -821,17 +828,17 @@
   </MessageScroller.Root>
   </MessageScroller.Provider>
 
-  <div class="border-t border-border p-3" bind:this={inputWrapper}>
+  <div class="p-3 pt-2" bind:this={inputWrapper}>
     {#if selected||!isEmpty}<div class="mb-2 flex min-w-0 items-center justify-between gap-2">
       {#if selected}<Attachment.Root size="sm" class="min-w-0 max-w-full"><Attachment.Content class="min-w-0"><Attachment.Title class="truncate" title={selected.label}>{selected.kind.replace('_',' ')}: {selected.label}</Attachment.Title></Attachment.Content>{#if onclear}<Attachment.Actions><Attachment.Action aria-label="Clear selection" class="size-9 shrink-0" onclick={onclear}><X class="size-3.5" /></Attachment.Action></Attachment.Actions>{/if}</Attachment.Root>{:else}<span></span>{/if}
       {#if embedded&&!isEmpty}<Button variant="ghost" size="icon" class="size-9 shrink-0 text-muted-foreground" aria-label="Clear chat" title="Clear visible chat; saved session history is kept" disabled={busy||historyLoading||isEmpty} onclick={clearChat}><Eraser class="size-4" /></Button>{/if}
     </div>{/if}
     {#if chips.length&&(!isEmpty||selected)}<div aria-label="Suggested prompts" class="mb-2 flex flex-wrap items-center gap-2">{@render chipRow(chips)}</div>{/if}
     <form onsubmit={e=>{e.preventDefault();void send();}}>
-      <InputGroup.Root class="rounded-xl bg-background has-disabled:opacity-100 has-disabled:bg-background dark:has-disabled:bg-background">
-        <InputGroup.Textarea aria-label="Message story assistant" bind:value={input} class="min-h-16 max-h-40" placeholder={selected ? `What should change in ${selected.label}?` : 'Describe your story or select an item…'} onkeydown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();void send();}}} />
+      <InputGroup.Root class="rounded-2xl bg-background shadow-none has-disabled:opacity-100 has-disabled:bg-background dark:has-disabled:bg-background">
+        <InputGroup.Textarea aria-label="Message story assistant" bind:value={input} class="min-h-24 max-h-40 px-3 pt-3" placeholder={selected ? `What should change in ${selected.label}?` : 'Describe your story or select an item…'} onkeydown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();void send();}}} />
         <InputGroup.Addon align="block-end" class="gap-2">
-          <DropdownMenu.Root><DropdownMenu.Trigger>{#snippet child({props})}<InputGroup.Button {...props} type="button" size="sm" aria-label="Assistant mode" disabled={busy}>{reviewMode?'Specialist review':'Story assistant'}<ChevronDown class="size-3.5" /></InputGroup.Button>{/snippet}</DropdownMenu.Trigger>
+          <DropdownMenu.Root><DropdownMenu.Trigger>{#snippet child({props})}<InputGroup.Button {...props} type="button" size="sm" aria-label="Assistant mode" disabled={busy}>{reviewMode?'Specialist review':'Planning'}<ChevronDown class="size-3.5" /></InputGroup.Button>{/snippet}</DropdownMenu.Trigger>
             <DropdownMenu.Content align="start" side="top" class="max-w-[min(360px,90vw)]"><DropdownMenu.RadioGroup value={reviewMode?'specialists':'assistant'} onValueChange={value=>reviewMode=value==='specialists'}><DropdownMenu.RadioItem value="assistant">Story assistant</DropdownMenu.RadioItem><DropdownMenu.RadioItem value="specialists" disabled={!specialistSupported}>Two specialist reviewers</DropdownMenu.RadioItem></DropdownMenu.RadioGroup><DropdownMenu.Separator /><p class="px-2 py-1.5 text-xs text-muted-foreground">{specialistSupported?'Specialist review uses two independent local planning calls. Results are advisory.':capabilities?.subagents?.reason??'Specialist review requires an available local AI session.'}</p><p class="px-2 py-1.5 text-xs text-muted-foreground">Model and effort use the local CLI defaults. Native shell and tool execution are disabled.</p><DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/director">Manage local AI sessions</a>{/snippet}</DropdownMenu.Item></DropdownMenu.Content>
           </DropdownMenu.Root>
           <!-- Stop is offered only when the backend has a concrete local session to cancel. -->
@@ -840,6 +847,6 @@
       </InputGroup.Root>
     </form>
     {#if cancelError}<p role="alert" class="mt-2 text-xs text-destructive">{cancelError}</p>{/if}
-    <p class="mt-2 text-xs text-muted-foreground">Enter to send · Shift + Enter for a new line</p>
+    <p class="mt-2 px-1 text-[11px] text-muted-foreground">Enter to send · Shift + Enter for a new line</p>
   </div>
 </div>

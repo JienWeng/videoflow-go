@@ -30,7 +30,7 @@ for(const width of [1440,390]) {
  const node=id=>page.locator(`.svelte-flow__node[data-id="${id}"]`);
  await node('s').waitFor();await page.waitForTimeout(800);
  if(width===390)await page.getByRole('button',{name:/Workbench/}).click();
- await page.getByRole('heading',{name:'What would you like to create?',exact:true}).waitFor();
+ await page.getByRole('heading',{name:'Start with an idea',exact:true}).waitFor();
  await page.getByRole('button',{name:'Create story',exact:true}).first().click();
  await page.getByRole('dialog').getByRole('heading',{name:'Create story',exact:true}).waitFor();await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click();await page.getByRole('dialog').waitFor({state:'hidden'});
  await page.getByRole('textbox',{name:'Message story assistant'}).fill('Draft to preserve');

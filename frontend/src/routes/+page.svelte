@@ -14,12 +14,17 @@
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
   import MoreHorizontal from '@lucide/svelte/icons/ellipsis';
   import Maximize2 from '@lucide/svelte/icons/maximize-2';
+  import X from '@lucide/svelte/icons/x';
+  import MessageSquare from '@lucide/svelte/icons/message-square';
   import Minimize2 from '@lucide/svelte/icons/minimize-2';
   import { Button } from '$lib/components/ui/button';
   import { palette } from '$lib/shell/palette.svelte';
   import { get } from '$lib/api';
   import { subscribeJobs } from '$lib/sse';
   let canvas:EntityCanvas|undefined=$state(), details:NodePanel|undefined=$state(), chat:ChatPanel|undefined=$state();
+  let assistantOpen=$state(true),openAssistantButton:HTMLButtonElement|null=$state(null);
+  function openAssistant(){assistantOpen=true;mobileView='workbench';void tick().then(()=>{if(tab==='chat')document.querySelector<HTMLTextAreaElement>('[aria-label="Message story assistant"]')?.focus();else document.querySelector<HTMLElement>('#panel-details input, #panel-details textarea')?.focus();});}
+  function closeAssistant(){assistantOpen=false;mobileView='canvas';void tick().then(()=>openAssistantButton?.focus());}
   let panelWidth=$state(420), panelExpanded=$state(false), restoreWidth=420;
   let studioElement: HTMLDivElement | null=$state(null), maxPanelWidth=$state(760);
   const minPanelWidth=$derived(Math.min(340,maxPanelWidth));
@@ -75,7 +80,7 @@
   function startStory(){storyCreation.show();}
   async function editScene(id:string){setWorkspace('story');await tick();await story?.openScene(id);}
   function beforeSelect(next:Node|null){return next?.id===selected?.id || details?.canLeave()!==false;}
-  function select(next:Node|null){const changed=next?.id!==selected?.id;selected=next;if(!next)tab='chat';if(next&&changed){setWorkspace('studio');tab='details';mobileView='workbench';}}
+  function select(next:Node|null){const changed=next?.id!==selected?.id;selected=next;if(!next)tab='chat';if(next&&changed){setWorkspace('studio');tab='details';mobileView='workbench';assistantOpen=true;}}
   function clear(){canvas?.clearSelection();tab='chat';}
   onMount(()=>{palette.setHandlers({onfocus:focusNode,onnewstory:startStory});if(page.url.searchParams.has('new_story'))void tick().then(async()=>{await startStory();const url=new URL(window.location.href);url.searchParams.delete('new_story');replaceState(url,page.state);});const stop=subscribeJobs(refresh,refresh);window.addEventListener('videoflow-library-changed',refresh);return()=>{stop();window.removeEventListener('videoflow-library-changed',refresh);palette.clearHandlers()}});
 </script>
@@ -91,7 +96,7 @@
       <button class="min-h-10 rounded-md px-3 text-sm {workspace==='studio'?'bg-accent font-semibold':'text-muted-foreground hover:text-foreground'}" aria-pressed={workspace==='studio'} onclick={()=>setWorkspace('studio')}>Canvas</button>
       <button class="min-h-10 rounded-md px-3 text-sm {workspace==='story'?'bg-accent font-semibold':'text-muted-foreground hover:text-foreground'}" aria-pressed={workspace==='story'} onclick={()=>setWorkspace('story')}>Story</button>
     </div>
-    <div class="flex gap-1">{#if workspace==='story'}<Button variant="ghost" onclick={()=>{setWorkspace('studio');tab='chat';mobileView='workbench'}}>Assistant</Button>{/if}<Button onclick={startStory}>Create story</Button></div>
+    <div class="flex gap-1">{#if workspace==='story'}<Button variant="ghost" onclick={()=>{setWorkspace('studio');tab='chat';openAssistant()}}>Assistant</Button>{/if}<Button onclick={startStory}>Create story</Button></div>
   </header>
   {#if workspace==='studio'&&canvasRefreshPaused}<div role="status" class="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2 text-xs text-muted-foreground"><p>Your editing draft is kept. Save or discard it before refreshing the canvas.</p><Button variant="ghost" size="sm" disabled={details?.hasUnsavedChanges()} onclick={refreshStudio}>Refresh canvas</Button></div>{/if}
   {#if overviewMounted}<section aria-label="Project overview" class="min-h-0 flex-1 overflow-auto {workspace==='overview'?'':'hidden'}"><ProjectOverview bind:this={overview} active={workspace==='overview'} onopenStudio={()=>setWorkspace('studio')} /></section>{/if}
@@ -99,37 +104,42 @@
   {#if studioMounted}
   <div class="shrink-0 border-b border-border {workspace==='studio'?'flex md:hidden':'hidden'}" aria-label="Studio view">
     <button class="min-h-11 flex-1 text-sm {mobileView==='canvas'?'bg-accent font-semibold':''}" aria-pressed={mobileView==='canvas'} onclick={()=>mobileView='canvas'}>Canvas</button>
-    <button class="min-h-11 flex-1 text-sm {mobileView==='workbench'?'bg-accent font-semibold':''}" aria-pressed={mobileView==='workbench'} onclick={()=>mobileView='workbench'}>Workbench{context?' · '+context.kind:''}</button>
+    <button class="min-h-11 flex-1 text-sm {mobileView==='workbench'?'bg-accent font-semibold':''}" aria-pressed={mobileView==='workbench'} onclick={openAssistant}>Workbench{context?' · '+context.kind:''}</button>
   </div>
-  <div bind:this={studioElement} class="min-h-0 flex-1 {workspace==='studio'?'flex':'hidden'}" aria-label="Studio editing workspace">
-    <section aria-label="Story canvas" class="relative min-w-0 flex-1 {mobileView==='canvas'?'block':'hidden'} md:block">
-      <EntityCanvas bind:this={canvas} externalPanel oninspect={()=>{tab='details';mobileView='workbench';}} onopenscene={editScene} beforeselect={beforeSelect} onselect={select} />
+  <div bind:this={studioElement} style:--panel-width={panelWidth+'px'} class:assistant-visible={assistantOpen} class="studio-area relative min-h-0 flex-1 {workspace==='studio'?'flex':'hidden'}" aria-label="Studio editing workspace">
+    <section aria-label="Story canvas" class="canvas-pane relative min-w-0 flex-1 {mobileView==='canvas'?'block':'hidden'} md:block">
+      <EntityCanvas bind:this={canvas} externalPanel oninspect={()=>{tab='details';mobileView='workbench';assistantOpen=true;}} onopenscene={editScene} beforeselect={beforeSelect} onselect={select} />
       {#if error}<div role="alert" class="absolute inset-x-4 top-20 rounded-xl border border-destructive bg-background p-4 text-sm"><p>Could not load your story.</p><p class="mt-1 text-xs text-muted-foreground">{error}</p><Button variant="outline" class="mt-3" onclick={refresh}>Retry</Button></div>
-      {:else if nodeCount===0}<div class="pointer-events-none absolute inset-0 flex items-center justify-center p-5"><div class="pointer-events-auto max-w-sm text-center"><h2 class="text-xl font-semibold tracking-tight">Your story starts here</h2><p class="mt-2 text-sm leading-relaxed text-muted-foreground">Describe an idea in the assistant, or use Create story for a guided start.</p><Button variant="outline" class="mt-5 md:hidden" onclick={()=>{mobileView='workbench';tab='chat';}}>Open assistant</Button></div></div>{/if}
+      {:else if nodeCount===0}<div class="pointer-events-none absolute inset-0 flex items-center justify-center p-5"><div class="pointer-events-auto max-w-sm text-center"><h2 class="text-sm font-medium text-muted-foreground">Your story starts here</h2><p class="mt-2 max-w-64 text-xs leading-relaxed text-muted-foreground">Describe an idea in the assistant, or use Create story for a guided start.</p>{#if assistantOpen}<Button variant="outline" class="mt-5 md:hidden" onclick={()=>{tab='chat';openAssistant();}}>Open assistant</Button>{/if}</div></div>{/if}
     </section>
     <!-- A focusable WAI-ARIA window splitter is an interactive separator. -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-    <div role="separator" tabindex="0" aria-label="Resize assistant panel" aria-orientation="vertical" aria-controls="assistant-workbench" aria-valuemin={minPanelWidth} aria-valuemax={maxPanelWidth} aria-valuenow={panelWidth} class="hidden w-2 shrink-0 cursor-col-resize touch-none items-center justify-center border-l border-border hover:bg-accent focus-visible:bg-accent focus-visible:outline-2 focus-visible:outline-ring md:flex" onpointerdown={dragPanel} onkeydown={e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();resizePanel(e.key==='Home'?minPanelWidth:e.key==='End'?maxPanelWidth:panelWidth+(e.key==='ArrowLeft'?32:-32));}}}><span class="h-8 w-0.5 rounded-full bg-muted-foreground/50"></span></div>
-    <aside id="assistant-workbench" aria-label="Contextual workbench" style:--panel-width={panelWidth+'px'} class="assistant-panel min-h-0 w-full shrink-0 flex-col bg-background {mobileView==='workbench'?'flex':'hidden md:flex'}">
-      <div class="shrink-0 border-b border-border px-4 pt-3 pb-2">
-        <div class="mb-2 flex items-center justify-between gap-2"><h2 class="text-sm font-semibold">Story assistant</h2><div class="flex items-center gap-1">
-          <Button variant="ghost" size="icon" class="hidden size-9 md:inline-flex" aria-label={panelExpanded?'Restore assistant size':'Expand assistant'} onclick={togglePanelSize}>{#if panelExpanded}<Minimize2 class="size-4" />{:else}<Maximize2 class="size-4" />{/if}</Button>
-
-        </div></div><SessionSelector compact />
+    <div role="separator" tabindex="0" aria-label="Resize assistant panel" aria-orientation="vertical" aria-controls="assistant-workbench" aria-valuemin={minPanelWidth} aria-valuemax={maxPanelWidth} aria-valuenow={panelWidth} class="assistant-resizer hidden w-2 cursor-col-resize touch-none items-center justify-center rounded-lg hover:bg-accent focus-visible:bg-accent focus-visible:outline-2 focus-visible:outline-ring {assistantOpen?'md:flex':''}" onpointerdown={dragPanel} onkeydown={e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();resizePanel(e.key==='Home'?minPanelWidth:e.key==='End'?maxPanelWidth:panelWidth+(e.key==='ArrowLeft'?32:-32));}}}><span class="h-8 w-0.5 rounded-full bg-muted-foreground/50"></span></div>
+    <aside id="assistant-workbench" aria-label="Contextual workbench" style:--panel-width={panelWidth+'px'} class="assistant-panel min-h-0 w-full shrink-0 flex-col overflow-hidden bg-card {assistantOpen?(mobileView==='workbench'?'flex':'hidden md:flex'):'hidden'}">
+      <div class="flex shrink-0 items-start gap-1 px-3 pt-3 pb-2">
+        <h2 class="sr-only">Story assistant</h2><div class="min-w-0 flex-1"><SessionSelector compact minimal /></div>
+        <Button variant="ghost" size="icon" class="hidden size-9 shrink-0 md:inline-flex" aria-label={panelExpanded?'Restore assistant size':'Expand assistant'} onclick={togglePanelSize}>{#if panelExpanded}<Minimize2 class="size-4" />{:else}<Maximize2 class="size-4" />{/if}</Button>
+        <Button variant="ghost" size="icon" class="size-9 shrink-0" aria-label="Close assistant" title="Close assistant; your draft is kept" onclick={closeAssistant}><X class="size-4" /></Button>
       </div>
-      <div role="tablist" aria-label="Workbench" class="flex shrink-0 border-b border-border px-4">
+      {#if selected}<div role="tablist" aria-label="Workbench" class="flex shrink-0 border-b border-border px-4">
         {#each (selected?['details','chat']:['chat']) as value}<button role="tab" id={'wb-'+value} aria-selected={tab===value} aria-controls={'panel-'+value} tabindex={tab===value?0:-1} class="min-h-11 flex-1 border-b-2 text-sm {tab===value?'border-primary font-semibold':'border-transparent text-muted-foreground'}" onclick={()=>tab=value} onkeydown={e=>{if(selected&&['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();tab=e.key==='Home'?'details':e.key==='End'?'chat':value==='chat'?'details':'chat';document.getElementById('wb-'+tab)?.focus();}}}>{value==='details'?'Details':'Chat'}</button>{/each}
-      </div>
+      </div>{/if}
       <div id="panel-details" role="tabpanel" aria-labelledby="wb-details" class="min-h-0 flex-1 {tab==='details'?'':'hidden'}"><NodePanel bind:this={details} embedded node={selected} onclose={clear} onsaved={refresh} onopenscene={editScene} />{#if !selected}<div class="p-6"><h3 class="font-medium">Select something to edit</h3><p class="mt-2 text-sm text-muted-foreground">Click a scene, shot, character or asset. Its current details and editing options appear here.</p><Button variant="outline" class="mt-4 md:hidden" onclick={()=>mobileView='canvas'}>Back to canvas</Button></div>{/if}</div>
-      <div id="panel-chat" role="tabpanel" aria-labelledby="wb-chat" class="flex min-h-0 flex-1 flex-col {tab==='chat'?'':'hidden'}">
+      <div id="panel-chat" role={selected?'tabpanel':undefined} aria-label={selected?undefined:'Conversation'} aria-labelledby={selected?'wb-chat':undefined} class="flex min-h-0 flex-1 flex-col {tab==='chat'?'':'hidden'}">
         <div class="min-h-0 flex-1"><ChatPanel embedded bind:this={chat} selected={context} onclear={clear} onfocus={focusNode} onmutate={refresh} /></div>
       </div>
     </aside>
+    {#if !assistantOpen}<Button bind:ref={openAssistantButton} class="absolute right-4 bottom-4 z-20 min-h-11 rounded-xl shadow-lg" onclick={openAssistant} aria-label="Open assistant"><MessageSquare class="size-4" />Open assistant</Button>{/if}
   </div>
   {/if}
 </div>
 {#if workspace==='studio'}<Onboarding onpalette={()=>palette.open=true} />{/if}
 
 <style>
-  @media (min-width: 768px) {.assistant-panel {width:var(--panel-width);max-width:calc(100% - 248px);}}
+  @media (min-width:768px) {
+    .studio-area {background-image:radial-gradient(var(--border) .7px,transparent .7px);background-size:20px 20px;}
+    .assistant-visible .canvas-pane {margin-right:calc(var(--panel-width) + 32px);}
+    .assistant-panel {position:absolute;right:16px;top:24px;bottom:16px;width:var(--panel-width);max-width:calc(100% - 248px);border:1px solid var(--border);border-radius:16px;box-shadow:0 12px 36px rgb(0 0 0 / .18);}
+    .assistant-resizer {position:absolute;right:calc(var(--panel-width) + 18px);top:44px;bottom:36px;z-index:10;}
+  }
 </style>
