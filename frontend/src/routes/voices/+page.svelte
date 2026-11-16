@@ -1,6 +1,9 @@
 <script lang="ts">
   import { protectDraft } from '$lib/protect-draft';
   import { onMount } from 'svelte';
+  import {page} from '$app/state';
+  let selectedCharacter=$state('');
+  onMount(()=>{selectedCharacter=page.url.searchParams.get('character_id')??'';});
   import { API_BASE, get, post, put, upload, mediaUrl, isImage } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
@@ -63,7 +66,7 @@
     scripts = state.scripts;
     tasks = state.tasks;
     const [allCharacters, allAssets, allScenes, jobs] = await Promise.all([get('/characters'), get('/assets'), get('/scenes'), get('/render-jobs')]);
-    characters = allCharacters; assets = allAssets; scenes = allScenes;
+    characters = allCharacters; if(selectedCharacter&&!characters.some(c=>c.id===selectedCharacter))selectedCharacter=''; assets = allAssets; scenes = allScenes;
     const details = await Promise.all(jobs.filter((j: any) => j.status === 'succeeded').map((j: any) => get(`/render-jobs/${j.id}`)));
     outputs = details.flatMap((d: any) => d.outputs.map((o: any) => ({ ...o, model: d.job.model })));
     if (reset) {
@@ -103,7 +106,7 @@
     scriptRevision = saved.revision;
     notice = 'Exact spoken lines saved. Captions and speech from older script revisions are stale.';
   }
-  function addLine() { lines.push({ id: crypto.randomUUID(), character_id: characters[0]?.id ?? '', language: 'en', text: '', visible: false }); approved = false; }
+  function addLine() { lines.push({ id: crypto.randomUUID(), character_id: selectedCharacter || characters[0]?.id || '', language: 'en', text: '', visible: false }); approved = false; }
   function importDialogue() {
     const imported: Line[] = scenes.flatMap(scene => {
       let data = scene.scene_json; if (typeof data === 'string') { try { data = JSON.parse(data); } catch { return []; } }
@@ -124,22 +127,23 @@
   const resultURL = (task: VoiceTask) => mediaUrl(task.result?.local_path) || task.result?.audio?.url || null;
 </script>
 
-<svelte:head><title>Voices & script captions — VideoFlow</title></svelte:head>
+<svelte:head><title>Voice & dialogue · VideoFlow</title></svelte:head>
 
 <div class="workspace">
   <header class="page-head">
-    <div><p class="eyebrow">CHARACTER PERFORMANCE</p><h1><Mic size={28} /> Voices & script captions</h1><p>Keep each speaker's identity and the approved wording through speech, video and final captions.</p></div>
+    <div><h1>Voice & dialogue</h1><p>Set character voices, approve dialogue, then prepare speech for your video.</p></div>
     <Button variant="outline" disabled={!!busy} onclick={() => action('refresh', () => refresh())}><RefreshCw size={15} /> Refresh</Button>
   </header>
-  <nav class="links"><a href="/characters">Characters</a><a href="/scenes">Script & scenes</a><a href="/render">My videos</a></nav>
+  <nav class="links" aria-label="Voice workflow"><a href="/library?tab=characters">Back to Characters</a><a href="/?view=story">Story</a><a href="/render">Videos</a></nav>
   {#if error}<div role="alert" class="message error">{error}</div>{/if}
   {#if notice}<div role="status" class="message">{notice}</div>{/if}
   {#if !loaded}<p class="muted">Loading this project's voices…</p>{:else}
   <section aria-labelledby="voice-heading">
-    <div class="section-head"><div><p class="eyebrow">01 / SPEAKERS</p><h2 id="voice-heading">A saved voice for every character</h2></div><p>Saved voices are the default. Native reference audio is an explicit alternative.</p></div>
-    {#if !characters.length}<p class="empty">Add a character in <a href="/characters">Characters</a> to bind an approved voice.</p>{/if}
+    <div class="section-head"><div><h2 id="voice-heading">A saved voice for every character</h2></div><p>Saved voices are the default. Native reference audio is an explicit alternative.</p></div>
+    {#if !characters.length}<p class="empty">Add a character in <a href="/library?tab=characters">Characters</a> to bind an approved voice.</p>{/if}
+    {#if characters.length}<label class="mb-4 max-w-sm">Character<select aria-label="Voice character" bind:value={selectedCharacter}><option value="">All characters</option>{#each characters as c}<option value={c.id}>{c.name}</option>{/each}</select></label>{/if}
     <div class="profile-grid">
-      {#each characters as character (character.id)}
+      {#each characters.filter(c=>!selectedCharacter||c.id===selectedCharacter) as character (character.id)}
         {@const profile = profileForms[character.id]}
         {#if profile}
         {@const sample = assets.find(a => a.id === profile.sample_asset_id)}
@@ -158,8 +162,9 @@
     </div>
   </section>
 
+  <details open={characters.length>0||lines.length>0}><summary>Dialogue & speech</summary>
   <section aria-labelledby="script-heading">
-    <div class="section-head"><div><p class="eyebrow">02 / EXACT WORDING</p><h2 id="script-heading">Approved spoken lines</h2></div><p>Untimed lines are drafts. Final audio supplies timing; the script supplies every word.</p></div>
+    <div class="section-head"><div><h2 id="script-heading">Approved spoken lines</h2></div><p>Untimed lines are drafts. Final audio supplies timing; the script supplies every word.</p></div>
     <div class="panel">
       <div class="row"><label>Spoken script<select value={scriptID} disabled={!!busy} onchange={e => { loadScript(e.currentTarget.value); e.currentTarget.value=scriptID; }}><option value="main">Main dialogue</option>{#each scripts.filter(s => s.id !== 'main') as doc}<option value={doc.id}>{doc.id}</option>{/each}</select></label><span class="muted">revision {scriptRevision}</span><Button variant="outline" disabled={!!busy} onclick={importDialogue}>Import scene dialogue draft</Button></div>
       {#each lines as line, i (line.id)}
@@ -173,9 +178,11 @@
       <div class="actions"><Button variant="outline" disabled={!!busy || !characters.length} onclick={addLine}><Plus size={15} /> Add spoken line</Button><label class="check"><input type="checkbox" bind:checked={approved} /> I approve the exact wording, speaker and language.</label><Button disabled={!!busy || !lines.length} onclick={() => action('script', saveScript)}>Save script revision</Button></div>
     </div>
   </section>
+  </details>
 
+  <details open={outputs.length>0}><summary>Final audio & captions</summary>
   <section aria-labelledby="timing-heading">
-    <div class="section-head"><div><p class="eyebrow">03 / PERFORMANCE & TIMING</p><h2 id="timing-heading">Final audio, lip sync and captions</h2></div><p>Replacing audio or changing script invalidates alignment. Mixing audio alone does not synchronize mouths.</p></div>
+    <div class="section-head"><div><h2 id="timing-heading">Final audio, lip sync and captions</h2></div><p>Replacing audio or changing script invalidates alignment. Mixing audio alone does not synchronize mouths.</p></div>
     <div class="panel">
       <div class="two-columns"><label>Final output for alignment / lip sync<select bind:value={selectedOutput}><option value="">Select a rendered output</option>{#each outputs as out}<option value={out.id}>{out.id} · {out.model}</option>{/each}</select></label><label>Saved-voice speech for lip sync<select bind:value={selectedAudio}><option value="">Select generated speech audio</option>{#each sampleAssets.filter(a => a.metadata_json?.voice_task_id) as a}<option value={a.id}>{characterName(a.character_id)} · {a.id}</option>{/each}</select></label></div>
       <p class="hint">Lip sync uses the selected spoken line and its matching speech asset. Audio and video duration must match within 250 ms. Narration can use a separate audio track in compositions.</p>
@@ -183,9 +190,11 @@
       <details><summary>Native reference video settings</summary><label>Reviewed scene prompt<textarea rows="3" bind:value={nativePrompt} placeholder="Describe the scene using the selected character references (@Image1…)"></textarea></label><div class="row"><label>Duration (seconds)<input type="number" min="4" max="15" bind:value={nativeDuration} /></label><label>Aspect ratio<select bind:value={nativeAspect}><option>16:9</option><option>9:16</option><option>1:1</option><option>4:3</option><option>3:4</option><option>21:9</option></select></label></div><p class="hint">Select 1–9 images. This reference endpoint preserves audio constraints and does not support strict first/last frame mode.</p><div class="reference-list">{#each imageAssets as asset}<label class="check"><input type="checkbox" checked={selectedImages.includes(asset.id)} onchange={e => chooseImage(asset.id, e.currentTarget.checked)} />{asset.name}</label>{/each}</div></details>
     </div>
   </section>
+  </details>
 
+  <details open={tasks.length>0}><summary>Generation history & recovery</summary>
   <section aria-labelledby="requests-heading">
-    <div class="section-head"><div><p class="eyebrow">04 / RUN & RECOVER</p><h2 id="requests-heading">Prepared actions and saved receipts</h2></div><p>Only Run submits paid work. Refresh and reconciliation retrieve existing work and never resubmit.</p></div>
+    <div class="section-head"><div><h2 id="requests-heading">Prepared actions and saved receipts</h2></div><p>Only Run submits paid work. Refresh and reconciliation retrieve existing work and never resubmit.</p></div>
     {#if !tasks.length}<p class="empty">Prepare an action above to review its exact source revisions and provider route.</p>{/if}
     {#each tasks as task (task.id)}
       <article class="panel task"><div class="row"><h3>{task.kind.replaceAll('_', ' ')}</h3><Badge variant="secondary">{task.status}</Badge></div><p class="route">fal / {task.model}</p><p class="hint">{task.bindings.map(b => `${b.kind}: ${b.id}${b.revision ? ` @ revision ${b.revision}` : ''}`).join(' · ')}</p><p class="hint">Local task {task.id}{#if task.upstream_id}<br />Upstream request {task.upstream_id}{/if}</p>
@@ -202,9 +211,10 @@
       </article>
     {/each}
   </section>
+  </details>
   {/if}
 </div>
 
 <style>
-  .workspace{max-width:1160px;margin:0 auto;padding:32px 28px 80px}.page-head,.section-head,.row,.actions,.links{display:flex;align-items:center;gap:14px}.page-head,.section-head{justify-content:space-between}.page-head{align-items:flex-start}.page-head h1{display:flex;align-items:center;gap:12px;font-size:28px;font-weight:650;letter-spacing:-.035em;margin:8px 0}.page-head p,.section-head>p{color:var(--muted-foreground);max-width:650px}.eyebrow{font-size:10px;font-weight:650;letter-spacing:.14em;color:var(--muted-foreground)}.links{margin:20px 0 32px;font-size:13px}section{margin-top:38px}.section-head{align-items:flex-end;margin-bottom:16px}.section-head h2{font-size:20px;letter-spacing:-.025em;margin-top:6px}.section-head>p{max-width:390px;font-size:12px}.profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.panel{border:1px solid var(--border);border-radius:12px;background:var(--card);padding:22px;margin-bottom:16px}.panel h3{font-size:16px;font-weight:600}.row{flex-wrap:wrap}.row h3{flex:1}.row>label{flex:1;min-width:100px}.actions{flex-wrap:wrap;margin-top:16px}.hint,.muted{font-size:11px;color:var(--muted-foreground);line-height:1.7;overflow-wrap:anywhere}.hint{margin:8px 0}.message{border:1px solid var(--border);background:var(--muted);padding:12px 16px;border-radius:8px;font-size:13px;margin:14px 0}.message.error{color:var(--destructive);border-color:color-mix(in srgb,var(--destructive) 25%,transparent)}label{display:flex;flex-direction:column;gap:6px;font-size:12px;margin:12px 0;color:var(--foreground)}input:not([type=checkbox]),select,textarea{width:100%;min-height:36px;border:1px solid var(--input);background:var(--background);color:var(--foreground);border-radius:6px;padding:8px 10px;font:inherit}textarea{resize:vertical}.check{display:flex;flex-direction:row;align-items:center;gap:8px;line-height:1.5}.check input{accent-color:var(--primary)}audio{display:block;width:100%;height:36px;margin:12px 0}a{display:inline-flex;align-items:center;gap:6px;text-decoration:underline;text-underline-offset:4px;font-size:12px}.empty{border:1px dashed var(--border);border-radius:10px;padding:24px;color:var(--muted-foreground);font-size:13px}.utterance{border-top:1px solid var(--border);margin-top:18px;padding-top:12px}.line-meta{display:grid;grid-template-columns:1fr 90px 1fr auto;gap:12px;align-items:center}.icon-button{padding:8px;color:var(--muted-foreground)}.two-columns{display:grid;grid-template-columns:1fr 1fr;gap:18px}details{border-top:1px solid var(--border);padding-top:18px;margin-top:22px}summary{cursor:pointer;font-size:13px;font-weight:600}.reference-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 16px}.payload{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;padding:14px 0}.route{font-size:12px;margin-top:8px;overflow-wrap:anywhere}.task>p:not(.hint):not(.route){font-size:12px;margin:12px 0}.cues{list-style:decimal;padding-left:20px;max-height:250px;overflow:auto;font-size:13px}.cues li{margin:8px 0}.cues span{font-variant-numeric:tabular-nums;color:var(--muted-foreground);font-size:11px;margin-right:8px}.upload input{font-size:11px}.task a{margin:10px 10px 10px 0}@media(max-width:760px){.workspace{padding:24px 16px 60px}.page-head,.section-head{align-items:flex-start;flex-direction:column}.profile-grid,.two-columns{grid-template-columns:1fr}.line-meta{grid-template-columns:1fr 70px}.reference-list{grid-template-columns:1fr 1fr}.page-head h1{font-size:24px}}
+  .workspace{max-width:1160px;margin:0 auto;padding:32px 28px 80px}.page-head,.section-head,.row,.actions,.links{display:flex;align-items:center;gap:14px}.page-head,.section-head{justify-content:space-between}.page-head{align-items:flex-start}.page-head h1{display:flex;align-items:center;gap:12px;font-size:28px;font-weight:650;letter-spacing:-.035em;margin:8px 0}.page-head p,.section-head>p{color:var(--muted-foreground);max-width:650px}.links{margin:20px 0 32px;font-size:13px}section{margin-top:38px}.section-head{align-items:flex-end;margin-bottom:16px}.section-head h2{font-size:20px;letter-spacing:-.025em;margin-top:6px}.section-head>p{max-width:390px;font-size:12px}.profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.panel{border:1px solid var(--border);border-radius:12px;background:var(--card);padding:22px;margin-bottom:16px}.panel h3{font-size:16px;font-weight:600}.row{flex-wrap:wrap}.row h3{flex:1}.row>label{flex:1;min-width:100px}.actions{flex-wrap:wrap;margin-top:16px}.hint,.muted{font-size:11px;color:var(--muted-foreground);line-height:1.7;overflow-wrap:anywhere}.hint{margin:8px 0}.message{border:1px solid var(--border);background:var(--muted);padding:12px 16px;border-radius:8px;font-size:13px;margin:14px 0}.message.error{color:var(--destructive);border-color:color-mix(in srgb,var(--destructive) 25%,transparent)}label{display:flex;flex-direction:column;gap:6px;font-size:12px;margin:12px 0;color:var(--foreground)}input:not([type=checkbox]),select,textarea{width:100%;min-height:36px;border:1px solid var(--input);background:var(--background);color:var(--foreground);border-radius:6px;padding:8px 10px;font:inherit}textarea{resize:vertical}.check{display:flex;flex-direction:row;align-items:center;gap:8px;line-height:1.5}.check input{accent-color:var(--primary)}audio{display:block;width:100%;height:36px;margin:12px 0}a{display:inline-flex;align-items:center;gap:6px;text-decoration:underline;text-underline-offset:4px;font-size:12px}.empty{border:1px dashed var(--border);border-radius:10px;padding:24px;color:var(--muted-foreground);font-size:13px}.utterance{border-top:1px solid var(--border);margin-top:18px;padding-top:12px}.line-meta{display:grid;grid-template-columns:1fr 90px 1fr auto;gap:12px;align-items:center}.icon-button{padding:8px;color:var(--muted-foreground)}.two-columns{display:grid;grid-template-columns:1fr 1fr;gap:18px}details{border-top:1px solid var(--border);padding-top:18px;margin-top:22px}summary{cursor:pointer;font-size:14px;font-weight:600;min-height:44px;padding:10px 0}summary:focus-visible{outline:2px solid var(--ring);outline-offset:4px}.reference-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0 16px}.payload{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;padding:14px 0}.route{font-size:12px;margin-top:8px;overflow-wrap:anywhere}.task>p:not(.hint):not(.route){font-size:12px;margin:12px 0}.cues{list-style:decimal;padding-left:20px;max-height:250px;overflow:auto;font-size:13px}.cues li{margin:8px 0}.cues span{font-variant-numeric:tabular-nums;color:var(--muted-foreground);font-size:11px;margin-right:8px}.upload input{font-size:11px}.task a{margin:10px 10px 10px 0}@media(max-width:760px){.workspace{padding:24px 16px 60px}.page-head,.section-head{align-items:flex-start;flex-direction:column}.profile-grid,.two-columns{grid-template-columns:1fr}.line-meta{grid-template-columns:1fr 70px}.reference-list{grid-template-columns:1fr 1fr}.page-head h1{font-size:24px}}
 </style>

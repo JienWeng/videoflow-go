@@ -366,7 +366,7 @@
 <div class="flex h-full flex-col">
   <!-- Page header -->
   <div class="px-6 pt-6 pb-3 shrink-0">
-    <h1 class="text-lg font-semibold">Render</h1>
+    <div class="flex flex-wrap items-center justify-between gap-3"><h1 class="text-lg font-semibold">Videos</h1><div class="flex flex-wrap gap-2"><Button variant="outline" href="/voices">Dialogue & captions</Button><Button variant="outline" href="/compositions">Edit final video</Button></div></div>
   </div>
 
   <div class="mx-4 my-2 flex flex-wrap items-center gap-3 rounded-md border p-3 text-xs">

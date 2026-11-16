@@ -1,0 +1,42 @@
+import assert from 'node:assert/strict';
+import {mkdir,writeFile} from 'node:fs/promises';
+import {pathToFileURL} from 'node:url';
+const {chromium}=await import(pathToFileURL('/tmp/videoflow-browser-runner/node_modules/playwright/index.mjs'));
+const {default:AxeBuilder}=await import(pathToFileURL('/tmp/videoflow-risk-tools/node_modules/@axe-core/playwright/dist/index.mjs'));
+const base=process.env.E2E_BASE_URL||'http://127.0.0.1:8091',out='/tmp/videoflow-contextual-workflow';await mkdir(out,{recursive:true});
+const browser=await chromium.launch({executablePath:'/home/ubuntu/.cache/ms-playwright/chromium-1254/chrome-linux-arm64/chrome',headless:true,args:['--no-sandbox']});
+const report={checks:[],errors:[],axe:[]};
+try{for(const mobile of [false,true]){
+ const mode=mobile?'mobile':'desktop',context=await browser.newContext({viewport:mobile?{width:390,height:844}:{width:1440,height:1000}});
+ await context.addInitScript(()=>{localStorage.setItem('videoflow.onboarded','1');localStorage.setItem('videoflow.canvas.coach','1')});
+ let withOutput=false;
+ const characters=[{id:'pip',name:'Pip',description:'A puppy',reference_asset_ids_json:[]},{id:'mama',name:'Mama',reference_asset_ids_json:[]}];
+ await context.route('**/*',async r=>{const u=new URL(r.request().url()),path=u.pathname.replace(/^\/api/,'');if(!u.pathname.startsWith('/api/'))return u.origin===new URL(base).origin?r.continue():r.abort();if(r.request().method()!=='GET')throw Error('Unexpected write '+path);let body=[];
+ if(path==='/events')return r.fulfill({contentType:'text/event-stream',body:': ok\n\n'});
+ if(path==='/projects/active')body={id:'p',name:'Workflow film'};
+ else if(path==='/characters')body=characters;
+ else if(path==='/voice/state')body={project_id:'p',profiles:[],scripts:[],tasks:withOutput?[{id:'task',kind:'speech',model:'test',status:'draft',fingerprint:'fixture',bindings:[]}]:[]};
+ else if(path==='/assets/types')body={types:['other']};
+ else if(path==='/style')body={};
+ else if(path==='/graph')body={nodes:[],edges:[]};
+ else if(path==='/director/status')body={engines:[{engine:'codex',installed:true}],all_text_local:true};
+ else if(path==='/director/sessions')body=[{id:'session',title:'Story planning',engine:'codex',selected:true,status:'ready'}];
+ else if(path==='/director/sessions/session/selection')body={character_ids:[],asset_ids:[]};
+ else if(path==='/render-jobs')body=withOutput?[{id:'job',status:'succeeded',scene_id:'scene',model:'test'}]:[];
+ else if(path==='/render-jobs/job')body={job:{id:'job',model:'test'},outputs:[{id:'out',video_path:'storage/test.mp4'}]};
+ await r.fulfill({json:body});});
+ const p=await context.newPage();p.on('pageerror',e=>report.errors.push(mode+': '+e.message));
+ async function check(name,fn){await fn();report.checks.push({auditId:`FLOW-${mode.toUpperCase()}-${report.checks.length+1}`,name,status:'pass'});console.log('PASS',mode,name)}
+ await check('sidebar has one Library and no miscellaneous tools menu',async()=>{await p.goto(base+'/library');await p.getByRole('heading',{name:'Library',exact:true}).waitFor();assert.equal(await p.getByText('More tools',{exact:true}).count(),0);assert.equal(await p.locator('aside a[href="/library"]').count(),1)});
+ await check('character voice action opens the selected character',async()=>{await p.getByRole('button',{name:'Open Pip',exact:true}).click();await p.getByRole('link',{name:'Voice & dialogue',exact:true}).click();await p.getByLabel('Voice character',{exact:true}).waitFor();assert.equal(await p.getByLabel('Voice character',{exact:true}).inputValue(),'pip');assert.equal(await p.locator('.profile-grid article').count(),1)});
+ await check('switching voice character retains unsaved fields',async()=>{const voice=p.getByRole('textbox',{name:'Provider voice ID',exact:true});await voice.fill('draft-voice');await p.getByLabel('Voice character',{exact:true}).selectOption('mama');await p.getByLabel('Voice character',{exact:true}).selectOption('pip');assert.equal(await voice.inputValue(),'draft-voice')});
+ await check('new dialogue defaults to the contextual character',async()=>{await p.getByLabel('Voice character',{exact:true}).selectOption('mama');await p.getByRole('button',{name:'Add spoken line',exact:true}).click();assert.equal(await p.locator('.utterance select').first().inputValue(),'mama')});
+ await check('later audio tools are collapsed and can be recalled',async()=>{const summary=p.getByText('Final audio & captions',{exact:true});const details=summary.locator('..');assert.equal(await details.getAttribute('open'),null);await summary.click();await p.getByRole('heading',{name:'Final audio, lip sync and captions',exact:true}).waitFor();assert(await p.getByRole('heading',{name:'Final audio, lip sync and captions',exact:true}).isVisible());await summary.click()});
+ await check('voice departure protects drafts and returns to Library',async()=>{const dismissed=p.waitForEvent('dialog').then(d=>d.dismiss());await p.getByRole('link',{name:'Back to Characters',exact:true}).click();await dismissed;assert(new URL(p.url()).pathname==='/voices');const accepted=p.waitForEvent('dialog').then(d=>d.accept());await p.getByRole('link',{name:'Back to Characters',exact:true}).click();await accepted;await p.waitForURL(/\/library/)});
+ await check('AI session tools remain available with a Studio return path',async()=>{await p.goto(base+'/director');await p.getByRole('link',{name:'Back to Studio',exact:true}).waitFor();await p.getByRole('link',{name:'Back to Studio',exact:true}).click();await p.waitForURL(base+'/');if(mobile)await p.getByRole('button',{name:'Workbench',exact:true}).click();await p.getByRole('button',{name:'AI session',exact:true}).click();await p.getByRole('menuitem',{name:'Manage AI sessions',exact:true}).waitFor();await p.keyboard.press('Escape')});
+ await check('Videos exposes final editing and dialogue in context',async()=>{await p.goto(base+'/render');assert.equal(await p.getByRole('link',{name:'Edit final video',exact:true}).getAttribute('href'),'/compositions');assert.equal(await p.getByRole('link',{name:'Dialogue & captions',exact:true}).getAttribute('href'),'/voices')});
+ await check('saved outputs and prepared actions reveal their stages without running them',async()=>{withOutput=true;await p.goto(base+'/voices');await p.getByLabel('Voice character',{exact:true}).waitFor();await p.getByRole('heading',{name:'Final audio, lip sync and captions',exact:true}).waitFor();assert(await p.getByRole('heading',{name:'Final audio, lip sync and captions',exact:true}).isVisible());assert(await p.getByRole('button',{name:'Run paid speech',exact:true}).isVisible())});
+ await check('voice workflow is accessible and fits the viewport',async()=>{const a=await new AxeBuilder({page:p}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();report.axe.push({mode,violations:a.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.failureSummary)}))});assert.deepEqual(a.violations.map(v=>v.id),[]);assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))});
+ await context.close();
+}}finally{await browser.close();await writeFile(out+'/report.json',JSON.stringify(report,null,2))}
+assert.equal(report.errors.length,0,JSON.stringify(report.errors));console.log('PASS',report.checks.length,'workflow checks;',report.axe.length,'accessibility scans');

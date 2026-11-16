@@ -107,8 +107,8 @@
         <h3 id="overview-actions" class="mb-2 text-sm font-semibold">Quick actions</h3>
         <div class="flex flex-col">
           {#if model.primary.href !== '/create'}<a href="/create" class="flex min-h-11 items-center justify-between gap-3 text-sm hover:underline underline-offset-4">New story<ArrowRight class="size-3.5 text-muted-foreground" /></a>{/if}
-          <a href="/assets" class="flex min-h-11 items-center justify-between gap-3 text-sm hover:underline underline-offset-4">Add references<ArrowRight class="size-3.5 text-muted-foreground" /></a>
-          <a href="/characters" class="flex min-h-11 items-center justify-between gap-3 text-sm hover:underline underline-offset-4">Manage characters<ArrowRight class="size-3.5 text-muted-foreground" /></a>
+          <a href="/library?tab=media" class="flex min-h-11 items-center justify-between gap-3 text-sm hover:underline underline-offset-4">Add references<ArrowRight class="size-3.5 text-muted-foreground" /></a>
+          <a href="/library?tab=characters" class="flex min-h-11 items-center justify-between gap-3 text-sm hover:underline underline-offset-4">Manage characters<ArrowRight class="size-3.5 text-muted-foreground" /></a>
         </div>
       </section>
     </div>

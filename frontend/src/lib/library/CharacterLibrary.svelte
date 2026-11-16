@@ -307,6 +307,7 @@
 
           {#if expanded[c.id]}
             <div class="mt-3 space-y-2 border-t border-border pt-3">
+              <Button variant="outline" href={`/voices?character_id=${encodeURIComponent(c.id)}`}>Voice & dialogue</Button>
               {#if editing === c.id}
                 <!-- ---- inline edit form ---- -->
                 <div class="grid gap-2">

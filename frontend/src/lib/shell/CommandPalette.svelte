@@ -133,10 +133,10 @@
     });
     out.push({
       id: 'nav-assets',
-      label: 'Go to Assets',
+      label: 'Go to Media',
       group: 'Go to',
       icon: Image,
-      href: '/library?tab=assets'
+      href: '/library?tab=media'
     });
     out.push({
       id: 'nav-settings',
@@ -145,6 +145,10 @@
       icon: SlidersHorizontal,
       href: '/settings'
     });
+
+    out.push({id:'nav-sessions',label:'Manage AI sessions',hint:'assistant setup and saved conversations',group:'Go to',icon:SlidersHorizontal,href:'/director'});
+    out.push({id:'nav-voices',label:'Voice & dialogue',hint:'character voices, speech and script captions',group:'Go to',icon:Users,href:'/voices'});
+    out.push({id:'nav-composition',label:'Edit final video',hint:'composition layers and saved edits',group:'Go to',icon:Film,href:'/compositions'});
 
     // --- Entities from the graph ----------------------------------------
     const nodes: any[] = graph?.nodes ?? [];
@@ -178,7 +182,7 @@
           group: 'Assets',
           icon: Image,
           focus: n.id,
-          href: '/library?tab=assets'
+          href: '/library?tab=media'
         });
       } else if (n.type === 'output') {
         out.push({

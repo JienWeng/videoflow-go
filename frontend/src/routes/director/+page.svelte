@@ -99,7 +99,7 @@
 
 <div class="mx-auto w-full max-w-4xl px-4 py-6 sm:px-8 sm:py-8">
   <header class="mb-8 flex items-start justify-between gap-4">
-    <div><h1 class="text-2xl font-semibold tracking-tight">AI sessions</h1></div>
+    <div><a href="/" class="mb-3 inline-flex min-h-11 items-center text-sm underline underline-offset-4">Back to Studio</a><h1 class="text-2xl font-semibold tracking-tight">AI sessions</h1><p class="mt-2 text-sm text-muted-foreground">Choose the conversation used by your story assistant.</p></div>
     <Button variant="ghost" class="min-h-11 shrink-0" disabled={busy || dirty} onclick={() => run(refresh)} aria-label="Refresh sessions"><RefreshCw class="size-4" /><span class="hidden sm:inline">Refresh</span></Button>
   </header>
   {#if error}<p role="alert" class="mb-5 rounded-lg border border-destructive p-3 text-sm text-destructive">{error}</p>{/if}
@@ -176,11 +176,11 @@ docker compose exec backend claude auth login</code></pre>
             <p class="text-sm text-muted-foreground">Choose what this session uses in future prompts.</p>
             <div class="grid gap-6 sm:grid-cols-2">
               <fieldset class="min-w-0 space-y-1" disabled={busy || selected.status === 'running'}><legend class="mb-2 text-sm font-medium">Characters</legend>
-                {#if !characters.length}<p class="text-sm text-muted-foreground">No characters yet. <a href="/characters" class="underline underline-offset-4">Add a character</a></p>{/if}
+                {#if !characters.length}<p class="text-sm text-muted-foreground">No characters yet. <a href="/library?tab=characters" class="underline underline-offset-4">Add a character</a></p>{/if}
                 {#each characters as character (character.id)}<label class="flex min-h-11 cursor-pointer items-center gap-3 text-sm"><input type="checkbox" bind:group={characterIDs} value={character.id} /><span class="min-w-0 break-words">{character.name || character.id}</span></label>{/each}
               </fieldset>
               <fieldset class="min-w-0 space-y-1" disabled={busy || selected.status === 'running'}><legend class="mb-2 text-sm font-medium">Reference assets</legend>
-                {#if !assets.length}<p class="text-sm text-muted-foreground">No assets yet. <a href="/assets" class="underline underline-offset-4">Upload references</a></p>{/if}
+                {#if !assets.length}<p class="text-sm text-muted-foreground">No assets yet. <a href="/library?tab=media" class="underline underline-offset-4">Upload references</a></p>{/if}
                 {#each assets as asset (asset.id)}<label class="flex min-h-11 cursor-pointer items-center gap-3 text-sm"><input type="checkbox" bind:group={assetIDs} value={asset.id} /><span class="min-w-0 break-words">{asset.name || asset.id}</span></label>{/each}
               </fieldset>
             </div>

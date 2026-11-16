@@ -518,7 +518,7 @@
           <Button variant="outline" disabled={(form.traits?.length??0)>=32} onclick={()=>{form.traits.push({name:'',value:''});markFormDirty()}}>Add identity trait</Button>
           <div class="flex gap-2"><Button onclick={save} disabled={saving||!formDirty}>{saving?'Saving…':'Save identity'}</Button><Button variant="outline" onclick={discard} disabled={!formDirty||saving}>Cancel</Button></div></div>
         {/if}
-        <Button variant="secondary" href={`/assets?asset_id=${encodeURIComponent(shown?.id ?? '')}`}>Edit asset identity & review</Button>
+        <Button variant="secondary" href={`/library?tab=media&asset_id=${encodeURIComponent(shown?.id ?? '')}`}>Edit asset identity & review</Button>
         <Button variant="destructive" onclick={deleteAsset} disabled={deleting}>
           <Trash2 class="size-4 mr-1" />
           {deleting ? 'Deleting…' : confirmingDelete ? 'Confirm delete' : 'Delete asset'}
@@ -541,8 +541,8 @@
           {/each}
           <div class="flex gap-2"><Button class="flex-1" onclick={save} disabled={saving||!formDirty}>{saving?'Saving…':'Save character'}</Button><Button variant="outline" disabled={saving||!formDirty} onclick={discard}>Cancel</Button></div>
         {/if}
-        <Button variant="outline" href={`/characters?character_id=${encodeURIComponent(shown?.id??'')}`}>Manage reference photos</Button>
-        <Button variant="outline" href="/voices">Edit saved voice</Button>
+        <Button variant="outline" href={`/library?tab=characters&character_id=${encodeURIComponent(shown?.id??'')}`}>Manage reference photos</Button>
+        <Button variant="outline" href={`/voices?character_id=${encodeURIComponent(shown?.id??'')}`}>Voice & dialogue</Button>
       {/if}
 
       {#if kind === 'scene' || kind === 'shot'}

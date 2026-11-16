@@ -55,15 +55,11 @@
   let navigationOpen = $state(false);
   afterNavigate(() => { navigationOpen = false;storyCreation.open=false; });
   const navGroups = [{label:'Workspace',items:[{href:'/',label:'Studio',icon:Clapperboard},{href:'/library',label:'Library',icon:FolderOpen},{href:'/render',label:'Videos',icon:Film}]}];
-  const tools = [
-    {href:'/voices',label:'Voices & captions'},
-    {href:'/compositions',label:'Compositions'}, {href:'/director',label:'AI sessions'}
-  ];
   // The editor is contextual (reached from a render output), so it highlights Render.
   function isActive(href: string, pathname: string): boolean {
-    if (href === '/') return pathname === '/';
-    if(href==='/library')return ['/library','/characters','/assets'].some(path=>pathname===path);
-    if (href === '/render') return pathname.startsWith('/render') || pathname.startsWith('/editor');
+    if (href === '/') return pathname === '/' || pathname === '/director';
+    if(href==='/library')return ['/library','/characters','/assets','/voices'].some(path=>pathname===path);
+    if (href === '/render') return pathname.startsWith('/render') || pathname.startsWith('/editor') || pathname === '/compositions';
     return pathname.startsWith(href);
   }
 
@@ -90,17 +86,6 @@
           {/each}
         </div>
       {/each}
-      {#if compact}
-        <DropdownMenu.Root>
-          <DropdownMenu.Trigger aria-label="More tools" title="More tools" class="flex min-h-11 w-full items-center justify-center rounded-lg text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring {tools.some(t=>isActive(t.href,page.url.pathname))?'bg-accent text-foreground':''}"><Ellipsis class="size-4" /></DropdownMenu.Trigger>
-          <DropdownMenu.Content side="right" align="start">{#each tools as tool}<DropdownMenu.Item>{#snippet child({props})}<a {...props} href={tool.href} aria-current={isActive(tool.href,page.url.pathname)?'page':undefined}>{tool.label}</a>{/snippet}</DropdownMenu.Item>{/each}</DropdownMenu.Content>
-        </DropdownMenu.Root>
-      {:else}
-      <details open={tools.some(t=>page.url.pathname.startsWith(t.href))} class="group">
-        <summary class="min-h-11 cursor-pointer rounded-lg px-3 py-3 text-sm text-muted-foreground hover:bg-accent">More tools</summary>
-        <div class="mt-1 border-l border-border pl-3 ml-3">{#each tools as tool}<a href={tool.href} aria-current={isActive(tool.href,page.url.pathname)?'page':undefined} class="flex min-h-11 items-center rounded-lg px-3 text-sm hover:bg-accent {isActive(tool.href,page.url.pathname)?'font-semibold':'text-muted-foreground'}">{tool.label}</a>{/each}</div>
-      </details>
-      {/if}
     </nav>
     <a href="/settings" aria-label="Settings" title={compact?'Settings':undefined} aria-current={isActive('/settings',page.url.pathname)?'page':undefined} class="mt-6 flex min-h-11 items-center gap-3 rounded-lg text-sm hover:bg-accent {compact?'justify-center px-0':'px-3'} {isActive('/settings',page.url.pathname)?'bg-accent font-semibold':'text-muted-foreground'}"><SlidersHorizontal class="size-4 shrink-0" /><span class={compact?'sr-only':''}>Settings</span></a>
   {/snippet}

@@ -27,3 +27,9 @@ Drag the assistant header or grip to undock and move it. Float assistant also op
 Local verification uses mocked provider responses plus real FFmpeg. Actual model fidelity, current model availability and the deployed server/browser still require a small, budgeted live check. The SaaS repositories and their cloud deployment are separate from this local workflow.
 
 Provider setup, supported model profiles and legacy migration are in [PROVIDERS.md](PROVIDERS.md). Current source defaults new media routes to fal.ai, keeps OpenRouter text/vision/transcription, and offers direct BytePlus video. Existing explicit OpenRouter selections stay intact.
+
+## Contextual tools
+
+The sidebar contains Studio, Library, Videos and Settings. Use the story assistant’s AI session menu to manage its conversation and setup. Open a character’s Details in Library, then Voice & dialogue to work with that character; new spoken lines default to the selected character. The character selector retains drafts when switching speakers.
+
+Voice workflow sections disclose dialogue when characters exist, final audio when rendered outputs exist, and generation history when prepared actions exist. Each section can also be opened manually. Prepared paid actions still require an explicit Run. Videos links to dialogue/captions and the final composition editor. These tools remain available through Search; existing routes and saved work are preserved. Storyboard and identity review links use the relevant Media collection in Library.

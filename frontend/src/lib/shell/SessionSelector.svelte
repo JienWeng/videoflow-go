@@ -25,7 +25,6 @@
         <DropdownMenu.Separator /><DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/director">Manage AI sessions</a>{/snippet}</DropdownMenu.Item>
       </DropdownMenu.Content>
     </DropdownMenu.Root>
-    {#if !compact}<a href="/director" class="text-xs underline underline-offset-4">Manage</a>{/if}
   </div>
   {#if loaded&&!selected}
     <div class="flex flex-wrap items-center gap-2">
