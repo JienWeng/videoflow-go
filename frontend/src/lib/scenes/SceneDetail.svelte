@@ -1,4 +1,5 @@
 <script lang="ts">
+  import {sceneStages} from './stages.mjs';
   import { mediaUrl } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
@@ -51,9 +52,14 @@
     onLightbox
   }: any = $props();
 
-  // Same correct-CTA logic as the old card: the "current" step is the first
-  // not-done one ONLY when nothing after it is done; otherwise it's complete-ish
-  // (primary CTA → Re-render, skipped earlier steps shown muted but clickable).
+  // Stage disclosure follows saved work; generation controls live inside each stage.
+  let showAll=$state(false);
+  let opened=$state<Record<string,boolean>>({});
+  const sections=$derived(sceneStages({expanded:!!steps.find((st:any)=>st.key==='expand')?.done,shots:shots.length,storyboard:!!storyboard,rendered:!!steps.find((st:any)=>st.key==='render')?.done,assets:(generatedAssets[s.id]??[]).length,all:showAll}));
+  const section=(key:string)=>sections.find(st=>st.key===key)!;
+  const isOpen=(key:string)=>opened[key]??section(key).open;
+  const remember=(key:string,event:Event)=>opened[key]=(event.currentTarget as HTMLDetailsElement).open;
+
   const firstNotDone = $derived(steps.findIndex((st: any) => !st.done));
   const laterDone = $derived(
     firstNotDone !== -1 && steps.some((st: any, i: number) => i > firstNotDone && st.done)
@@ -63,8 +69,8 @@
 </script>
 
 <div class="p-5">
-  <!-- Header: title, duration, primary next-step CTA / re-render, delete -->
-  <div class="flex items-start gap-4">
+  <!-- Status and identity stay visible; each stage owns its actions. -->
+  <div class="flex flex-wrap items-start gap-4">
     {#if storyboard}
       <button type="button"
         class="group relative size-16 shrink-0 overflow-hidden rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-ring"
@@ -81,7 +87,7 @@
       </div>
     {/if}
 
-    <div class="min-w-0 flex-1">
+    <div class="min-w-0 flex-1 basis-52">
       <div class="flex items-center gap-2 mb-2">
         <h2 class="font-semibold text-base truncate" title={s.title}>{s.title || 'Untitled scene'}</h2>
         <Badge variant="secondary" class="shrink-0 gap-1"><Clock class="size-3" />{s.duration}s</Badge>
@@ -91,72 +97,10 @@
         <span class="ml-auto font-mono text-[10px] text-muted-foreground">{s.id}</span>
       </div>
 
-      <!-- Pipeline stepper: connected segments, primary visual element -->
-      <div class="flex items-center gap-0 flex-wrap">
-        {#each steps as st, i (st.key)}
-          {#if i > 0}
-            <div class="h-0.5 w-4 sm:w-6 shrink-0 {st.done && steps[i - 1].done ? 'bg-primary/50' : 'bg-border'}"></div>
-          {/if}
-          {#if st.done}
-            <span class="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
-              <Check class="size-3" />{st.label}{#if st.key === 'shots' && shots?.length}<span class="opacity-70">{shots.length}</span>{/if}
-            </span>
-          {:else if i === currentIdx}
-            <button type="button"
-              class="inline-flex items-center gap-1.5 rounded-full bg-background px-2.5 py-1 text-xs font-medium ring-2 ring-primary/70 hover:bg-accent disabled:opacity-60"
-              disabled={st.busy} onclick={st.action}>
-              <st.icon class="size-3" />{st.busy ? st.busyLabel : st.label}
-            </button>
-          {:else if !st.done && laterDone}
-            <button type="button"
-              class="inline-flex items-center gap-1.5 rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground/60 hover:text-foreground disabled:opacity-60"
-              title="Skipped — later steps are already done. Click to run it anyway."
-              disabled={st.busy} onclick={st.action}>
-              <st.icon class="size-3" />{st.busy ? st.busyLabel : st.label}
-            </button>
-          {:else}
-            <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs text-muted-foreground">
-              <st.icon class="size-3" />{st.label}
-            </span>
-          {/if}
-        {/each}
-      </div>
+      <p class="text-xs text-muted-foreground">{current?`Next: ${current.label}`:'Video ready · earlier stages are available below'}</p>
     </div>
 
     <div class="flex shrink-0 items-center gap-2">
-      {#if current}
-        <div class="flex flex-col items-end gap-1">
-          <Button size="sm" disabled={current.busy} onclick={current.action}>
-            <current.icon class="size-3.5 mr-1" />
-            {current.busy ? current.busyLabel : `Next: ${current.label}`}
-          </Button>
-          {#if current.key === 'shots'}
-            <label class="inline-flex items-center gap-1 text-xs text-muted-foreground cursor-pointer select-none">
-              <input
-                type="checkbox"
-                class="w-auto"
-                checked={autoProps[s.id] ?? true}
-                onchange={(e) => (autoProps[s.id] = (e.currentTarget as HTMLInputElement).checked)}
-              />
-              auto props
-            </label>
-          {/if}
-        </div>
-      {:else}
-        <Button variant="secondary" size="sm" disabled={busy[`render-${s.id}`]} onclick={() => onRenderScene(s)}>
-          <Video class="size-3.5 mr-1" />{busy[`render-${s.id}`] ? 'Submitting…' : 'Re-render'}
-        </Button>
-      {/if}
-      {#if shots.length > 0 && !steps.find((st: any) => st.key === 'render')?.done}
-        <Button
-          variant="outline"
-          size="sm"
-          title="Submit the current shots directly without generating a storyboard"
-          disabled={busy[`render-${s.id}`] || sceneDirty || shots.some((shot: any) => shotDirty(shot))}
-          onclick={() => onRenderScene(s)}>
-          <Video class="size-3.5 mr-1" />{busy[`render-${s.id}`] ? 'Submitting…' : 'Render now'}
-        </Button>
-      {/if}
       <Button variant="ghost" size="icon" class="size-8 text-muted-foreground hover:text-destructive"
         title="Delete scene" disabled={busy[`delete-${s.id}`]} onclick={() => onDelete(s)}>
         <Trash2 class="size-4" />
@@ -164,10 +108,11 @@
     </div>
   </div>
 
-  <div class="mt-5 space-y-5">
+  <div class="mt-5 space-y-3">
+    <div class="flex flex-wrap items-center justify-between gap-2"><p class="text-xs text-muted-foreground">Open an earlier stage to review or edit it.</p><Button variant="ghost" size="sm" aria-expanded={showAll} onclick={()=>showAll=!showAll}>{showAll?'Hide future stages':'Show all stages'}</Button></div>
     <!-- Scene -->
-    <div>
-      <div class="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Scene</div>
+    {#if section('scene').visible}<details class="border-t border-border pt-2" open={isOpen('scene')} ontoggle={event=>remember('scene',event)} data-stage="scene">
+      <summary class="min-h-11 cursor-pointer py-3 text-sm font-semibold">{section('scene').label}</summary><div class="pb-4">
       <div class="flex flex-wrap gap-4 items-end mb-2">
         <div style="flex:2;min-width:160px">
           <label class="block text-xs text-muted-foreground mb-1" for="title-{s.id}">Title</label>
@@ -225,16 +170,16 @@
         {/each}
       </div>
       <Button variant="outline" size="sm" disabled={busy[`expand-${s.id}`]} onclick={() => onExpand(s)}>
-        <Wand2 class="size-3 mr-1" />{busy[`expand-${s.id}`] ? 'Expanding…' : 'Re-expand scene (AI)'}
+        <Wand2 class="size-3 mr-1" />{busy[`expand-${s.id}`] ? 'Expanding…' : steps.find((st:any)=>st.key==='expand')?.done?'Re-expand scene (AI)':'Expand scene (AI)'}
       </Button>
-    </div>
+    </div></details>{/if}
 
     <!-- Shots -->
-    <div class="border-t border-border pt-4">
-      <div class="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Shots</div>
+    {#if section('shots').visible}<details class="border-t border-border pt-2" open={isOpen('shots')} ontoggle={event=>remember('shots',event)} data-stage="shots">
+      <summary class="min-h-11 cursor-pointer py-3 text-sm font-semibold">{section('shots').label}</summary><div class="pb-4">
       <div class="flex flex-wrap items-center gap-2 mb-2">
         <Button variant="outline" size="sm" disabled={opBusy[`shots-${s.id}`]} onclick={() => onGenerateShots(s)}>
-          <LayoutGrid class="size-3 mr-1" />{opBusy[`shots-${s.id}`] ? 'Generating…' : 'Regenerate shots (AI)'}
+          <LayoutGrid class="size-3 mr-1" />{opBusy[`shots-${s.id}`] ? 'Generating…' : shots.length?'Regenerate shots (AI)':'Generate shots (AI)'}
         </Button>
         <Button variant="outline" size="sm" disabled={busy[`add-${s.id}`]} onclick={() => onAddShot(s)}>
           <Plus class="size-3 mr-1" />{busy[`add-${s.id}`] ? 'Adding…' : 'Add shot'}
@@ -346,11 +291,11 @@
       {:else}
         <p class="text-xs text-muted-foreground">Generate shots with AI or add one manually.</p>
       {/if}
-    </div>
+    </div></details>{/if}
 
     <!-- Assets -->
-    <div class="border-t border-border pt-4">
-      <div class="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Assets</div>
+    {#if section('assets').visible}<details class="border-t border-border pt-2" open={isOpen('assets')} ontoggle={event=>remember('assets',event)} data-stage="assets">
+      <summary class="min-h-11 cursor-pointer py-3 text-sm font-semibold">{section('assets').label}</summary><div class="pb-4">
       <div class="text-xs text-muted-foreground mb-1">Generate assets (props) for this scene:</div>
       <div class="flex flex-wrap gap-2 items-center">
         <input
@@ -435,16 +380,16 @@
           {/each}
         </div>
       {/if}
-    </div>
+    </div></details>{/if}
 
     <!-- Storyboard -->
-    <div class="border-t border-border pt-4">
-      <div class="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Storyboard</div>
+    {#if section('storyboard').visible}<details class="border-t border-border pt-2" open={isOpen('storyboard')} ontoggle={event=>remember('storyboard',event)} data-stage="storyboard">
+      <summary class="min-h-11 cursor-pointer py-3 text-sm font-semibold">{section('storyboard').label}</summary><div class="pb-4">
       <div class="flex flex-wrap items-center gap-2 mb-2">
         <Button variant="outline" size="sm"
           disabled={opBusy[`sb-${s.id}`] || !(shots?.length)}
           onclick={() => onGenerateStoryboard(s)}>
-          <Images class="size-3 mr-1" />{opBusy[`sb-${s.id}`] ? 'Generating…' : 'Regenerate storyboard'}
+          <Images class="size-3 mr-1" />{opBusy[`sb-${s.id}`] ? 'Generating…' : storyboard?'Regenerate storyboard':'Generate storyboard'}
         </Button>
       </div>
       {#if storyboard}
@@ -459,6 +404,7 @@
       {:else}
         <p class="text-xs text-muted-foreground">Generate a storyboard after adding shots.</p>
       {/if}
-    </div>
+    </div></details>{/if}
+    {#if section('render').visible}<details class="border-t border-border pt-2" open={isOpen('render')} ontoggle={event=>remember('render',event)} data-stage="render"><summary class="min-h-11 cursor-pointer py-3 text-sm font-semibold">Video</summary><div class="space-y-3 pb-4"><p class="text-sm text-muted-foreground">Review references and saved dialogue before submitting. Provider calls may incur charges.</p><div class="flex flex-wrap gap-2"><Button variant="outline" href={`/assets?scene_id=${encodeURIComponent(s.id)}`}>Review references</Button><Button disabled={!shots.length||busy[`render-${s.id}`]||sceneDirty||shots.some((shot:any)=>shotDirty(shot))} onclick={()=>onRenderScene(s)}>{busy[`render-${s.id}`]?'Submitting…':steps.find((st:any)=>st.key==='render')?.done?'Render another version':'Render scene'}</Button><Button variant="ghost" href="/render">Videos & render history</Button></div>{#if !shots.length}<p class="text-xs text-muted-foreground">Add shots before rendering.</p>{/if}</div></details>{/if}
   </div>
 </div>

@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {sceneStages} from './stages.mjs';
+const stage=(input,key)=>sceneStages(input).find(s=>s.key===key);
+assert.deepEqual(sceneStages({}).filter(s=>s.visible).map(s=>s.key),['scene']);
+assert.equal(stage({expanded:true},'shots').visible,true);
+assert.equal(stage({shots:2},'storyboard').visible,true);
+assert.equal(stage({shots:2},'assets').visible,true);
+assert.equal(stage({storyboard:true},'render').visible,true);
+assert.equal(stage({rendered:true},'scene').visible,true);
+assert.equal(stage({rendered:true},'shots').visible,true);
+assert.equal(stage({rendered:true},'render').open,true);
+assert.equal(stage({shots:2},'scene').open,false);
+assert.equal(stage({shots:2},'storyboard').open,true);
+assert.equal(sceneStages({all:true}).every(s=>s.visible),true);
+assert.equal(stage({assets:1},'assets').visible,true);
+console.log('PASS 12 scene stage assertions');

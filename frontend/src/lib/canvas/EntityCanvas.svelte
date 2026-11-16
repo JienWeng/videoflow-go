@@ -43,7 +43,7 @@
   import CanvasMenu from './CanvasMenu.svelte';
   import NodePanel from './NodePanel.svelte';
 
-  let { onselect, externalPanel = false, beforeselect }: { onselect: (node: Node | null) => void; externalPanel?: boolean; beforeselect?: (node: Node|null)=>boolean } = $props();
+  let { onselect, externalPanel = false, beforeselect, onopenscene, oninspect }: { onselect: (node: Node | null) => void; externalPanel?: boolean; beforeselect?: (node: Node|null)=>boolean; onopenscene?:(id:string)=>void; oninspect?:()=>void } = $props();
 
   let nodes = $state.raw<Node[]>([]);
   let edges = $state.raw<Edge[]>([]);
@@ -503,7 +503,7 @@
           {#if previousLayout}<Button variant="ghost" size="sm" aria-label="Undo arrange" onclick={undoArrange}><Undo2 class="size-3.5" />Undo</Button>{/if}
           <Button variant="ghost" size="sm" aria-expanded={legendOpen} onclick={()=>legendOpen=!legendOpen}>Guide</Button>
         </div>
-        {#if panelNode}<div class="mt-1 flex items-center gap-2 border-t border-border pt-2"><p class="min-w-0 flex-1 truncate text-xs" title={String(panelNode.data?.label)}>{KIND_LABELS[String(panelNode.data?.kind)]} · {panelNode.data?.label}</p><Button variant="ghost" size="sm" onclick={focusConnections} aria-label="Focus selected item and connections"><Focus class="size-3.5" />Connections</Button></div>{/if}
+
         {#if graphError}<div role="alert" class="mt-2 space-y-2 border-t border-border pt-2 text-sm"><p>{graphError}</p>{#if nodes.length}<p class="text-xs text-muted-foreground">Showing the last loaded items.</p>{/if}<Button variant="outline" size="sm" onclick={refresh}>Try again</Button></div>{:else if loading}<p role="status" class="mt-2 text-xs text-muted-foreground">Loading canvas…</p>{/if}
       </div>
       {#if finderOpen}
@@ -516,6 +516,8 @@
       {/if}
       {#if legendOpen}<section aria-label="Canvas guide" class="mt-2 space-y-3 rounded-lg border border-border bg-popover p-3 text-sm text-popover-foreground"><p>Select an item to edit it. Drag the background to move around; use Fit all to return.</p><p class="text-xs text-muted-foreground">Connect a character to a scene, or an asset to a shot, by dragging between the side handles. Right-click an item for more actions.</p><div class="flex flex-wrap gap-x-4 gap-y-2">{#each LEGEND_KINDS as kind}<span class="flex items-center gap-2 text-xs"><span class="size-2 rounded-full" style={`background:${kindColor(kind)}`}></span>{KIND_LABELS[kind]}</span>{/each}</div></section>{/if}
     </Panel>
+
+    {#if panelNode}<Panel position="bottom-center" class="z-10 max-w-[calc(100%-6rem)]"><div role="toolbar" aria-label="Selected item actions" class="flex flex-wrap items-center gap-1 rounded-xl border border-border bg-card p-2"><span class="max-w-40 truncate px-2 text-xs font-medium">{panelNode.data?.label}</span><Button variant="ghost" size="sm" onclick={()=>oninspect?oninspect():onselect(panelNode)}>Details</Button>{#if panelNode.data?.kind==='scene'&&onopenscene}<Button variant="ghost" size="sm" onclick={()=>onopenscene?.(panelNode!.id)}>Scene stages</Button>{/if}{#if panelNode.data?.kind==='output'}<Button variant="ghost" size="sm" href={`/editor/${panelNode.id}`}>Edit video</Button>{/if}<Button variant="ghost" size="sm" onclick={focusConnections} aria-label="Focus selected item and connections"><Focus class="size-3.5"/>Connections</Button><Button variant="ghost" size="icon" aria-label="Clear selection" onclick={()=>selectNode(null)}><X class="size-4"/></Button></div></Panel>{/if}
 
     <Background />
     <Controls showFitView={false} />

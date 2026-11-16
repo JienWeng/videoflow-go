@@ -1,5 +1,9 @@
 <script lang="ts">
   import '../app.css';
+  import CreateStoryDialog from '$lib/create/CreateStoryDialog.svelte';
+  import {storyCreation} from '$lib/create/story-creation.svelte';
+  import LibraryDialog from '$lib/library/LibraryDialog.svelte';
+  import {library} from '$lib/library/library.svelte';
   import BrandLogo from '$lib/shell/BrandLogo.svelte';
   import { afterNavigate, goto } from '$app/navigation';
   import { Button } from '$lib/components/ui/button';
@@ -50,21 +54,13 @@
     get('/projects/active').then((p) => (activeProject = p)).catch(() => {});
   });
 
+  function openLibrary(){navigationOpen=false;if(page.url.pathname==='/library')return;if(['/characters','/assets'].includes(page.url.pathname)){void goto('/library?tab='+ (page.url.pathname==='/assets'?'assets':'characters'));return;}library.show();}
   let navigationOpen = $state(false);
-  afterNavigate(() => { navigationOpen = false; });
-  const navGroups = [
-    { label: 'Workspace', items: [
-      { href: '/', label: 'Studio', icon: Clapperboard },
-      { href: '/render', label: 'Videos', icon: Film }
-    ]},
-    { label: 'Library', items: [
-      { href: '/characters', label: 'Characters', icon: Users },
-      { href: '/assets', label: 'Assets', icon: Image },
-      { href: '/scenes', label: 'Scenes & shots', icon: ListVideo }
-    ]}
-  ];
+  afterNavigate(() => { navigationOpen = false;storyCreation.open=false;library.open=false; });
+  const navGroups = [{label:'Workspace',items:[{href:'/',label:'Studio',icon:Clapperboard},{href:'/library',label:'Library',icon:FolderOpen},{href:'/render',label:'Videos',icon:Film}]}];
   const tools = [
-    {href:'/create', label:'Guided creator'}, {href:'/voices',label:'Voices & captions'},
+    {href:'/library',label:'Open full library'},
+    {href:'/voices',label:'Voices & captions'},
     {href:'/compositions',label:'Compositions'}, {href:'/director',label:'AI sessions'}
   ];
   // The editor is contextual (reached from a render output), so it highlights Render.
@@ -93,7 +89,7 @@
       {#each navGroups as group}
         <div><p class={compact?'sr-only':'mb-2 px-3 text-xs font-medium text-muted-foreground'}>{group.label}</p>
           {#each group.items as item}
-            <a href={item.href} aria-label={item.label} title={compact?item.label:undefined} aria-current={isActive(item.href,page.url.pathname)?'page':undefined} class="flex min-h-11 items-center gap-3 rounded-lg text-sm {compact?'justify-center px-0':'px-3'} {isActive(item.href,page.url.pathname)?'bg-accent font-semibold':'text-muted-foreground hover:bg-accent hover:text-foreground'}"><item.icon class="size-4 shrink-0" /><span class={compact?'sr-only':''}>{item.label}</span></a>
+            {#if item.href==='/library'}<button aria-label="Library" title={compact?'Library':undefined} class="flex min-h-11 w-full items-center gap-3 rounded-lg text-sm text-muted-foreground hover:bg-accent hover:text-foreground {compact?'justify-center px-0':'px-3'}" onclick={openLibrary}><item.icon class="size-4 shrink-0"/><span class={compact?'sr-only':''}>Library</span></button>{:else}<a href={item.href} aria-label={item.label} title={compact?item.label:undefined} aria-current={isActive(item.href,page.url.pathname)?'page':undefined} class="flex min-h-11 items-center gap-3 rounded-lg text-sm {compact?'justify-center px-0':'px-3'} {isActive(item.href,page.url.pathname)?'bg-accent font-semibold':'text-muted-foreground hover:bg-accent hover:text-foreground'}"><item.icon class="size-4 shrink-0" /><span class={compact?'sr-only':''}>{item.label}</span></a>{/if}
           {/each}
         </div>
       {/each}
@@ -143,7 +139,9 @@
 <CommandPalette
   bind:open={palette.open}
   onfocus={(id) => palette.handlers.onfocus?.(id)}
-  onnewstory={() => { if(palette.handlers.onnewstory)palette.handlers.onnewstory();else void goto('/?view=studio&new_story=1'); }}
+  onnewstory={() => storyCreation.show()}
 />
 
+<CreateStoryDialog />
+<LibraryDialog />
 <Toaster richColors />

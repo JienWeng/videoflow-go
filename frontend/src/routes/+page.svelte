@@ -3,6 +3,8 @@
   import { replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import type { Node } from '@xyflow/svelte';
+  import StoryWorkspace from '$lib/scenes/StoryWorkspace.svelte';
+  import {storyCreation} from '$lib/create/story-creation.svelte';
   import EntityCanvas from '$lib/canvas/EntityCanvas.svelte';
   import NodePanel from '$lib/canvas/NodePanel.svelte';
   import ChatPanel from '$lib/chat/ChatPanel.svelte';
@@ -45,10 +47,11 @@
   }
   let selected=$state<Node|null>(null);
   let overview: ProjectOverview | undefined = $state();
-  const workspace = $derived((page.state as { studioView?: 'overview' | 'studio' }).studioView ?? (page.url.searchParams.get('view') === 'studio' ? 'studio' : 'overview'));
-  let studioMounted = $state(false), overviewMounted = $state(false);
+  const workspace = $derived((page.state as { studioView?: 'overview' | 'studio' | 'story' }).studioView ?? (page.url.searchParams.get('view') === 'overview' ? 'overview' : page.url.searchParams.get('view') === 'story' ? 'story' : 'studio'));
+  let studioMounted = $state(false), overviewMounted = $state(false),storyMounted=$state(false);
+  let story:StoryWorkspace|undefined=$state();
   let canvasRefreshPaused = $state(false);
-  $effect(() => { if(workspace==='studio')studioMounted=true;else overviewMounted=true; });
+  $effect(() => { if(workspace==='studio')studioMounted=true;else if(workspace==='story')storyMounted=true;else overviewMounted=true; });
   let tab=$state('chat'), mobileView=$state('canvas'), nodeCount=$state(-1), error=$state('');
   const context=$derived(selected?{id:selected.id,kind:String(selected.data?.kind??''),label:String(selected.data?.label??'')}:null);
   async function probe(){try{const g=await get('/graph');nodeCount=g.nodes?.length??0;error=''}catch(e){error=String(e)}}
@@ -57,35 +60,42 @@
     if(details?.hasUnsavedChanges()){canvasRefreshPaused=true;return;}
     canvasRefreshPaused=false;await canvas?.refresh();await probe();
   }
-  async function refresh(){if(workspace==='overview')await overview?.refresh();else await refreshStudio();}
-  function setWorkspace(value: 'overview' | 'studio') {
+  async function refresh(){if(workspace==='overview')await overview?.refresh();else if(workspace==='story')await story?.reload();else await refreshStudio();}
+  function setWorkspace(value: 'overview' | 'studio' | 'story') {
     if(page.url.pathname!=='/')return;
     const changed=value!==workspace;
-    const wasMounted=value==='studio'?studioMounted:overviewMounted;
-    if(value==='studio')studioMounted=true;else overviewMounted=true;
+    const wasMounted=value==='studio'?studioMounted:value==='story'?storyMounted:overviewMounted;
+    if(value==='studio')studioMounted=true;else if(value==='story')storyMounted=true;else overviewMounted=true;
     const url = new URL(page.url);
-    if (value === 'studio') url.searchParams.set('view', 'studio'); else url.searchParams.delete('view');
+    if(value==='studio')url.searchParams.delete('view');else url.searchParams.set('view',value);
     replaceState(url, { ...page.state, studioView: value });
-    if(changed&&wasMounted)void tick().then(()=>value==='overview'?overview?.refresh():refreshStudio());
+    if(changed&&wasMounted)void tick().then(()=>value==='overview'?overview?.refresh():value==='story'?story?.reload():refreshStudio());
   }
   async function focusNode(id: string) { const first=!studioMounted;setWorkspace('studio');await tick();if(first)await canvas?.refresh();canvas?.focusNode(id); }
-  async function startStory() { setWorkspace('studio'); tab='chat';mobileView='workbench';await tick();chat?.startNewStory(); }
+  function startStory(){storyCreation.show();}
+  async function editScene(id:string){setWorkspace('story');await tick();await story?.openScene(id);}
   function beforeSelect(next:Node|null){return next?.id===selected?.id || details?.canLeave()!==false;}
-  function select(next:Node|null){const changed=next?.id!==selected?.id;selected=next;if(next&&changed){setWorkspace('studio');tab='details';mobileView='workbench';}}
-  function clear(){canvas?.clearSelection();}
-  onMount(()=>{palette.setHandlers({onfocus:focusNode,onnewstory:startStory});if(page.url.searchParams.has('new_story'))void tick().then(async()=>{await startStory();const url=new URL(window.location.href);url.searchParams.delete('new_story');replaceState(url,page.state);});const stop=subscribeJobs(refresh,refresh);return()=>{stop();palette.clearHandlers()}});
+  function select(next:Node|null){const changed=next?.id!==selected?.id;selected=next;if(!next)tab='chat';if(next&&changed){setWorkspace('studio');tab='details';mobileView='workbench';}}
+  function clear(){canvas?.clearSelection();tab='chat';}
+  onMount(()=>{palette.setHandlers({onfocus:focusNode,onnewstory:startStory});if(page.url.searchParams.has('new_story'))void tick().then(async()=>{await startStory();const url=new URL(window.location.href);url.searchParams.delete('new_story');replaceState(url,page.state);});const stop=subscribeJobs(refresh,refresh);window.addEventListener('videoflow-library-changed',refresh);return()=>{stop();window.removeEventListener('videoflow-library-changed',refresh);palette.clearHandlers()}});
 </script>
 <svelte:head><title>{workspace==='overview'?'Project overview · VideoFlow':'VideoFlow Studio'}</title></svelte:head>
 <div class="flex h-full min-h-0 flex-col">
-  <header class="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
-    <div><h1 class="text-base font-semibold">{workspace==='overview'?'Project overview':'Story studio'}</h1></div>
-    <div role="group" aria-label="Workspace view" class="flex rounded-lg border border-border p-1">
-      <button class="min-h-10 rounded-md px-3 text-sm {workspace==='overview'?'bg-accent font-semibold':'text-muted-foreground hover:text-foreground'}" aria-pressed={workspace==='overview'} onclick={()=>setWorkspace('overview')}>Overview</button>
-      <button class="min-h-10 rounded-md px-3 text-sm {workspace==='studio'?'bg-accent font-semibold':'text-muted-foreground hover:text-foreground'}" aria-pressed={workspace==='studio'} onclick={()=>setWorkspace('studio')}>Canvas &amp; chat</button>
+  <h1 class="sr-only">VideoFlow Studio</h1>
+  <header class="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2 sm:px-6">
+    <DropdownMenu.Root><DropdownMenu.Trigger class="inline-flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm font-semibold hover:bg-accent" aria-label="Project menu">Studio <MoreHorizontal class="size-4" /></DropdownMenu.Trigger><DropdownMenu.Content align="start">
+      <DropdownMenu.Item onclick={()=>setWorkspace('overview')}>Project summary</DropdownMenu.Item>
+      <DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/projects">Switch project</a>{/snippet}</DropdownMenu.Item>
+    </DropdownMenu.Content></DropdownMenu.Root>
+    <div role="group" aria-label="Workspace view" class="flex rounded-lg bg-muted/40 p-1">
+      <button class="min-h-10 rounded-md px-3 text-sm {workspace==='studio'?'bg-accent font-semibold':'text-muted-foreground hover:text-foreground'}" aria-pressed={workspace==='studio'} onclick={()=>setWorkspace('studio')}>Canvas</button>
+      <button class="min-h-10 rounded-md px-3 text-sm {workspace==='story'?'bg-accent font-semibold':'text-muted-foreground hover:text-foreground'}" aria-pressed={workspace==='story'} onclick={()=>setWorkspace('story')}>Story</button>
     </div>
+    <div class="flex gap-1">{#if workspace==='story'}<Button variant="ghost" onclick={()=>{setWorkspace('studio');tab='chat';mobileView='workbench'}}>Assistant</Button>{/if}<Button onclick={startStory}>Create story</Button></div>
   </header>
   {#if workspace==='studio'&&canvasRefreshPaused}<div role="status" class="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2 text-xs text-muted-foreground"><p>Your editing draft is kept. Save or discard it before refreshing the canvas.</p><Button variant="ghost" size="sm" disabled={details?.hasUnsavedChanges()} onclick={refreshStudio}>Refresh canvas</Button></div>{/if}
   {#if overviewMounted}<section aria-label="Project overview" class="min-h-0 flex-1 overflow-auto {workspace==='overview'?'':'hidden'}"><ProjectOverview bind:this={overview} active={workspace==='overview'} onopenStudio={()=>setWorkspace('studio')} /></section>{/if}
+  {#if storyMounted}<section aria-label="Story workspace" class="min-h-0 flex-1 {workspace==='story'?'':'hidden'}"><StoryWorkspace embedded bind:this={story}/></section>{/if}
   {#if studioMounted}
   <div class="shrink-0 border-b border-border {workspace==='studio'?'flex md:hidden':'hidden'}" aria-label="Studio view">
     <button class="min-h-11 flex-1 text-sm {mobileView==='canvas'?'bg-accent font-semibold':''}" aria-pressed={mobileView==='canvas'} onclick={()=>mobileView='canvas'}>Canvas</button>
@@ -93,9 +103,9 @@
   </div>
   <div bind:this={studioElement} class="min-h-0 flex-1 {workspace==='studio'?'flex':'hidden'}" aria-label="Studio editing workspace">
     <section aria-label="Story canvas" class="relative min-w-0 flex-1 {mobileView==='canvas'?'block':'hidden'} md:block">
-      <EntityCanvas bind:this={canvas} externalPanel beforeselect={beforeSelect} onselect={select} />
+      <EntityCanvas bind:this={canvas} externalPanel oninspect={()=>{tab='details';mobileView='workbench';}} onopenscene={editScene} beforeselect={beforeSelect} onselect={select} />
       {#if error}<div role="alert" class="absolute inset-x-4 top-20 rounded-xl border border-destructive bg-background p-4 text-sm"><p>Could not load your story.</p><p class="mt-1 text-xs text-muted-foreground">{error}</p><Button variant="outline" class="mt-3" onclick={refresh}>Retry</Button></div>
-      {:else if nodeCount===0}<div class="pointer-events-none absolute inset-0 flex items-center justify-center p-5"><div class="pointer-events-auto w-full max-w-sm rounded-2xl border border-border bg-background p-6"><h2 class="text-xl font-semibold tracking-tight">Your story starts here</h2><p class="mt-2 text-sm leading-relaxed text-muted-foreground">Start an AI session, then describe your idea in Chat. Characters, scenes and shots will appear on this canvas.</p><Button class="mt-5 w-full" onclick={()=>{tab='chat';mobileView='workbench'}}>Open chat</Button><a href="/create" class="mt-3 block text-center text-xs text-muted-foreground underline underline-offset-4">Prefer a guided start?</a></div></div>{/if}
+      {:else if nodeCount===0}<div class="pointer-events-none absolute inset-0 flex items-center justify-center p-5"><div class="pointer-events-auto max-w-sm text-center"><h2 class="text-xl font-semibold tracking-tight">Your story starts here</h2><p class="mt-2 text-sm leading-relaxed text-muted-foreground">Describe an idea in the assistant, or use Create story for a guided start.</p><Button variant="outline" class="mt-5 md:hidden" onclick={()=>{mobileView='workbench';tab='chat';}}>Open assistant</Button></div></div>{/if}
     </section>
     <!-- A focusable WAI-ARIA window splitter is an interactive separator. -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
@@ -104,15 +114,13 @@
       <div class="shrink-0 border-b border-border px-4 pt-3 pb-2">
         <div class="mb-2 flex items-center justify-between gap-2"><h2 class="text-sm font-semibold">Story assistant</h2><div class="flex items-center gap-1">
           <Button variant="ghost" size="icon" class="hidden size-9 md:inline-flex" aria-label={panelExpanded?'Restore assistant size':'Expand assistant'} onclick={togglePanelSize}>{#if panelExpanded}<Minimize2 class="size-4" />{:else}<Maximize2 class="size-4" />{/if}</Button>
-          <DropdownMenu.Root><DropdownMenu.Trigger aria-label="Studio tools" class="inline-flex size-9 items-center justify-center rounded-md hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"><MoreHorizontal class="size-4" /></DropdownMenu.Trigger><DropdownMenu.Content align="end">
-            <DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/characters">Characters</a>{/snippet}</DropdownMenu.Item><DropdownMenu.Item>{#snippet child({props})}<a {...props} href={context?.kind==='scene'?`/assets?scene_id=${context.id}`:'/assets'}>Review references</a>{/snippet}</DropdownMenu.Item><DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/render">Render progress</a>{/snippet}</DropdownMenu.Item><DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/voices">Voices &amp; captions</a>{/snippet}</DropdownMenu.Item><DropdownMenu.Separator /><DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/director">Manage AI sessions</a>{/snippet}</DropdownMenu.Item>
-          </DropdownMenu.Content></DropdownMenu.Root>
+
         </div></div><SessionSelector compact />
       </div>
       <div role="tablist" aria-label="Workbench" class="flex shrink-0 border-b border-border px-4">
-        {#each ['details','chat'] as value}<button role="tab" id={'wb-'+value} aria-selected={tab===value} aria-controls={'panel-'+value} tabindex={tab===value?0:-1} class="min-h-11 flex-1 border-b-2 text-sm {tab===value?'border-primary font-semibold':'border-transparent text-muted-foreground'}" onclick={()=>tab=value} onkeydown={e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();tab=e.key==='Home'?'details':e.key==='End'?'chat':value==='chat'?'details':'chat';document.getElementById('wb-'+tab)?.focus();}}}>{value==='details'?'Details':'Chat'}</button>{/each}
+        {#each (selected?['details','chat']:['chat']) as value}<button role="tab" id={'wb-'+value} aria-selected={tab===value} aria-controls={'panel-'+value} tabindex={tab===value?0:-1} class="min-h-11 flex-1 border-b-2 text-sm {tab===value?'border-primary font-semibold':'border-transparent text-muted-foreground'}" onclick={()=>tab=value} onkeydown={e=>{if(selected&&['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();tab=e.key==='Home'?'details':e.key==='End'?'chat':value==='chat'?'details':'chat';document.getElementById('wb-'+tab)?.focus();}}}>{value==='details'?'Details':'Chat'}</button>{/each}
       </div>
-      <div id="panel-details" role="tabpanel" aria-labelledby="wb-details" class="min-h-0 flex-1 {tab==='details'?'':'hidden'}"><NodePanel bind:this={details} embedded node={selected} onclose={clear} onsaved={refresh} />{#if !selected}<div class="p-6"><h3 class="font-medium">Select something to edit</h3><p class="mt-2 text-sm text-muted-foreground">Click a scene, shot, character or asset. Its current details and editing options appear here.</p><Button variant="outline" class="mt-4 md:hidden" onclick={()=>mobileView='canvas'}>Back to canvas</Button></div>{/if}</div>
+      <div id="panel-details" role="tabpanel" aria-labelledby="wb-details" class="min-h-0 flex-1 {tab==='details'?'':'hidden'}"><NodePanel bind:this={details} embedded node={selected} onclose={clear} onsaved={refresh} onopenscene={editScene} />{#if !selected}<div class="p-6"><h3 class="font-medium">Select something to edit</h3><p class="mt-2 text-sm text-muted-foreground">Click a scene, shot, character or asset. Its current details and editing options appear here.</p><Button variant="outline" class="mt-4 md:hidden" onclick={()=>mobileView='canvas'}>Back to canvas</Button></div>{/if}</div>
       <div id="panel-chat" role="tabpanel" aria-labelledby="wb-chat" class="flex min-h-0 flex-1 flex-col {tab==='chat'?'':'hidden'}">
         <div class="min-h-0 flex-1"><ChatPanel embedded bind:this={chat} selected={context} onclear={clear} onfocus={focusNode} onmutate={refresh} /></div>
       </div>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import {storyCreation} from '$lib/create/story-creation.svelte';
   import { onMount, tick } from 'svelte';
   import { get, mediaUrl, post } from '$lib/api';
   import ActionCard from '$lib/chat/ActionCard.svelte';
@@ -745,7 +746,7 @@
         <div class="flex flex-1 flex-col justify-end gap-3 py-4">
           <h3 class="text-lg font-semibold">{selected?`Let’s work on ${selected.label}`:'What would you like to create?'}</h3>
 
-          {#if !selected}<Button variant="outline" class="h-auto min-h-11 self-start whitespace-normal text-left" onclick={()=>reusePrompt('Help me plan a story about ')}>Start a story</Button>{/if}
+          {#if !selected&&!embedded}<Button variant="outline" class="h-auto min-h-11 self-start whitespace-normal text-left" onclick={()=>storyCreation.show()}>Create story</Button>{/if}
         </div>
       {:else}
       {#each messages as m, i (i)}

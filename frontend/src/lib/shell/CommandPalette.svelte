@@ -97,8 +97,8 @@
     // --- Top actions -----------------------------------------------------
     out.push({
       id: 'act-new-story',
-      label: 'New story',
-      hint: 'write a script with the chat',
+      label: 'Create story',
+      hint: 'story, characters and storyboard',
       group: 'Actions',
       icon: Sparkles,
       run: () => onnewstory?.()
@@ -112,14 +112,14 @@
     });
     out.push({
       id: 'nav-scenes',
-      label: 'Go to Scenes',
+      label: 'Go to Story',
       group: 'Go to',
       icon: ListVideo,
-      href: '/scenes'
+      href: '/?view=story'
     });
     out.push({
       id: 'nav-render',
-      label: 'Go to Render',
+      label: 'Go to Videos',
       group: 'Go to',
       icon: Film,
       href: '/render'
@@ -129,14 +129,14 @@
       label: 'Go to Characters',
       group: 'Go to',
       icon: Users,
-      href: '/characters'
+      href: '/library?tab=characters'
     });
     out.push({
       id: 'nav-assets',
       label: 'Go to Assets',
       group: 'Go to',
       icon: Image,
-      href: '/assets'
+      href: '/library?tab=assets'
     });
     out.push({
       id: 'nav-settings',
@@ -158,7 +158,7 @@
           icon: ListVideo,
           // On the canvas we focus the node; elsewhere /scenes opens it.
           focus: n.id,
-          href: '/scenes'
+          href: '/?view=story'
         });
       } else if (n.type === 'character') {
         out.push({
@@ -168,7 +168,7 @@
           group: 'Characters',
           icon: Users,
           focus: n.id,
-          href: '/characters'
+          href: '/library?tab=characters'
         });
       } else if (n.type === 'asset') {
         out.push({
@@ -178,7 +178,7 @@
           group: 'Assets',
           icon: Image,
           focus: n.id,
-          href: '/assets'
+          href: '/library?tab=assets'
         });
       } else if (n.type === 'output') {
         out.push({

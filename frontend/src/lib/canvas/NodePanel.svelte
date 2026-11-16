@@ -12,6 +12,7 @@
 </script>
 
 <script lang="ts">
+  import {changedFields} from '$lib/scenes/drafts.mjs';
   import { beforeNavigate } from '$app/navigation';
   import { untrack } from 'svelte';
   import type { Node } from '@xyflow/svelte';
@@ -29,8 +30,8 @@
   let {
     node,
     onclose,
-    onsaved, embedded = false
-  }: { node: Node | null; onclose: () => void; onsaved: () => void; embedded?: boolean } = $props();
+    onsaved, embedded = false, onopenscene
+  }: { node: Node | null; onclose: () => void; onsaved: () => void; embedded?: boolean; onopenscene?:(id:string)=>void } = $props();
 
   // The panel's own source of truth for which node it shows. It tracks the
   // `node` prop, EXCEPT when the form is dirty and the user cancels the
@@ -209,20 +210,20 @@
         if(!form.name?.trim())throw Error('Character name is required');
         await patch(`/characters/${shown.id}`,{...form,name:form.name.trim(),visual_rules_json:form.visual_rules.split('\n').map((v:string)=>v.trim()).filter(Boolean),voice_rules_json:form.voice_rules.split('\n').map((v:string)=>v.trim()).filter(Boolean)});
       } else if (kind === 'scene') {
-        await patch(`/scenes/${shown.id}`, {
+        await patch(`/scenes/${shown.id}`, changedFields({
           title: form.title,
           summary: form.summary,
           duration: Number(form.duration),
           aspect_ratio: form.aspect_ratio
-        });
+        },JSON.parse(baseline||'{}')));
       } else if (kind === 'shot') {
-        await patch(`/shots/${shown.id}`, {
+        await patch(`/shots/${shown.id}`, changedFields({
           prompt: form.prompt,
           duration: Number(form.duration),
           camera: form.camera,
           movement: form.movement,
           shot_order: Number(form.shot_order)
-        });
+        },JSON.parse(baseline||'{}')));
       }
       formDirty = false;remember();
       toast.success('Saved');
@@ -376,6 +377,7 @@
 
     <div class="flex min-h-0 flex-col gap-4 overflow-y-auto px-4 pb-4">
       {#if kind === 'scene'}
+        {#if onopenscene}<Button variant="secondary" onclick={()=>onopenscene?.(shown!.id)}>Open scene stages</Button>{/if}
         <div class="grid gap-1.5">
           <Label for="np-title">Title</Label>
           <Input id="np-title" bind:value={form.title} oninput={markFormDirty} />
