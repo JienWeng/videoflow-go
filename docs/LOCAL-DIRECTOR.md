@@ -4,9 +4,18 @@ Current source routes all planning and writing through your selected local **Cod
 
 ## Set up the local engine
 
-Install and sign in to [Codex CLI](https://developers.openai.com/codex/cli/) or [Claude Code](https://code.claude.com/docs/en/setup) on the **same host and OS account as the VideoFlow backend**. This implementation checks Codex 0.165.0 command flags; Claude needs a version supporting `--restricted` (documented from 2.1.248). Installation detection does not prove login, account entitlement, quota or successful inference. The app reports a failed native turn instead of falling back to a paid OpenRouter text call.
+For native backends, install and sign in to [Codex CLI](https://developers.openai.com/codex/cli/) or [Claude Code](https://code.claude.com/docs/en/setup) on the **same host and OS account as the VideoFlow backend**. Docker builds bundle Codex 0.169.0 and Claude Code 2.1.325. Installation detection does not prove login, account entitlement, quota or successful inference. The app reports a failed native turn instead of falling back to a paid OpenRouter text call.
 
-A backend inside Docker cannot automatically use the CLIs/authentication on your computer. Run the native backend for this local workflow; a host bridge is not bundled. Provider/media keys are configured separately in Settings. Optional executable overrides are `VIDEOFLOW_CODEX_BIN` and `VIDEOFLOW_CLAUDE_BIN`; these are server environment settings, not arbitrary browser commands.
+A backend inside Docker uses its own bundled CLIs and authentication, not the login on your computer. After rebuilding, sign in from the project folder on the backend host using one of:
+
+```sh
+docker compose exec backend codex login --device-auth
+docker compose exec backend claude auth login
+```
+
+Follow the provider's official flow in your browser/terminal. Codex device login must be enabled for your account/workspace; if unavailable, use the official authentication fallback. The `videoflow-agent-auth` named volume mounts `/home/videoflow`, preserving CLI credentials, configuration and native histories across container recreation. It is separate from public media storage and the project-data volume; keep it private and never export it in a project JSON. `docker compose down -v` deletes both named volumes. No host credentials are imported automatically. Existing installations need `docker compose up --build -d` to receive the bundled tools.
+
+Provider/media keys are configured separately in Settings. Optional executable overrides are `VIDEOFLOW_CODEX_BIN` and `VIDEOFLOW_CLAUDE_BIN`; these are server environment settings, not arbitrary browser commands. Packaged native desktop previews still require separately installed CLIs.
 
 1. Open **Local sessions** (`/director`), choose an engine and create a named session.
 2. Select the characters and reference assets, then save the selection. Full appearance, personality, visual/voice rules, sample dialogue and reference bindings are included. In Assets, open a file and save identity locks such as `kind: car`, `color: red`.

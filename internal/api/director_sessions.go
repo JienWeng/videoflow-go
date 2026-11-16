@@ -212,7 +212,7 @@ func (s *Server) registerDirectorRoutes() {
 			}
 			engines = append(engines, map[string]any{"engine": name, "installed": err == nil, "reason": reason})
 		}
-		writeJSON(w, 200, map[string]any{"all_text_local": s.cfg.UseLocalText, "engines": engines, "voice_default": "saved_character_voice", "host_requirement": "CLIs and their signed-in accounts must be on the backend host. Docker requires explicit host integration."})
+		writeJSON(w, 200, map[string]any{"all_text_local": s.cfg.UseLocalText, "engines": engines, "voice_default": "saved_character_voice", "host_requirement": "Sign in under the backend's OS account. Docker builds use their bundled CLIs and private agent-auth volume; native backends use locally installed CLIs."})
 	})
 	s.router.Get("/director/sessions", func(w http.ResponseWriter, r *http.Request) {
 		binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)

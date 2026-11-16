@@ -1,3 +1,10 @@
+FROM node:24-bookworm-slim AS agents
+ARG CODEX_VERSION=0.169.0
+ARG CLAUDE_CODE_VERSION=2.1.325
+RUN npm install --global --prefix /opt/agent-clis --no-audit --no-fund \
+    "@openai/codex@${CODEX_VERSION}" "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+    && npm cache clean --force
+
 FROM golang:1.26-bookworm AS build
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -7,9 +14,15 @@ COPY internal ./internal
 RUN CGO_ENABLED=0 GOMAXPROCS=2 go build -p 2 -trimpath -o /videoflow ./cmd/server
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates fonts-noto-core fonts-noto-cjk && rm -rf /var/lib/apt/lists/* \
-    && useradd --uid 10001 --create-home videoflow && mkdir /data && chown videoflow /data
+    && useradd --uid 10001 --create-home videoflow && chmod 700 /home/videoflow \
+    && mkdir /data && chown videoflow /data
 COPY --from=build /videoflow /usr/local/bin/videoflow
+COPY --from=agents /usr/local/bin/node /usr/local/bin/node
+COPY --from=agents /opt/agent-clis /opt/agent-clis
+ENV PATH="/opt/agent-clis/bin:${PATH}"
 USER videoflow
+RUN codex --version && claude --version \
+    && rm -rf /home/videoflow/.codex /home/videoflow/.claude /home/videoflow/.claude.json
 ENV DATABASE_PATH=/data/db.sqlite STORAGE_ROOT=/data/storage PORT=8000
 EXPOSE 8000
 CMD ["videoflow", "--host", "0.0.0.0"]

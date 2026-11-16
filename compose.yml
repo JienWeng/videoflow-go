@@ -5,6 +5,7 @@ services:
       dockerfile: deploy/Dockerfile.backend
     volumes:
       - videoflow-data:/data
+      - videoflow-agent-auth:/home/videoflow
     restart: unless-stopped
   frontend:
     build:
@@ -17,3 +18,4 @@ services:
     restart: unless-stopped
 volumes:
   videoflow-data:
+  videoflow-agent-auth:

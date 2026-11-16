@@ -1,0 +1,84 @@
+{
+  "liveDetection": {
+    "all_text_local": true,
+    "engines": [
+      {
+        "engine": "codex",
+        "installed": true,
+        "reason": ""
+      },
+      {
+        "engine": "claude",
+        "installed": true,
+        "reason": ""
+      }
+    ],
+    "host_requirement": "Sign in under the backend's OS account. Docker builds use their bundled CLIs and private agent-auth volume; native backends use locally installed CLIs.",
+    "voice_default": "saved_character_voice"
+  },
+  "checks": [
+    {
+      "name": "desktop: first session and progressive disclosure",
+      "status": "pass"
+    },
+    {
+      "name": "desktop: references save, unsaved guard and discard",
+      "status": "pass"
+    },
+    {
+      "name": "desktop: running cancel and interrupted review gate",
+      "status": "pass"
+    },
+    {
+      "name": "desktop: missing engine shows setup, never ready",
+      "status": "pass"
+    },
+    {
+      "name": "desktop: failed details cannot save old references or continue",
+      "status": "pass"
+    },
+    {
+      "name": "desktop: long session name, compact default and no overflow",
+      "status": "pass"
+    },
+    {
+      "name": "desktop: backend error keeps refresh usable and blocks continuation",
+      "status": "pass"
+    },
+    {
+      "name": "mobile: first session and progressive disclosure",
+      "status": "pass"
+    },
+    {
+      "name": "mobile: references save, unsaved guard and discard",
+      "status": "pass"
+    },
+    {
+      "name": "mobile: running cancel and interrupted review gate",
+      "status": "pass"
+    },
+    {
+      "name": "mobile: missing engine shows setup, never ready",
+      "status": "pass"
+    },
+    {
+      "name": "mobile: failed details cannot save old references or continue",
+      "status": "pass"
+    },
+    {
+      "name": "mobile: long session name, compact default and no overflow",
+      "status": "pass"
+    },
+    {
+      "name": "mobile: backend error keeps refresh usable and blocks continuation",
+      "status": "pass"
+    }
+  ],
+  "pageErrors": [],
+  "cliVersions": {
+    "codex": "0.169.0",
+    "claude": "2.1.325"
+  },
+  "accountAuthorizationTested": false,
+  "paidInferenceSubmitted": false
+}

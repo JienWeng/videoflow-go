@@ -154,8 +154,14 @@
         <summary bind:this={setupSummary} class="flex min-h-16 cursor-pointer list-none items-center justify-between gap-3 py-4 text-sm font-medium">AI setup<ChevronDown class="size-4 shrink-0 transition-transform group-open:rotate-180" /></summary>
         <div class="space-y-4 pb-6 text-sm">
           <ul class="divide-y divide-border">{#each status?.engines ?? [] as item (item.engine)}<li class="flex items-center justify-between gap-4 py-3"><span>{engineName(item.engine)}</span><span class="text-muted-foreground">{item.installed ? 'Detected' : 'Not installed'}</span></li>{/each}</ul>
-          <p class="max-w-prose text-muted-foreground">Install Codex or Claude Code on the computer running VideoFlow’s backend, then sign in there. Use Refresh above to check again.</p>
-          <p class="max-w-prose text-muted-foreground">Using Docker? A CLI installed on your computer is not available inside the container. Use a native backend or configure a host integration.</p>
+          <p class="max-w-prose text-muted-foreground">Docker builds include Codex and Claude Code. For a native backend, install either CLI under the same account running VideoFlow. Sign in to the engine you want to use.</p>
+          <details>
+            <summary class="cursor-pointer py-2 font-medium">Sign in inside Docker</summary>
+            <p class="mt-2 max-w-prose text-muted-foreground">On the computer hosting VideoFlow, run one of these commands from the project folder and follow the official sign-in flow:</p>
+            <pre class="mt-3 overflow-x-auto rounded-md border border-border bg-muted/30 p-3 text-xs leading-relaxed"><code>docker compose exec backend codex login --device-auth
+docker compose exec backend claude auth login</code></pre>
+            <p class="mt-3 max-w-prose text-muted-foreground">The private agent-auth volume keeps sign-in data across container restarts. A login on your own computer does not sign in the backend container.</p>
+          </details>
           <p class="max-w-prose text-muted-foreground">Detection only checks installation. Sign-in and account access are checked on your first prompt.</p>
           {#if status?.all_text_local === false}<p role="alert" class="text-destructive">Local planning is disabled in the backend configuration.</p>{/if}
         </div>
