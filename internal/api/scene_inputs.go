@@ -35,7 +35,11 @@ func (s *Server) sceneInputRevision(scene *models.Scene) (string, error) {
 		document["generation_brief"], _ = json.Marshal(brief)
 	}
 	delete(document, "story_asset_ids")
-	raw, err := json.Marshal(map[string]any{"title": scene.Title, "summary": scene.Summary, "duration": scene.Duration, "aspect": scene.AspectRatio, "scene": document, "shots": shotInputs, "style": s.stylePrompt(scene.ProjectID)})
+	style := s.stylePrompt(scene.ProjectID)
+	if saved := sceneBrief(scene).CreativePreset; saved != nil {
+		style = saved.Style
+	}
+	raw, err := json.Marshal(map[string]any{"title": scene.Title, "summary": scene.Summary, "duration": scene.Duration, "aspect": scene.AspectRatio, "scene": document, "shots": shotInputs, "style": style})
 	if err != nil {
 		return "", err
 	}

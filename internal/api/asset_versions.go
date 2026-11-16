@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 	"videoflow-go/internal/models"
+	"videoflow-go/internal/presets"
 )
 
 func assetVariantGroup(asset *models.Asset) string {
@@ -59,6 +60,11 @@ func (s *Server) handleRegenerateAsset(w http.ResponseWriter, r *http.Request) {
 		var identity map[string]any
 		_ = json.Unmarshal(source.MetadataJSON, &identity)
 		ctx = guidedStoryContext(ctx, project, nil)
+		var snapshot struct {
+			Preset *presets.Preset `json:"creative_preset"`
+		}
+		_ = json.Unmarshal(source.MetadataJSON, &snapshot)
+		ctx = presets.With(ctx, snapshot.Preset)
 		references := []string{}
 		if models.ReferenceApproved(source.MetadataJSON) {
 			if reference, e := s.imageURL(source); e == nil {

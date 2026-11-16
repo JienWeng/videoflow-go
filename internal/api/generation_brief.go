@@ -7,21 +7,24 @@ import (
 	"strings"
 	"videoflow-go/internal/agents"
 	"videoflow-go/internal/models"
+	"videoflow-go/internal/presets"
 )
 
 type generationBrief struct {
-	Idea              string   `json:"idea"`
-	TargetDuration    int      `json:"target_duration"`
-	SceneCount        int      `json:"scene_count"`
-	Style             string   `json:"style"`
-	AspectRatio       string   `json:"aspect_ratio"`
-	Language          string   `json:"language"`
-	ConversationMode  string   `json:"conversation_mode"`
-	Instruction       string   `json:"instruction"`
-	CharacterIDs      []string `json:"character_ids"`
-	CreateCharacters  bool     `json:"create_characters"`
-	CharacterNotes    string   `json:"character_notes,omitempty"`
-	ReferenceAssetIDs []string `json:"reference_asset_ids,omitempty"`
+	PresetID          string          `json:"style_preset_id,omitempty"`
+	CreativePreset    *presets.Preset `json:"creative_preset,omitempty"`
+	Idea              string          `json:"idea"`
+	TargetDuration    int             `json:"target_duration"`
+	SceneCount        int             `json:"scene_count"`
+	Style             string          `json:"style"`
+	AspectRatio       string          `json:"aspect_ratio"`
+	Language          string          `json:"language"`
+	ConversationMode  string          `json:"conversation_mode"`
+	Instruction       string          `json:"instruction"`
+	CharacterIDs      []string        `json:"character_ids"`
+	CreateCharacters  bool            `json:"create_characters"`
+	CharacterNotes    string          `json:"character_notes,omitempty"`
+	ReferenceAssetIDs []string        `json:"reference_asset_ids,omitempty"`
 }
 
 func (s *Server) effectiveStyle(projectID, choice string) (string, bool) {
@@ -70,7 +73,17 @@ func (s *Server) prepareBrief(project string, b *generationBrief) error {
 	if b.ConversationMode != "dialogue" && b.ConversationMode != "narration" && b.ConversationMode != "silent" {
 		return fmt.Errorf("unsupported dialogue mode")
 	}
-	b.Style, _ = s.effectiveStyle(project, b.Style)
+	b.CreativePreset = nil // Resolve trusted catalog data, never accept a client-supplied snapshot.
+	if b.PresetID != "" && b.PresetID != "project-style" {
+		p, err := s.findPreset(b.PresetID)
+		if err != nil {
+			return err
+		}
+		b.CreativePreset = p
+		b.Style = p.Style
+	} else {
+		b.Style, _ = s.effectiveStyle(project, b.Style)
+	}
 	raw, _ := json.Marshal(b.CharacterIDs)
 	notes, err := s.characterNotes(&project, raw)
 	if err != nil {
@@ -96,11 +109,26 @@ func (s *Server) prepareBrief(project string, b *generationBrief) error {
 	}
 	return nil
 }
+
+// prepareSavedBrief validates server-persisted scenes without resolving a newer catalog.
+func (s *Server) prepareSavedBrief(project string, b *generationBrief) error {
+	snapshot, id, style := b.CreativePreset, b.PresetID, b.Style
+	b.PresetID = ""
+	if err := s.prepareBrief(project, b); err != nil {
+		return err
+	}
+	b.CreativePreset = snapshot
+	b.PresetID = id
+	if style != "" {
+		b.Style = style
+	}
+	return nil
+}
 func (b generationBrief) prompt() string {
 	return fmt.Sprintf("%s\nVisual style: %s\nSpoken language: %s\nMode: %s\nDirection: %s\n%s", b.Idea, b.Style, b.Language, b.ConversationMode, b.Instruction, b.CharacterNotes)
 }
 func (b generationBrief) context(ctx context.Context) context.Context {
-	return agents.WithStoryCharacters(agents.WithDialogueLanguage(ctx, b.Language), b.CreateCharacters)
+	return presets.With(agents.WithStoryCharacters(agents.WithDialogueLanguage(ctx, b.Language), b.CreateCharacters), b.CreativePreset)
 }
 func (s *Server) persistDraft(project string, b generationBrief, draft *agents.ScriptDraft) (*models.Script, []models.Scene, error) {
 	characters, bindings, err := s.prepareStoryCharacters(project, b, draft)

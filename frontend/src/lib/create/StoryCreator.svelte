@@ -10,10 +10,14 @@
 
   let idea = $state('');
   let submitted=$state(false);
-  const draftDirty=()=>!submitted&&!!(idea.trim()||instruction.trim()||selectedCharacters.length||style!=='2d-picture-book'||aspectRatio!=='9:16'||sceneCount!==1||language!=='English'||duration||!createCharacters);
+  const draftDirty=()=>!submitted&&!!(idea.trim()||instruction.trim()||selectedCharacters.length||style!==defaultStyle||aspectRatio!=='9:16'||sceneCount!==1||language!=='English'||duration||!createCharacters);
   export function canClose(){return !draftDirty()||window.confirm('Discard this story draft?');}
   protectDraft(draftDirty,'Discard this story draft and leave?');
   let style = $state('2d-picture-book');
+ let defaultStyle=$state('2d-picture-book');let styleTouched=false;
+ let styleOptions:any[]=$state([]);let presetError=$state('');
+ async function loadStyles(){try{const result=await get('/style-presets');if(!Array.isArray(result?.presets))return;styleOptions=result.presets;if(result.has_project_style&&!styleTouched&&!submitted){defaultStyle='project-style';style='project-style'}presetError=''}catch(e){presetError='Could not load extra styles. Reopen this form to retry.'}}
+
   let aspectRatio = $state('9:16');
   let duration = $state('');
   let sceneCount=$state(1);
@@ -121,7 +125,7 @@
     preflightError = '';
     try {
       const params = new URLSearchParams({ aspect_ratio: ratio });
-      params.set('style', styleChoice);
+      params.set('style', styleChoice); if(styleOptions.length)params.set('style_preset_id',styleChoice);
       params.set('create_characters',String(createCharacters));params.set('scene_count',String(sceneCount));params.set('target_duration',duration||'0');params.set('character_ids',selectedCharacters.join(','));
       const result=await get(`/videos/preflight?${params}`);if(sequence!==preflightSequence)return null;preflight=result;
       return preflight;
@@ -162,7 +166,7 @@
     } catch (e: any) { if(requested)opError=`Could not restore this generation: ${e.message}`; }
   }
 
-  onMount(() => { void restoreOperation(); get('/characters').then(result=>characters=result).catch(()=>{}); });
+  onMount(() => { void loadStyles(); void restoreOperation(); get('/characters').then(result=>characters=result).catch(()=>{}); });
 
   $effect(() => {
     const ratio = aspectRatio;
@@ -187,6 +191,7 @@
         idea: idea.trim(),
         scene_count:sceneCount,
         style,
+        ...(styleOptions.length?{style_preset_id:style}:{}),
         aspect_ratio: aspectRatio,
         language,
         conversation_mode: conversationMode,
@@ -279,17 +284,17 @@
        <p class="text-xs text-muted-foreground">Select existing characters to reuse them. Their saved identities stay unchanged.</p>
        {/if}
       </fieldset>
+      {#if styleOptions.find(p=>p.id===style)}{@const selected=styleOptions.find(p=>p.id===style)}<details class="text-sm"><summary class="cursor-pointer text-muted-foreground">About {selected.name}</summary><p class="mt-2">{selected.description}</p><dl class="mt-2 space-y-2">{#each Object.entries(selected.guidance??{}) as [stage,text]}<div><dt class="font-medium capitalize">{stage}</dt><dd class="text-muted-foreground">{String(text)}</dd></div>{/each}</dl><a href="/settings#presets" class="mt-2 inline-block underline">Manage preset packs</a></details>{/if}
       <div class="grid gap-3 sm:grid-cols-2">
         <label class="grid gap-1.5 text-sm">
           <span class="font-medium">Visual style</span>
-          {#if preflight?.has_project_style}
-            <span class="rounded-lg border border-input bg-muted px-3 py-2">{preflight.effective_style} · project style</span>
-          {:else}
-            <select bind:value={style} class="rounded-lg border border-input bg-background px-3 py-2 text-sm">
-              <option value="2d-picture-book">2D picture book</option>
-              <option value="cinematic">Cinematic</option>
-            </select>
-          {/if}
+          <select bind:value={style} onchange={()=>styleTouched=true} class="rounded-lg border border-input bg-background px-3 py-2 text-sm">
+            {#if preflight?.has_project_style||defaultStyle==='project-style'}<option value="project-style">Project style</option>{/if}
+            {#if styleOptions.length}{#each styleOptions as option(option.id)}<option value={option.id}>{option.name}{option.id.startsWith('community:')?' · Community':''}</option>{/each}
+            {:else}<option value="2d-picture-book">2D picture book</option><option value="cinematic">Cinematic</option>{/if}
+          </select>
+          {#if presetError}<span role="status" class="text-xs text-muted-foreground">{presetError}</span>{/if}
+
         </label>
         <label class="grid gap-1.5 text-sm">
           <span class="font-medium">Format</span>

@@ -1,4 +1,5 @@
 <script lang="ts">
+ import CreativePresetManager from '$lib/CreativePresetManager.svelte';
  import { protectDraft } from '$lib/protect-draft';
  import GenerationRecovery from '$lib/GenerationRecovery.svelte';
   import { replaceState } from '$app/navigation';
@@ -159,7 +160,7 @@ media_model_preferences:Record<string,Record<string,string>>;
 
   // Active settings tab (bound so clicking a trigger switches sections).
   let tab = $state('general');
-  function settingsHash(){const h=window.location.hash.slice(1);tab=['providers','connections'].includes(h)?'connections':['engines','models'].includes(h)?'models':['agents','advanced'].includes(h)?'advanced':'general';}
+  function settingsHash(){const h=window.location.hash.slice(1);tab=h==='presets'?'presets':['providers','connections'].includes(h)?'connections':['engines','models'].includes(h)?'models':['agents','advanced'].includes(h)?'advanced':'general';}
   function chooseSection(value:string){tab=value;replaceState('#'+value,page.state);}
 
   // ------------------------------------------------------------- labels
@@ -626,12 +627,13 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
   {:else if !error}
     <div class="grid gap-6 md:grid-cols-[200px_minmax(0,1fr)]">
       <nav aria-label="Settings sections" class="grid grid-cols-2 gap-2 self-start md:sticky md:top-8 md:block md:space-y-2">
-        {#each [{id:'general',label:'General',hint:'Video defaults & appearance'},{id:'connections',label:'AI connections',hint:'Provider keys & access'},{id:'models',label:'Media models',hint:'Image, video & vision'},{id:'advanced',label:'Advanced',hint:'Routing & recovery'}] as section}
+        {#each [{id:'general',label:'General',hint:'Video defaults & appearance'},{id:'connections',label:'AI connections',hint:'Provider keys & access'},{id:'models',label:'Media models',hint:'Image, video & vision'},{id:'presets',label:'Creative presets',hint:'Styles & community packs'},{id:'advanced',label:'Advanced',hint:'Routing & recovery'}] as section}
           <button type="button" aria-label={section.label} aria-current={tab===section.id?'page':undefined} onclick={()=>chooseSection(section.id)} class="min-h-11 flex-1 rounded-lg px-3 py-2 text-left md:w-full {tab===section.id?'bg-accent font-semibold':'hover:bg-accent text-muted-foreground'}"><span class="block text-sm">{section.label}</span><span class="hidden text-xs font-normal md:block">{section.hint}</span></button>
         {/each}
       </nav>
       <div class="min-w-0 space-y-6" data-testid="settings-content">
-        <div class="space-y-1 text-sm text-muted-foreground"><p>{tab === 'connections' ? 'Save each provider key before checking its connection.' : 'Preferences save automatically when changed.'}</p><p role="status" aria-live="polite" class="min-h-5 text-foreground">{saveStatus}</p></div>
+        <div class="space-y-1 text-sm text-muted-foreground"><p>{tab === 'connections' ? 'Save each provider key before checking its connection.' : tab === 'presets' ? 'Preview a pack before installing it.' : 'Preferences save automatically when changed.'}</p><p role="status" aria-live="polite" class="min-h-5 text-foreground">{saveStatus}</p></div>
+      {#if tab === 'presets'}<CreativePresetManager />{/if}
       <!-- ============================================ APPEARANCE -->
       {#if tab === 'general'}
       <section id="appearance" class="settings-section">

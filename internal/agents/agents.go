@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"videoflow-go/internal/presets"
 
 	"videoflow-go/internal/providers"
 )
@@ -48,6 +49,16 @@ func (a *AgentEngine) SetStructuredRunner(runner func(context.Context, string, s
 	a.structuredRunner = runner
 }
 func (a *AgentEngine) structured(ctx context.Context, name, system, prompt string, target any) error {
+	stage := ""
+	if name == "script_agent" {
+		stage = "story"
+	}
+	if name == "shot_agent" {
+		stage = "shots"
+	}
+	if stage != "" {
+		prompt += presets.Prompt(presets.From(ctx), stage)
+	}
 	if a.structuredRunner != nil {
 		language := "English"
 		if a.language != nil {

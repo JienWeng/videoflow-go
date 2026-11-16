@@ -46,6 +46,7 @@ func (s *Server) storyAssetCatalog(project *string) ([]models.Asset, error) {
 
 // Materialization always rechecks the current project library under a project lock.
 func (s *Server) materializeStoryAssets(ctx context.Context, scene *models.Scene, plan *assetPlan) ([]models.Asset, error) {
+	ctx = sceneBrief(scene).context(ctx)
 	if scene.ProjectID == nil {
 		return nil, fmt.Errorf("scene project is required")
 	}

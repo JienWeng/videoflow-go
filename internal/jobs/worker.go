@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"videoflow-go/internal/presets"
 	"videoflow-go/internal/providers"
 	"videoflow-go/internal/routing"
 
@@ -232,6 +233,12 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 				var raw map[string]map[string]any
 				json.Unmarshal(scene.SceneJSON, &raw)
 				brief := raw["generation_brief"]
+				if data, err := json.Marshal(brief["creative_preset"]); err == nil {
+					var preset *presets.Preset
+					if json.Unmarshal(data, &preset) == nil {
+						prompt += presets.Prompt(preset, "video")
+					}
+				}
 				if value, ok := brief["language"].(string); ok && value != "" {
 					language = value
 				}

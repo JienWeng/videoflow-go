@@ -1,0 +1,137 @@
+{
+  "checks": [
+    {
+      "id": "PRESETS-desktop-1",
+      "name": "six built-ins and portable starter",
+      "status": "pass"
+    },
+    {
+      "id": "PRESETS-desktop-2",
+      "name": "invalid JSON shows recoverable error",
+      "status": "pass"
+    },
+    {
+      "id": "PRESETS-desktop-3",
+      "name": "preview does not install",
+      "status": "pass"
+    },
+    {
+      "id": "PRESETS-desktop-4",
+      "name": "install adds namespaced choice",
+      "status": "pass"
+    },
+    {
+      "id": "PRESETS-desktop-5",
+      "name": "installed pack exports valid JSON",
+      "status": "pass"
+    },
+    {
+      "id": "PRESETS-desktop-6",
+      "name": "same pack is idempotent",
+      "status": "pass"
+    },
+    {
+      "id": "PRESETS-desktop-7",
+      "name": "replacement requires explicit reviewed revision",
+      "status": "pass"
+    },
+    {
+      "id": "PRESETS-desktop-8",
+      "name": "new styles and community preset selectable",
+      "status": "pass"
+    },
+    {
+      "id": "PRESETS-desktop-9",
+      "name": "mobile content fits viewport",
+      "status": "pass"
+    },
+    {
+      "id": "PRESETS-desktop-10",
+      "name": "remove pack clears catalog",
+      "status": "pass"
+    },
+    {
+      "id": "PRESETS-desktop-11",
+      "name": "preset operations never call providers",
+      "status": "pass"
+    },
+    {
+      "id": "PRESETS-mobile-12",
+      "name": "six built-ins and portable starter",
+      "status": "pass"
+    },
+    {
+      "id": "PRESETS-mobile-13",
+      "name": "invalid JSON shows recoverable error",
+      "status": "pass"
+    },
+    {
+      "id": "PRESETS-mobile-14",
+      "name": "preview does not install",
+      "status": "pass"
+    },
+    {
+      "id": "PRESETS-mobile-15",
+      "name": "install adds namespaced choice",
+      "status": "pass"
+    },
+    {
+      "id": "PRESETS-mobile-16",
+      "name": "installed pack exports valid JSON",
+      "status": "pass"
+    },
+    {
+      "id": "PRESETS-mobile-17",
+      "name": "same pack is idempotent",
+      "status": "pass"
+    },
+    {
+      "id": "PRESETS-mobile-18",
+      "name": "replacement requires explicit reviewed revision",
+      "status": "pass"
+    },
+    {
+      "id": "PRESETS-mobile-19",
+      "name": "new styles and community preset selectable",
+      "status": "pass"
+    },
+    {
+      "id": "PRESETS-mobile-20",
+      "name": "mobile content fits viewport",
+      "status": "pass"
+    },
+    {
+      "id": "PRESETS-mobile-21",
+      "name": "remove pack clears catalog",
+      "status": "pass"
+    },
+    {
+      "id": "PRESETS-mobile-22",
+      "name": "preset operations never call providers",
+      "status": "pass"
+    }
+  ],
+  "errors": [],
+  "axe": [
+    {
+      "mode": "desktop",
+      "name": "preset settings",
+      "violations": []
+    },
+    {
+      "mode": "desktop",
+      "name": "story preset selection",
+      "violations": []
+    },
+    {
+      "mode": "mobile",
+      "name": "preset settings",
+      "violations": []
+    },
+    {
+      "mode": "mobile",
+      "name": "story preset selection",
+      "violations": []
+    }
+  ]
+}

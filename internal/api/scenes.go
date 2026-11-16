@@ -211,7 +211,7 @@ func (s *Server) handleGenerateShots(w http.ResponseWriter, r *http.Request) {
 			if brief.Idea == "" {
 				brief.Idea = scene.Summary
 			}
-			if err = s.prepareBrief(*scene.ProjectID, &brief); err != nil {
+			if err = s.prepareSavedBrief(*scene.ProjectID, &brief); err != nil {
 				http.Error(w, err.Error(), 400)
 				return
 			}
@@ -423,9 +423,11 @@ func (s *Server) handleStoryboard(w http.ResponseWriter, r *http.Request) {
 		}
 		brief := sceneBrief(scene)
 		if profile, e := s.database.GetStyleGuide(*scene.ProjectID); e == nil && profile.StylePrompt != "" {
-			brief.Style = s.stylePrompt(scene.ProjectID)
+			if brief.CreativePreset == nil {
+				brief.Style = s.stylePrompt(scene.ProjectID)
+			}
 		}
-		assets, err := s.generateAssets(ctx, scene.ProjectID, nil, scene.ID, scene.Title+" storyboard", "storyboard", "Storyboard keyframe of "+scene.Title+". "+scene.Summary+"\n"+brief.prompt(), scene.AspectRatio, refs)
+		assets, err := s.generateAssets(brief.context(ctx), scene.ProjectID, nil, scene.ID, scene.Title+" storyboard", "storyboard", "Storyboard keyframe of "+scene.Title+". "+scene.Summary+"\n"+brief.prompt(), scene.AspectRatio, refs)
 		if err != nil {
 			return nil, err
 		}

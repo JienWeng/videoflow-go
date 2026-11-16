@@ -22,7 +22,7 @@ func (s *Server) handleVideoPreflight(w http.ResponseWriter, r *http.Request) {
 	}
 
 	project, _ := s.activeProjectID(r.Context())
-	brief := generationBrief{Idea: "Preflight", AspectRatio: aspectRatio, Style: style}
+	brief := generationBrief{Idea: "Preflight", AspectRatio: aspectRatio, Style: style, PresetID: r.URL.Query().Get("style_preset_id")}
 	brief.SceneCount, _ = strconv.Atoi(r.URL.Query().Get("scene_count"))
 	brief.CreateCharacters, _ = strconv.ParseBool(r.URL.Query().Get("create_characters"))
 	brief.TargetDuration, _ = strconv.Atoi(r.URL.Query().Get("target_duration"))
@@ -34,7 +34,8 @@ func (s *Server) handleVideoPreflight(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	missing := s.generationPrerequisites(r.Context(), brief)
-	effective, hasStyle := s.effectiveStyle(project, style)
+	_, hasStyle := s.effectiveStyle(project, style)
+	effective := brief.Style
 	client, videoProvider, videoModel, _ := s.routes().SelectedMedia("video")
 	imageProvider, _ := s.routes().MediaSelection("image")
 	var durations []int

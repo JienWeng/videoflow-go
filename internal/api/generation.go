@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"videoflow-go/internal/presets"
 
 	"github.com/google/uuid"
 	"videoflow-go/internal/media"
@@ -106,6 +107,8 @@ func (s *Server) stylePrompt(projectID *string) string {
 }
 
 func (s *Server) generateAssets(ctx context.Context, projectID *string, characterID *string, sceneID, name, kind, prompt, aspect string, references []string) ([]models.Asset, error) {
+	descriptionPrompt := prompt
+	prompt += presets.Prompt(presets.From(ctx), "image")
 	sceneRevision := ""
 	if sceneID != "" {
 		if frozen, ok := ctx.Value(sceneInputKey{}).(sceneInputSnapshot); ok && frozen.ID == sceneID {
@@ -126,7 +129,6 @@ func (s *Server) generateAssets(ctx context.Context, projectID *string, characte
 	if err != nil {
 		return nil, err
 	}
-	descriptionPrompt := prompt
 	prompt += identityNotes
 	modelKind := "image"
 	if characterID != nil || kind == "prop" {
@@ -212,7 +214,7 @@ func (s *Server) generateAssets(ctx context.Context, projectID *string, characte
 		if err = os.WriteFile(path, image.Data, 0644); err != nil {
 			return nil, err
 		}
-		metadata, _ := json.Marshal(map[string]any{"scene_id": sceneID, "provider": provider, "model": model, "media_type": image.MediaType, "fallback_reason": fallbackReason, "scene_input_revision": sceneRevision})
+		metadata, _ := json.Marshal(map[string]any{"scene_id": sceneID, "provider": provider, "model": model, "media_type": image.MediaType, "fallback_reason": fallbackReason, "scene_input_revision": sceneRevision, "creative_preset": presets.From(ctx)})
 		if frozenIdentity != nil {
 			var fields map[string]any
 			_ = json.Unmarshal(metadata, &fields)

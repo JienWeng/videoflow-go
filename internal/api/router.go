@@ -252,6 +252,11 @@ func (s *Server) setupRoutes() {
 	s.router.Get("/caption-config", s.handleCaptionConfig)
 
 	// Style Guide
+	s.router.Get("/style-presets", s.handlePresetCatalog)
+	s.router.Post("/preset-packs/preview", s.handlePresetPack)
+	s.router.Post("/preset-packs/import", s.handlePresetPack)
+	s.router.Delete("/preset-packs/{id}", s.handleDeletePresetPack)
+	s.router.Get("/preset-packs/{id}/export", s.handleExportPresetPack)
 	s.router.Get("/style", s.handleGetStyle)
 	s.router.Patch("/style", s.handleUpdateStyle)
 	s.router.Put("/style", s.handleUpdateStyle)
