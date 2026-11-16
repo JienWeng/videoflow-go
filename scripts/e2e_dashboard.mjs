@@ -50,11 +50,12 @@ try {
       try { await fn(); report.checks.push({ name: `${mode}: ${name}`, status: 'pass' }); console.error('PASS', mode, name); }
       catch (error) { report.checks.push({ name: `${mode}: ${name}`, status: 'fail', error: error.message }); console.error('FAIL', mode, name, error.message); }
     }
-    const refresh = () => page.getByRole('button', { name: 'Refresh overview', exact: true }).click();
+    const refresh = async (event='focus') => { await page.waitForFunction(()=>document.querySelector('[aria-label="Project overview"] [aria-busy]')?.getAttribute('aria-busy')==='false');const response=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/graph');await page.evaluate(event=>(event==='visibilitychange'?document:window).dispatchEvent(new Event(event)),event);await response;await page.waitForFunction(()=>document.querySelector('[aria-label="Project overview"] [aria-busy]')?.getAttribute('aria-busy')==='false'); };
     await check('empty project is oriented with true totals and a first action', async () => {
       await page.goto(base);
       await page.getByRole('heading', { name: 'Project overview', exact: true }).waitFor();
       await page.getByRole('heading', { name: 'Forest film', exact: true }).waitFor();
+      assert.equal(await page.getByRole('button', { name: 'Refresh overview', exact: true }).count(),0,'Overview should update automatically without a Refresh control');
       await page.getByRole('link', { name: 'Scenes: 0', exact: true }).waitFor();
       await page.getByRole('link', { name: 'Choose AI session', exact: true }).waitFor();
       await page.getByText('No activity yet. Start a story or add your first reference to begin.', { exact: true }).waitFor();
@@ -72,7 +73,15 @@ try {
       const items = page.getByRole('region', { name: 'Recent activity', exact: true }).getByRole('listitem');
       assert.equal(await items.count(), 3);
       assert.match(await items.first().innerText(), /Render · Forest/);
-      assert.match(await page.getByRole('region', { name: 'Project totals', exact: true }).innerText(), /Updated/);
+      assert.equal(await page.getByRole('region', { name: 'Project totals', exact: true }).getByRole('link').count(),4);
+    });
+    await check('returning to a visible tab updates totals automatically', async () => {
+      assets.push({id:'automatic-reference',name:'Another reference',type:'image',metadata_json:{}});
+      await refresh('visibilitychange');
+      await page.getByRole('link',{name:'Assets: 2',exact:true}).waitFor();
+      assets.pop();await refresh();
+      await page.getByRole('link',{name:'Assets: 1',exact:true}).waitFor();
+      assert.equal(mutations.length,0);
     });
     await check('recovery and pending references are actionable without any resubmission', async () => {
       jobs[0].status = 'reconciliation_required'; assets[0].metadata_json.consistency_review = 'pending';
