@@ -243,3 +243,53 @@ func (d *DB) ReplaceUnapprovedCharacterReferences(id, project string, created []
 	}
 	return tx.Commit()
 }
+
+// ExcludeStoryAsset atomically updates the paused operation and its scene bindings.
+// The library asset is retained. Exact result matching prevents racing continuation.
+func (d *DB) ExcludeStoryAsset(op, project, asset string, scenes []string, expected, next []byte) error {
+	tx, err := d.conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`UPDATE ops SET result_json=? WHERE id=? AND project_id=? AND kind='video_generation' AND status='succeeded' AND result_json=?`, string(next), op, project, string(expected))
+	if err != nil {
+		return err
+	}
+	n, _ := result.RowsAffected()
+	if n != 1 {
+		return fmt.Errorf("story changed; refresh before removing a reference")
+	}
+	remove := func(ids []string) []string {
+		result := []string{}
+		for _, id := range ids {
+			if id != asset {
+				result = append(result, id)
+			}
+		}
+		return result
+	}
+	for _, id := range scenes {
+		var sceneRaw, assetRaw []byte
+		if err = tx.QueryRow(`SELECT scene_json,asset_ids_json FROM scenes WHERE id=? AND project_id=?`, id, project).Scan(&sceneRaw, &assetRaw); err != nil {
+			return err
+		}
+		var metadata map[string]json.RawMessage
+		if err = json.Unmarshal(sceneRaw, &metadata); err != nil {
+			return err
+		}
+		if metadata == nil {
+			metadata = map[string]json.RawMessage{}
+		}
+		var refs, all []string
+		_ = json.Unmarshal(metadata["story_asset_ids"], &refs)
+		_ = json.Unmarshal(assetRaw, &all)
+		metadata["story_asset_ids"], _ = json.Marshal(remove(refs))
+		sceneRaw, _ = json.Marshal(metadata)
+		assetRaw, _ = json.Marshal(remove(all))
+		if _, err = tx.Exec(`UPDATE scenes SET scene_json=?,asset_ids_json=?,updated_at=? WHERE id=? AND project_id=?`, string(sceneRaw), string(assetRaw), time.Now().UTC(), id, project); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}

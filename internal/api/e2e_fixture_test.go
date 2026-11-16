@@ -139,6 +139,8 @@ elif 'scriptwriter' in prompt:
    result['scenes'][0]['spoken_lines']=[{'id':'dog-line','character_id':'new:pup','language':'English','text':'Mama!','visible':True}]
  else:
   result={'title':'Mimi','summary':'Cat story','scenes':[{'title':'One','summary':'Mimi arrives','duration':1,'aspect_ratio':'16:9'},{'title':'Two','summary':'Mimi plays','duration':1,'aspect_ratio':'16:9'}]}
+elif 'Plan only essential visible props' in prompt:
+ result={'assets':[]}
 elif 'cinematographer' in prompt:
  result={'shots':[{'shot_order':1,'duration':1,'prompt':'Pip finds mother' if 'small golden puppy' in prompt else 'Mimi plays','camera':'wide','movement':'still'}]}
 else:

@@ -1,17 +1,17 @@
 <script lang="ts">
   import {Check,LoaderCircle,LockKeyhole,TriangleAlert,ArrowRight} from '@lucide/svelte';
   import {creationProgress,stepsForCreation} from './progress.mjs';
-  let {status='running',stages=[],error='',onopen,reviewHref,characterReferences=false,referenceCount=null}:{status?:string;stages?:string[];error?:string;onopen?:()=>void;reviewHref?:string;characterReferences?:boolean;referenceCount?:number|null}=$props();
-  const creationSteps=$derived(stepsForCreation(characterReferences));
-  const progress=$derived(creationProgress(status,stages,characterReferences));
+  let {status='running',stages=[],error='',onopen,reviewHref,characterReferences=false,automaticAssets=false,referenceCount=null}:{status?:string;stages?:string[];error?:string;onopen?:()=>void;reviewHref?:string;characterReferences?:boolean;automaticAssets?:boolean;referenceCount?:number|null}=$props();
+  const creationSteps=$derived(stepsForCreation(characterReferences,automaticAssets));
+  const progress=$derived(creationProgress(status,stages,characterReferences,automaticAssets));
   const currentStep=$derived(creationSteps.find(step=>step.key===progress.current));
 </script>
 <section aria-label="Story creation progress" class="py-2">
   <div class="mb-6" role="status" aria-live="polite" aria-atomic="true">
     <p class="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">{#if progress.stopped}<TriangleAlert class="size-4"/>Needs attention{:else if progress.review}<ArrowRight class="size-4"/>Your turn{:else if status==='completed'}<Check class="size-4"/>Ready{:else}<LoaderCircle class="size-4 motion-safe:animate-spin"/>{error?'Reconnecting…':`Step ${creationSteps.findIndex(step=>step.key===progress.current)+1} of ${creationSteps.length}`}{/if}</p>
     <h2 class="text-xl font-semibold tracking-tight sm:text-2xl">{progress.title}</h2>
-    <p class="mt-2 max-w-prose text-sm leading-relaxed text-muted-foreground">{progress.characterReview?'Approve the character designs next. Scene images will use these references.':progress.review?'Review your images next. Video generation waits for your approval.':progress.stopped?'Completed work is preserved. Review it before starting another attempt.':status==='completed'?'Open your saved work to review the result.':progress.rendering?'Your submitted clips are being processed. You can check their status in Videos.':currentStep?.detail}</p>
-    {#if progress.review&&reviewHref}<a href={reviewHref} class="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">{progress.characterReview?'Review character sheets':'Review storyboard'}<ArrowRight class="size-4"/></a>{/if}
+    <p class="mt-2 max-w-prose text-sm leading-relaxed text-muted-foreground">{progress.characterReview?'Approve the selected references next. Scene images will use these designs.':progress.review?'Review your images next. Video generation waits for your approval.':progress.stopped?'Completed work is preserved. Review it before starting another attempt.':status==='completed'?'Open your saved work to review the result.':progress.rendering?'Your submitted clips are being processed. You can check their status in Videos.':currentStep?.detail}</p>
+    {#if progress.review&&reviewHref}<a href={reviewHref} class="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">{progress.characterReview?'Review references':'Review storyboard'}<ArrowRight class="size-4"/></a>{/if}
   </div>
   <ol aria-label="Creation steps" class="divide-y divide-border border-y border-border">
     {#each creationSteps as step,i}

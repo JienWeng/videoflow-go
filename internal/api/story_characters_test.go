@@ -181,7 +181,7 @@ func TestStoryCharacterPlanningMustBeExplicitAndRejectUnknownBindings(t *testing
 	}
 }
 
-type storyPipelineTestOptions struct{ fractional, replaceReference, failReference bool }
+type storyPipelineTestOptions struct{ fractional, replaceReference, failReference, reuseProp bool }
 
 func runGuidedStoryCharacterPipeline(t *testing.T, imageFailure bool, options ...storyPipelineTestOptions) {
 	opts := storyPipelineTestOptions{}
@@ -210,8 +210,12 @@ func runGuidedStoryCharacterPipeline(t *testing.T, imageFailure bool, options ..
 				t.Error("character sheet inherited another actor's references")
 			}
 			if images.Load() == 3 {
-				if len(refs) != 2 {
-					t.Error("storyboard lost cast sheets", payload)
+				expected := 2
+				if opts.reuseProp {
+					expected = 3
+				}
+				if len(refs) != expected {
+					t.Error("storyboard lost cast/prop references", payload)
 				}
 				raw, _ := json.Marshal(payload)
 				storyboardPayload.Store(string(raw))
@@ -228,6 +232,12 @@ func runGuidedStoryCharacterPipeline(t *testing.T, imageFailure bool, options ..
 	})
 	s.cfg.UseLocalText = true
 	project, _ := s.database.GetActiveProjectID()
+	var prop *models.Asset
+	if opts.reuseProp {
+		os.WriteFile(filepath.Join(s.cfg.StorageRoot, "collar.png"), []byte{137, 80, 78, 71, 13, 10, 26, 10}, 0600)
+		prop = &models.Asset{ProjectID: &project, Type: "prop", Name: "Red collar", Description: "Red leather collar", FilePath: "storage/collar.png", MetadataJSON: []byte(`{"consistency_review":"pending","locked_traits":{"color":"red"}}`)}
+		s.database.CreateAsset(prop)
+	}
 	session, _ := s.database.CreateDirectorSession(project, "codex", "Dog story")
 	s.database.SetDirectorSelection(session.ID, project, []byte(`{"character_ids":["char_deleted"],"asset_ids":[]}`))
 	fake := filepath.Join(t.TempDir(), "codex")
@@ -236,6 +246,7 @@ import sys,json
 p=sys.stdin.read()
 result={'prompt':'Pip, a small golden puppy, meets his cream-colored mother'}
 if 'scriptwriter' in p: result=json.loads(` + fmt.Sprintf("%q", dogStoryDraft) + `)
+elif 'Plan only essential visible props' in p: result={'assets':[]}
 elif 'cinematographer' in p: result={'shots':[{'shot_order':1,'duration':1,'prompt':'Pip and mother','camera':'wide','movement':'still'}]}
 if 'precise image-generation prompt' in p and 'Character reference sheet' not in p and 'small golden puppy' not in p: sys.exit(2)
 print(json.dumps({'type':'thread.started','thread_id':'dog-native'}))
@@ -247,6 +258,10 @@ print(json.dumps({'type':'turn.completed'}))
 		if !strings.Contains(program, "'duration':1.2") {
 			t.Fatal("fractional fixture was not installed")
 		}
+	}
+	if opts.reuseProp {
+		plan, _ := json.Marshal(map[string]any{"assets": []any{map[string]any{"name": prop.Name, "type": "prop", "description": prop.Description, "existing_asset_id": prop.ID, "reason": "Existing red collar matches"}}})
+		program = strings.Replace(program, "result={'assets':[]}", "result=json.loads("+fmt.Sprintf("%q", string(plan))+")", 1)
 	}
 	os.WriteFile(fake, []byte(program), 0700)
 	s.directorRunner.Codex = fake
@@ -360,6 +375,16 @@ print(json.dumps({'type':'turn.completed'}))
 				if e != nil || !approved || len(reused) != 2 || images.Load() != 2 {
 					t.Fatal("existing sheets were regenerated or not reused", e, reused, images.Load())
 				}
+				if opts.reuseProp {
+					if blocked := call(t, s, "POST", "/videos/generate/"+start.ID+"/continue", `{}`); blocked.Code != 409 {
+						t.Fatal("unapproved prop passed", blocked.Code)
+					}
+					prop, _ = s.database.GetAsset(prop.ID)
+					body, _ := json.Marshal(map[string]any{"approved": true, "expected_updated_at": prop.UpdatedAt})
+					if review := call(t, s, "POST", "/assets/"+prop.ID+"/review", string(body)); review.Code != 200 {
+						t.Fatal(review.Code, review.Body.String())
+					}
+				}
 				continued := call(t, s, "POST", "/videos/generate/"+start.ID+"/continue", `{}`)
 				if continued.Code != 202 {
 					t.Fatal(continued.Code, continued.Body.String())
@@ -447,4 +472,8 @@ func TestGuidedStoryUsesCurrentReplacementReferences(t *testing.T) {
 }
 func TestGuidedStoryReferenceFailurePreservesEarlierSheet(t *testing.T) {
 	runGuidedStoryCharacterPipeline(t, false, storyPipelineTestOptions{failReference: true})
+}
+
+func TestGuidedStoryReusesPropAndRequiresItsApproval(t *testing.T) {
+	runGuidedStoryCharacterPipeline(t, false, storyPipelineTestOptions{reuseProp: true})
 }

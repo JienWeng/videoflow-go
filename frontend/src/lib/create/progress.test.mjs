@@ -19,3 +19,8 @@ assert.equal(progress('awaiting_character_review',[],true).review,true);
 assert.equal(progress('awaiting_character_review',[],true).characterReview,true);
 assert.equal(progress('running',['story','scenes','shots','characters','character_review'],true).current,'visuals');
 console.log('PASS 18 story-progress assertions');
+assert.equal(stepsForCreation(true,true).length,9);
+assert.equal(stepsForCreation(true,true)[3].key,'assets');
+assert.equal(progress('running',['story','scenes','shots'],true,true).current,'assets');
+assert.equal(progress('awaiting_character_review',['story','scenes','shots','assets','characters'],true,true).title,'Your story references are ready');
+console.log('PASS 4 story-asset progress assertions');

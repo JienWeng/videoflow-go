@@ -202,9 +202,14 @@ func (s *Server) generateAssets(ctx context.Context, projectID *string, characte
 }
 
 type plannedAsset struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Description string `json:"description"`
+	Name            string `json:"name"`
+	Type            string `json:"type"`
+	Description     string `json:"description"`
+	AssetID         string `json:"asset_id,omitempty"`
+	ExistingAssetID string `json:"existing_asset_id,omitempty"`
+	Reuse           bool   `json:"reuse"`
+	Reason          string `json:"reason"`
+	AssetType       string `json:"asset_type"`
 }
 type assetPlan struct {
 	SceneID        string         `json:"scene_id"`
@@ -219,15 +224,40 @@ func (s *Server) planAssets(ctx context.Context, scene *models.Scene, instructio
 	if maxAssets > 10 {
 		maxAssets = 10
 	}
-	plan := &assetPlan{Assets: []plannedAsset{}, SuggestedShots: []string{}}
-	err := s.agentJSON(ctx, "asset_planner", "Plan only essential props and locations. Return assets with name, type (prop or location), description, and suggested_shots.", fmt.Sprintf("Scene: %s\n%s\nInstructions: %s\nMaximum assets: %d", scene.Title, scene.Summary, instruction, maxAssets), nil, plan)
+	catalog, err := s.storyAssetCatalog(scene.ProjectID)
 	if err != nil {
 		return nil, err
+	}
+	catalogJSON, _ := json.Marshal(catalog)
+	plan := &assetPlan{SuggestedShots: []string{}}
+	err = s.agentJSON(ctx, "asset_planner", "Plan only essential visible props and locations, never characters or incidental objects. Return assets with name, type (prop or location), description, existing_asset_id (empty for new), reason, and suggested_shots. Inspect the supplied project library first. Reuse suitable existing assets by their exact ID, preserving appearance and locked traits. Explain every reuse or new asset decision. Do not invent IDs. Return an empty assets array when no references are needed.", fmt.Sprintf("Scene: %s\n%s\nInstructions: %s\nMaximum assets: %d\nProject library: %s", scene.Title, scene.Summary, instruction, maxAssets, catalogJSON), nil, plan)
+	if err != nil {
+		return nil, err
+	}
+	if plan.Assets == nil {
+		return nil, fmt.Errorf("asset planner did not return an assets array")
 	}
 	if len(plan.Assets) > maxAssets {
 		plan.Assets = plan.Assets[:maxAssets]
 	}
-	for _, asset := range plan.Assets {
+	for i := range plan.Assets {
+		asset := &plan.Assets[i]
+		asset.AssetType = asset.Type
+		if asset.ExistingAssetID == "" {
+			asset.ExistingAssetID = matchingStoryAsset(*asset, catalog)
+		}
+		if asset.ExistingAssetID != "" {
+			valid := false
+			for _, candidate := range catalog {
+				if candidate.ID == asset.ExistingAssetID && candidate.Type == asset.Type {
+					valid = true
+				}
+			}
+			if !valid {
+				return nil, fmt.Errorf("asset reuse target is unavailable or incompatible")
+			}
+			asset.Reuse = true
+		}
 		if strings.TrimSpace(asset.Name) == "" || strings.TrimSpace(asset.Description) == "" || (asset.Type != "prop" && asset.Type != "location") {
 			return nil, fmt.Errorf("OpenRouter returned an invalid asset plan")
 		}

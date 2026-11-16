@@ -66,6 +66,7 @@ import sys,json
 p=sys.stdin.read()
 result={'prompt':'A red car'}
 if 'scriptwriter' in p: result={'title':'Car','summary':'Car','scenes':[{'title':'One','summary':'Car arrives','duration':1,'aspect_ratio':'16:9'}]}
+elif 'Plan only essential visible props' in p: result={'assets':[]}
 elif 'cinematographer' in p: result={'shots':[{'shot_order':1,'duration':1,'prompt':'Car','camera':'wide','movement':'still'}]}
 print(json.dumps({'type':'thread.started','thread_id':'review-native'}))
 print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':json.dumps(result)}}))
@@ -84,7 +85,7 @@ print(json.dumps({'type':'turn.completed'}))
 	for time.Now().Before(deadline) {
 		op, _ := s.database.GetOp(response.ID)
 		if op.Status == "failed" {
-			t.Fatal(op.Error)
+			t.Fatal(*op.Error)
 		}
 		if op.Status == "succeeded" {
 			if !strings.Contains(string(op.ResultJSON), "awaiting_reference_review") {

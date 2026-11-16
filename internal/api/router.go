@@ -272,6 +272,7 @@ func (s *Server) setupRoutes() {
 	s.router.Get("/videos/preflight", s.handleVideoPreflight)
 	s.router.Post("/videos/generate", s.handleGenerateVideo)
 	s.router.Post("/videos/generate/{id}/continue", s.handleContinueStory)
+	s.router.Post("/videos/generate/{id}/assets/exclude", s.handleExcludeStoryAsset)
 
 	// Ops
 	s.router.Get("/ops/{id}", s.handleGetOp)

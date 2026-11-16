@@ -655,13 +655,13 @@
     };
   }
 
-  async function startAssetGeneration(s: any, instruction: string, maxAssets: number) {
+  async function startAssetGeneration(s: any, instruction: string, maxAssets: number, items?: any[]) {
     const key = `assets-${s.id}`;
     opBusy[key] = true;
     try {
       await runBackgroundOp(
         `/scenes/${s.id}/assets/generate`,
-        { instruction, max_assets: maxAssets },
+        { instruction, max_assets: maxAssets, items },
         {
           signal:operationScope.signal,
           label: 'Asset generation',
@@ -671,7 +671,7 @@
             const all = await get('/assets');
             generatedAssets[s.id] = all.filter((a: any) => ids.includes(a.id));
             assetPlans[s.id] = null; // any pending suggestion plan is now out of date
-            // Generation auto-attaches assets and @-tags shot prompts — refresh the shot table.
+            // Generation binds reviewed references to the scene; refresh its shots.
             shotsByScene[s.id] = mergeShots(s.id, await get(`/scenes/${s.id}/shots`));
             shotsByScene = shotsByScene;
           },
@@ -715,7 +715,7 @@
       'Generate exactly these assets: ' +
       selected.map((a) => `${a.name} — ${a.description}`).join('; ') +
       (userInstruction ? `. ${userInstruction}` : '');
-    await startAssetGeneration(s, instruction, selected.length);
+    await startAssetGeneration(s, instruction, selected.length, selected);
   }
 
   const saveShot = (shot: any) =>

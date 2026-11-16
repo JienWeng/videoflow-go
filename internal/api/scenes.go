@@ -440,6 +440,11 @@ func (s *Server) handlePlanSceneAssets(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "scene not found", 404)
 		return
 	}
+	project, projectErr := s.activeProjectID(r.Context())
+	if projectErr != nil || scene.ProjectID == nil || *scene.ProjectID != project {
+		http.Error(w, "scene not found", 404)
+		return
+	}
 	var body struct {
 		Instruction string `json:"instruction"`
 		MaxAssets   int    `json:"max_assets"`
@@ -459,35 +464,38 @@ func (s *Server) handleGenerateSceneAssets(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "scene not found", 404)
 		return
 	}
+	project, projectErr := s.activeProjectID(r.Context())
+	if projectErr != nil || scene.ProjectID == nil || *scene.ProjectID != project {
+		http.Error(w, "scene not found", 404)
+		return
+	}
 	var body struct {
-		Instruction string `json:"instruction"`
-		MaxAssets   int    `json:"max_assets"`
+		Instruction string         `json:"instruction"`
+		MaxAssets   int            `json:"max_assets"`
+		Items       []plannedAsset `json:"items"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	s.operation(w, r, &models.Op{Kind: "assets", SceneID: &sceneID, ProjectID: scene.ProjectID}, func(ctx context.Context) (any, error) {
-		plan, err := s.planAssets(ctx, scene, body.Instruction, body.MaxAssets)
+		plan := &assetPlan{Assets: body.Items}
+		var err error
+		if len(body.Items) == 0 {
+			plan, err = s.planAssets(ctx, scene, body.Instruction, body.MaxAssets)
+		}
 		if err != nil {
 			return nil, err
 		}
-		assets := []models.Asset{}
-		ids := []string{}
-		existing := []string{}
-		_ = json.Unmarshal(scene.AssetIDsJSON, &existing)
-		for _, item := range plan.Assets {
-			generated, err := s.generateAssets(ctx, scene.ProjectID, nil, scene.ID, item.Name, item.Type, item.Description, "1:1", nil)
-			if err != nil {
-				return nil, err
-			}
-			assets = append(assets, generated...)
-			for _, asset := range generated {
-				ids = append(ids, asset.ID)
-				existing = append(existing, asset.ID)
-			}
+		if len(plan.Assets) > 10 {
+			return nil, fmt.Errorf("too many asset requests")
 		}
-		scene.AssetIDsJSON, _ = json.Marshal(existing)
-		if err = s.database.UpdateScene(scene); err != nil {
+		assets, err := s.materializeStoryAssets(ctx, scene, plan)
+		if err != nil {
 			return nil, err
 		}
+		ids := []string{}
+		for _, asset := range assets {
+			ids = append(ids, asset.ID)
+		}
+
 		return map[string]any{"scene_id": scene.ID, "asset_ids": ids, "assets": assets}, nil
 	})
 }
@@ -510,6 +518,7 @@ func (s *Server) sceneReferences(scene *models.Scene) ([]string, error) {
 			assetIDs = append(assetIDs, ids...)
 		}
 	}
+	assetIDs = append(assetIDs, sceneStoryAssetIDs(scene)...)
 	refs := []string{}
 	seen := map[string]bool{}
 	for _, id := range assetIDs {

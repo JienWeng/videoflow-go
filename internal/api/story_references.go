@@ -22,6 +22,9 @@ type storyContinuation struct {
 	Cast                []string              `json:"cast_character_ids"`
 	References          []string              `json:"character_reference_ids"`
 	CharacterReferences bool                  `json:"character_references"`
+	AssetDecisions      []plannedAsset        `json:"story_assets,omitempty"`
+	AutomaticAssets     bool                  `json:"automatic_assets,omitempty"`
+	AssetReferences     []string              `json:"story_asset_ids,omitempty"`
 	Status              string                `json:"status"`
 }
 
@@ -275,6 +278,27 @@ func (s *Server) handleContinueStory(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	for _, id := range state.AssetReferences {
+		asset, e := s.database.GetAsset(id)
+		if e != nil || asset.ProjectID == nil || *asset.ProjectID != project || !models.ReferenceApproved(asset.MetadataJSON) {
+			http.Error(w, "approve each prop and location reference before continuing", 409)
+			return
+		}
+		if _, e = s.imageURL(asset); e != nil {
+			http.Error(w, "story asset reference is unavailable", 409)
+			return
+		}
+	}
+	for i := range scenes {
+		bound, _, e := s.directorGenerationContext(ctx, &project, scenes[i].ID, nil)
+		if e == nil {
+			_, _, e = s.directorImageInputs(bound, &project, nil)
+		}
+		if e != nil {
+			http.Error(w, e.Error(), 409)
+			return
+		}
+	}
 	for _, kind := range []string{"image", "reference", "video"} {
 		route, ok := state.Routes[kind]
 		if !ok || route.Provider == "" || route.Model == "" {
@@ -329,4 +353,56 @@ func (s *Server) handleContinueStory(w http.ResponseWriter, r *http.Request) {
 		s.database.UpdateOp(op.ID, "succeeded", raw, nil)
 	}()
 	writeJSON(w, 202, map[string]any{"op_id": op.ID, "status": "running", "character_references": true})
+}
+
+func (s *Server) handleExcludeStoryAsset(w http.ResponseWriter, r *http.Request) {
+	project, err := s.activeProjectID(r.Context())
+	if err != nil {
+		http.Error(w, "no active project", 400)
+		return
+	}
+	op, err := s.database.GetOp(chi.URLParam(r, "id"))
+	if err != nil || op.ProjectID == nil || *op.ProjectID != project || op.Kind != "video_generation" {
+		http.Error(w, "story not found", 404)
+		return
+	}
+	var state storyContinuation
+	if json.Unmarshal(op.ResultJSON, &state) != nil || op.Status != "succeeded" || state.Status != "awaiting_character_review" || state.ProjectID != project {
+		http.Error(w, "story is not waiting for review", 409)
+		return
+	}
+	var body struct {
+		AssetID string `json:"asset_id"`
+	}
+	if json.NewDecoder(r.Body).Decode(&body) != nil || body.AssetID == "" {
+		http.Error(w, "asset_id is required", 400)
+		return
+	}
+	found := false
+	ids := []string{}
+	for _, id := range state.AssetReferences {
+		if id == body.AssetID {
+			found = true
+		} else {
+			ids = append(ids, id)
+		}
+	}
+	if !found {
+		http.Error(w, "asset is not selected for this story", 404)
+		return
+	}
+	state.AssetReferences = ids
+	decisions := []plannedAsset{}
+	for _, item := range state.AssetDecisions {
+		if item.AssetID != body.AssetID {
+			decisions = append(decisions, item)
+		}
+	}
+	state.AssetDecisions = decisions
+	next, _ := json.Marshal(state)
+	if err = s.database.ExcludeStoryAsset(op.ID, project, body.AssetID, state.SceneIDs, op.ResultJSON, next); err != nil {
+		http.Error(w, err.Error(), 409)
+		return
+	}
+	writeJSON(w, 200, state)
 }

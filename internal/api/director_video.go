@@ -34,6 +34,7 @@ func (s *Server) directorGenerationContext(ctx context.Context, project *string,
 			return ctx, nil, fmt.Errorf("invalid scene cast")
 		}
 		binding.Selection.CharacterIDs = append(binding.Selection.CharacterIDs, ids...)
+		binding.Selection.AssetIDs = append(binding.Selection.AssetIDs, sceneStoryAssetIDs(scene)...)
 	}
 	if character != nil {
 		binding.Selection.CharacterIDs = append(binding.Selection.CharacterIDs, *character)
