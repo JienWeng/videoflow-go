@@ -31,10 +31,18 @@ func (s *Server) generateCharacterSheet(ctx context.Context, c *models.Character
 	}
 	value, _ := s.referenceLocks.LoadOrStore(c.ID, make(chan struct{}, 1))
 	lock := value.(chan struct{})
-	select {
-	case lock <- struct{}{}:
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	if onlyMissing {
+		select {
+		case lock <- struct{}{}:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	} else {
+		select {
+		case lock <- struct{}{}:
+		default:
+			return nil, fmt.Errorf("reference generation is already running for this character; check Activity")
+		}
 	}
 	defer func() { <-lock }()
 	current, err := s.database.GetCharacter(c.ID)
@@ -52,10 +60,32 @@ func (s *Server) generateCharacterSheet(ctx context.Context, c *models.Character
 	if onlyMissing && len(existing) > 0 {
 		return c, nil
 	}
-	cast, _ := json.Marshal([]string{c.ID})
-	refs, err := s.sceneReferences(&models.Scene{ProjectID: c.ProjectID, CharacterIDsJSON: cast})
-	if err != nil {
-		return nil, err
+	var refs []string
+	if onlyMissing {
+		cast, _ := json.Marshal([]string{c.ID})
+		refs, err = s.sceneReferences(&models.Scene{ProjectID: c.ProjectID, CharacterIDsJSON: cast})
+		if err != nil {
+			return nil, err
+		}
+	} else if s.cfg.UseLocalText {
+		ctx = guidedStoryContext(ctx, *c.ProjectID, []string{c.ID})
+		binding, _ := ctx.Value(directorBindingKey{}).(directorBinding)
+		binding.Selection.referenceCandidate = c.ID
+		ctx = context.WithValue(ctx, directorBindingKey{}, binding)
+	} else {
+		for _, id := range existing {
+			asset, e := s.database.GetAsset(id)
+			if e != nil || asset.ProjectID == nil || *asset.ProjectID != *c.ProjectID {
+				return nil, fmt.Errorf("character reference is not in this project")
+			}
+			if !models.ReferenceApproved(asset.MetadataJSON) {
+				continue
+			}
+			image, e := s.imageURL(asset)
+			if e == nil {
+				refs = append(refs, image)
+			}
+		}
 	}
 	prompt := fmt.Sprintf("Character reference sheet showing front, side and full body views of %s. Appearance: %s. Description: %s. Visual rules: %s", c.Name, c.Appearance, c.Description, c.VisualRulesJSON)
 	if style != "" {
@@ -72,7 +102,12 @@ func (s *Server) generateCharacterSheet(ctx context.Context, c *models.Character
 	for _, image := range images {
 		ids = append(ids, image.ID)
 	}
-	if err = s.database.AppendCharacterReferences(c.ID, *c.ProjectID, ids); err != nil {
+	if onlyMissing {
+		err = s.database.AppendCharacterReferences(c.ID, *c.ProjectID, ids)
+	} else {
+		err = s.database.ReplaceUnapprovedCharacterReferences(c.ID, *c.ProjectID, ids)
+	}
+	if err != nil {
 		return nil, err
 	}
 	return s.database.GetCharacter(c.ID)

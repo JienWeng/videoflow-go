@@ -1275,13 +1275,21 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 	edges := []models.GraphEdge{}
 
 	// Characters
+	activeReferenceIDs := map[string]map[string]bool{}
 	chars, err := d.ListCharacters(projectID)
 	if err == nil {
 		for _, c := range chars {
+			refs := []string{}
+			json.Unmarshal(c.ReferenceAssetIDsJSON, &refs)
+			activeReferenceIDs[c.ID] = map[string]bool{}
+			for _, id := range refs {
+				activeReferenceIDs[c.ID][id] = true
+			}
 			nodes = append(nodes, models.GraphNode{
 				ID:    c.ID,
 				Type:  "character",
 				Label: c.Name,
+				Data:  map[string]interface{}{"reference_asset_ids_json": c.ReferenceAssetIDsJSON},
 			})
 		}
 	}
@@ -1290,16 +1298,22 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 	assets, err := d.ListAssets(projectID)
 	if err == nil {
 		for _, a := range assets {
+			var review struct {
+				Status string `json:"consistency_review"`
+			}
+			json.Unmarshal(a.MetadataJSON, &review)
 			nodes = append(nodes, models.GraphNode{
 				ID:    a.ID,
 				Type:  "asset",
 				Label: a.Name,
 				Data: map[string]interface{}{
-					"file_path":  a.FilePath,
-					"asset_type": a.Type,
+					"file_path":          a.FilePath,
+					"asset_type":         a.Type,
+					"consistency_review": review.Status,
 				},
 			})
-			if a.CharacterID != nil && *a.CharacterID != "" {
+			activeReference := a.CharacterID != nil && activeReferenceIDs[*a.CharacterID][a.ID]
+			if activeReference {
 				edges = append(edges, models.GraphEdge{
 					Source: *a.CharacterID,
 					Target: a.ID,

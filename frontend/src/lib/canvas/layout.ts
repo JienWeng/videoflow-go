@@ -28,9 +28,10 @@ export function nodeSize(n: Node): { w: number; h: number } {
   let h = H;
   const hasPreview =
     (kind === 'asset' && IMG_RE.test(String(d.file_path ?? ''))) ||
-    (kind === 'output' && !!d.thumbnail_path);
+    (kind === 'output' && !!d.thumbnail_path) || (kind==='character'&&!!d.reference_preview_path);
   if (hasPreview) h += 70;
   if (kind === 'render_job') h += 26;
+  if(kind==='character')h+=58;
   return { w: kind === 'scene' ? 190 : W, h };
 }
 

@@ -156,7 +156,7 @@
       // Pinned (saved) nodes keep their spots; fresh nodes get collision-free
       // dagre positions. After autoArrange clears the saved store, this is a
       // pure dagre layout until the user drags a node again.
-      nodes = layoutFresh(n, e, loadPositions()).map(node=>({...node,selected:node.id===selectedNodeId}));
+      nodes = layoutFresh(n, e, loadPositions()).map(node=>({...node,selected:node.id===selectedNodeId,data:{...node.data,...(node.data.kind==='character'?{onReferenceImages:()=>openCharacterReferences(node)}:{})}}));
       // Re-apply the current highlight so a background refresh (SSE job update)
       // while a node panel is open doesn't flash the dimming/labels away.
       edges = styleEdges(e, selectedNodeId, hoveredEdge, selectedEdge);
@@ -219,6 +219,9 @@
     refresh();
     return()=>{observer.disconnect();motion.removeEventListener('change',syncMotion);};
   });
+
+  async function openCharacterReferences(node:Node){if(!selectNode(node))return false;oninspect?.();await tick();const section=document.getElementById('np-character-references');section?.focus();section?.scrollIntoView({block:'nearest',behavior:'instant'});return true}
+  export async function openReferenceImages(id:string){const node=nodes.find(n=>n.id===id&&n.data.kind==='character');if(!node){toast.error('Character is not available in this project');return false}return openCharacterReferences(node)}
 
   export function clearSelection(){selectNode(null);}
 
@@ -527,6 +530,7 @@
   <!-- Docked detail panel: absolutely positioned inside this pane (top-right),
     NOT a viewport-fixed full-height slab, so the chat + minimap stay reachable. -->
   {#if !externalPanel}<NodePanel
+    onopencharacterrefs={id=>{void openReferenceImages(id)}}
     node={panelNode}
     onclose={() => selectNode(null)}
     onsaved={refresh}

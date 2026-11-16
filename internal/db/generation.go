@@ -192,3 +192,54 @@ func (d *DB) ClaimStoryContinuation(id, project string, expected json.RawMessage
 	rows, err := result.RowsAffected()
 	return rows == 1, err
 }
+
+// ReplaceUnapprovedCharacterReferences keeps approved active inputs and retires
+// older candidates only after a new image is saved. Asset history is untouched.
+func (d *DB) ReplaceUnapprovedCharacterReferences(id, project string, created []string) error {
+	tx, err := d.conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var raw string
+	if err = tx.QueryRow(`SELECT reference_asset_ids_json FROM characters WHERE id=? AND project_id=?`, id, project).Scan(&raw); err != nil {
+		return err
+	}
+	var current []string
+	if err = json.Unmarshal([]byte(raw), &current); err != nil {
+		return err
+	}
+	next := []string{}
+	seen := map[string]bool{}
+	for _, ref := range current {
+		var meta string
+		if err = tx.QueryRow(`SELECT metadata_json FROM assets WHERE id=? AND project_id=?`, ref, project).Scan(&meta); err != nil {
+			return err
+		}
+		if models.ReferenceApproved([]byte(meta)) && !seen[ref] {
+			next = append(next, ref)
+			seen[ref] = true
+		}
+	}
+	for _, ref := range created {
+		var owner, kind string
+		if err = tx.QueryRow(`SELECT character_id,type FROM assets WHERE id=? AND project_id=?`, ref, project).Scan(&owner, &kind); err != nil {
+			return err
+		}
+		if owner != id || kind != "character_reference" {
+			return fmt.Errorf("candidate is not a reference for this character")
+		}
+		if !seen[ref] {
+			next = append(next, ref)
+			seen[ref] = true
+		}
+	}
+	rawNext, err := json.Marshal(next)
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`UPDATE characters SET reference_asset_ids_json=?,updated_at=? WHERE id=? AND project_id=?`, string(rawNext), time.Now().UTC(), id, project); err != nil {
+		return err
+	}
+	return tx.Commit()
+}

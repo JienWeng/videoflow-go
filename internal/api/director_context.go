@@ -14,8 +14,9 @@ import (
 
 // Selection order is significant: it fixes reference-to-entity bindings for proposals.
 type directorSelection struct {
-	CharacterIDs []string `json:"character_ids"`
-	AssetIDs     []string `json:"asset_ids"`
+	referenceCandidate string   // internal-only: omit unapproved inputs when regenerating this character
+	CharacterIDs       []string `json:"character_ids"`
+	AssetIDs           []string `json:"asset_ids"`
 }
 type directorContext struct {
 	Selection  *directorSelection `json:"selection,omitempty"`
@@ -57,11 +58,29 @@ func (s *Server) buildDirectorContext(project string, selection directorSelectio
 		if err != nil || c.ProjectID == nil || *c.ProjectID != project {
 			return nil, fmt.Errorf("selected character is not in this project")
 		}
-		result.Characters = append(result.Characters, *c)
 		var refs []string
 		if json.Unmarshal(c.ReferenceAssetIDsJSON, &refs) != nil {
 			return nil, fmt.Errorf("character has invalid reference bindings")
 		}
+		if selection.referenceCandidate == id {
+			approved := []string{}
+			for _, ref := range refs {
+				asset, err := s.database.GetAsset(ref)
+				if err != nil || asset.ProjectID == nil || *asset.ProjectID != project {
+					return nil, fmt.Errorf("character reference is not in this project")
+				}
+				if !models.ReferenceApproved(asset.MetadataJSON) {
+					continue
+				}
+				if _, err = s.imageURL(asset); err != nil {
+					continue
+				}
+				approved = append(approved, ref)
+			}
+			refs = approved
+			c.ReferenceAssetIDsJSON, _ = json.Marshal(refs)
+		}
+		result.Characters = append(result.Characters, *c)
 		assetIDs = append(assetIDs, refs...)
 	}
 	seenAssets := map[string]bool{}

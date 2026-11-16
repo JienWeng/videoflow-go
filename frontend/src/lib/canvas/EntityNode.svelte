@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
-  import { Users, Image, Clapperboard, ListVideo, Film } from '@lucide/svelte';
+  import { Users, Image, Clapperboard, ListVideo, Film, RefreshCw } from '@lucide/svelte';
   import { Badge } from '$lib/components/ui/badge';
   import { mediaUrl, isImage } from '$lib/api';
   import { kindColor, KIND_LABELS } from './transform';
@@ -23,7 +23,9 @@
   const isScene = $derived(kind === 'scene');
   const isDerived = $derived(kind === 'render_job' || kind === 'output');
   const preview = $derived(
-    kind === 'asset' && isImage(data.file_path as string)
+    kind === 'character' && isImage(data.reference_preview_path as string)
+      ? mediaUrl(data.reference_preview_path as string)
+      : kind === 'asset' && isImage(data.file_path as string)
       ? mediaUrl(data.file_path as string)
       : kind === 'output' && data.thumbnail_path
         ? mediaUrl(data.thumbnail_path as string)
@@ -70,6 +72,7 @@
   {#if preview}
     <img src={preview} alt={String(data.label ?? '')} loading="lazy" class="mt-1 h-16 w-full rounded object-cover" />
   {/if}
+  {#if kind==='character'&&data.onReferenceImages}<button type="button" class="nodrag nopan mt-2 flex min-h-8 w-full items-center justify-center gap-1.5 rounded-md border border-border px-2 text-xs text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring" aria-label={`Reference images for ${data.label}`} onclick={event=>{event.stopPropagation();(data.onReferenceImages as ()=>void)()}}><RefreshCw class="size-3"/>Reference images</button>{#if ['pending','rejected'].includes(String(data.reference_review))}<p class="mt-1 text-xs text-muted-foreground">Review needed</p>{/if}{/if}
   {#if status}
     <div class="mt-1">
       <Badge variant={badgeVariant}>{status}</Badge>

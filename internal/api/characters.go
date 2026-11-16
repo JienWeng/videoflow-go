@@ -92,6 +92,12 @@ func (s *Server) handleCharacterRefSheets(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	project, err := s.activeProjectID(r.Context())
+	if err != nil || c.ProjectID == nil || *c.ProjectID != project {
+		http.Error(w, "character not found in active project", 404)
+		return
+	}
+
 	s.operation(w, r, &models.Op{Kind: "character_reference", ProjectID: c.ProjectID}, func(ctx context.Context) (any, error) {
 		return s.generateCharacterSheet(ctx, c, false, "")
 	})

@@ -12,6 +12,7 @@
 </script>
 
 <script lang="ts">
+  import CharacterReferences from './CharacterReferences.svelte';
   import {changedFields} from '$lib/scenes/drafts.mjs';
   import { beforeNavigate } from '$app/navigation';
   import { untrack } from 'svelte';
@@ -30,8 +31,8 @@
   let {
     node,
     onclose,
-    onsaved, embedded = false, onopenscene
-  }: { node: Node | null; onclose: () => void; onsaved: () => void; embedded?: boolean; onopenscene?:(id:string)=>void } = $props();
+    onsaved, embedded = false, onopenscene,onopencharacterrefs
+  }: { node: Node | null; onclose: () => void; onsaved: () => void; embedded?: boolean; onopenscene?:(id:string)=>void;onopencharacterrefs?:(id:string)=>void } = $props();
 
   // The panel's own source of truth for which node it shows. It tracks the
   // `node` prop, EXCEPT when the form is dirty and the user cancels the
@@ -114,7 +115,7 @@
       };
     } else if(shown && String(d.kind)==='asset'){
       form={};loadingRecord=true;const id=shown.id;
-      get(`/assets/${id}`).then(a=>{if(token!==recordToken)return;form={updated_at:a.updated_at,traits:Object.entries(a.metadata_json?.locked_traits??{}).map(([name,value])=>({name,value:String(value)})),review:a.metadata_json?.consistency_review};remember();}).catch(e=>{if(token===recordToken)recordError=String(e)}).finally(()=>{if(token===recordToken)loadingRecord=false});
+      get(`/assets/${id}`).then(a=>{if(token!==recordToken)return;form={updated_at:a.updated_at,character_id:a.character_id,traits:Object.entries(a.metadata_json?.locked_traits??{}).map(([name,value])=>({name,value:String(value)})),review:a.metadata_json?.consistency_review};remember();}).catch(e=>{if(token===recordToken)recordError=String(e)}).finally(()=>{if(token===recordToken)loadingRecord=false});
     } else if(shown && String(d.kind)==='character'){
       form={};loadingRecord=true;const id=shown.id;
       get(`/characters/${id}`).then(c=>{if(token!==recordToken)return;form={name:c.name,description:c.description??'',appearance:c.appearance??'',personality:c.personality??'',visual_rules:(c.visual_rules_json??[]).join('\n'),voice_rules:(c.voice_rules_json??[]).join('\n'),sample_dialogue:c.sample_dialogue??''};remember();}).catch(e=>{if(token===recordToken)recordError=String(e)}).finally(()=>{if(token===recordToken)loadingRecord=false});
@@ -499,6 +500,7 @@
           </p>
         </div>
       {:else if kind === 'asset'}
+        {#if form.character_id&&data.asset_type==='character_reference'&&onopencharacterrefs}<Button variant="outline" onclick={()=>onopencharacterrefs?.(form.character_id)}>Character reference images</Button>{/if}
         {#if imageSrc}
           <img src={imageSrc} alt={String(data.label ?? '')} class="w-full rounded-md border border-border object-cover" />
         {/if}
@@ -535,13 +537,13 @@
           >
         </div>
       {:else if kind === 'character'}
+        <CharacterReferences characterId={shown!.id} disabled={formDirty||saving||loadingRecord||!!recordError} onchanged={onsaved}/>
         {#if loadingRecord}<p role="status">Loading character…</p>{:else if recordError}<p role="alert" class="text-destructive">{recordError}</p>{:else}
           {#each [{key:'name',label:'Name'},{key:'description',label:'Description'},{key:'appearance',label:'Appearance'},{key:'personality',label:'Personality'},{key:'visual_rules',label:'Visual rules (one per line)'},{key:'voice_rules',label:'Voice rules (one per line)'},{key:'sample_dialogue',label:'Sample dialogue'}] as field}
             <div class="grid gap-1.5"><Label for={'np-character-'+field.key}>{field.label}</Label><Textarea id={'np-character-'+field.key} rows={field.key==='name'?1:3} bind:value={form[field.key]} oninput={markFormDirty} /></div>
           {/each}
           <div class="flex gap-2"><Button class="flex-1" onclick={save} disabled={saving||!formDirty}>{saving?'Saving…':'Save character'}</Button><Button variant="outline" disabled={saving||!formDirty} onclick={discard}>Cancel</Button></div>
         {/if}
-        <Button variant="outline" href={`/library?tab=characters&character_id=${encodeURIComponent(shown?.id??'')}`}>Manage reference photos</Button>
         <Button variant="outline" href={`/voices?character_id=${encodeURIComponent(shown?.id??'')}`}>Voice & dialogue</Button>
       {/if}
 

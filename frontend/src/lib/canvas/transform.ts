@@ -52,11 +52,12 @@ export type ApiGraph = {
 };
 
 export function toFlow(g: ApiGraph): { nodes: Node[]; edges: Edge[] } {
+  const assets=new Map(g.nodes.filter(n=>n.type==='asset').map(n=>[n.id,n]));
   const nodes: Node[] = g.nodes.map((n) => ({
     id: n.id,
     type: 'entity',
     position: { x: 0, y: 0 },
-    data: { kind: n.type, label: n.label, ...(n.data ?? {}) }
+    data: { kind: n.type, label: n.label, ...(n.data ?? {}), ...(n.type==='character'?(()=>{const refs=Array.isArray(n.data?.reference_asset_ids_json)?n.data.reference_asset_ids_json:[];const image=refs.slice().reverse().map((id:string)=>assets.get(id)).find((a:any)=>/\.(png|jpe?g|webp|gif)$/i.test(a?.data?.file_path??''));return {reference_preview_path:image?.data?.file_path,reference_review:image?.data?.consistency_review};})():{}) }
   }));
   const edges: Edge[] = g.edges.map((e) => {
     const color = edgeColor(e.label);
