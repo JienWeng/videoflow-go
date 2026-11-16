@@ -59,9 +59,10 @@ func TestGuidedRenderScopeAvoidsStaleCastButKeepsReferenceApproval(t *testing.T)
 	s.database.CreateScene(scene)
 	ctx := context.WithValue(context.Background(), directorBindingKey{}, directorBinding{ProjectID: project, Selection: directorSelection{CharacterIDs: []string{"deleted-character"}}})
 	job := &models.RenderJob{ProjectID: &project, SceneID: &scene.ID, RequestJSON: []byte(`{}`)}
-	if err := s.freezeDirectorVideo(ctx, job); err == nil || !strings.Contains(err.Error(), "selected character") {
-		t.Fatal("fixture did not reproduce stale context", err)
+	if err := s.freezeDirectorVideo(ctx, job); err == nil || !strings.Contains(err.Error(), "review") {
+		t.Fatal("scene scope must ignore incidental selection and retain approval", err)
 	}
+
 	if err := s.freezeDirectorVideo(guidedStoryContext(ctx, project, nil), job); err == nil || !strings.Contains(err.Error(), "review") {
 		t.Fatal("guided rendering lost its approval gate", err)
 	}

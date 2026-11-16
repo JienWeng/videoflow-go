@@ -969,7 +969,23 @@ func (d *DB) GetStyleGuide(projectID string) (*models.StyleGuide, error) {
 	return &s, nil
 }
 
-func (d *DB) UpsertStyleGuide(s *models.StyleGuide) error { return upsertStyleGuide(d.conn, s) }
+func (d *DB) UpsertStyleGuide(s *models.StyleGuide) error {
+	if s.ProjectID == nil {
+		return fmt.Errorf("style project is required")
+	}
+	if s.ID != "" {
+		var owner string
+		err := d.conn.QueryRow(`SELECT project_id FROM style_guides WHERE id=?`, s.ID).Scan(&owner)
+		if err == nil && owner != *s.ProjectID {
+			return fmt.Errorf("style belongs to another project")
+		}
+	}
+	if existing, err := d.GetStyleGuide(*s.ProjectID); err == nil {
+		s.ID = existing.ID
+		s.CreatedAt = existing.CreatedAt
+	}
+	return upsertStyleGuide(d.conn, s)
+}
 
 func upsertStyleGuide(conn sqlExecutor, s *models.StyleGuide) error {
 	now := time.Now().UTC()

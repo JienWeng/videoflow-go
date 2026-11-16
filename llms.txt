@@ -100,3 +100,7 @@ The repair was verified with local provider mocks, real FFmpeg, automated tests 
 For maintainers, build/package commands are in ELECTRON-AND-WEB.md. Do not run release publication, destructive cleanup or paid model tests merely because this guide mentions them.
 
 - docs/audits/2026-11-11-local-integration.md — independent review fixes, verification evidence, architectural decisions and live-test limits.
+
+## Scene studios and shared assets
+
+Open a scene from Studio or /scenes?scene_id=<id>. Its Scene references section uses the project's shared character sheets, props and locations. Choose props/locations from Library; removing a binding does not delete the asset. Library scene filters include reused references and cast sheets. Asset details show usage and allow manual identity edits; appearance changes need fresh approval. In-use assets cannot be deleted. Generate new version creates a pending candidate and preserves existing scene bindings; replace a version explicitly in the desired scene after review. Scene/shot/style changes invalidate a previously reviewed storyboard for rendering until it is reviewed for the current scene or regenerated. No image generation or render starts automatically from these management actions.

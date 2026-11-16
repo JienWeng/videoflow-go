@@ -106,6 +106,18 @@ func (s *Server) stylePrompt(projectID *string) string {
 }
 
 func (s *Server) generateAssets(ctx context.Context, projectID *string, characterID *string, sceneID, name, kind, prompt, aspect string, references []string) ([]models.Asset, error) {
+	sceneRevision := ""
+	if sceneID != "" {
+		if frozen, ok := ctx.Value(sceneInputKey{}).(sceneInputSnapshot); ok && frozen.ID == sceneID {
+			sceneRevision = frozen.Revision
+		} else {
+			var e error
+			sceneRevision, e = s.currentSceneInputRevision(sceneID)
+			if e != nil {
+				return nil, e
+			}
+		}
+	}
 	ctx, frozenIdentity, err := s.directorGenerationContext(ctx, projectID, sceneID, characterID)
 	if err != nil {
 		return nil, err
@@ -200,7 +212,7 @@ func (s *Server) generateAssets(ctx context.Context, projectID *string, characte
 		if err = os.WriteFile(path, image.Data, 0644); err != nil {
 			return nil, err
 		}
-		metadata, _ := json.Marshal(map[string]any{"scene_id": sceneID, "provider": provider, "model": model, "media_type": image.MediaType, "fallback_reason": fallbackReason})
+		metadata, _ := json.Marshal(map[string]any{"scene_id": sceneID, "provider": provider, "model": model, "media_type": image.MediaType, "fallback_reason": fallbackReason, "scene_input_revision": sceneRevision})
 		if frozenIdentity != nil {
 			var fields map[string]any
 			_ = json.Unmarshal(metadata, &fields)

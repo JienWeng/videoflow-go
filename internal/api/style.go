@@ -37,8 +37,14 @@ func (s *Server) handleUpdateStyle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no active project", http.StatusInternalServerError)
 		return
 	}
-	var style models.StyleGuide
-	if err := json.NewDecoder(r.Body).Decode(&style); err != nil {
+	current, loadErr := s.database.GetStyleGuide(projectID)
+	if loadErr != nil {
+		current = &models.StyleGuide{Name: "2D Picture Book", StylePrompt: "warm 2D children's picture-book illustration, clean shapes, expressive faces", Palette: "soft pastel colors", Lighting: "gentle even lighting", Audience: "children aged 5 to 9", Tone: "warm and playful"}
+	}
+	style := *current
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 65536))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&style); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}

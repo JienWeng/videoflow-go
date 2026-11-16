@@ -4,7 +4,8 @@
  onDestroy(()=>operationScope.abort());
   import { onMount,onDestroy } from 'svelte';
   import {changedFields,mergeDraft} from './drafts.mjs';
-  import { beforeNavigate } from '$app/navigation';
+  import { beforeNavigate,replaceState } from '$app/navigation';
+  import {page} from '$app/state';
   import { storyCreation } from '$lib/create/story-creation.svelte';
   import { get, patch, post, put, del, mediaUrl } from '$lib/api';
   import { runBackgroundOp } from '$lib/ops';
@@ -110,7 +111,7 @@
   // dedicated dialog; null selectedId = empty workspace.
   let selectedId: string | null = $state(null);
   let mobileDetail=$state(false);
-  export async function openScene(id:string){await reload();if(scenes.some(s=>s.id===id)){selectedId=id;mobileDetail=true;}}
+  export async function openScene(id:string){await reload();if(scenes.some(s=>s.id===id)){selectScene(id);}}
   export async function reload(){try{await refresh();error='';}catch(e){error=String(e);}}
 
   // ── List UX: search + stage filter + keyboard nav ──────────────────────────
@@ -246,7 +247,7 @@
     storyboards = {};
     for (const a of allAssets) {
       const sid = a.metadata_json?.scene_id;
-      if (a.type === 'storyboard' && sid && freshScenes.find((scene:any)=>scene.id===sid)?.asset_ids_json?.includes(a.id)) storyboards[sid] = a;
+      if (!storyboards[sid] && a.type === 'storyboard' && sid && freshScenes.find((scene:any)=>scene.id===sid)?.asset_ids_json?.includes(a.id)) storyboards[sid] = a;
     }
     const rendered: Record<string, boolean> = {};
     for (const j of jobs) {
@@ -265,7 +266,7 @@
     shotsByScene = shotsByScene;
   }
   onMount(() => {
-    refresh().then(()=>{const sceneID=new URL(window.location.href).searchParams.get('scene_id');if(sceneID&&scenes.some(s=>s.id===sceneID))selectedId=sceneID})
+    refresh().then(()=>{const sceneID=new URL(window.location.href).searchParams.get('scene_id');if(sceneID&&scenes.some(s=>s.id===sceneID))selectScene(sceneID)})
       .catch((e) => (error = e.message))
       .finally(() => (loaded = true));
     get('/style').then((s) => (style = s)).catch(() => {});
@@ -384,7 +385,7 @@
       confirmAction = {
         title: 'Regenerate storyboard?',
         message:
-          'This replaces the existing storyboard image for this scene. Continue?',
+          'Create a new storyboard candidate? Previous images stay in Library. Review the new image before rendering.',
         run: () => generateStoryboard(s)
       };
     } else {
@@ -726,6 +727,7 @@
   function selectScene(id: string) {
     selectedId = id;
     mobileDetail = true;
+    const url=new URL(page.url);url.searchParams.set('scene_id',id);replaceState(url,{...page.state});
   }
 
   // Arrow-key navigation in the left list (when not typing in a field).
@@ -751,12 +753,12 @@
   ];
 </script>
 
-<svelte:head>{#if !embedded}<title>Scenes & shots · VideoFlow</title>{/if}</svelte:head>
+<svelte:head>{#if !embedded}<title>Scene studios · VideoFlow</title>{/if}</svelte:head>
 
 <div class="story-workspace flex h-full min-h-0 flex-col {mobileDetail?'show-detail':''}">
   <!-- Page header (unchanged copy) -->
   <div class="px-6 pt-6 pb-3 shrink-0">
-    {#if !embedded}<h1 class="text-lg font-semibold">Story</h1>{/if}
+    {#if !embedded}<h1 class="text-lg font-semibold">Scene studios</h1>{/if}
     <details class="mt-2"><summary class="min-h-10 cursor-pointer text-sm text-muted-foreground">Story options</summary><div class="flex flex-wrap items-center gap-2 pb-2">
       <input
         bind:value={conversationInstruction}
@@ -940,6 +942,7 @@
               onRenderScene={renderScene}
               onDelete={(s: any) => (deleteTarget = s)}
               onLightbox={(a: any) => (lightbox = a)}
+              onReferencesChanged={refresh}
             />
           {/key}
         {:else}

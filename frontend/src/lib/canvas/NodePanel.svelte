@@ -378,7 +378,7 @@
 
     <div class="flex min-h-0 flex-col gap-4 overflow-y-auto px-4 pb-4">
       {#if kind === 'scene'}
-        {#if onopenscene}<Button variant="secondary" onclick={()=>onopenscene?.(shown!.id)}>Open scene stages</Button>{/if}
+        {#if onopenscene}<Button variant="secondary" onclick={()=>onopenscene?.(shown!.id)}>Open scene studio</Button>{/if}
         <div class="grid gap-1.5">
           <Label for="np-title">Title</Label>
           <Input id="np-title" bind:value={form.title} oninput={markFormDirty} />

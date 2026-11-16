@@ -66,8 +66,8 @@ export const patch = (path: string, body: unknown) =>
     body: JSON.stringify(body)
   }).then(handle);
 
-export const del = (path: string) =>
-  fetch(`${API_BASE}${path}`, { method: 'DELETE' }).then(handle);
+export const del = (path: string,body?:unknown) =>
+  fetch(`${API_BASE}${path}`, { method: 'DELETE',...(body===undefined?{}:{headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}) }).then(handle);
 
 export const upload = (path: string, form: FormData) =>
   fetch(`${API_BASE}${path}`, { method: 'POST', body: form }).then(handle);

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SceneReferences from './SceneReferences.svelte';
   import {sceneStages} from './stages.mjs';
   import { mediaUrl } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
@@ -49,10 +50,13 @@
     onGenerateStoryboard,
     onRenderScene,
     onDelete,
-    onLightbox
+    onLightbox,
+    onReferencesChanged
   }: any = $props();
 
   // Stage disclosure follows saved work; generation controls live inside each stage.
+  let referenceInfo:any=$state(null);
+  const currentStoryboard=$derived(referenceInfo?.storyboards?.find((a:any)=>a.id===referenceInfo.active_storyboard_id)??storyboard);
   let showAll=$state(false);
   let opened=$state<Record<string,boolean>>({});
   const sections=$derived(sceneStages({expanded:!!steps.find((st:any)=>st.key==='expand')?.done,shots:shots.length,storyboard:!!storyboard,rendered:!!steps.find((st:any)=>st.key==='render')?.done,assets:(generatedAssets[s.id]??[]).length,all:showAll}));
@@ -74,9 +78,9 @@
     {#if storyboard}
       <button type="button"
         class="group relative size-16 shrink-0 overflow-hidden rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-ring"
-        title="View storyboard" onclick={() => onLightbox(storyboard)}>
+        title="View storyboard" onclick={() => onLightbox(currentStoryboard)}>
         <img class="size-full object-cover transition-transform group-hover:scale-105"
-          src={mediaUrl(storyboard.file_path)} alt="Storyboard" loading="lazy" />
+          src={mediaUrl(currentStoryboard.file_path)} alt="Storyboard" loading="lazy" />
         <span class="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-colors">
           <Maximize2 class="size-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
         </span>
@@ -94,7 +98,6 @@
         {#if sceneDirty}
           <Badge variant="outline" class="shrink-0 border-amber-500/50 text-amber-800 dark:text-amber-300">Unsaved</Badge>
         {/if}
-        <span class="ml-auto font-mono text-[10px] text-muted-foreground">{s.id}</span>
       </div>
 
       <p class="text-xs text-muted-foreground">{current?`Next: ${current.label}`:'Video ready · earlier stages are available below'}</p>
@@ -107,6 +110,8 @@
       </Button>
     </div>
   </div>
+
+  <SceneReferences sceneId={s.id} {characters} onchanged={onReferencesChanged} onstate={value=>referenceInfo=value}/>
 
   <div class="mt-5 space-y-3">
     <div class="flex flex-wrap items-center justify-between gap-2"><p class="text-xs text-muted-foreground">Open an earlier stage to review or edit it.</p><Button variant="ghost" size="sm" aria-expanded={showAll} onclick={()=>showAll=!showAll}>{showAll?'Hide future stages':'Show all stages'}</Button></div>
@@ -387,7 +392,7 @@
       <summary class="min-h-11 cursor-pointer py-3 text-sm font-semibold">{section('storyboard').label}</summary><div class="pb-4">
       <div class="flex flex-wrap items-center gap-2 mb-2">
         <Button variant="outline" size="sm"
-          disabled={opBusy[`sb-${s.id}`] || !(shots?.length)}
+          disabled={referenceInfo?.references_ready===false||opBusy[`sb-${s.id}`] || !(shots?.length)}
           onclick={() => onGenerateStoryboard(s)}>
           <Images class="size-3 mr-1" />{opBusy[`sb-${s.id}`] ? 'Generating…' : storyboard?'Regenerate storyboard':'Generate storyboard'}
         </Button>
@@ -395,8 +400,8 @@
       {#if storyboard}
         <button type="button"
           class="group relative block max-w-[420px] w-full overflow-hidden rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-ring"
-          title="Click to enlarge" onclick={() => onLightbox(storyboard)}>
-          <img class="w-full transition-transform group-hover:scale-[1.02]" src={mediaUrl(storyboard.file_path)} alt="Storyboard" loading="lazy" />
+          title="Click to enlarge" onclick={() => onLightbox(currentStoryboard)}>
+          <img class="w-full transition-transform group-hover:scale-[1.02]" src={mediaUrl(currentStoryboard.file_path)} alt="Storyboard" loading="lazy" />
           <span class="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity">
             <Maximize2 class="size-3" />Enlarge
           </span>
@@ -405,6 +410,6 @@
         <p class="text-xs text-muted-foreground">Generate a storyboard after adding shots.</p>
       {/if}
     </div></details>{/if}
-    {#if section('render').visible}<details class="border-t border-border pt-2" open={isOpen('render')} ontoggle={event=>remember('render',event)} data-stage="render"><summary class="min-h-11 cursor-pointer py-3 text-sm font-semibold">Video</summary><div class="space-y-3 pb-4"><p class="text-sm text-muted-foreground">Review references and saved dialogue before submitting. Provider calls may incur charges.</p><div class="flex flex-wrap gap-2"><Button variant="outline" href={`/library?tab=media&scene_id=${encodeURIComponent(s.id)}`}>Review references</Button><Button disabled={!shots.length||busy[`render-${s.id}`]||sceneDirty||shots.some((shot:any)=>shotDirty(shot))} onclick={()=>onRenderScene(s)}>{busy[`render-${s.id}`]?'Submitting…':steps.find((st:any)=>st.key==='render')?.done?'Render another version':'Render scene'}</Button><Button variant="ghost" href="/render">Videos & render history</Button></div>{#if !shots.length}<p class="text-xs text-muted-foreground">Add shots before rendering.</p>{/if}</div></details>{/if}
+    {#if section('render').visible}<details class="border-t border-border pt-2" open={isOpen('render')} ontoggle={event=>remember('render',event)} data-stage="render"><summary class="min-h-11 cursor-pointer py-3 text-sm font-semibold">Video</summary><div class="space-y-3 pb-4"><p class="text-sm text-muted-foreground">Review references and saved dialogue before submitting. Provider calls may incur charges.</p><div class="flex flex-wrap gap-2"><Button variant="outline" href={`/library?tab=media&scene_id=${encodeURIComponent(s.id)}`}>Review references</Button><Button disabled={referenceInfo?.references_ready===false||referenceInfo?.storyboard_ready===false||!shots.length||busy[`render-${s.id}`]||sceneDirty||shots.some((shot:any)=>shotDirty(shot))} onclick={()=>onRenderScene(s)}>{busy[`render-${s.id}`]?'Submitting…':steps.find((st:any)=>st.key==='render')?.done?'Render another version':'Render scene'}</Button><Button variant="ghost" href="/render">Videos & render history</Button></div>{#if !shots.length}<p class="text-xs text-muted-foreground">Add shots before rendering.</p>{/if}</div></details>{/if}
   </div>
 </div>

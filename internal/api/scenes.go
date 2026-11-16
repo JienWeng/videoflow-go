@@ -413,11 +413,19 @@ func (s *Server) handleStoryboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.operation(w, r, &models.Op{Kind: "storyboard", SceneID: &sceneID, ProjectID: scene.ProjectID}, func(ctx context.Context) (any, error) {
+		ctx, err = s.bindSceneInputs(ctx, scene)
+		if err != nil {
+			return nil, err
+		}
 		refs, err := s.sceneReferences(scene)
 		if err != nil {
 			return nil, err
 		}
-		assets, err := s.generateAssets(ctx, scene.ProjectID, nil, scene.ID, scene.Title+" storyboard", "storyboard", "Storyboard keyframe of "+scene.Title+". "+scene.Summary+"\n"+sceneBrief(scene).prompt(), scene.AspectRatio, refs)
+		brief := sceneBrief(scene)
+		if profile, e := s.database.GetStyleGuide(*scene.ProjectID); e == nil && profile.StylePrompt != "" {
+			brief.Style = s.stylePrompt(scene.ProjectID)
+		}
+		assets, err := s.generateAssets(ctx, scene.ProjectID, nil, scene.ID, scene.Title+" storyboard", "storyboard", "Storyboard keyframe of "+scene.Title+". "+scene.Summary+"\n"+brief.prompt(), scene.AspectRatio, refs)
 		if err != nil {
 			return nil, err
 		}
@@ -501,8 +509,8 @@ func (s *Server) handleGenerateSceneAssets(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) sceneReferences(scene *models.Scene) ([]string, error) {
-	assetIDs := sceneBrief(scene).ReferenceAssetIDs
-	if len(assetIDs) == 0 {
+	assetIDs := []string{}
+	{
 		var characterIDs []string
 		json.Unmarshal(scene.CharacterIDsJSON, &characterIDs)
 		if _, err := s.characterNotes(scene.ProjectID, scene.CharacterIDsJSON); err != nil {
@@ -518,7 +526,7 @@ func (s *Server) sceneReferences(scene *models.Scene) ([]string, error) {
 			assetIDs = append(assetIDs, ids...)
 		}
 	}
-	assetIDs = append(assetIDs, sceneStoryAssetIDs(scene)...)
+	assetIDs = append(assetIDs, s.sceneBoundAssets(scene)...)
 	refs := []string{}
 	seen := map[string]bool{}
 	for _, id := range assetIDs {

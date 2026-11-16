@@ -33,8 +33,8 @@ func (s *Server) directorGenerationContext(ctx context.Context, project *string,
 		if json.Unmarshal(scene.CharacterIDsJSON, &ids) != nil {
 			return ctx, nil, fmt.Errorf("invalid scene cast")
 		}
-		binding.Selection.CharacterIDs = append(binding.Selection.CharacterIDs, ids...)
-		binding.Selection.AssetIDs = append(binding.Selection.AssetIDs, sceneStoryAssetIDs(scene)...)
+		binding.Selection = directorSelection{CharacterIDs: ids}
+		binding.Selection.AssetIDs = append(binding.Selection.AssetIDs, s.sceneBoundAssets(scene)...)
 	}
 	if character != nil {
 		binding.Selection.CharacterIDs = append(binding.Selection.CharacterIDs, *character)
@@ -101,13 +101,30 @@ func (s *Server) freezeDirectorVideo(ctx context.Context, job *models.RenderJob)
 	}
 	var keyframe *models.Asset
 	unreviewed := false
+	hasSceneBoards := false
+	sceneRevision := ""
+	if sceneID != "" {
+		sceneRevision, err = s.currentSceneInputRevision(sceneID)
+		if err != nil {
+			return err
+		}
+	}
 	if sceneID != "" {
 		scene, _ := s.database.GetScene(sceneID)
 		var ids []string
 		json.Unmarshal(scene.AssetIDsJSON, &ids)
-		for _, id := range ids {
+		for i := len(ids) - 1; i >= 0; i-- {
+			id := ids[i]
 			asset, e := s.database.GetAsset(id)
 			if e != nil || asset.Type != "storyboard" {
+				continue
+			}
+			hasSceneBoards = true
+			var inputs struct {
+				Revision string `json:"scene_input_revision"`
+			}
+			_ = json.Unmarshal(asset.MetadataJSON, &inputs)
+			if inputs.Revision != "" && inputs.Revision != sceneRevision {
 				continue
 			}
 			if !models.ReferenceApproved(asset.MetadataJSON) {
@@ -127,7 +144,10 @@ func (s *Server) freezeDirectorVideo(ctx context.Context, job *models.RenderJob)
 			return fmt.Errorf("generated keyframes await consistency review; approve a matching reference in Assets before Render")
 		}
 	}
-	if keyframe == nil && len(visual) == 1 {
+	if sceneID != "" && hasSceneBoards && keyframe == nil {
+		return fmt.Errorf("scene inputs or references changed; review or regenerate a matching storyboard before rendering")
+	}
+	if sceneID == "" && keyframe == nil && len(visual) == 1 {
 		keyframe = &visual[0]
 	}
 	if len(visual) > 0 && keyframe == nil {
@@ -158,6 +178,9 @@ func (s *Server) freezeDirectorVideo(ctx context.Context, job *models.RenderJob)
 		}
 		payload["frame_images"] = []map[string]any{{"type": "image_url", "image_url": map[string]string{"url": image}, "frame_type": "first_frame"}}
 		payload["director_keyframe"] = keyframe.ID
+		if sceneRevision != "" {
+			payload["scene_input_revision"] = sceneRevision
+		}
 	}
 	if stringPrompt(payload["prompt"]) == "" {
 		if job.ShotID != nil {
@@ -191,9 +214,10 @@ func (s *Server) prepareDirectorVideoJob(ctx context.Context, job *models.Render
 // Called again at the provider submission boundary, including after a backend restart.
 func (s *Server) validateFrozenVideo(ctx context.Context, job *models.RenderJob) error {
 	var payload struct {
-		Context  *directorContext `json:"director_context"`
-		Keyframe string           `json:"director_keyframe"`
-		Voice    struct {
+		SceneInput string           `json:"scene_input_revision"`
+		Context    *directorContext `json:"director_context"`
+		Keyframe   string           `json:"director_keyframe"`
+		Voice      struct {
 			Bindings []db.VoiceBinding `json:"source_bindings"`
 		} `json:"voice_policy"`
 	}
@@ -205,6 +229,12 @@ func (s *Server) validateFrozenVideo(ctx context.Context, job *models.RenderJob)
 	}
 	if job.ProjectID == nil {
 		return fmt.Errorf("missing frozen render project")
+	}
+	if payload.SceneInput != "" && job.SceneID != nil {
+		current, e := s.currentSceneInputRevision(*job.SceneID)
+		if e != nil || current != payload.SceneInput {
+			return fmt.Errorf("scene changed after render approval; review before submitting")
+		}
 	}
 	if payload.Context != nil {
 		if payload.Context.ProjectID != *job.ProjectID {

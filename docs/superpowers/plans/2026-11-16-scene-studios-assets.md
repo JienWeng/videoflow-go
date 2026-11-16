@@ -1,0 +1,10 @@
+# Scene studios and shared assets
+
+Use the existing Studio/Story workspace as the per-scene studio rather than creating another editor. Each scene owns its cast, selected prop/location references, shots, storyboards and renders. The project Library owns asset identities/files; scenes reference shared IDs instead of copies. Canvas and Library links open the same scene studio.
+
+1. Add current-scene reference listing plus explicit attach/detach APIs with ownership, type/review, deduplication and revision checks. Scene generation uses canonical scene bindings rather than incidental chat selection. Changing inputs makes older keyframes stale; a lone identity image must never substitute for a scene keyframe.
+2. Show reference state, identity locks, Library selection, removal and storyboard freshness inside the existing scene workspace. Retain draft protection and progressive stage disclosure.
+3. Make Library scene filters use actual cast/reference/storyboard associations, show asset usage and link back to scene studios. Block deletion of in-use assets and foreign-project reads/deletes. Keep detach separate from deletion.
+4. Verify project isolation, shared reuse, stale writes, stale keyframe fences, usage/deletion, desktop/mobile workflow and accessibility. No paid generation or native-session acknowledgement. Update PR #2 without merging.
+
+Implemented refinements: manual asset name/description/identity editing with CAS and renewed approval after appearance changes; new prop/location candidates preserve old scene bindings, then explicit same-group replacement updates one scene atomically. Saved scenes use current cast references and legacy attached props. The current reviewed keyframe and render selection agree, and scene/shot/style input revisions fence stale storyboards and queued renders. Mobile deep links open the selected scene studio. Broken nonpersistent style pinning is replaced by explicit vision-based style extraction; partial style edits preserve the rest of the current project style.

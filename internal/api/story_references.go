@@ -163,6 +163,9 @@ func (s *Server) generateStoryboards(ctx context.Context, scenes []models.Scene)
 		if err != nil {
 			return err
 		}
+		if profile, e := s.database.GetStyleGuide(*scene.ProjectID); e == nil && profile.StylePrompt != "" {
+			brief.Style = s.stylePrompt(scene.ProjectID)
+		}
 		var snapshot map[string]any
 		if err = json.Unmarshal(scene.SceneJSON, &snapshot); err != nil {
 			return err
@@ -185,6 +188,10 @@ func (s *Server) generateStoryboards(ctx context.Context, scenes []models.Scene)
 		// Local generation gets images exclusively from the current validated
 		// director snapshot, never detached references from an older scene brief.
 		sceneCtx := brief.context(guidedStoryContext(ctx, *scene.ProjectID, brief.CharacterIDs))
+		sceneCtx, err = s.bindSceneInputs(sceneCtx, scene)
+		if err != nil {
+			return err
+		}
 		images, err := s.generateAssets(sceneCtx, scene.ProjectID, nil, scene.ID, scene.Title+" keyframe", "storyboard", scene.Title+". "+scene.Summary+"\n"+brief.prompt(), scene.AspectRatio, refs)
 		if err != nil {
 			return err
