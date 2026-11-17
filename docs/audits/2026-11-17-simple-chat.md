@@ -1,0 +1,5 @@
+# Simpler chat window — 2026-11-17
+
+The empty conversation had three large descriptive cards plus a repeated brand heading, while its narrow mode menu contained long account and CLI explanations. Replace the cards with compact starter buttons and one question. The mode trigger now reads Chat/Review; its 256px menu contains only two mode choices and an AI-session settings link. Unavailable specialist review stays disabled and visibly marked. Native session review/approval gates and backend behavior remain unchanged.
+
+Verification: Svelte check has zero errors/warnings; production frontend build passes. Established chat-state suite checks disconnected sessions, history recovery, drafting, failed sends, reviewed actions, specialist reviews and cancellation at desktop/mobile widths. Window suite passes 19 checks and three WCAG axe scans, including the compact menu bounds, disabled review, and unchanged drag/dock/resize/draft persistence. JSON results are adjacent. All browser requests are isolated fixtures; no live generation occurred.

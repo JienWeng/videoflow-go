@@ -1,7 +1,5 @@
 <script lang="ts">
   import {protectDraft} from '$lib/protect-draft';
-  import BrandLogo from '$lib/shell/BrandLogo.svelte';
-  import ArrowRight from '@lucide/svelte/icons/arrow-right';
   import {storyCreation} from '$lib/create/story-creation.svelte';
   import { onMount, tick } from 'svelte';
   import { get, mediaUrl, post } from '$lib/api';
@@ -748,11 +746,11 @@
       {:else if sessionRequired}<div class="space-y-3 py-4"><MessageSquare class="size-7 text-muted-foreground" /><h3 class="font-semibold">Connect your story assistant</h3><p class="text-sm text-muted-foreground">Choose a session above, or set up Codex or Claude Code to start planning.</p><Button variant="outline" href="/director">Set up AI session</Button></div>
       {:else if isEmpty}
         <div class="flex flex-col gap-4 py-3">
-          <div class="flex items-center gap-3"><div class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent"><BrandLogo compact class="size-7" /></div><div><p class="text-xs text-muted-foreground">VideoFlow assistant</p><h3 class="mt-1 text-lg font-semibold">{selected?`Let’s work on ${selected.label}`:'Start with an idea'}</h3></div></div>
-          <p class="text-sm leading-relaxed text-muted-foreground">{selected?'Ask for a change or review this item. You approve proposals before they run.':'Tell me about your story. We’ll shape its characters, scenes and shots together.'}</p>
-          <div class="grid gap-2" aria-label="Conversation starters">
-            {#each (selected?[{title:'Suggest improvements',description:'Review this item before making changes',prompt:`Review ${selected.label} and suggest improvements. Do not run changes yet.`}]:[{title:'Build a story',description:'Turn an idea into characters and scenes',prompt:'Help me plan a story about '},{title:'Plan the storyboard',description:'Work out the shots and visual direction',prompt:'Help me plan storyboard shots for '},{title:'Develop a character',description:'Find their personality and appearance',prompt:'Help me develop a character who '}]) as starter}
-              <button type="button" class="group flex min-h-16 items-center gap-3 rounded-xl bg-muted/60 px-3 py-3 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" onclick={()=>reusePrompt(starter.prompt)}><span class="min-w-0 flex-1"><span class="block text-sm font-medium">{starter.title}</span><span class="mt-1 block text-xs leading-relaxed text-muted-foreground">{starter.description}</span></span><ArrowRight class="size-4 shrink-0 text-muted-foreground" /></button>
+          <h3 class="text-lg font-semibold">{selected?`Let’s work on ${selected.label}`:'Start with an idea'}</h3>
+          <p class="text-sm leading-relaxed text-muted-foreground">{selected?'Describe a change. You’ll review it before it runs.':'What story would you like to tell?'}</p>
+          <div class="flex flex-wrap gap-2" aria-label="Conversation starters">
+            {#each (selected?[{title:'Suggest improvements',prompt:`Review ${selected.label} and suggest improvements. Do not run changes yet.`}]:[{title:'Build a story',prompt:'Help me plan a story about '},{title:'Plan the storyboard',prompt:'Help me plan storyboard shots for '},{title:'Develop a character',prompt:'Help me develop a character who '}]) as starter}
+              <button type="button" class="min-h-10 rounded-lg border border-border px-3 py-2 text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" onclick={()=>reusePrompt(starter.prompt)}>{starter.title}</button>
             {/each}
           </div>
           {#if !selected&&!embedded}<Button variant="outline" class="self-start" onclick={()=>storyCreation.show()}>Create story</Button>{/if}
@@ -838,10 +836,17 @@
     {#if chips.length&&(!isEmpty||selected)}<div aria-label="Suggested prompts" class="mb-2 flex flex-wrap items-center gap-2">{@render chipRow(chips)}</div>{/if}
     <form onsubmit={e=>{e.preventDefault();void send();}}>
       <InputGroup.Root class="rounded-2xl bg-background shadow-none has-disabled:opacity-100 has-disabled:bg-background dark:has-disabled:bg-background">
-        <InputGroup.Textarea aria-label="Message story assistant" bind:value={input} class="min-h-24 max-h-40 px-3 pt-3" placeholder={selected ? `What should change in ${selected.label}?` : 'Describe your story or select an item…'} onkeydown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();void send();}}} />
+        <InputGroup.Textarea aria-label="Message story assistant" bind:value={input} class="min-h-24 max-h-40 px-3 pt-3" placeholder={selected ? `What should change in ${selected.label}?` : 'Tell me your idea…'} onkeydown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();void send();}}} />
         <InputGroup.Addon align="block-end" class="gap-2">
-          <DropdownMenu.Root><DropdownMenu.Trigger>{#snippet child({props})}<InputGroup.Button {...props} type="button" size="sm" aria-label="Assistant mode" disabled={busy}>{reviewMode?'Specialist review':'Planning'}<ChevronDown class="size-3.5" /></InputGroup.Button>{/snippet}</DropdownMenu.Trigger>
-            <DropdownMenu.Content align="start" side="top" class="max-w-[min(360px,90vw)]"><DropdownMenu.RadioGroup value={reviewMode?'specialists':'assistant'} onValueChange={value=>reviewMode=value==='specialists'}><DropdownMenu.RadioItem value="assistant">Story assistant</DropdownMenu.RadioItem><DropdownMenu.RadioItem value="specialists" disabled={!specialistSupported}>Two specialist reviewers</DropdownMenu.RadioItem></DropdownMenu.RadioGroup><DropdownMenu.Separator /><p class="px-2 py-1.5 text-xs text-muted-foreground">{specialistSupported?'Specialist review uses two independent local planning calls. Results are advisory.':capabilities?.subagents?.reason??'Specialist review requires an available local AI session.'}</p><p class="px-2 py-1.5 text-xs text-muted-foreground">Model and effort use the local CLI defaults. Native shell and tool execution are disabled.</p><DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/director">Manage local AI sessions</a>{/snippet}</DropdownMenu.Item></DropdownMenu.Content>
+          <DropdownMenu.Root><DropdownMenu.Trigger>{#snippet child({props})}<InputGroup.Button {...props} type="button" size="sm" aria-label="Assistant mode" disabled={busy}>{reviewMode?'Review':'Chat'}<ChevronDown class="size-3.5" /></InputGroup.Button>{/snippet}</DropdownMenu.Trigger>
+            <DropdownMenu.Content align="start" side="top" class="w-64 max-w-[calc(100vw-2rem)]">
+              <DropdownMenu.RadioGroup value={reviewMode?'specialists':'assistant'} onValueChange={value=>reviewMode=value==='specialists'}>
+                <DropdownMenu.RadioItem value="assistant">Chat</DropdownMenu.RadioItem>
+                <DropdownMenu.RadioItem value="specialists" disabled={!specialistSupported}>Specialist review{#if !specialistSupported}<span class="ml-auto text-xs text-muted-foreground">Unavailable</span>{/if}</DropdownMenu.RadioItem>
+              </DropdownMenu.RadioGroup>
+              <DropdownMenu.Separator />
+              <DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/director">AI session settings</a>{/snippet}</DropdownMenu.Item>
+            </DropdownMenu.Content>
           </DropdownMenu.Root>
           <!-- Stop is offered only when the backend has a concrete local session to cancel. -->
           {#if busy&&activeSessionId}<InputGroup.Button type="button" size="sm" variant="outline" class="ml-auto" aria-label="Stop planning" disabled={cancelling} onclick={stopPlanning}>{cancelling?'Stopping…':'Stop'}</InputGroup.Button>{:else}<InputGroup.Button type="submit" size="icon-sm" variant="default" class="ml-auto" aria-label="Send message" disabled={busy||historyLoading||sessionRequired||!!historyError||!input.trim()}>{#if busy}<LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />{:else}<ArrowUp class="size-4" />{/if}</InputGroup.Button>{/if}
