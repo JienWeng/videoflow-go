@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"videoflow-go/internal/models"
 )
 
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -42,9 +43,13 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	sceneOptions := []map[string]interface{}{}
 	for _, sc := range scenes {
+		setup, setupErr := s.sceneSetup(r.Context(), &sc)
+		if setupErr != nil {
+			setup = map[string]any{"error": setupErr.Error()}
+		}
 		sceneOptions = append(sceneOptions, map[string]interface{}{
-			"id":    sc.ID,
-			"title": sc.Title, "summary": sc.Summary, "duration": sc.Duration, "character_ids": sc.CharacterIDsJSON,
+			"id":           sc.ID,
+			"render_setup": setup, "title": sc.Title, "summary": sc.Summary, "duration": sc.Duration, "character_ids": sc.CharacterIDsJSON,
 		})
 	}
 
@@ -62,7 +67,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		if i >= 64 {
 			break
 		}
-		assetContext = append(assetContext, map[string]any{"id": a.ID, "name": a.Name, "type": a.Type, "character_id": a.CharacterID, "description": a.Description, "metadata": a.MetadataJSON})
+		assetContext = append(assetContext, map[string]any{"id": a.ID, "name": a.Name, "type": a.Type, "character_id": a.CharacterID, "description": a.Description, "metadata": a.MetadataJSON, "reference_usable": models.ReferenceApproved(a.MetadataJSON)})
 	}
 	graph, graphErr := s.database.GetGraphData(projectID)
 	if graphErr != nil {
@@ -70,7 +75,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	style, _ := s.database.GetStyleGuide(projectID)
-	contextJSON, _ := json.Marshal(map[string]any{"style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext, "canvas": graph})
+	contextJSON, _ := json.Marshal(map[string]any{"style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "missing_voices_setup": "inline_render_card", "render_is_silent_visual_pass": true, "source_clip_required_before_render": false, "exact_dialogue_requires_speech_and_lipsync": true}})
 	ctx := r.Context()
 	var plannedSnapshot *directorContext
 	if s.cfg.UseLocalText {

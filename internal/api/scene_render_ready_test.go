@@ -14,7 +14,7 @@ import (
 )
 
 func TestPrepareRenderRefreshesStaleStoryboardAndReusesMatching(t *testing.T) {
-	for _, testCase := range []string{"ready", "image_failure", "changed_during_image"} {
+	for _, testCase := range []string{"ready", "image_failure", "changed_during_image", "voice_setup"} {
 		fail := testCase == "image_failure"
 		t.Run(testCase, func(t *testing.T) {
 			var images atomic.Int32
@@ -96,6 +96,24 @@ print(json.dumps({'type':'turn.completed'}))
 			blocked := call(t, s, "POST", "/scenes/"+scene.ID+"/render", `{}`)
 			if blocked.Code != 400 || images.Load() != 0 {
 				t.Fatal("stale reference protection bypassed", blocked.Code, blocked.Body.String())
+			}
+			if testCase == "voice_setup" {
+				c := &models.Character{ProjectID: &project, Name: "Narrator"}
+				s.database.CreateCharacter(c)
+				current, _ := s.database.GetScene(scene.ID)
+				current.SceneJSON = voiceJSON(map[string]any{"spoken_lines": []SpokenLine{{ID: "u", CharacterID: c.ID, Text: "Come home, Pip!", Language: "en"}}})
+				s.database.UpdateScene(current)
+				blockedVoice := run()
+				if blockedVoice.Status != "failed" || (blockedVoice.Error == nil || !strings.Contains(*blockedVoice.Error, "Narrator")) || images.Load() != 0 {
+					t.Fatal("voice setup spent image quota", blockedVoice.Error, images.Load())
+				}
+				s.cfg.FishAPIKey = "fixture-key"
+				current, _ = s.database.GetScene(scene.ID)
+				body := voiceJSON(map[string]any{"confirmed": true, "expected_updated_at": current.UpdatedAt, "profiles": []map[string]any{{"character_id": c.ID, "revision": 0, "provider": "fish", "model": "s2.1-pro", "voice_id": "narrator"}}})
+				configured := call(t, s, "PUT", "/voice/scenes/"+scene.ID+"/setup", string(body))
+				if configured.Code != 200 {
+					t.Fatal(configured.Body.String())
+				}
 			}
 			op := run()
 			jobs, _ := s.database.ListRenderJobs(project)

@@ -27,6 +27,8 @@ import (
 // starts an upstream request; only /run with an exact fingerprint does that.
 func (s *Server) RegisterVoiceCaptionRoutes() {
 	s.router.Get("/voice/state", s.handleVoiceState)
+	s.router.Get("/voice/scenes/{scene}/setup", s.handleSceneSetup)
+	s.router.Put("/voice/scenes/{scene}/setup", s.handleSaveSceneVoices)
 	s.router.Get("/voice/catalog/{provider}/models", s.handleSpeechModels)
 	s.router.Get("/voice/catalog/{provider}/voices", s.handleSpeechVoices)
 	s.router.Get("/voice/preferences", s.handleVoicePreferences)

@@ -1,6 +1,7 @@
 <script lang="ts">
  const operationScope=new AbortController();
  onDestroy(()=>operationScope.abort());
+ import SceneSetup from './SceneSetup.svelte';
  import {onDestroy,untrack} from 'svelte';
   import { del as apiDel, get, post as apiPost } from '$lib/api';
   import { normalizeChatIntent } from './intent.mjs';
@@ -115,6 +116,7 @@
 
   // Each card gets one fixed intent, so plain init from props is fine.
   let busy = $state(false);
+  let sceneSetupBlocking=$state(true);
   // svelte-ignore state_referenced_locally
   let idea = $state(intent.idea ?? '');
   // svelte-ignore state_referenced_locally
@@ -514,7 +516,7 @@
         </div>
       {/if}
 
-      {#if intent.action==='render_scene'}<p class="text-xs text-muted-foreground">Updates a missing or outdated storyboard before starting video. Image and video generation may use account quota or provider credits.</p>{/if}
+      {#if intent.action==='render_scene'}<p class="text-xs text-muted-foreground">Updates a missing or outdated storyboard before starting video. Image and video generation may use account quota or provider credits.</p>{#if sceneId}<SceneSetup scene={sceneId} disabled={busy} onstate={s=>sceneSetupBlocking=s.blocking||s.loading} oncontinue={run} onask={text=>onsuggest?.(text)}/>{/if}{/if}
       {#if intent.action === 'generate_shots'}
         <label class="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
           <input type="checkbox" class="w-auto" bind:checked={autoAssets} />
@@ -625,12 +627,12 @@
           >
             Back
           </Button>
-        {:else}
+        {:else if intent.action!=='render_scene'||!sceneSetupBlocking}
           <Button
             size="sm"
             variant={intent.action === 'delete_scene' ? 'destructive' : 'default'}
             class="rounded-full px-4"
-            disabled={busy || !ready}
+            disabled={busy || !ready || (intent.action==='render_scene'&&sceneSetupBlocking)}
             onclick={run}
           >
             {#if busy}
