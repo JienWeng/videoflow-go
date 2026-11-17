@@ -13,6 +13,7 @@
 
 <script lang="ts">
   import NodeTools from './NodeTools.svelte';
+  import RenderProgress from './RenderProgress.svelte';
   import AssetDescriptionEditor from '$lib/assets/AssetDescriptionEditor.svelte';
   import CharacterReferences from './CharacterReferences.svelte';
   import {changedFields} from '$lib/scenes/drafts.mjs';
@@ -526,16 +527,7 @@
           {deleting ? 'Deleting…' : confirmingDelete ? 'Confirm delete' : 'Delete asset'}
         </Button>
       {:else if kind === 'render_job'}
-        <div class="flex items-center gap-2 text-sm">
-          <span class="text-muted-foreground">Status</span>
-          <Badge
-            variant={data.status === 'succeeded'
-              ? 'default'
-              : data.status === 'failed'
-                ? 'destructive'
-                : 'secondary'}>{data.status}</Badge
-          >
-        </div>
+        <RenderProgress id={shown.id} initialStatus={String(data.status??'pending')}/>
       {:else if kind === 'character'}
         <CharacterReferences characterId={shown!.id} disabled={formDirty||saving||loadingRecord||!!recordError} onchanged={onsaved}/>
         {#if loadingRecord}<p role="status">Loading character…</p>{:else if recordError}<p role="alert" class="text-destructive">{recordError}</p>{:else}
