@@ -1,6 +1,6 @@
 # Connected video workflow: verification and review
 
-Expected checklist IDs: FLOW-01 through FLOW-10 (10). Implemented and verified IDs: FLOW-01 through FLOW-09. FLOW-10 awaits deployment health checks; no remaining code implementation IDs.
+Expected checklist IDs: FLOW-01 through FLOW-10 (10). Implemented and verified IDs: all 10. Remaining implementation IDs: none.
 
 | ID | Result / evidence |
 | --- | --- |
@@ -13,7 +13,7 @@ Expected checklist IDs: FLOW-01 through FLOW-10 (10). Implemented and verified I
 | FLOW-07 | Actual FFmpeg fixture videos verify 3+2+3 trim/positions, portrait format, audio preservation and incomplete-plan rejection. Legacy full-scene versions remain alternatives. Backend/chat/Studio completion waits for every unique planned subclip; duplicates cannot fake completion. |
 | FLOW-08 | Native music direction plus uploaded/library audio, volume, fade and background-level preset. Offline HyperFrames export has an audio stream and measured gain/fades matching the edit; browser Save/export handoff preserves values. |
 | FLOW-09 | 35 production-image browser checks, 8 axe scans, zero browser errors/axe violations. Real local media and read-only/counting mock APIs cover the flow; no paid generation submitted. |
-| FLOW-10 | Full Go suite, targeted contract/race tests, Svelte zero errors/warnings and production builds passed. Diff reviewed for correctness, ownership, duplication, data boundaries and compatibility. Prepared for delivery through existing PR #2; final live health checks pending. No merge. |
+| FLOW-10 | Full Go suite, targeted contract/race tests, Svelte zero errors/warnings and production builds passed. Diff reviewed for correctness, ownership, duplication, data boundaries and compatibility. Delivered through existing PR #2; backend/frontend running, local API and Tailscale HTTP 200, original three job IDs preserved. No merge. |
 
 ## Media evidence
 
@@ -28,3 +28,5 @@ Offline export used only deterministic test frame/tone media, networking disable
 - Design: existing visual identity retained, advanced clip/music options collapsed. Regex-only design scan found no additional issues in its three selected Svelte files; this limited scan is not a whole-interface clearance. Real browser axe scans cover the selected workflows.
 
 Unverified external checks: paid Seedance output quality, exact native dialogue/voice consistency, native shot cut timing, continuity between independently generated clips and each user's provider/account access. These are model-dependent and were not asserted as verified. Native music is requested in generation; a separate editable soundtrack is recommended across clips. The 15% background preset is not speech detection or dynamic sidechain ducking. Captions need actual final audio/timing; no fabricated timing was introduced. No blanket claim of platform parity or zero bugs is made.
+
+Deployment smoke: the existing story reports native audio, automatic grouping, one eight-second clip, ready image references/storyboard and no saved voice requirement. All live smoke requests were GET-only; no new jobs or paid generation were created. Removed the stale Scene references sentence requiring image approval.

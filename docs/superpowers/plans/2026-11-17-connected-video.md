@@ -22,7 +22,7 @@
 - [x] FLOW-07 Ordered assembly loads one output per unit, correct aspect and trims, never duplicate scene versions.
 - [x] FLOW-08 Native music prompt plus uploaded/library music; gain/fade/background-level controls work in preview and export.
 - [x] FLOW-09 Verify plan/audio/ownership/staleness/reuse/assembly with fixtures, real local media and mocked browser flows.
-- [ ] FLOW-10 Full regression/type/build/accessibility checks, review, PR update and deployment with existing outputs preserved.
+- [x] FLOW-10 Full regression/type/build/accessibility checks, review, PR update and deployment with existing outputs preserved.
 
 ## Review focus
 - Changed scene/provider/settings after plan display must reject before provider calls.
@@ -37,4 +37,4 @@
 3. Add music controls with local media export verification and browser regression coverage.
 4. Run full checks, inspect changes and deploy through PR #2 without paid generation.
 
-FLOW-01 through FLOW-09 are completed; FLOW-10 awaits final deployment health checks. Detailed verification and remaining model-quality limits: docs/audits/2026-11-17-connected-video-review.md.
+All ten implementation IDs are completed, including deployment health checks. Detailed verification and remaining model-quality limits: docs/audits/2026-11-17-connected-video-review.md.

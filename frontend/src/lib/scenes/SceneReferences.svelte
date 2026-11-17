@@ -24,7 +24,7 @@
  {#if loading}<p class="text-muted-foreground" role="status">Loading scene references…</p>{/if}
  {#if error}<div role="alert"><p class="break-words">{error}</p><Button variant="outline" size="sm" disabled={busy} onclick={load}>Reload references</Button></div>{/if}
  {#if referenceState}
- <p class="max-w-prose text-xs leading-relaxed text-muted-foreground">Shared from your project Library. Characters follow this scene’s cast; props and locations are selected here. New images need approval before generation.</p>
+ <p class="max-w-prose text-xs leading-relaxed text-muted-foreground">Shared from your project Library. Characters follow this scene’s cast; props and locations are selected here. Images are usable once saved unless excluded.</p>
  {#if referenceState.missing_character_ids?.length}<p role="status" class="text-xs">Add reference images for {#each referenceState.missing_character_ids as id,i}{#if i}, {/if}<a class="underline underline-offset-4" href={`/characters/${encodeURIComponent(id)}`}>{characters.find(c=>c.id===id)?.name??'this character'}</a>{/each}.</p>{/if}
  {#if referenceState.missing_asset_ids?.length}<div role="alert" class="text-xs"><p>Some saved references are unavailable. Remove missing scene references or repair the character’s images in Library.</p>{#each referenceState.missing_asset_ids as id}{#if selected.has(id)}<Button variant="ghost" size="sm" disabled={busy} onclick={()=>change(id,false)}>Remove missing reference</Button>{/if}{/each}</div>{/if}
  {#if referenceState.references?.length}
