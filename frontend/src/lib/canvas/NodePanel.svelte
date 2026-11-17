@@ -13,6 +13,7 @@
 
 <script lang="ts">
   import NodeTools from './NodeTools.svelte';
+  import AssetDescriptionEditor from '$lib/assets/AssetDescriptionEditor.svelte';
   import CharacterReferences from './CharacterReferences.svelte';
   import {changedFields} from '$lib/scenes/drafts.mjs';
   import { beforeNavigate } from '$app/navigation';
@@ -514,13 +515,13 @@
           </div>
         </div>
         {#if loadingRecord}<p role="status">Loading identity…</p>{:else if recordError}<p role="alert" class="text-destructive">{recordError}</p>{:else}
-          <div class="space-y-3"><Label for="np-asset-name">Asset name</Label><Input id="np-asset-name" bind:value={form.name} oninput={markFormDirty}/><Label for="np-asset-description">Asset description</Label><Textarea id="np-asset-description" bind:value={form.description} oninput={markFormDirty}/><h3 class="font-medium">Identity locks</h3><p class="text-xs text-muted-foreground">Keep defining details consistent, such as color: red or vehicle: car.</p>
+          <div class="space-y-3"><Label for="np-asset-name">Asset name</Label><Input id="np-asset-name" bind:value={form.name} oninput={markFormDirty}/><AssetDescriptionEditor bind:value={form.description} onchange={markFormDirty}/><h3 class="font-medium">Identity locks</h3><p class="text-xs text-muted-foreground">Keep defining details consistent, such as color: red or vehicle: car.</p>
           {#each form.traits??[] as trait,i}<div class="grid grid-cols-[1fr_1fr_auto] gap-2"><Input aria-label={'Trait name '+(i+1)} bind:value={trait.name} oninput={markFormDirty} placeholder="Color" /><Input aria-label={'Trait value '+(i+1)} bind:value={trait.value} oninput={markFormDirty} placeholder="Red" /><Button variant="ghost" aria-label={'Remove trait '+(i+1)} onclick={()=>{form.traits.splice(i,1);markFormDirty()}}><X class="size-4" /></Button></div>{/each}
           <Button variant="outline" disabled={(form.traits?.length??0)>=32} onclick={()=>{form.traits.push({name:'',value:''});markFormDirty()}}>Add identity trait</Button>
           <div class="flex gap-2"><Button onclick={save} disabled={saving||!formDirty}>{saving?'Saving…':'Save asset details'}</Button><Button variant="outline" onclick={discard} disabled={!formDirty||saving}>Cancel</Button></div></div>
         {/if}
 
-        <Button variant="destructive" onclick={deleteAsset} disabled={deleting}>
+        <Button variant="destructive" class="hover:text-foreground" onclick={deleteAsset} disabled={deleting}>
           <Trash2 class="size-4 mr-1" />
           {deleting ? 'Deleting…' : confirmingDelete ? 'Confirm delete' : 'Delete asset'}
         </Button>

@@ -2,6 +2,9 @@
   let { embedded = false,oncounts }:{embedded?:boolean;oncounts?:(characters:number,media:number)=>void}=$props();
   import {nodeTools} from '$lib/canvas/tools.mjs';
   import LibraryPreview from './LibraryPreview.svelte';
+  import AssetDescription from '$lib/assets/AssetDescription.svelte';
+  import AssetDescriptionEditor from '$lib/assets/AssetDescriptionEditor.svelte';
+  import {parseDescription} from '$lib/assets/description.mjs';
   import {mediaKind,typeLabel} from './catalog.mjs';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
   import {Ellipsis,LayoutGrid,List} from '@lucide/svelte';
@@ -376,7 +379,7 @@
             <DropdownMenu.Item onclick={()=>openDetail(asset)}>Open detail</DropdownMenu.Item><DropdownMenu.Item disabled={busy} onclick={()=>openDescribe(asset)}>Describe with AI</DropdownMenu.Item>{#if isImage(asset.file_path)}<DropdownMenu.Item disabled={busy||!!styleBusy} onclick={()=>deriveStyleFrom(asset)}>Derive visual style</DropdownMenu.Item>{/if}<DropdownMenu.Separator/><DropdownMenu.Item disabled={busy} onclick={()=>prepareDelete(asset)}>Delete asset</DropdownMenu.Item>
           </DropdownMenu.Content></DropdownMenu.Root>
         </div>
-        {#if asset.description&&view==='grid'}<p class="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{asset.description}</p>{/if}
+        {#if asset.description&&view==='grid'}<p class="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{parseDescription(asset.description).summary}</p>{/if}
         {#if asset.metadata_json?.consistency_review||asset.tags_json?.length}<div class="mt-3 flex flex-wrap gap-1">{#if asset.metadata_json?.consistency_review}<Badge variant="outline">{asset.metadata_json.consistency_review==='rejected'?'Excluded':'Ready to use'}</Badge>{/if}{#each (asset.tags_json??[]).slice(0,3) as tag}<Badge variant="secondary">{tag}</Badge>{/each}{#if asset.tags_json?.length>3}<span class="px-1 text-xs text-muted-foreground">+{asset.tags_json.length-3}</span>{/if}</div>{/if}
         </div>
       </CardContent></Card>
@@ -482,6 +485,7 @@
           {/if}
         </div>
         <div class="space-y-3 text-xs">
+ {#if !detailedView}<AssetDescription description={detail.description??''}/>{/if}
  {#if detail.metadata_json?.consistency_review==='rejected'}<p class="text-sm">Excluded from generation.</p>{/if}
  {#if detailedView&&detail.metadata_json?.consistency_review}<Button variant="outline" size="sm" disabled={reviewBusy||identityBusy||assetDetailsDirty()} onclick={()=>reviewReference(detail.metadata_json.consistency_review==='rejected')}>{detail.metadata_json.consistency_review==='rejected'?'Allow reuse':'Exclude from generation'}</Button>{/if}
  {#if detailedView}
@@ -490,7 +494,7 @@
  <details><summary class="cursor-pointer py-2 font-semibold">Used in this project</summary><section aria-label="Asset usage">{#if usageError[detail.id]}<p class="mt-2 text-muted-foreground">{usageError[detail.id]}</p><Button variant="outline" size="sm" onclick={()=>loadUsage(detail.id)}>Reload usage</Button>{:else if !usage[detail.id]}<p class="mt-2 text-muted-foreground" role="status">Checking usage…</p>{:else if usage[detail.id].uses.length}<ul class="mt-2 space-y-2">{#each usage[detail.id].uses as use}<li>{#if use.kind==='scene'}<a class="inline-flex min-h-11 items-center underline underline-offset-4" href={`/scenes?scene_id=${encodeURIComponent(use.id)}`}>{use.name} · Scene studio</a>{:else if use.kind==='character'}<a class="inline-flex min-h-11 items-center underline underline-offset-4" href={`/characters/${encodeURIComponent(use.id)}`}>{use.name} · Character</a>{:else}<span>{use.name} · {use.kind}</span>{/if}</li>{/each}</ul><p class="mt-2 text-xs text-muted-foreground">This shared asset cannot be deleted while it is in use. Remove a scene binding in its studio; existing renders retain their original references.</p>{:else}<p class="mt-2 text-muted-foreground">No active bindings. This asset is available for reuse.</p>{/if}</section>
  </details>
  {#if detailedView}
- <section aria-label="Asset identity locks"><h3 class="font-semibold">Asset details &amp; identity</h3><div class="mt-3 space-y-3"><label class="block text-sm">Asset name<input class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2" disabled={identityBusy||reviewBusy} bind:value={assetNameDraft}/></label><label class="block text-sm">Asset description<textarea class="mt-1 min-h-24 w-full rounded-md border border-input bg-background px-3 py-2" disabled={identityBusy||reviewBusy} bind:value={assetDescriptionDraft}></textarea></label></div><p class="text-muted-foreground">Keep specific traits across scenes, for example kind: car and color: red. Select this reference in each scene studio. Changed appearances may need a new storyboard image.</p>
+ <section aria-label="Asset identity locks"><h3 class="font-semibold">Asset details &amp; identity</h3><div class="mt-3 space-y-3"><label class="block text-sm">Asset name<input class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2" disabled={identityBusy||reviewBusy} bind:value={assetNameDraft}/></label><AssetDescriptionEditor bind:value={assetDescriptionDraft} disabled={identityBusy||reviewBusy}/></div><p class="text-muted-foreground">Keep specific traits across scenes, for example kind: car and color: red. Select this reference in each scene studio. Changed appearances may need a new storyboard image.</p>
  {#each identityTraits as row,i}<div class="mt-2 flex gap-2"><input aria-label={`Trait ${i+1} name`} class="min-w-0 w-1/3 rounded border p-2" disabled={identityBusy||reviewBusy} bind:value={row.name} placeholder="color"/><input aria-label={`Trait ${i+1} value`} class="min-w-0 flex-1 rounded border p-2" disabled={identityBusy||reviewBusy} bind:value={row.value} placeholder="red"/><button aria-label={`Remove trait ${i+1}`} disabled={identityBusy||reviewBusy} onclick={()=>identityTraits=identityTraits.filter((_,n)=>n!==i)}>Remove</button></div>{/each}
  <Button size="sm" variant="outline" disabled={identityBusy||identityTraits.length>=32} onclick={()=>identityTraits=[...identityTraits,{name:'',value:''}]}>Add trait</Button><Button size="sm" disabled={identityBusy||reviewBusy||!assetDetailsDirty()} onclick={saveIdentity}>{identityBusy?'Saving…':'Save asset details'}</Button></section>
 
