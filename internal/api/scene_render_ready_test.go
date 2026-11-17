@@ -147,6 +147,17 @@ print(json.dumps({'type':'turn.completed'}))
 			if op.Status != "succeeded" || images.Load() != 1 {
 				t.Fatal("matching image regenerated", op.Status, op.Error, images.Load())
 			}
+			jobs, _ = s.database.ListRenderJobs(project)
+			if len(jobs) != 1 {
+				t.Fatalf("second scene render created %d paid jobs instead of reusing one", len(jobs))
+			}
+			var result struct {
+				Reused bool `json:"reused"`
+			}
+			if json.Unmarshal(op.ResultJSON, &result) != nil || !result.Reused {
+				t.Fatal("second action did not disclose reuse", string(op.ResultJSON))
+			}
+
 		})
 	}
 }

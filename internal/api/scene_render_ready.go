@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"videoflow-go/internal/models"
 )
 
@@ -15,7 +16,7 @@ func sceneRenderJob(project string, scene *models.Scene) *models.RenderJob {
 }
 
 // Called only by an explicit prepare_storyboard render request. Never on read.
-func (s *Server) prepareAndRenderScene(ctx context.Context, project, id string) (any, error) {
+func (s *Server) prepareAndRenderScene(ctx context.Context, project, id string, newVersion ...bool) (any, error) {
 	value, _ := s.referenceLocks.LoadOrStore("scene-render:"+id, make(chan struct{}, 1))
 	lock := value.(chan struct{})
 	select {
@@ -62,6 +63,11 @@ func (s *Server) prepareAndRenderScene(ctx context.Context, project, id string) 
 	// Rebuild the frozen request from current records; never bypass stale-input checks.
 	if err = s.prepareDirectorVideoJob(ctx, job); err != nil {
 		return nil, err
+	}
+	if existing, e := s.existingSceneRender(job, len(newVersion) > 0 && newVersion[0]); e != nil {
+		return nil, e
+	} else if existing != nil {
+		return map[string]any{"job_id": existing.ID, "scene_id": id, "status": existing.Status, "reused": true}, nil
 	}
 	if err = s.database.CreateRenderJob(job); err != nil {
 		return nil, err
@@ -122,4 +128,38 @@ func (s *Server) storyboardShotNotes(id string) (string, error) {
 		}
 	}
 	return notes, nil
+}
+
+// Call under the per-scene render lock. A second click must not spend again.
+func (s *Server) existingSceneRender(job *models.RenderJob, newVersion bool) (*models.RenderJob, error) {
+	jobs, err := s.database.ListRenderJobs(*job.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	var completed *models.RenderJob
+	for i := range jobs {
+		old := &jobs[i]
+		if old.SceneID == nil || job.SceneID == nil || *old.SceneID != *job.SceneID || old.ShotID != nil {
+			continue
+		}
+		active := old.Status == "pending" || old.Status == "running" || old.Status == "reconciliation_required"
+		if !active && (old.Status != "succeeded" || newVersion) {
+			continue
+		}
+		var a, b any
+		if json.Unmarshal(old.RequestJSON, &a) != nil || json.Unmarshal(job.RequestJSON, &b) != nil {
+			return nil, fmt.Errorf("cannot compare existing scene render; check Videos before submitting again")
+		}
+		if old.Provider == job.Provider && old.Model == job.Model && old.ProviderEndpoint == job.ProviderEndpoint && reflect.DeepEqual(a, b) {
+			if active {
+				return old, nil
+			}
+			completed = old
+			continue
+		}
+		if active {
+			return nil, fmt.Errorf("this scene already has an active or unresolved render; check Videos before submitting another")
+		}
+	}
+	return completed, nil
 }

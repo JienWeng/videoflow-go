@@ -367,6 +367,7 @@ func (s *Server) handleRenderScene(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var options struct {
+		NewVersion        bool `json:"new_version"`
 		UseSceneCast      bool `json:"use_scene_cast"`
 		PrepareStoryboard bool `json:"prepare_storyboard"`
 	}
@@ -375,7 +376,18 @@ func (s *Server) handleRenderScene(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if options.PrepareStoryboard {
-		s.operation(w, r, &models.Op{Kind: "scene_render", SceneID: &sceneID, ProjectID: &projectID}, func(ctx context.Context) (any, error) { return s.prepareAndRenderScene(ctx, projectID, sceneID) })
+		s.operation(w, r, &models.Op{Kind: "scene_render", SceneID: &sceneID, ProjectID: &projectID}, func(ctx context.Context) (any, error) {
+			return s.prepareAndRenderScene(ctx, projectID, sceneID, options.NewVersion)
+		})
+		return
+	}
+	value, _ := s.referenceLocks.LoadOrStore("scene-render:"+sceneID, make(chan struct{}, 1))
+	lock := value.(chan struct{})
+	select {
+	case lock <- struct{}{}:
+		defer func() { <-lock }()
+	default:
+		http.Error(w, "scene render preparation already running; check Activity", 409)
 		return
 	}
 	ctx := r.Context()
@@ -396,6 +408,13 @@ func (s *Server) handleRenderScene(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.prepareDirectorVideoJob(ctx, job); err != nil {
 		http.Error(w, err.Error(), 400)
+		return
+	}
+	if existing, e := s.existingSceneRender(job, options.NewVersion); e != nil {
+		http.Error(w, e.Error(), 409)
+		return
+	} else if existing != nil {
+		writeJSON(w, 202, map[string]any{"job_id": existing.ID, "status": existing.Status, "reused": true})
 		return
 	}
 	if err := s.database.CreateRenderJob(job); err != nil {

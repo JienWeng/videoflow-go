@@ -1,4 +1,5 @@
 <script lang="ts">
+ let newRenderVersion = $state(false);
  const operationScope=new AbortController();
  onDestroy(()=>operationScope.abort());
  import SceneSetup from './SceneSetup.svelte';
@@ -312,7 +313,7 @@
           (op) => op.result_json?.asset_id ?? op.scene_id ?? sceneId,
           ctx
         );
-      case 'render_scene':return runInBackground(`/scenes/${sceneId}/render`,{prepare_storyboard:true,use_scene_cast:true},'Update storyboard & render',op=>op.result_json?.job_id,ctx);
+      case 'render_scene':return runInBackground(`/scenes/${sceneId}/render`,{prepare_storyboard:true,use_scene_cast:true,new_version:newRenderVersion},'Update storyboard & render',op=>op.result_json?.job_id,ctx);
       case 'generate_shots':
         return runInBackground(
           `/scenes/${sceneId}/shots/generate`,
@@ -516,7 +517,7 @@
         </div>
       {/if}
 
-      {#if intent.action==='render_scene'}<p class="text-xs text-muted-foreground">Updates a missing or outdated storyboard before starting video. Image and video generation may use account quota or provider credits.</p>{#if sceneId}<SceneSetup scene={sceneId} disabled={busy} onstate={s=>sceneSetupBlocking=s.blocking||s.loading} oncontinue={run} onask={text=>onsuggest?.(text)}/>{/if}{/if}
+      {#if intent.action==='render_scene'}<p class="text-xs text-muted-foreground">Generates one whole-scene video containing the shot plan, not separate shot clips. Identical queued or completed renders are reused. Image and video generation may use account quota or provider credits.</p><label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={newRenderVersion} disabled={busy}/>Generate another paid version instead of reusing a completed video</label>{#if sceneId}<SceneSetup scene={sceneId} disabled={busy} onstate={s=>sceneSetupBlocking=s.blocking||s.loading} oncontinue={run} onask={text=>onsuggest?.(text)}/>{/if}{/if}
       {#if intent.action === 'generate_shots'}
         <label class="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
           <input type="checkbox" class="w-auto" bind:checked={autoAssets} />
