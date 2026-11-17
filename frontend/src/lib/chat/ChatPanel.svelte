@@ -317,7 +317,7 @@
           send: `Write a story featuring ${sel.label}`
         });
       }
-      if (sel.kind === 'asset') return [{label:'Manage identity & review',href:`/library?tab=media&asset_id=${encodeURIComponent(sel.id)}`}];
+      if (sel.kind === 'asset') return [{label:'Edit asset details',href:`/library?tab=media&asset_id=${encodeURIComponent(sel.id)}`}];
       if (sel.kind === 'render_job') return [{label:'View render progress',href:'/render'}];
       if (out.length) return out.slice(0, 3);
       // Unhandled kinds (asset, render_job) fall through to global chips.
@@ -814,9 +814,7 @@
         <Message.Root align={m.role==='user'?'end':'start'}>
           <Message.Content>
             <Message.Header class="text-xs font-medium text-muted-foreground">{m.role === 'user' ? 'You' : 'Story assistant'}</Message.Header>
-            {#if m.intent && m.intent.action !== 'unknown' && !m.dismissed}
-              <ActivityView events={[{kind:'plan',title:'Proposed workflow',status:'pending',detail:intentSummary(m.intent,m.options),items:[{title:'Review the proposal',status:'pending'},{title:'Choose its Run action to approve',status:'pending'},{title:'Review the result',status:'pending'}]}]} />
-            {/if}
+
             {#if m.text}
               <Bubble.Root align={m.role==='user'?'end':'start'} variant={m.role==='user'?'muted':'ghost'}><Bubble.Content class="whitespace-pre-wrap break-words leading-relaxed">{m.text}</Bubble.Content></Bubble.Root>
             {/if}

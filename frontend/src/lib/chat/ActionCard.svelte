@@ -406,7 +406,7 @@
 </script>
 
 <Item.Root variant="outline" class="mt-2 w-full items-start"><Item.Content class="min-w-0">
-  <Item.Title>Review proposal</Item.Title><Item.Description>Choose an action below to approve it. Editing these fields does not run generation.</Item.Description>
+  <Item.Title>Creation options</Item.Title><Item.Description>Adjust the options, then choose an action to start. Editing fields does not run generation.</Item.Description>
   <div class="mt-3 space-y-3">
     {#if intent.action === 'unknown'}
       {#if projectState?.next_steps?.length}
@@ -485,7 +485,7 @@
         </div>
       {/if}
 
-      {#if intent.action==='generate_image'}<label class="grid gap-1 text-xs">Image type<select class={selectClass} bind:value={imageType}><option value="other">General image</option><option value="prop">Prop</option><option value="location">Location</option><option value="background">Background</option></select></label><label class="grid gap-1 text-xs">Image prompt<Textarea bind:value={idea} rows={3}/></label><label class="grid gap-1 text-xs">Format<select class={selectClass} bind:value={storyFormat}><option value="1:1">Square · 1:1</option><option value="9:16">Vertical · 9:16</option><option value="16:9">Landscape · 16:9</option></select></label><p class="text-xs text-muted-foreground">Uses the current project style. Review the generated image before reuse. Provider calls may incur charges.</p>{/if}
+      {#if intent.action==='generate_image'}<label class="grid gap-1 text-xs">Image type<select class={selectClass} bind:value={imageType}><option value="other">General image</option><option value="prop">Prop</option><option value="location">Location</option><option value="background">Background</option></select></label><label class="grid gap-1 text-xs">Image prompt<Textarea bind:value={idea} rows={3}/></label><label class="grid gap-1 text-xs">Format<select class={selectClass} bind:value={storyFormat}><option value="1:1">Square · 1:1</option><option value="9:16">Vertical · 9:16</option><option value="16:9">Landscape · 16:9</option></select></label><p class="text-xs text-muted-foreground">Uses the current project style. Generated images are ready to use. Provider calls may incur charges.</p>{/if}
       {#if intent.action==='generate_character_reference'}<div><label class={labelClass} for="reference-character">Character</label><select id="reference-character" class={selectClass} bind:value={characterId}><option value="">Choose a character…</option>{#each options.characters as c(c.id)}<option value={c.id}>{c.name}</option>{/each}</select><p class="mt-2 text-xs text-muted-foreground">Generates a full-body reference candidate. Review it before use. Provider calls may incur charges.</p></div>{/if}
       {#if intent.action==='generate_script'}<label class="grid gap-1 text-xs">Format<select class={selectClass} bind:value={storyFormat}><option value="9:16">Vertical · 9:16</option><option value="16:9">Landscape · 16:9</option><option value="1:1">Square · 1:1</option></select></label><p class="text-xs text-muted-foreground">Uses your saved project style. <a class="underline" href="/projects">Edit project style</a></p>{/if}
       {#if intent.action === 'generate_script' && options.characters.length}
