@@ -99,3 +99,34 @@ func TestGenerateShotsRejectsOverflowingProposedTotal(t *testing.T) {
 		t.Fatal("accepted non-finite total")
 	}
 }
+
+func TestGenerateShotsAcceptsMissingModelOrder(t *testing.T) {
+	for _, raw := range []string{
+		`{"shots":[{"duration":2,"prompt":"Shopkeeper points to pawprints"},{"duration":1.2,"prompt":"Pip follows the trail"},{"duration":1.8,"prompt":"Pip finds Mama"}]}`,
+		`{"shots":[{"duration":2,"prompt":"Shopkeeper points to pawprints"},{"duration":1,"prompt":"Pip follows the trail"},{"shot_order":3,"duration":2,"prompt":"Pip finds Mama"}]}`,
+	} {
+		e := NewAgentEngine(nil, "")
+		calls := 0
+		e.SetStructuredRunner(func(_ context.Context, _, _, _ string, target any) error {
+			calls++
+			return json.Unmarshal([]byte(raw), target)
+		})
+		shots, err := e.GenerateShots(context.Background(), "Pawprints to Mama", "A puppy finds his mother", 5)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if calls != 1 || len(shots) != 3 {
+			t.Fatal("unexpected model calls or shot count", calls, len(shots))
+		}
+		total := 0
+		for i, s := range shots {
+			if s.Order != i+1 || s.Duration < 1 || s.Prompt == "" {
+				t.Fatal("invalid normalized shot", s)
+			}
+			total += s.Duration
+		}
+		if total != 5 {
+			t.Fatal("timing changed scene duration", total)
+		}
+	}
+}

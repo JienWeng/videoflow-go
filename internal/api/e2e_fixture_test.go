@@ -148,7 +148,7 @@ elif 'scriptwriter' in prompt:
 elif 'Plan only essential visible props' in prompt:
  result={'assets':[]}
 elif 'cinematographer' in prompt:
- result={'shots':[{'shot_order':1,'duration':1,'prompt':'Pip finds mother' if 'small golden puppy' in prompt else 'Mimi plays','camera':'wide','movement':'still'}]}
+ result={'shots':[{'duration':1,'prompt':'Pip finds mother' if 'small golden puppy' in prompt else 'Mimi plays','camera':'wide','movement':'still'}]}
 else:
  result={'prompt':'A small golden puppy finds his cream-colored mother' if 'small golden puppy' in prompt else ('A cream-colored mother dog' if 'large cream dog' in prompt else 'Mimi the cat, cinematic framing')}
 print(json.dumps({'type':'thread.started','thread_id':'native-browser-fixture'}))

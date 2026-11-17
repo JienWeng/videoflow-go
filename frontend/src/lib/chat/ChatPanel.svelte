@@ -505,6 +505,7 @@
         if (!m?.op) return;
         m.op.status = 'failed';
         m.op.detail = op.error ?? 'failed';
+        m.text = op.error ?? 'This action could not finish. Try its action button again; existing work is kept.';
       }
     };
   }
