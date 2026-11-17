@@ -52,6 +52,9 @@ func (a Adjustments) CSS() string {
 }
 
 type Clip struct {
+	Volume           *float64     `json:"volume,omitempty"`
+	FadeIn           float64      `json:"fade_in,omitempty"`
+	FadeOut          float64      `json:"fade_out,omitempty"`
 	Muted            bool         `json:"muted,omitempty"`
 	Adjustments      *Adjustments `json:"adjustments,omitempty"`
 	HasAudio         bool         `json:"has_audio"`
@@ -122,6 +125,9 @@ func Save(root, project string, m Manifest, sources map[string]string) (string, 
 			if !ValidID(c.ID) || seen[c.ID] || !ValidID(c.AssetID) || c.Speed != 1 || !(c.Start >= 0 && c.Trim >= 0 && c.Duration > 0 && c.Start+c.Duration <= m.Duration) {
 				return fmt.Errorf("invalid clip or unsupported speed (only 1 supported)")
 			}
+			if (c.Volume != nil && !(*c.Volume >= 0 && *c.Volume <= 1)) || !(c.FadeIn >= 0 && c.FadeOut >= 0 && c.FadeIn+c.FadeOut <= c.Duration) {
+				return fmt.Errorf("audio volume must be 0–1 and fades must fit within the clip")
+			}
 			if c.Adjustments != nil && !c.Adjustments.Valid() {
 				return fmt.Errorf("invalid framing or color adjustment")
 			}
@@ -138,7 +144,7 @@ func Save(root, project string, m Manifest, sources map[string]string) (string, 
 			}
 			ext := strings.ToLower(filepath.Ext(p))
 			switch ext {
-			case ".mp4", ".webm", ".mov", ".png", ".jpg", ".jpeg", ".webp", ".wav", ".mp3", ".m4a", ".ogg":
+			case ".mp4", ".webm", ".mov", ".png", ".jpg", ".jpeg", ".webp", ".wav", ".mp3", ".m4a", ".ogg", ".aac", ".flac", ".opus":
 			default:
 				return fmt.Errorf("unsupported asset format")
 			}
@@ -218,6 +224,15 @@ func Document(m Manifest) string {
 			audioAttribute := "muted"
 			if c.HasAudio && !c.Muted {
 				audioAttribute = `data-has-audio="true"`
+			}
+			if c.Volume != nil {
+				audioAttribute += fmt.Sprintf(` data-volume="%g"`, *c.Volume)
+			}
+			if c.FadeIn > 0 {
+				audioAttribute += fmt.Sprintf(` data-fade-in="%g"`, c.FadeIn)
+			}
+			if c.FadeOut > 0 {
+				audioAttribute += fmt.Sprintf(` data-fade-out="%g"`, c.FadeOut)
 			}
 			style := ""
 			if c.Adjustments != nil && c.Adjustments.Valid() {

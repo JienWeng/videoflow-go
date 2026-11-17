@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {completeSceneRenders} from "$lib/production/completion.mjs";
   import {conversationTurns,conversationView} from './history.mjs';
   import {subscribeJobs} from '$lib/sse';
   import {runBackgroundOp} from '$lib/ops';
@@ -236,7 +237,7 @@
     const outputs = nodes.filter((n) => n.type === 'output');
 
     const scenesWithShots = new Set(shots.map((sh) => sh.data?.scene_id).filter(Boolean));
-    const shotScene = new Map(shots.map((sh) => [sh.id, sh.data?.scene_id]));
+
 
     // Storyboard assets are linked to their scene by a metadata edge.
     const scenesWithStoryboard = new Set(
@@ -245,15 +246,7 @@
         .map((e) => e.source)
     );
 
-    // A scene counts as rendered when a succeeded render job hangs off it
-    // (directly, or via one of its shots).
-    const renderedScenes = new Set<string>();
-    for (const e of edges) {
-      if (byId.get(e.target)?.type !== 'render_job') continue;
-      if (byId.get(e.target)?.data?.status !== 'succeeded') continue;
-      const sceneId = byId.get(e.source)?.type === 'shot' ? shotScene.get(e.source) : e.source;
-      if (sceneId) renderedScenes.add(sceneId);
-    }
+    const renderedScenes=completeSceneRenders(nodes.filter(n=>n.type==='render_job').map(n=>n.data??{}));
 
     /** The next pipeline action for a single scene, if it isn't done yet. */
     function sceneNextChip(sceneId: string, label: string): Chip | null {
@@ -499,7 +492,7 @@
       const scenes=await get('/scenes');const char=missingVoiceCharacter(m.text);
       const choices=m.setupSceneId?scenes.filter((s:any)=>s.id===m.setupSceneId):char?scenes.filter((s:any)=>{let cast=s.character_ids_json??[];if(typeof cast==='string'){try{cast=JSON.parse(cast)}catch{cast=[]}}return cast.includes(char)}):scenes;
       if(!choices.length){messages.push({role:'assistant',text:'That scene or speaker is no longer in this project. Select the current scene to prepare its setup.'});return}
-      messages.push({role:'assistant',text:'Set up the missing speakers together below. Existing ready voices are kept. Saving does not generate speech; the combined render button may use image and video credits.',intent:{action:'render_scene',scene_id:choices.length===1?choices[0].id:''},options:{scenes:choices.map((s:any)=>({id:s.id,title:s.title})),characters:[],outputs:[],caption_styles:[]}});
+      messages.push({role:'assistant',text:'Choose native sound, saved character voices or silence below. Existing ready voices are kept. Saving options does not generate media; the render action follows the displayed paid-call plan.',intent:{action:'render_scene',scene_id:choices.length===1?choices[0].id:''},options:{scenes:choices.map((s:any)=>({id:s.id,title:s.title})),characters:[],outputs:[],caption_styles:[]}});
     }catch(e){messages.push({role:'assistant',text:'Could not load scene setup. '+String(e)})}
   }
 
@@ -573,7 +566,7 @@
         };
       }
       case 'render_scene':
-        return {role:'assistant',text:'Visual render submitted. Add saved-speaker speech and any needed lip sync before timing final captions.',chips:[{label:'Track in Render — 查看渲染',href:'/render'},{label:'Speech & lip sync',href:'/voices'}]};
+        return {role:'assistant',text:'Video plan submitted. Native sound follows the saved audio mode; saved character voices use the separate speech workflow. Once clips finish, assemble them, add music and time captions from the actual audio.',chips:[{label:'Track in Videos',href:'/render'},{label:'Assemble & add music',href:ctx.sceneId?`/compositions?scene_id=${encodeURIComponent(ctx.sceneId)}`:'/compositions'}]};
       case 'render_shot':
       case 'retry_render':
         return {

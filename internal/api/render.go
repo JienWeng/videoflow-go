@@ -32,6 +32,12 @@ func (s *Server) handleStartRender(w http.ResponseWriter, r *http.Request) {
 	delete(body, "director_context")
 	delete(body, "director_keyframe")
 	delete(body, "voice_policy")
+	for _, field := range []string{"render_unit", "render_plan_id", "request_fingerprint"} {
+		delete(body, field)
+	}
+	newVersion, _ := body["new_version"].(bool)
+	delete(body, "new_version")
+
 	provider, _ := body["provider"].(string)
 	if provider == "" {
 		provider, _ = s.routes().MediaSelection("video")
@@ -52,6 +58,27 @@ func (s *Server) handleStartRender(w http.ResponseWriter, r *http.Request) {
 	}
 	if value, ok := body["shot_id"].(string); ok {
 		shotID = &value
+	}
+	if shotID != nil {
+		shot, e := s.database.GetShot(*shotID)
+		if e != nil || (sceneID != nil && *sceneID != shot.SceneID) {
+			http.Error(w, "shot is not in this scene", 400)
+			return
+		}
+		sceneID = &shot.SceneID
+	}
+	if sceneID != nil {
+		scene, e := s.database.GetScene(*sceneID)
+		if e != nil || scene.ProjectID == nil || *scene.ProjectID != projectID {
+			http.Error(w, "scene is not in the active project", 400)
+			return
+		}
+		unlock, e := s.lockSceneRender(*sceneID)
+		if e != nil {
+			http.Error(w, e.Error(), 409)
+			return
+		}
+		defer unlock()
 	}
 	delete(body, "provider") // Provider is a local routing field; OpenRouter routing options use provider_options.
 	if value, ok := body["provider_options"]; ok {
@@ -79,6 +106,15 @@ func (s *Server) handleStartRender(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 400)
 		return
 	}
+	if sceneID != nil {
+		if existing, e := s.existingSceneRender(job, newVersion); e != nil {
+			http.Error(w, e.Error(), 409)
+			return
+		} else if existing != nil {
+			writeJSON(w, 202, map[string]any{"job_id": existing.ID, "status": existing.Status, "reused": true})
+			return
+		}
+	}
 	if err := s.database.CreateRenderJob(job); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -94,8 +130,9 @@ func (s *Server) handleStartRender(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRenderFromShot(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		SceneID string `json:"scene_id"`
-		ShotID  string `json:"shot_id"`
+		SceneID    string `json:"scene_id"`
+		ShotID     string `json:"shot_id"`
+		NewVersion bool   `json:"new_version"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -119,6 +156,13 @@ func (s *Server) handleRenderFromShot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body.SceneID = shot.SceneID
+	unlock, e := s.lockSceneRender(body.SceneID)
+	if e != nil {
+		http.Error(w, e.Error(), 409)
+		return
+	}
+	defer unlock()
+
 	stage := "submitted"
 	progress := "Queued from shot"
 	reqBytes, _ := json.Marshal(map[string]any{"prompt": shot.Prompt})
@@ -137,6 +181,13 @@ func (s *Server) handleRenderFromShot(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.prepareDirectorVideoJob(r.Context(), job); err != nil {
 		http.Error(w, err.Error(), 400)
+		return
+	}
+	if existing, e := s.existingSceneRender(job, body.NewVersion); e != nil {
+		http.Error(w, e.Error(), 409)
+		return
+	} else if existing != nil {
+		writeJSON(w, 202, map[string]any{"job_id": existing.ID, "status": existing.Status, "reused": true})
 		return
 	}
 	if err := s.database.CreateRenderJob(job); err != nil {

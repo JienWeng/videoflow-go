@@ -35,6 +35,7 @@ func (s *Server) sceneInputRevision(scene *models.Scene) (string, error) {
 		document["generation_brief"], _ = json.Marshal(brief)
 	}
 	delete(document, "story_asset_ids")
+	delete(document, "production") // Audio/render choices do not invalidate visual storyboards.
 	style := s.stylePrompt(scene.ProjectID)
 	if saved := sceneBrief(scene).CreativePreset; saved != nil {
 		style = saved.Style

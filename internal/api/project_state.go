@@ -1,6 +1,9 @@
 package api
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"videoflow-go/internal/models"
+)
 
 // projectState is derived from persisted work, never from an assistant's guesses.
 func (s *Server) projectState(projectID string) (map[string]any, error) {
@@ -47,15 +50,19 @@ func (s *Server) projectState(projectID string) (map[string]any, error) {
 				storyboard = true
 			}
 		}
+		playable := []models.RenderJob{}
 		for _, j := range jobs {
 			if j.SceneID != nil && *j.SceneID == sc.ID && j.Status == "succeeded" {
 				outputs, err := s.database.ListOutputsForJob(j.ID)
 				if err != nil {
 					return nil, err
 				}
-				rendered = rendered || len(outputs) > 0
+				if len(outputs) > 0 {
+					playable = append(playable, j)
+				}
 			}
 		}
+		rendered = models.CompleteSceneRenders(playable)[sc.ID]
 		snapshots = append(snapshots, map[string]any{"id": sc.ID, "title": sc.Title, "expanded": len(shots) > 0, "has_shots": len(shots) > 0, "has_storyboard": storyboard, "rendered": rendered})
 	}
 	next := []string{}

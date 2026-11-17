@@ -9,6 +9,7 @@ import (
 )
 
 type storyboardShotsKey struct{}
+type confirmedRenderPlanKey struct{}
 
 func sceneRenderJob(project string, scene *models.Scene) *models.RenderJob {
 	stage, progress := "submitted", "Whole scene render queued"
@@ -17,14 +18,11 @@ func sceneRenderJob(project string, scene *models.Scene) *models.RenderJob {
 
 // Called only by an explicit prepare_storyboard render request. Never on read.
 func (s *Server) prepareAndRenderScene(ctx context.Context, project, id string, newVersion ...bool) (any, error) {
-	value, _ := s.referenceLocks.LoadOrStore("scene-render:"+id, make(chan struct{}, 1))
-	lock := value.(chan struct{})
-	select {
-	case lock <- struct{}{}:
-		defer func() { <-lock }()
-	default:
-		return nil, fmt.Errorf("a render preparation is already running for this scene; check Activity")
+	unlock, err := s.lockSceneRender(id)
+	if err != nil {
+		return nil, err
 	}
+	defer unlock()
 	scene, err := s.database.GetScene(id)
 	if err != nil || scene.ProjectID == nil || *scene.ProjectID != project {
 		return nil, fmt.Errorf("scene is not in this project")
@@ -36,44 +34,14 @@ func (s *Server) prepareAndRenderScene(ctx context.Context, project, id string, 
 	if len(shots) == 0 {
 		return nil, fmt.Errorf("generate or add shots before rendering this scene")
 	}
-	ctx = guidedStoryContext(ctx, project, nil)
-	job := sceneRenderJob(project, scene)
-	// Validate the video route before spending image-generation quota.
-	if err = s.prepareVideoJob(job); err != nil {
-		return nil, err
-	}
-	state, err := s.sceneReferenceState(ctx, scene)
-	if err != nil {
-		return nil, err
-	}
-	if state["references_ready"] != true {
-		return nil, fmt.Errorf("selected character or asset references are missing, unavailable or excluded; replace them before rendering")
-	}
-	// Voice setup must fail before spending storyboard-generation quota.
-	if err = s.applyDirectorVoicePolicy(ctx, sceneRenderJob(project, scene)); err != nil {
-		return nil, err
-	}
-	updated := false
-	if state["storyboard_ready"] != true {
-		if _, err = s.generateMatchingStoryboard(ctx, scene); err != nil {
-			return nil, fmt.Errorf("could not update the storyboard: %w", err)
-		}
-		updated = true
-	}
-	// Rebuild the frozen request from current records; never bypass stale-input checks.
-	if err = s.prepareDirectorVideoJob(ctx, job); err != nil {
-		return nil, err
-	}
-	if existing, e := s.existingSceneRender(job, len(newVersion) > 0 && newVersion[0]); e != nil {
+	plan, e := s.sceneProductionPlan(ctx, scene)
+	if e != nil {
 		return nil, e
-	} else if existing != nil {
-		return map[string]any{"job_id": existing.ID, "scene_id": id, "status": existing.Status, "reused": true}, nil
 	}
-	if err = s.database.CreateRenderJob(job); err != nil {
-		return nil, err
+	if expected, _ := ctx.Value(confirmedRenderPlanKey{}).(string); expected != "" && expected != plan.ID {
+		return nil, fmt.Errorf("render plan changed before preparation; reload before generating")
 	}
-	s.workers.Enqueue(job.ID)
-	return map[string]any{"job_id": job.ID, "scene_id": id, "status": job.Status, "storyboard_updated": updated}, nil
+	return s.renderProductionPlan(ctx, scene, plan, len(newVersion) > 0 && newVersion[0])
 }
 
 func (s *Server) generateMatchingStoryboard(ctx context.Context, scene *models.Scene) (any, error) {
@@ -139,10 +107,18 @@ func (s *Server) existingSceneRender(job *models.RenderJob, newVersion bool) (*m
 	var completed *models.RenderJob
 	for i := range jobs {
 		old := &jobs[i]
-		if old.SceneID == nil || job.SceneID == nil || *old.SceneID != *job.SceneID || old.ShotID != nil {
+		if old.SceneID == nil || job.SceneID == nil || *old.SceneID != *job.SceneID {
 			continue
 		}
 		active := old.Status == "pending" || old.Status == "running" || old.Status == "reconciliation_required"
+		sameTarget := (old.ShotID == nil && job.ShotID == nil) || (old.ShotID != nil && job.ShotID != nil && *old.ShotID == *job.ShotID)
+		if !sameTarget {
+			if active {
+				return nil, fmt.Errorf("another scene or shot render is active; check Videos before spending again")
+			}
+			continue
+		}
+
 		if !active && (old.Status != "succeeded" || newVersion) {
 			continue
 		}
@@ -150,7 +126,17 @@ func (s *Server) existingSceneRender(job *models.RenderJob, newVersion bool) (*m
 		if json.Unmarshal(old.RequestJSON, &a) != nil || json.Unmarshal(job.RequestJSON, &b) != nil {
 			return nil, fmt.Errorf("cannot compare existing scene render; check Videos before submitting again")
 		}
-		if old.Provider == job.Provider && old.Model == job.Model && old.ProviderEndpoint == job.ProviderEndpoint && reflect.DeepEqual(a, b) {
+		same := reflect.DeepEqual(a, b)
+		if am, ok := a.(map[string]any); ok {
+			if bm, ok := b.(map[string]any); ok {
+				af, _ := am["request_fingerprint"].(string)
+				bf, _ := bm["request_fingerprint"].(string)
+				if af != "" && bf != "" {
+					same = af == bf
+				}
+			}
+		}
+		if old.Provider == job.Provider && old.Model == job.Model && old.ProviderEndpoint == job.ProviderEndpoint && same {
 			if active {
 				return old, nil
 			}

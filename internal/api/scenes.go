@@ -367,29 +367,69 @@ func (s *Server) handleRenderScene(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var options struct {
-		NewVersion        bool `json:"new_version"`
-		UseSceneCast      bool `json:"use_scene_cast"`
-		PrepareStoryboard bool `json:"prepare_storyboard"`
+		ConfirmedStoryboardCalls *int   `json:"confirmed_storyboard_calls"`
+		ConfirmedCalls           *int   `json:"confirmed_calls"`
+		ConfirmedSeconds         *int   `json:"confirmed_seconds"`
+		ConfirmedPlanID          string `json:"confirmed_plan_id"`
+		NewVersion               bool   `json:"new_version"`
+		UseSceneCast             bool   `json:"use_scene_cast"`
+		PrepareStoryboard        bool   `json:"prepare_storyboard"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&options); err != nil && err != io.EOF {
 		http.Error(w, "invalid render options", 400)
 		return
 	}
+	// Plan validation happens synchronously before creating a background operation.
 	if options.PrepareStoryboard {
+		plan, e := s.sceneProductionPlan(r.Context(), scene)
+		if e != nil {
+			http.Error(w, e.Error(), 422)
+			return
+		}
+		if options.ConfirmedPlanID != "" && options.ConfirmedPlanID != plan.ID {
+			http.Error(w, "render plan changed; reload before generating", 409)
+			return
+		}
+		if (len(plan.Units) > 1 || options.NewVersion) && (options.ConfirmedCalls == nil || options.ConfirmedSeconds == nil) {
+			http.Error(w, "recheck and confirm the displayed paid-call count before generating", 409)
+			return
+		}
+		spend := productionSpend(plan, options.NewVersion)
+		if (options.ConfirmedCalls != nil && spend.Calls > *options.ConfirmedCalls) || (options.ConfirmedSeconds != nil && spend.Seconds > *options.ConfirmedSeconds) || (options.ConfirmedStoryboardCalls != nil && spend.Storyboards > *options.ConfirmedStoryboardCalls) {
+			http.Error(w, "paid-call count increased; recheck the render plan before generating", 409)
+			return
+		}
+		if len(plan.Units) > 1 && options.ConfirmedPlanID == "" {
+			http.Error(w, "multiple paid clips require the displayed render plan confirmation", 409)
+			return
+		}
+		if plan.Blocked != "" {
+			http.Error(w, plan.Blocked, 409)
+			return
+		}
+
 		s.operation(w, r, &models.Op{Kind: "scene_render", SceneID: &sceneID, ProjectID: &projectID}, func(ctx context.Context) (any, error) {
-			return s.prepareAndRenderScene(ctx, projectID, sceneID, options.NewVersion)
+			approved := spend
+			if options.ConfirmedCalls != nil {
+				approved.Calls = *options.ConfirmedCalls
+			}
+			if options.ConfirmedSeconds != nil {
+				approved.Seconds = *options.ConfirmedSeconds
+			}
+			if options.ConfirmedStoryboardCalls != nil {
+				approved.Storyboards = *options.ConfirmedStoryboardCalls
+			}
+			ctx = context.WithValue(ctx, confirmedRenderSpendKey{}, approved)
+			return s.prepareAndRenderScene(context.WithValue(ctx, confirmedRenderPlanKey{}, plan.ID), projectID, sceneID, options.NewVersion)
 		})
 		return
 	}
-	value, _ := s.referenceLocks.LoadOrStore("scene-render:"+sceneID, make(chan struct{}, 1))
-	lock := value.(chan struct{})
-	select {
-	case lock <- struct{}{}:
-		defer func() { <-lock }()
-	default:
-		http.Error(w, "scene render preparation already running; check Activity", 409)
+	unlock, e := s.lockSceneRender(sceneID)
+	if e != nil {
+		http.Error(w, e.Error(), 409)
 		return
 	}
+	defer unlock()
 	ctx := r.Context()
 	if options.UseSceneCast {
 		ctx = guidedStoryContext(ctx, projectID, nil)

@@ -13,7 +13,13 @@ import (
 // video is the visual pass; speech and visible-speaker lip sync remain explicit
 // /voices stages. It never contacts a provider or replaces a native audio sample.
 func (s *Server) applyDirectorVoicePolicy(ctx context.Context, job *models.RenderJob) error {
-	if !s.cfg.UseLocalText {
+	payload := map[string]any{}
+	if len(job.RequestJSON) > 0 {
+		if err := json.Unmarshal(job.RequestJSON, &payload); err != nil || payload == nil {
+			return fmt.Errorf("invalid video request for voice policy")
+		}
+	}
+	if !s.cfg.UseLocalText && payload["audio_mode"] == nil {
 		return nil
 	}
 	if job.ProjectID == nil {
@@ -23,19 +29,23 @@ func (s *Server) applyDirectorVoicePolicy(ctx context.Context, job *models.Rende
 	if binding.ProjectID != "" && binding.ProjectID != *job.ProjectID {
 		return fmt.Errorf("voice selection belongs to another project")
 	}
-	payload := map[string]any{}
-	if len(job.RequestJSON) > 0 {
-		if err := json.Unmarshal(job.RequestJSON, &payload); err != nil || payload == nil {
-			return fmt.Errorf("invalid video request for voice policy")
-		}
-	}
 	mode, _ := payload["conversation_mode"].(string)
+	audioMode, _ := payload["audio_mode"].(string)
+	music, _ := payload["music_prompt"].(string)
+
 	characters := append([]string{}, binding.Selection.CharacterIDs...)
 	var spoken []SpokenLine
 	if job.SceneID != nil {
 		scene, err := s.database.GetScene(*job.SceneID)
 		if err != nil || scene.ProjectID == nil || *scene.ProjectID != *job.ProjectID {
 			return fmt.Errorf("video scene does not belong to this project")
+		}
+		settings := sceneProduction(scene)
+		if audioMode == "" {
+			audioMode = settings.AudioMode
+		}
+		if music == "" {
+			music = settings.MusicPrompt
 		}
 		brief := sceneBrief(scene)
 		if brief.ConversationMode != "" {
@@ -84,7 +94,80 @@ func (s *Server) applyDirectorVoicePolicy(ctx context.Context, job *models.Rende
 			payload["prompt"] = prompt
 		}
 	}
-	if mode == "silent" {
+	if audioMode == "" {
+		audioMode = "saved"
+		if job.SceneID != nil {
+			_, capabilities, e := s.productionVideoModel(ctx)
+			if e == nil && capabilities.GenerateAudio {
+				audioMode = "native"
+			}
+		}
+		if mode == "silent" {
+			audioMode = "silent"
+		}
+	}
+	if audioMode != "native" && audioMode != "saved" && audioMode != "silent" {
+		return fmt.Errorf("unsupported audio mode")
+	}
+	payload["audio_mode"] = audioMode
+	if audioMode == "native" {
+		_, capabilities, e := s.productionVideoModel(ctx)
+		if e != nil || !capabilities.GenerateAudio {
+			return fmt.Errorf("native audio is unavailable for the selected model; choose saved voices or silent")
+		}
+		payload["generate_audio"] = true
+		payload["voice_policy"] = map[string]any{"mode": "native", "project_id": *job.ProjectID, "exact_voice_identity": false}
+		prompt := stringPrompt(payload["prompt"]) + "\nGenerate synchronized dialogue, ambience and sound effects. Native speaker identity and exact word/cut timing are best effort, not a saved-voice guarantee."
+		if mode == "silent" {
+			prompt += " No spoken dialogue or narration."
+		}
+		unit := renderRequestUnit(job.RequestJSON)
+		if job.ShotID != nil && len(unit.ShotIDs) == 0 {
+			unit.ShotIDs = []string{*job.ShotID}
+		}
+		settings := productionSettings{}
+		if job.SceneID != nil {
+			if scene, e := s.database.GetScene(*job.SceneID); e == nil {
+				settings = sceneProduction(scene)
+			}
+		}
+		for index, line := range spoken {
+			if len(unit.ShotIDs) > 0 {
+				id := line.ID
+				if id == "" {
+					id = fmt.Sprintf("line-%d", index)
+				}
+				target := settings.DialogueShots[id]
+				if target != "" {
+					included := false
+					for _, shot := range unit.ShotIDs {
+						included = included || shot == target
+					}
+					if !included {
+						continue
+					}
+				}
+				if target == "" && job.ShotID != nil && strings.TrimSpace(line.Text) != "" {
+					return fmt.Errorf("assign dialogue to shots in the scene production settings before rendering an individual shot with native audio")
+				}
+			}
+			if strings.TrimSpace(line.Text) != "" && mode != "silent" {
+				if err := s.voiceCharacter(*job.ProjectID, line.CharacterID); err != nil {
+					return fmt.Errorf("native dialogue speaker is not in this project")
+				}
+				prompt += fmt.Sprintf("\nSpeaker %s (%s): %s", line.CharacterID, line.Language, line.Text)
+			}
+		}
+		if strings.TrimSpace(music) != "" {
+			prompt += "\nBackground music direction: " + music + ". Keep music below dialogue."
+		} else {
+			prompt += "\nNo background music; keep dialogue, ambience and sound effects only."
+		}
+		payload["prompt"] = prompt
+		job.RequestJSON = voiceJSON(payload)
+		return nil
+	}
+	if audioMode == "silent" {
 		payload["generate_audio"] = false
 		payload["voice_policy"] = map[string]any{"mode": "silent", "project_id": *job.ProjectID}
 		payload["prompt"] = stringPrompt(payload["prompt"]) + "\nAuthoritative voice policy: SILENT visual pass. Generate no speech or audio."

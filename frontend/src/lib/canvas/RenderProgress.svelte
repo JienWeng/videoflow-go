@@ -3,7 +3,7 @@
  import {get,mediaUrl} from '$lib/api';import {subscribeJobs} from '$lib/sse';
  import {Film,Check,TriangleAlert} from '@lucide/svelte';import {Button} from '$lib/components/ui/button';
  let {id,initialStatus='pending'}:{id:string;initialStatus?:string}=$props();
- type Detail={job:{status:string;stage?:string;progress?:string;error?:string};outputs:{id:string;video_path?:string;captioned_path?:string}[]};
+ type Detail={job:{scene_id?:string;request_json?:{audio_mode?:string};status:string;stage?:string;progress?:string;error?:string};outputs:{id:string;video_path?:string;captioned_path?:string}[]};
  let detail=$state<Detail|null>(null),error=$state(''),loading=$state(true);let retry=$state(0);
  const status=$derived(detail?.job.status??initialStatus);
  const active=$derived(!error&&['pending','running','queued','submitted','processing'].includes(status));
@@ -35,7 +35,8 @@
  </div>
  {#if active}<div aria-hidden="true" class="space-y-2"><div class="h-2 w-3/4 rounded bg-muted"></div><div class="h-2 w-1/2 rounded bg-muted"></div></div><p class="text-xs text-muted-foreground">Updates automatically · Timing depends on the video provider</p>{/if}
  {#if error}<Button variant="outline" size="sm" onclick={()=>retry++}>Reload render details</Button>{/if}
- {#if output}<Button variant="outline" size="sm" href={`/editor/${output.id}`}>Open video editor</Button>{/if}
+ {#if detail?.job.request_json?.audio_mode}<p class="text-xs text-muted-foreground">Audio: {detail.job.request_json.audio_mode==='native'?'native dialogue, ambience and effects':detail.job.request_json.audio_mode==='saved'?'silent visuals for saved-voice speech':'silent'}</p>{/if}
+ {#if output}<Button variant="outline" size="sm" href={`/editor/${output.id}`}>Open video editor</Button>{#if detail?.job.scene_id}<Button variant="outline" size="sm" href={`/compositions?scene_id=${encodeURIComponent(detail.job.scene_id)}`}>Assemble clips & add music</Button>{/if}{/if}
 </section>
 <style>
  .preview-light{animation:render-breathe 2.8s ease-in-out infinite;pointer-events:none}

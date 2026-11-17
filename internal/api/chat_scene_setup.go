@@ -42,7 +42,19 @@ func (s *Server) sceneSetup(ctx context.Context, scene *models.Scene) (map[strin
 	}
 	languages := map[string]string{}
 	mode := brief.ConversationMode
-	if !s.cfg.UseLocalText || mode == "silent" {
+	audioMode := sceneProduction(scene).AudioMode
+	if audioMode == "" {
+		audioMode = "saved"
+		_, m, e := s.productionVideoModel(ctx)
+		if e == nil && m.GenerateAudio {
+			audioMode = "native"
+		}
+		if mode == "silent" {
+			audioMode = "silent"
+		}
+	}
+
+	if !s.cfg.UseLocalText || audioMode != "saved" {
 		cast = nil
 	} else if len(data.Lines) > 0 {
 		cast = nil
@@ -111,7 +123,7 @@ func (s *Server) sceneSetup(ctx context.Context, scene *models.Scene) (map[strin
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"project_id": project, "scene_id": scene.ID, "title": scene.Title, "updated_at": scene.UpdatedAt, "duration": scene.Duration, "aspect_ratio": scene.AspectRatio, "language": language, "speakers": speakers, "voices_ready": allReady, "references_ready": refs["references_ready"], "storyboard_ready": refs["storyboard_ready"], "missing_character_ids": refs["missing_character_ids"], "missing_asset_ids": refs["missing_asset_ids"], "has_shots": len(shots) > 0, "primary_provider": s.routes().Setting("voice_primary_provider", "fal")}, nil
+	return map[string]any{"project_id": project, "scene_id": scene.ID, "title": scene.Title, "updated_at": scene.UpdatedAt, "duration": scene.Duration, "aspect_ratio": scene.AspectRatio, "language": language, "speakers": speakers, "voices_ready": allReady, "audio_mode": audioMode, "references_ready": refs["references_ready"], "storyboard_ready": refs["storyboard_ready"], "missing_character_ids": refs["missing_character_ids"], "missing_asset_ids": refs["missing_asset_ids"], "has_shots": len(shots) > 0, "primary_provider": s.routes().Setting("voice_primary_provider", "fal")}, nil
 }
 func (s *Server) setupScene(w http.ResponseWriter, r *http.Request) (*models.Scene, bool) {
 	project, ok := s.voiceProject(w, r)

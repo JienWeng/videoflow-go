@@ -191,7 +191,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 			}
 		}
 		// Only fields in the provider contract are forwarded. Local IDs never leave the app.
-		allowed := map[string]bool{"prompt": true, "duration": true, "aspect_ratio": true, "resolution": true, "generate_audio": true, "seed": true, "frame_images": true, "input_references": true, "provider": true, "director_context": true, "director_keyframe": true, "voice_policy": true}
+		allowed := map[string]bool{"prompt": true, "duration": true, "aspect_ratio": true, "resolution": true, "generate_audio": true, "seed": true, "frame_images": true, "input_references": true, "provider": true, "director_context": true, "director_keyframe": true, "voice_policy": true, "request_fingerprint": true, "audio_mode": true, "music_prompt": true, "render_unit": true, "render_plan_id": true, "scene_input_revision": true}
 		for key := range payload {
 			if !allowed[key] {
 				delete(payload, key)
@@ -250,7 +250,15 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 			}
 		}
 		prompt += "\nSpoken dialogue language: " + language
-		if payload["voice_policy"] != nil {
+		nativeAudio := false
+		if policy, ok := payload["voice_policy"].(map[string]any); ok {
+			nativeAudio = policy["mode"] == "native"
+		}
+		if nativeAudio {
+			payload["generate_audio"] = true
+			prompt += "\nFinal audio requirement: generate synchronized native audio as specified above."
+		}
+		if payload["voice_policy"] != nil && !nativeAudio {
 			prompt += "\nFinal audio requirement: SILENT VISUAL PASS. No generated dialogue, narration or substitute voice; approved saved speech is a separate explicit stage."
 			payload["generate_audio"] = false
 		}

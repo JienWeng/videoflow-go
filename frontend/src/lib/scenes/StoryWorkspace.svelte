@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {completeSceneRenders} from "$lib/production/completion.mjs";
   let { embedded = false }:{embedded?:boolean}=$props();
  const operationScope=new AbortController();
  onDestroy(()=>operationScope.abort());
@@ -249,12 +250,7 @@
       const sid = a.metadata_json?.scene_id;
       if (!storyboards[sid] && a.type === 'storyboard' && sid && freshScenes.find((scene:any)=>scene.id===sid)?.asset_ids_json?.includes(a.id)) storyboards[sid] = a;
     }
-    const rendered: Record<string, boolean> = {};
-    for (const j of jobs) {
-      // Whole-scene renders only — a from-shot job (has shot_id) must not mark the scene done.
-      if (j.status === 'succeeded' && j.scene_id && !j.shot_id) rendered[j.scene_id] = true;
-    }
-    renderedScenes = rendered;
+    renderedScenes=Object.fromEntries([...completeSceneRenders(jobs)].map(id=>[id,true]));
     scenes = mergeScenes(freshScenes);
     await Promise.all(
       scenes.map(async (s) => {
@@ -393,7 +389,7 @@
     }
   }
 
-  async function renderScene(s:any){const key=`render-${s.id}`;if(busy[key])return;busy[key]=true;error='';try{await runBackgroundOp(`/scenes/${s.id}/render`,{prepare_storyboard:true,use_scene_cast:true},{signal:operationScope.signal,label:'Update storyboard & render',onDone:async()=>{busy[key]=false;await refresh();toast.success('Render queued. Track it in Videos.')},onFail:op=>{busy[key]=false;error=op.error??'Render preparation failed.'}})}catch(e){busy[key]=false;error=String(e);toast.error(error)}}
+  async function renderScene(s:any){const key=`render-${s.id}`;if(busy[key])return;busy[key]=true;error='';try{await runBackgroundOp(`/scenes/${s.id}/render`,{prepare_storyboard:true,use_scene_cast:true,confirmed_plan_id:s.production_plan_id,new_version:!!s.new_version,confirmed_calls:s.confirmed_calls,confirmed_seconds:s.confirmed_seconds,confirmed_storyboard_calls:s.confirmed_storyboard_calls},{signal:operationScope.signal,label:'Update storyboard & render',onDone:async()=>{busy[key]=false;await refresh();toast.success('Render queued. Track it in Videos.')},onFail:op=>{busy[key]=false;error=op.error??'Render preparation failed.'}})}catch(e){busy[key]=false;error=String(e);toast.error(error)}}
 
   // Pipeline stepper: one entry per stage, computed from data already loaded.
   // Each stage's "done" uses the later-done rule so the stepper never shows an

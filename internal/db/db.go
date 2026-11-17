@@ -1425,6 +1425,10 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 	jobs, err := d.ListRenderJobs(projectID)
 	if err == nil {
 		for _, j := range jobs {
+			var request struct {
+				Unit json.RawMessage `json:"render_unit"`
+			}
+			_ = json.Unmarshal(j.RequestJSON, &request)
 			modelName := j.Model
 			if idx := strings.LastIndex(modelName, "/"); idx >= 0 {
 				modelName = modelName[idx+1:]
@@ -1434,9 +1438,10 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 				Type:  "render_job",
 				Label: fmt.Sprintf("%s (%s)", j.Status, modelName),
 				Data: map[string]interface{}{
-					"status":   j.Status,
-					"scene_id": j.SceneID,
-					"shot_id":  j.ShotID,
+					"status":      j.Status,
+					"render_unit": request.Unit,
+					"scene_id":    j.SceneID,
+					"shot_id":     j.ShotID,
 				},
 			})
 			parentID := ""
@@ -1867,4 +1872,19 @@ func (d *DB) GetRevision(id string) (*models.Revision, error) {
 	}
 	r.SnapshotJSON = []byte(snap)
 	return &r, nil
+}
+
+// CreateRenderJobs commits a confirmed batch before any unit is enqueued.
+func (d *DB) CreateRenderJobs(jobs []*models.RenderJob) error {
+	tx, err := d.conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, j := range jobs {
+		if err = insertRenderJob(tx, j); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }

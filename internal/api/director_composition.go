@@ -27,7 +27,7 @@ func (s *Server) handleDirectorCompositionPlan(w http.ResponseWriter, r *http.Re
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	instructions += "\nVideoFlow clip editing fields: muted (boolean); optional adjustments object with all fields fit (contain or cover), scale (1–4), x and y focal position (0–100), brightness/contrast/saturation (0–2), opacity (0–1). Neutral defaults are fit=contain, scale=1, x=50, y=50, brightness=1, contrast=1, saturation=1, opacity=1. Preserve existing adjustments unless asked to change them. Split clips by adjusting start, trim and duration without modifying source assets. Do not change linked caption timing or its clip IDs; ask the user to remove and reimport linked captions first."
+	instructions += "\nVideoFlow clip editing fields: muted (boolean), volume (0–1, default 1), fade_in and fade_out in seconds (nonnegative, sum must fit duration); use about 0.15 volume for background music below dialogue; preserve existing audio mix values unless asked to change them; optional adjustments object with all fields fit (contain or cover), scale (1–4), x and y focal position (0–100), brightness/contrast/saturation (0–2), opacity (0–1). Neutral defaults are fit=contain, scale=1, x=50, y=50, brightness=1, contrast=1, saturation=1, opacity=1. Preserve existing adjustments unless asked to change them. Split clips by adjusting start, trim and duration without modifying source assets. Do not change linked caption timing or its clip IDs; ask the user to remove and reimport linked captions first."
 	current, _ := json.Marshal(body.Manifest)
 	sourceJSON, _ := json.Marshal(sources)
 	var planned composition.Manifest

@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -208,7 +210,24 @@ func (s *Server) prepareDirectorVideoJob(ctx context.Context, job *models.Render
 	if err := s.prepareVideoJob(job); err != nil {
 		return err
 	}
-	return s.freezeDirectorVideo(ctx, job)
+	var err error
+	if !s.cfg.UseLocalText {
+		err = s.applyDirectorVoicePolicy(ctx, job)
+	} else {
+		err = s.freezeDirectorVideo(ctx, job)
+	}
+	if err != nil {
+		return err
+	}
+	var payload map[string]any
+	if json.Unmarshal(job.RequestJSON, &payload) != nil || payload == nil {
+		return fmt.Errorf("invalid frozen video request")
+	}
+	delete(payload, "request_fingerprint")
+	digest := sha256.Sum256(voiceJSON(map[string]any{"provider": job.Provider, "model": job.Model, "endpoint": job.ProviderEndpoint, "request": payload}))
+	payload["request_fingerprint"] = hex.EncodeToString(digest[:])
+	job.RequestJSON = voiceJSON(payload)
+	return nil
 }
 
 // Called again at the provider submission boundary, including after a backend restart.

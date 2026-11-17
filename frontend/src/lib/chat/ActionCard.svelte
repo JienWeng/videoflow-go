@@ -2,7 +2,8 @@
  let newRenderVersion = $state(false);
  const operationScope=new AbortController();
  onDestroy(()=>operationScope.abort());
- import SceneSetup from './SceneSetup.svelte';
+ import ProductionControls from '$lib/production/ProductionControls.svelte';
+ let renderPlanId=$state(''),renderQuote=$state({calls:0,seconds:0,storyboards:0});
  import {onDestroy,untrack} from 'svelte';
   import { del as apiDel, get, post as apiPost } from '$lib/api';
   import { normalizeChatIntent } from './intent.mjs';
@@ -313,7 +314,7 @@
           (op) => op.result_json?.asset_id ?? op.scene_id ?? sceneId,
           ctx
         );
-      case 'render_scene':return runInBackground(`/scenes/${sceneId}/render`,{prepare_storyboard:true,use_scene_cast:true,new_version:newRenderVersion},'Update storyboard & render',op=>op.result_json?.job_id,ctx);
+      case 'render_scene':{const quote={...renderQuote};const anotherVersion=newRenderVersion;newRenderVersion=false;return runInBackground(`/scenes/${sceneId}/render`,{prepare_storyboard:true,use_scene_cast:true,new_version:anotherVersion,confirmed_plan_id:renderPlanId,confirmed_calls:quote.calls,confirmed_seconds:quote.seconds,confirmed_storyboard_calls:quote.storyboards},'Update storyboard & render',op=>op.result_json?.job_id,ctx);}
       case 'generate_shots':
         return runInBackground(
           `/scenes/${sceneId}/shots/generate`,
@@ -517,7 +518,7 @@
         </div>
       {/if}
 
-      {#if intent.action==='render_scene'}<p class="text-xs text-muted-foreground">Generates one whole-scene video containing the shot plan, not separate shot clips. Identical queued or completed renders are reused. Image and video generation may use account quota or provider credits.</p><label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={newRenderVersion} disabled={busy}/>Generate another paid version instead of reusing a completed video</label>{#if sceneId}<SceneSetup scene={sceneId} disabled={busy} onstate={s=>sceneSetupBlocking=s.blocking||s.loading} oncontinue={run} onask={text=>onsuggest?.(text)}/>{/if}{/if}
+      {#if intent.action==='render_scene'}<p class="text-xs text-muted-foreground">Uses the saved clip and sound plan below. Automatic mode groups consecutive shots to reduce paid calls. Matching clips are reused. Image and video generation may use account quota or provider credits.</p>{#if sceneId}<ProductionControls scene={sceneId} bind:newVersion={newRenderVersion} onplan={(id,cost)=>{renderPlanId=id;renderQuote=cost}} disabled={busy} onstate={s=>sceneSetupBlocking=s.blocking||s.loading} oncontinue={run} onask={text=>onsuggest?.(text)}/>{/if}{/if}
       {#if intent.action === 'generate_shots'}
         <label class="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
           <input type="checkbox" class="w-auto" bind:checked={autoAssets} />
@@ -628,7 +629,7 @@
           >
             Back
           </Button>
-        {:else if intent.action!=='render_scene'||!sceneSetupBlocking}
+        {:else}
           <Button
             size="sm"
             variant={intent.action === 'delete_scene' ? 'destructive' : 'default'}

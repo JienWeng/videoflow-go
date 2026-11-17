@@ -192,6 +192,8 @@ func (s *Server) setupRoutes() {
 	s.router.Post("/scenes/{id}/generate", s.handleExpandScene)
 	s.router.Post("/scenes/{id}/refine", s.handleRefineScene)
 	s.router.Post("/scenes/{id}/render", s.handleRenderScene)
+	s.router.Get("/scenes/{id}/production", s.handleProductionPlan)
+	s.router.Put("/scenes/{id}/production", s.handleProductionPlan)
 	s.router.Post("/scenes/{id}/storyboard", s.handleStoryboard)
 	s.router.Get("/scenes/{id}/references", s.handleSceneReferences)
 	s.router.Post("/scenes/{id}/references/{asset_id}", s.handleSetSceneReference)

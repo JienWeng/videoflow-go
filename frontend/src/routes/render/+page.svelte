@@ -511,7 +511,7 @@
             <div class="p-5">
               <!-- Header: scene title + at-a-glance counts -->
               <div class="flex flex-wrap items-center gap-2 mb-4">
-                <h2 class="font-semibold text-base truncate" title={g.title}>{g.title}</h2>
+                <h2 class="font-semibold text-base truncate" title={g.title}>{g.title}</h2>{#if g.sceneId!=='__other__'&&g.succeeded}<Button size="sm" variant="outline" href={`/compositions?scene_id=${encodeURIComponent(g.sceneId)}`}>Assemble clips & add music</Button>{@const storyId=scenes.find((scene:any)=>scene.id===g.sceneId)?.script_id}{#if storyId}<Button size="sm" variant="ghost" href={`/compositions?script_id=${encodeURIComponent(storyId)}`}>Assemble full story</Button>{/if}{/if}
                 <div class="flex items-center gap-1.5 ml-auto">
                   {#if g.active.length}
                     <Badge variant="secondary" class="animate-pulse">{g.active.length} in progress</Badge>

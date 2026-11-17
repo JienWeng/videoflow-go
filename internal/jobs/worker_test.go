@@ -326,3 +326,42 @@ func TestCompletedProviderRetrievalFailureKeepsRetryFence(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkerPreservesNativeAudioAndLocalRenderUnits(t *testing.T) {
+	var submitted map[string]any
+	worker, job := workerFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/videos/models":
+			w.Write([]byte(`{"data":[{"id":"test/video","supported_durations":[4],"supported_aspect_ratios":["16:9"],"generate_audio":true}]}`))
+		case "/videos":
+			json.NewDecoder(r.Body).Decode(&submitted)
+			w.Write([]byte(`{"id":"native"}`))
+		case "/videos/native":
+			w.Write([]byte(`{"status":"completed","unsigned_urls":["/videos/native/content"]}`))
+		case "/videos/native/content":
+			w.Write([]byte("\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom"))
+		default:
+			t.Error("unexpected fixture route", r.URL.Path)
+		}
+	})
+	worker.SetSubmissionValidator(func(context.Context, *models.RenderJob) error { return nil })
+	job.RequestJSON = []byte(`{"prompt":"A puppy speaks, with gentle music","duration":4,"aspect_ratio":"16:9","generate_audio":true,"audio_mode":"native","voice_policy":{"mode":"native"},"request_fingerprint":"frozen","render_plan_id":"plan","render_unit":{"key":"plan:0","index":0,"length":3}}`)
+	worker.database.UpdateRenderJob(job)
+	if err := worker.processJob(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if submitted["generate_audio"] != true {
+		t.Fatal("native audio switched off", submitted)
+	}
+	for _, key := range []string{"request_fingerprint", "audio_mode", "voice_policy", "render_plan_id", "render_unit"} {
+		if submitted[key] != nil {
+			t.Fatal("local metadata leaked to provider", key)
+		}
+	}
+	saved, _ := worker.database.GetRenderJob(job.ID)
+	var p map[string]any
+	json.Unmarshal(saved.RequestJSON, &p)
+	if p["request_fingerprint"] != "frozen" || p["render_plan_id"] != "plan" || p["render_unit"].(map[string]any)["key"] != "plan:0" {
+		t.Fatal("assembly/reuse metadata lost", p)
+	}
+}

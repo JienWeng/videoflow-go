@@ -21,6 +21,8 @@ var compositionImportMu sync.Mutex
 func (s *Server) registerCompositionRoutes() {
 	s.router.Post("/compositions/captions/import", s.handleCompositionCaptionImport)
 	s.router.Get("/scenes/{id}/composition-sources", s.handleSceneCompositionSources)
+	s.router.Get("/scenes/{id}/composition-draft", s.handleSceneCompositionDraft)
+	s.router.Get("/scripts/{id}/composition-draft", s.handleScriptCompositionDraft)
 	s.router.Get("/compositions/sources", s.handleCompositionSources)
 	s.router.Get("/compositions/sources/{id}", s.handleCompositionSource)
 	s.router.Get("/compositions/runtime", s.handleCompositionRuntime)

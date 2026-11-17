@@ -47,3 +47,18 @@ func TestSceneRenderDoesNotSpendTwice(t *testing.T) {
 		})
 	}
 }
+
+func TestSceneReuseSurvivesWorkerPayloadEnrichment(t *testing.T) {
+	s := routerServer(t, nil)
+	project, _ := s.database.GetActiveProjectID()
+	scene := &models.Scene{ProjectID: &project, Title: "Home", Duration: 8, AspectRatio: "9:16"}
+	s.database.CreateScene(scene)
+	old := &models.RenderJob{ProjectID: &project, SceneID: &scene.ID, Provider: "fal", Model: "fixture", Status: "succeeded", RequestJSON: []byte(`{"request_fingerprint":"stable","prompt":"Scene plus worker instructions","model":"fixture","duration":8}`)}
+	s.database.CreateRenderJob(old)
+	candidate := *old
+	candidate.RequestJSON = []byte(`{"request_fingerprint":"stable","prompt":"Scene"}`)
+	got, e := s.existingSceneRender(&candidate, false)
+	if e != nil || got == nil || got.ID != old.ID {
+		t.Fatal("worker enrichment caused another paid render", got, e)
+	}
+}
