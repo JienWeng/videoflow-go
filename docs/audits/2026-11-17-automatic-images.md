@@ -14,6 +14,8 @@ Video submission remains a separate explicit action. Project ownership, missing 
 - Svelte: 0 errors/warnings. Production builds passed.
 - Real-router desktop/mobile: 14 checks and 6 axe scans, no browser errors/violations. Verifies project style, explicit start, automatic complete image pipeline, storyboard readiness, canvas focus, full images without approval controls, regeneration and standalone images.
 - Asset viewer desktop/mobile: 6 checks and 4 axe scans, no browser errors/violations. Verifies simple/detail modes, preserved drafts, collapsed metadata, optional exclusion/reuse and reset-on-reopen.
+- Final production frontend chat-state regression: 20 checks, no browser errors; all API calls intercepted.
+- Deployed backend and frontend after verifying no active operations/render jobs. Local and Tailscale health passed; readonly production asset viewer showed ready-to-use images, Simple/Details and no approval controls, with no console errors.
 - Pure dashboard/guidance/progress tests passed (18 test entries, including progress assertions).
 
 Tests used isolated data and fake providers; no live paid generation or model-quality assessment. Optional image exclusion retains the existing review API for compatibility; old status keys remain readable. Native session recovery and voice approval are distinct from the removed image-approval flow.
