@@ -821,6 +821,7 @@
 
             {#if m.text}
               <Bubble.Root align={m.role==='user'?'end':'start'} variant={m.role==='user'?'muted':'ghost'}><Bubble.Content class="whitespace-pre-wrap break-words leading-relaxed">{m.text}</Bubble.Content></Bubble.Root>
+              {#if m.role==='assistant'&&m.text.match(/\/voices\?character_id=([a-zA-Z0-9_-]+)/)}<Button variant="outline" size="sm" href={'/voices?character_id='+m.text.match(/\/voices\?character_id=([a-zA-Z0-9_-]+)/)?.[1]}>Set up character voice</Button>{/if}
             {/if}
             {#if m.intent?.action==='unknown' && m.state?.next_steps?.length}<ol class="list-decimal space-y-1 pl-5 text-sm">{#each m.state.next_steps as step}<li>{step}</li>{/each}</ol>{/if}
             {#if m.repairContext}<Button variant="outline" size="sm" class="mt-2" disabled={busy||repairingContext} onclick={()=>repairContext(m)}>{repairingContext?'Repairing…':'Repair chat context'}</Button>{/if}

@@ -9,7 +9,7 @@
   import { Badge } from '$lib/components/ui/badge';
   import { Mic, RefreshCw, Plus, Trash2, Play, FileText, ArrowRight } from '@lucide/svelte';
 
-  type Profile = { character_id?: string; mode: string; sample_asset_id: string; voice_id: string; approved: boolean };
+  type Profile = { provider?:string; model?:string; character_id?: string; mode: string; sample_asset_id: string; voice_id: string; approved: boolean };
   type Line = { id: string; character_id: string; language: string; text: string; visible: boolean };
   type Document<T> = { id: string; revision: number; data: T };
   type VoiceTask = { id: string; kind: string; model: string; status: string; fingerprint: string; upstream_id: string; error?: string; preview?: Record<string, unknown>; bindings: {kind: string; id: string; revision?: number}[]; result?: any };
@@ -43,6 +43,7 @@
   let nativeAspect = $state('16:9');
   let reconciliation = $state<Record<string, string>>({});
   let listeningReview = $state<Record<string, boolean>>({});
+  function cloneValue<T>(value:T):T{return structuredClone($state.snapshot(value)) as T;}
   const profileFor = (id: string) => profiles.find(p => p.id === id);
   const characterName = (id: string) => characters.find(c => c.id === id)?.name ?? id;
   const scoped = (path: string) => `${path}${path.includes('?') ? '&' : '?'}project_id=${encodeURIComponent(project)}`;
@@ -55,7 +56,7 @@
     const doc = scripts.find(s => s.id === id);
     scriptRevision = doc?.revision ?? 0;
     approved = doc?.data.approved ?? false;
-    lines = structuredClone(doc?.data.lines ?? []);
+    lines = cloneValue(doc?.data.lines ?? []);
     scriptBaseline = scriptSnapshot();
   }
   async function refresh(reset = false) {
@@ -70,7 +71,7 @@
     const details = await Promise.all(jobs.filter((j: any) => j.status === 'succeeded').map((j: any) => get(`/render-jobs/${j.id}`)));
     outputs = details.flatMap((d: any) => d.outputs.map((o: any) => ({ ...o, model: d.job.model })));
     if (reset) {
-      profileForms = Object.fromEntries(characters.map(c => [c.id, structuredClone(profileFor(c.id)?.data ?? { mode: 'saved', sample_asset_id: '', voice_id: '', approved: false })]));
+      profileForms = Object.fromEntries(characters.map(c => [c.id, cloneValue(profileFor(c.id)?.data ?? { provider:'fal',model:'s2.1-pro',mode: 'saved', sample_asset_id: '', voice_id: '', approved: false })]));
       profileBaselines = Object.fromEntries(Object.entries(profileForms).map(([id,value]) => [id,JSON.stringify(value)]));
       loadScript(scriptID);
     }
@@ -121,7 +122,7 @@
   }
   async function taskAction(task: VoiceTask, endpoint: string, body: unknown = {}) {
     const result = await post(scoped(`/voice/tasks/${task.id}/${endpoint}`), body);
-    if (endpoint === 'accept-voice') profileForms[result.id] = structuredClone(result.data);
+    if (endpoint === 'accept-voice') profileForms[result.id] = cloneValue(result.data);
   }
   function chooseImage(id: string, checked: boolean) { selectedImages = checked ? [...selectedImages, id] : selectedImages.filter(v => v !== id); }
   const resultURL = (task: VoiceTask) => mediaUrl(task.result?.local_path) || task.result?.audio?.url || null;
@@ -149,13 +150,16 @@
         {@const sample = assets.find(a => a.id === profile.sample_asset_id)}
         <article class="panel">
           <div class="row"><h3>{character.name}</h3><Badge variant="secondary">revision {profileFor(character.id)?.revision ?? 0}</Badge></div>
+          <label>Speech provider<select aria-label="Speech provider" value={profile.provider??'fal'} onchange={e=>{profile.provider=e.currentTarget.value;profile.approved=false;profile.voice_id='';profile.sample_asset_id='';if(profile.provider==='fish'){profile.mode='saved';profile.model='s2.1-pro';}}}><option value="fal">fal.ai · MiniMax</option><option value="fish">Fish Audio</option></select></label>
+          {#if profile.provider==='fish'}<label>Speech model<select aria-label="Speech model" bind:value={profile.model} onchange={()=>profile.approved=false}><option value="s2.1-pro">S2.1 Pro</option><option value="s2.1-pro-free">S2.1 Pro · developer free tier</option><option value="s2-pro">S2 Pro</option></select></label><p class="hint"><a href="/settings#connections">Configure Fish Audio API key</a> · <a href="https://fish.audio/discovery" target="_blank" rel="noreferrer">Find or create a Fish Audio voice</a></p>{:else}
           <label>Voice mode<select bind:value={profile.mode} onchange={() => profile.approved = false}><option value="saved">Saved character voice (default)</option><option value="native_reference">Native reference audio → video</option></select></label>
           <label>Approved audio sample<select bind:value={profile.sample_asset_id} onchange={() => profile.approved = false}><option value="">Select an uploaded sample</option>{#each sampleAssets as a}<option value={a.id}>{a.name}</option>{/each}</select></label>
           <label class="upload">Upload sample<input type="file" accept="audio/wav,audio/mpeg,audio/flac,audio/mp4,.wav,.mp3,.flac,.m4a" disabled={!!busy} onchange={e => uploadSample(character.id, e)} /></label>
           {#if sample}<audio controls preload="none" src={mediaUrl(sample.file_path) ?? ''}></audio>{/if}
-          {#if profile.mode === 'saved'}<label>Provider voice ID<input bind:value={profile.voice_id} placeholder="Bind an existing MiniMax voice ID, or create from sample" onchange={() => profile.approved = false} /></label><p class="hint">Voice creation needs a sample of at least 10 seconds. Use the created voice with speech within 7 days to retain it.</p>{:else}<p class="hint">Native video uses a WAV/MP3 sample up to 15 seconds and 15 MB plus an approved visual reference. Review identity and spoken wording after generation.</p>{/if}
+          {/if}
+          {#if profile.mode === 'saved'}<label>Provider voice ID<input bind:value={profile.voice_id} placeholder={profile.provider==='fish'?'Fish Audio voice model ID (reference_id)':'Bind an existing MiniMax voice ID, or create from sample'} onchange={() => profile.approved = false} /></label>{#if profile.provider!=='fish'}<p class="hint">Voice creation needs a sample of at least 10 seconds. Use the created voice with speech within 7 days to retain it.</p>{/if}{:else}<p class="hint">Native video uses a WAV/MP3 sample up to 15 seconds and 15 MB plus an approved visual reference. Review identity and spoken wording after generation.</p>{/if}
           <label class="check"><input type="checkbox" bind:checked={profile.approved} /> I approve this character's sample / provider voice ID.</label>
-          <div class="actions"><Button disabled={!!busy} onclick={() => action(`profile-${character.id}`, () => saveProfile(character.id))}>Save voice revision</Button>{#if profile.mode === 'saved'}<Button variant="outline" disabled={!!busy || !profileFor(character.id)?.data.approved || !profileFor(character.id)?.data.sample_asset_id} onclick={() => action(`clone-${character.id}`, () => prepare('clone', { character_id: character.id }))}>Prepare voice creation</Button>{/if}</div>
+          <div class="actions"><Button disabled={!!busy} onclick={() => action(`profile-${character.id}`, () => saveProfile(character.id))}>Save voice revision</Button>{#if profile.mode === 'saved'&&profile.provider!=='fish'}<Button variant="outline" disabled={!!busy || !profileFor(character.id)?.data.approved || !profileFor(character.id)?.data.sample_asset_id} onclick={() => action(`clone-${character.id}`, () => prepare('clone', { character_id: character.id }))}>Prepare voice creation</Button>{/if}</div>
         </article>
         {/if}
       {/each}
@@ -201,7 +205,7 @@
         {#if task.preview && Object.keys(task.preview).length}<details><summary>Exact approved payload</summary><pre class="payload">{JSON.stringify(task.preview, null, 2)}</pre></details>{/if}
         {#if task.error}<p class="message error">{task.error}</p>{/if}
         {#if task.status === 'draft'}<p>Run approves this exact prepared action and may incur provider charges. Editing a source revision requires preparing a new action.</p><Button disabled={!!busy} onclick={() => action(task.id, () => taskAction(task, 'run', { confirmed: true, fingerprint: task.fingerprint }))}><Play size={15} /> Run paid {task.kind.replaceAll('_', ' ')}</Button>
-        {:else if ['submitting', 'uncertain'].includes(task.status) && !task.upstream_id}<p>Submission is fenced. Review fal activity, then attach the existing request ID.</p><label>Existing fal request ID<input bind:value={reconciliation[task.id]} /></label><Button variant="outline" disabled={!!busy || !reconciliation[task.id]} onclick={() => action(task.id, () => taskAction(task, 'reconcile', { reviewed: true, upstream_id: reconciliation[task.id] }))}>Reconcile reviewed receipt</Button>
+        {:else if ['submitting', 'uncertain'].includes(task.status) && !task.upstream_id}{#if task.model.startsWith('fish/')}<p>Fish Audio speech is synchronous. Check Fish Audio activity for this uncertain request; it will not be retried automatically.</p>{:else}<p>Submission is fenced. Review fal activity, then attach the existing request ID.</p><label>Existing fal request ID<input bind:value={reconciliation[task.id]} /></label><Button variant="outline" disabled={!!busy || !reconciliation[task.id]} onclick={() => action(task.id, () => taskAction(task, 'reconcile', { reviewed: true, upstream_id: reconciliation[task.id] }))}>Reconcile reviewed receipt</Button>{/if}
         {:else if task.upstream_id && !['completed', 'review_required', 'failed'].includes(task.status)}<Button variant="outline" disabled={!!busy} onclick={() => action(task.id, () => taskAction(task, 'refresh'))}><RefreshCw size={14} /> Refresh existing request</Button>{/if}
         {#if resultURL(task) && task.kind !== 'native_reference' && task.kind !== 'lipsync'}<audio controls preload="none" src={resultURL(task) ?? ''}></audio>{/if}
         {#if task.result?.output_id}<a href={`/editor/${task.result.output_id}`}>Review generated video <ArrowRight size={14} /></a>{/if}

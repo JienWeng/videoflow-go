@@ -19,6 +19,12 @@ const (
 
 func ValidateVoiceInput(model string, p map[string]any) error {
 	required := func(key string) bool { return strings.TrimSpace(stringValue(p[key])) != "" }
+	if strings.HasPrefix(model, "fish/") {
+		if !FishModel(strings.TrimPrefix(model, "fish/")) || !required("text") || !required("reference_id") || utf8.RuneCountInString(stringValue(p["text"])) > 5000 {
+			return fmt.Errorf("Fish Audio speech requires a supported model, saved voice ID and 1–5000 characters")
+		}
+		return nil
+	}
 	switch model {
 	case FalVoiceCloneModel:
 		if !required("audio_url") {

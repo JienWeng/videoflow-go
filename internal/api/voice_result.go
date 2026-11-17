@@ -34,6 +34,10 @@ func (s *Server) handleRefreshVoice(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no upstream receipt; reconcile provider activity, never submit again", 409)
 		return
 	}
+	if strings.HasPrefix(task.Model, "fish/") {
+		http.Error(w, "Fish Audio speech is synchronous; check provider activity for an uncertain request. Refresh never resubmits.", 409)
+		return
+	}
 	client, err := s.voiceClient(task)
 	if err != nil {
 		http.Error(w, err.Error(), 400)

@@ -77,7 +77,7 @@ media_model_preferences:Record<string,Record<string,string>>;
   type TestResult = { checked?:string;message?:string;ok: boolean; latency_ms: number | null; error: string | null };
   type ProviderPreset = {
     label: string;
-    protocol: 'chat' | 'responses' | 'anthropic' | 'codex' | 'media' | 'video';
+    protocol: 'chat' | 'responses' | 'anthropic' | 'codex' | 'media' | 'video' | 'speech';
     url: string;
     model: string;
     preset: string;
@@ -164,7 +164,7 @@ media_model_preferences:Record<string,Record<string,string>>;
   function chooseSection(value:string){tab=value;replaceState('#'+value,page.state);}
 
   // ------------------------------------------------------------- labels
-  const providerLabels: Record<string, string> = { fal:'fal.ai',byteplus:'BytePlus ModelArk',openrouter:'OpenRouter' };
+  const providerLabels: Record<string, string> = { fish:'Fish Audio',fal:'fal.ai',byteplus:'BytePlus ModelArk',openrouter:'OpenRouter' };
   const FALLBACK_PRESETS: Record<string, ProviderPreset> = {
     openrouter: { label: 'OpenRouter', protocol: 'chat', url: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini', preset: 'openrouter', mode: 'auto', vision: true }
   };
@@ -220,6 +220,7 @@ media_model_preferences:Record<string,Record<string,string>>;
   const primaryTextProvider = $derived(
     agents.find((agent) => agent.agent === 'script_agent')?.provider ?? 'openrouter'
   );
+  let providerOpen=$state<Record<string,boolean>>({});
   const orderedProviders = $derived(
     providers
   );
@@ -677,14 +678,14 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
               <Plug class="size-4" />AI connections
             </CardTitle>
             <CardDescription>
-              Configure fal.ai for images/video, OpenRouter for vision/transcription, and optional direct BytePlus Seedance video. Planning and writing use local AI sessions. Keys stay on the backend and are never shown again after saving.
+              Configure Fish Audio for character speech, fal.ai for images/video, OpenRouter for vision/transcription, and optional direct BytePlus Seedance video. Planning and writing use local AI sessions. Keys stay on the backend and are never shown again after saving.
             </CardDescription>
           </CardHeader>
           <CardContent class="space-y-5">
             {#each orderedProviders as p (p.name)}
               {@const cfg = provCfg[p.name]}
               {@const test = provTest[p.name]}
-              <details open={p.name === primaryTextProvider || p.name === app?.default_image_provider || p.name === app?.default_video_provider}>
+              <details open={providerOpen[p.name] ?? (p.name === primaryTextProvider || p.name === app?.default_image_provider || p.name === app?.default_video_provider)} ontoggle={e=>providerOpen[p.name]=e.currentTarget.open}>
                 <summary class="cursor-pointer rounded-md py-2 text-sm font-medium">
                   {providerLabels[p.name] ?? p.name}
                   <span class="ml-2 text-xs font-normal text-muted-foreground">{cfg?.configured ? 'Configured' : 'Not configured'}</span>
@@ -722,6 +723,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
 
                 <p class="settings-help mt-2" role="status">{providerDirty(p.name) ? 'Unsaved credential changes' : 'No unsaved credential changes'}</p>
                 <div class="mt-2 flex flex-wrap items-center gap-2">
+                  {#if p.name === 'fish'}<p class="settings-help">Choose a Fish Audio voice ID and speech model in <a class="underline" href="/voices">Voice & dialogue</a>. Configuration checks do not generate speech.</p>{:else}
                   {#if providerModelInput[p.name]}
                     <Input
                       class="max-w-64"
@@ -767,7 +769,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                       Verify
                     </Button>
                   {/if}
-                  <span class="settings-help">{p.protocol === 'chat' ? 'Text model tests consume provider usage.' : 'Catalog checks do not submit generation or verify account/model access.'}</span>
+                  <span class="settings-help">{p.protocol === 'chat' ? 'Text model tests consume provider usage.' : 'Catalog checks do not submit generation or verify account/model access.'}</span>{/if}
                   <Button
                     size="sm"
                     disabled={!!busy || !providerDirty(p.name)}

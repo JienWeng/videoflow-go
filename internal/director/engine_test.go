@@ -43,9 +43,9 @@ func TestClaudeRejectsFailureAndWrongNativeSession(t *testing.T) {
 	}
 }
 func TestNativeEnvironmentRemovesMediaCredentials(t *testing.T) {
-	env := SafeEnvironment([]string{"HOME=/tmp/home", "PATH=/bin", "FAL_KEY=secret", "OPENROUTER_API_KEY=secret", "BYTEPLUS_API_KEY=secret", "ANTHROPIC_API_KEY=auth", "CODEX_HOME=/tmp/codex"})
+	env := SafeEnvironment([]string{"HOME=/tmp/home", "PATH=/bin", "FAL_KEY=secret", "FISH_API_KEY=secret", "OPENROUTER_API_KEY=secret", "BYTEPLUS_API_KEY=secret", "ANTHROPIC_API_KEY=auth", "CODEX_HOME=/tmp/codex"})
 	joined := strings.Join(env, "\n")
-	if strings.Contains(joined, "FAL_KEY") || strings.Contains(joined, "OPENROUTER") || strings.Contains(joined, "BYTEPLUS") {
+	if strings.Contains(joined, "FISH_API_KEY") || strings.Contains(joined, "FAL_KEY") || strings.Contains(joined, "OPENROUTER") || strings.Contains(joined, "BYTEPLUS") {
 		t.Fatal("provider keys inherited")
 	}
 	if !strings.Contains(joined, "ANTHROPIC_API_KEY=auth") {

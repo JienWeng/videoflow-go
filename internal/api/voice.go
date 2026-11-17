@@ -187,6 +187,26 @@ func (s *Server) handleVoiceProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	p := &body.Data
 	p.CharacterID = id
+	if p.Provider == "" {
+		p.Provider = "fal"
+	}
+	if p.Provider != "fal" && p.Provider != "fish" {
+		http.Error(w, "voice provider must be fal or fish", 400)
+		return
+	}
+	if p.Provider == "fish" {
+		if p.Mode != "" && p.Mode != "saved" {
+			http.Error(w, "Fish Audio supports saved voices; native reference mode uses fal", 400)
+			return
+		}
+		if p.Model == "" {
+			p.Model = "s2.1-pro"
+		}
+		if !providers.FishModel(p.Model) {
+			http.Error(w, "unsupported Fish Audio speech model", 400)
+			return
+		}
+	}
 	p.SampleHash = ""
 	if p.Mode == "" {
 		p.Mode = "saved"
@@ -314,10 +334,8 @@ func (s *Server) voiceScript(project, id string) (*db.VoiceDocument, SpokenScrip
 	return doc, script, err
 }
 func (s *Server) prepareVoice(ctx context.Context, project string, p voicePreparation) (*db.VoiceTask, error) {
-	_, endpoint, _, err := s.routes().Credentials("fal")
-	if err != nil {
-		return nil, err
-	}
+	endpoint := ""
+	var err error
 	task := db.VoiceTask{ID: uuid.NewString(), ProjectID: project, Kind: p.Kind, Endpoint: endpoint, Status: "draft", Bindings: []db.VoiceBinding{}}
 	input := map[string]any{}
 	var script SpokenScript
@@ -382,6 +400,9 @@ func (s *Server) prepareVoice(ctx context.Context, project string, p voicePrepar
 	}
 	switch p.Kind {
 	case "clone":
+		if profile.Provider == "fish" {
+			return nil, fmt.Errorf("create or select a voice in Fish Audio, then save its voice model ID here")
+		}
 		if profile.Mode != "saved" {
 			return nil, fmt.Errorf("voice creation requires saved-voice mode")
 		}
@@ -410,6 +431,17 @@ func (s *Server) prepareVoice(ctx context.Context, project string, p voicePrepar
 		}
 		task.Model = providers.FalSpeechModel
 		input = map[string]any{"text": line.Text, "voice_setting": map[string]any{"voice_id": profile.VoiceID}, "output_format": "url"}
+		if profile.Provider == "fish" {
+			model := profile.Model
+			if model == "" {
+				model = "s2.1-pro"
+			}
+			if !providers.FishModel(model) {
+				return nil, fmt.Errorf("unsupported Fish Audio speech model")
+			}
+			task.Model = "fish/" + model
+			input = map[string]any{"text": line.Text, "reference_id": profile.VoiceID, "format": "mp3"}
+		}
 	case "native_reference":
 		if profile.Mode != "native_reference" {
 			return nil, fmt.Errorf("explicitly select native reference mode on this character")
@@ -548,6 +580,14 @@ func (s *Server) prepareVoice(ctx context.Context, project string, p voicePrepar
 	default:
 		return nil, fmt.Errorf("kind must be clone, speech, native_reference, alignment or lipsync")
 	}
+	provider := "fal"
+	if strings.HasPrefix(task.Model, "fish/") {
+		provider = "fish"
+	}
+	_, task.Endpoint, _, err = s.routes().Credentials(provider)
+	if err != nil {
+		return nil, err
+	}
 	if err = providers.ValidateVoiceInput(task.Model, input); err != nil {
 		return nil, err
 	}
@@ -656,6 +696,10 @@ func (s *Server) handleRunVoice(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 409)
 		return
 	}
+	if strings.HasPrefix(task.Model, "fish/") {
+		s.runFishSpeech(w, r, task)
+		return
+	}
 	client, err := s.voiceClient(task)
 	if err != nil {
 		http.Error(w, err.Error(), 400)
@@ -685,6 +729,10 @@ func (s *Server) handleRunVoice(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleReconcileVoice(w http.ResponseWriter, r *http.Request) {
 	task, ok := s.voiceTaskFromRequest(w, r)
 	if !ok {
+		return
+	}
+	if strings.HasPrefix(task.Model, "fish/") {
+		http.Error(w, "Fish Audio speech has no queued fal receipt; check Fish Audio activity", 409)
 		return
 	}
 	var body struct {

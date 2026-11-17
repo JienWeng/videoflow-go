@@ -115,7 +115,11 @@ func (s *Server) applyDirectorVoicePolicy(ctx context.Context, job *models.Rende
 		}
 		doc, err := s.database.GetVoiceDocument(*job.ProjectID, "profile", id)
 		if err != nil {
-			return fmt.Errorf("speaker %s needs an approved saved character voice in /voices before video generation", id)
+			name := id
+			if character, e := s.database.GetCharacter(id); e == nil && character != nil {
+				name = character.Name
+			}
+			return fmt.Errorf("set up and save a voice for %s before rendering: /voices?character_id=%s (choose Fish Audio or fal and a saved voice ID)", name, id)
 		}
 		var profile VoiceProfile
 		if err = json.Unmarshal(doc.Data, &profile); err != nil || !profile.Approved {
@@ -135,7 +139,7 @@ func (s *Server) applyDirectorVoicePolicy(ctx context.Context, job *models.Rende
 			bindings = append(bindings, db.VoiceBinding{Kind: "asset", ID: profile.SampleAssetID, Hash: hash})
 		}
 		bindings = append(bindings, db.VoiceBinding{Kind: "profile", ID: id, Revision: doc.Revision})
-		speakers = append(speakers, map[string]any{"character_id": id, "voice_id": profile.VoiceID, "profile_revision": doc.Revision})
+		speakers = append(speakers, map[string]any{"character_id": id, "voice_id": profile.VoiceID, "provider": profile.Provider, "model": profile.Model, "profile_revision": doc.Revision})
 	}
 	if len(speakers) == 0 {
 		payload["generate_audio"] = false

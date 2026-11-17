@@ -48,6 +48,10 @@ func (s *Server) prepareAndRenderScene(ctx context.Context, project, id string) 
 	if state["references_ready"] != true {
 		return nil, fmt.Errorf("selected character or asset references are missing, unavailable or excluded; replace them before rendering")
 	}
+	// Voice setup must fail before spending storyboard-generation quota.
+	if err = s.applyDirectorVoicePolicy(ctx, sceneRenderJob(project, scene)); err != nil {
+		return nil, err
+	}
 	updated := false
 	if state["storyboard_ready"] != true {
 		if _, err = s.generateMatchingStoryboard(ctx, scene); err != nil {

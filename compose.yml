@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile.backend
+    environment:
+      FISH_API_KEY: ${FISH_API_KEY:-}
     volumes:
       - videoflow-data:/data
       - videoflow-agent-auth:/home/videoflow

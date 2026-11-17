@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
 	"videoflow-go/internal/providers"
 )
 
@@ -12,6 +13,8 @@ func ValidProviderURL(provider, raw string) bool {
 	switch provider {
 	case "openrouter":
 		return ValidBaseURL(raw)
+	case "fish":
+		return strings.TrimRight(raw, "/") == providers.FishURL
 	case "fal":
 		return strings.TrimRight(raw, "/") == providers.FalURL
 	case "byteplus":
@@ -21,6 +24,12 @@ func ValidProviderURL(provider, raw string) bool {
 }
 func (r Resolver) mediaCredentials(name string) (key, endpoint string, fromDB bool, err error) {
 	switch name {
+	case "fish":
+		key = r.Config.FishAPIKey
+		endpoint = r.Config.FishBaseURL
+		if endpoint == "" {
+			endpoint = providers.FishURL
+		}
 	case "fal":
 		key = r.Config.FalAPIKey
 		endpoint = r.Config.FalBaseURL

@@ -22,6 +22,8 @@ type SpokenScript struct {
 	Lines    []SpokenLine `json:"lines"`
 }
 type VoiceProfile struct {
+	Provider      string `json:"provider,omitempty"`
+	Model         string `json:"model,omitempty"`
 	CharacterID   string `json:"character_id"`
 	Mode          string `json:"mode"` // saved (default) or native_reference
 	SampleAssetID string `json:"sample_asset_id"`
