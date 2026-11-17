@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import ConversationHistory from './ConversationHistory.svelte';
   import { get, post } from '$lib/api';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
@@ -25,6 +26,7 @@
         <DropdownMenu.Separator /><DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/director">Manage AI sessions</a>{/snippet}</DropdownMenu.Item>
       </DropdownMenu.Content>
     </DropdownMenu.Root>
+    <ConversationHistory disabled={busy||!loaded} oncontinue={async id=>{await post(`/director/sessions/${encodeURIComponent(id)}/select`,{});await refresh();window.dispatchEvent(new Event('videoflow-session-changed'));}} />
   </div>
   {#if loaded&&!selected}
     <div class="flex flex-wrap items-center gap-2">
