@@ -1,12 +1,13 @@
 <script lang="ts">
   import {get} from '$lib/api';
+  import {conversationTurns} from '$lib/chat/history.mjs';
   import {Button} from '$lib/components/ui/button';
   import * as Dialog from '$lib/components/ui/dialog';
   import History from '@lucide/svelte/icons/history';
   let {disabled=false,oncontinue}:{disabled?:boolean;oncontinue:(id:string)=>Promise<void>}=$props();
   let open=$state(false),loading=$state(false),error=$state(''),sessions:any[]=$state([]),chosen=$state(''),turns:any[]=$state([]),switching=$state(false);
   let generation=0;
-  async function loadTurns(id:string){const current=++generation;chosen=id;turns=[];error='';loading=true;try{const result=await get(`/director/sessions/${encodeURIComponent(id)}/turns`);if(current===generation)turns=result.filter((t:any)=>t.kind==='chat'||t.kind==='specialist_review');}catch(e){if(current===generation)error=String(e)}finally{if(current===generation)loading=false}}
+  async function loadTurns(id:string){const current=++generation;chosen=id;turns=[];error='';loading=true;try{const result=await get(`/director/sessions/${encodeURIComponent(id)}/turns`);if(current===generation)turns=conversationTurns(result);}catch(e){if(current===generation)error=String(e)}finally{if(current===generation)loading=false}}
   async function show(){open=true;error='';turns=[];sessions=[];loading=true;const current=++generation;try{const list=await get('/director/sessions');if(current!==generation)return;sessions=list;const id=list.find((s:any)=>s.selected)?.id??list[0]?.id;chosen=id??'';if(id)await loadTurns(id);}catch(e){if(current===generation)error=String(e)}finally{if(current===generation)loading=false}}
   function changeOpen(value:boolean){if(switching)return;open=value;if(!value){generation++;loading=false}}
   async function resume(){switching=true;error='';try{await oncontinue(chosen);open=false;generation++;}catch(e){error=String(e)}finally{switching=false}}

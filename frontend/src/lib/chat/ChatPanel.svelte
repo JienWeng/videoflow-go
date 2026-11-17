@@ -1,4 +1,5 @@
 <script lang="ts">
+  import {conversationTurns,conversationView} from './history.mjs';
   import {subscribeJobs} from '$lib/sse';
   import {runBackgroundOp} from '$lib/ops';
   import {workflowNext,storyReferencesApproved,hasPendingSceneReferences} from './workflow.mjs';
@@ -172,12 +173,14 @@
         activeSessionId=session.id;loadCheckpoints('videoflow.chat.'+session.id);localSessionLabel=`${session.engine} · ${session.title}`;
         const turns=await get(`/director/sessions/${session.id}/turns`);if(generation!==conversationGeneration)return;
         const restored:Msg[]=[];
-        for(const turn of turns.filter((item:any)=>item.kind==='chat'||item.kind==='specialist_review')){
+        for(const turn of conversationTurns(turns)){
           if(turn.request_json?.user_message)restored.push({role:'user',text:turn.request_json.user_message});
           if(turn.result_json?.reply)restored.push({role:'assistant',text:turn.result_json.reply,activity:subagentEvents(turn.result_json.subagents??[])});
           else if(turn.error)restored.push({role:'assistant',text:turn.error});
         }
-        messages=restored.length?restored:[greeting()];return;
+        const key='videoflow.chat.'+session.id;
+        let cached:unknown;try{cached=JSON.parse(sessionStorage.getItem(key)??'null')}catch{cached=null}
+        messages=conversationView(restored,cached);if(!messages.length)messages=[greeting()];storageKey=key;return;
       }
       const project=await get('/projects/active');if(generation!==conversationGeneration)return;
       const key=`videoflow.chat.${project?.id??'default'}`;

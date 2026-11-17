@@ -1,0 +1,9 @@
+# Consistent conversation history across panels
+
+Root cause: the local engine records chat as intent_agent turns. ChatPanel and ConversationHistory restored only chat/specialist_review, so remounting after navigation replaced a populated conversation with an empty greeting. Readonly inspection of the selected production session found 15 stored turns: the old filter restored zero, while the corrected filter restored eight user-facing chat turns.
+
+Both views now use one conversation-turn filter, accepting user-message-marked intent_agent, legacy chat and specialist-review records while excluding internal planning/image turns. The selected-session view is retained in this browser tab to preserve action cards, completed/failed results and context chips when navigating. A snapshot is reused only if its user-message sequence and saved reply match the server. Newer server messages win. A previously running action is represented as status unknown/check Activity, never falsely marked failed or automatically restarted. No native history records are modified.
+
+Verification: five pure history regressions plus existing guidance tests passed; Svelte check 0 errors/warnings; production frontend build. Twelve desktop/mobile history checks and two axe scans passed, including actual intent_agent records, Library round trips, retained action cards, identical history transcripts, explicit session switching, load-error recovery and no replay. Twenty additional chat-state checks passed with no browser errors. All test API writes were intercepted; no AI/media generation was run. Frontend-only deployment; backend data/auth/operations are unchanged.
+
+The server remains the durable source for messages. Rich action snapshots are scoped to the browser tab and selected session; a new browser restores the saved text transcript. Ordinary page navigation retains history; explicitly selecting another session intentionally shows that session's conversation.
