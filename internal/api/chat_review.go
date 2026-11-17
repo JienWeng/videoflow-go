@@ -96,7 +96,7 @@ func (s *Server) handleChatReview(w http.ResponseWriter, r *http.Request) {
 	}
 	snapshot, err := s.buildDirectorContext(binding.ProjectID, binding.Selection)
 	if err != nil {
-		http.Error(w, err.Error(), 409)
+		chatContextError(w)
 		return
 	}
 	story, storyRevision, err := s.chatReviewStory(binding.ProjectID)

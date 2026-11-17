@@ -2,7 +2,7 @@
   import {protectDraft} from '$lib/protect-draft';
   import {storyCreation} from '$lib/create/story-creation.svelte';
   import { onMount, tick } from 'svelte';
-  import { get, mediaUrl, post } from '$lib/api';
+  import { APIError, get, mediaUrl, post } from '$lib/api';
   import ActionCard from '$lib/chat/ActionCard.svelte';
   import { Button } from '$lib/components/ui/button';
   import * as Tooltip from '$lib/components/ui/tooltip';
@@ -53,6 +53,8 @@
   interface Msg {
     role: 'user' | 'assistant';
     retry?: string;
+    repairContext?: boolean;
+    sessionReview?: boolean;
     activity?: unknown[];
     dismissed?: boolean;
     text: string;
@@ -145,8 +147,8 @@
   /** Drop the non-serializable / refetched parts (state, callbacks live in
    * the template anyway — cards re-render fine from intent + options). */
   function serializableMsg(m: Msg) {
-    const { role, text, intent, options, warnings, chips, op, thumbs, retry, activity, dismissed } = m;
-    return { role, text, intent, options, warnings, chips, op, thumbs, retry, activity:normalizeActivity(activity), dismissed };
+    const { role, text, intent, options, warnings, chips, op, thumbs, retry, activity, dismissed,repairContext,sessionReview } = m;
+    return { role, text, intent, options, warnings, chips, op, thumbs, retry, activity:normalizeActivity(activity), dismissed,repairContext,sessionReview };
   }
 
   let conversationGeneration=0;
@@ -591,6 +593,8 @@
     inputWrapper?.querySelector('textarea')?.focus();
   }
 
+  let repairingContext=$state(false);
+  async function repairContext(message:Msg){if(!activeSessionId||repairingContext)return;repairingContext=true;const generation=conversationGeneration;try{const result=await post(`/director/sessions/${activeSessionId}/repair-context`,{});if(generation!==conversationGeneration)return;message.repairContext=false;message.sessionReview=!!result.review_required;message.text=result.review_required?'Unavailable references removed. Review the interrupted AI session before sending again.':'Unavailable references removed. Your message is ready to retry.';reusePrompt(message.retry??'');void refreshCapabilities();}catch(e){if(generation===conversationGeneration)message.text=`Could not repair context. ${String(e)}`;}finally{repairingContext=false}}
   async function send(text?: string) {
     const message = (text ?? input).trim();
     if (!message || busy || historyLoading || sessionRequired || historyError) return;
@@ -624,7 +628,9 @@
       messages.push({
         role: 'assistant',
         text: `Could not send your message. ${(e as Error).message}`,
-        retry: message
+        retry: message,
+        repairContext:e instanceof APIError&&e.code==='chat_context_invalid',
+        sessionReview:e instanceof APIError&&e.code==='chat_session_review_required'
       });
     } finally {
       if(generation===conversationGeneration){busy = false;
@@ -768,7 +774,9 @@
               <Bubble.Root align={m.role==='user'?'end':'start'} variant={m.role==='user'?'muted':'ghost'}><Bubble.Content class="whitespace-pre-wrap break-words leading-relaxed">{m.text}</Bubble.Content></Bubble.Root>
             {/if}
             {#if m.intent?.action==='unknown' && m.state?.next_steps?.length}<ol class="list-decimal space-y-1 pl-5 text-sm">{#each m.state.next_steps as step}<li>{step}</li>{/each}</ol>{/if}
-            {#if m.retry}<Button variant="outline" size="sm" class="mt-2" disabled={busy} onclick={()=>reusePrompt(m.retry??'')}>Edit and retry</Button>{/if}
+            {#if m.repairContext}<Button variant="outline" size="sm" class="mt-2" disabled={busy||repairingContext} onclick={()=>repairContext(m)}>{repairingContext?'Repairing…':'Repair chat context'}</Button>{/if}
+            {#if m.sessionReview}<Button variant="outline" size="sm" class="mt-2" href="/director">Review AI session</Button>{/if}
+            {#if m.retry&&!m.repairContext&&!m.sessionReview}<Button variant="outline" size="sm" class="mt-2" disabled={busy} onclick={()=>reusePrompt(m.retry??'')}>Edit and retry</Button>{/if}
             <ActivityView events={messageActivity(m)} />
             {#if normalizeActivity(m.activity).some(e=>e.kind==='subagent'&&e.status==='done')}<Button variant="outline" size="sm" class="self-start" disabled={busy} onclick={()=>prepareReviewChanges(m)}>Prepare changes from review</Button>{/if}
             {#if m.thumbs?.length}

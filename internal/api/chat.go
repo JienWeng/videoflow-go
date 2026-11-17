@@ -64,7 +64,11 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		var snapshotErr error
 		plannedSnapshot, snapshotErr = s.buildDirectorContext(projectID, binding.Selection)
 		if snapshotErr != nil {
-			http.Error(w, snapshotErr.Error(), 409)
+			chatContextError(w)
+			return
+		}
+		if session, err := s.directorSession(ctx); err == nil && session.Status == "review_required" {
+			writeJSON(w, 409, map[string]string{"code": "chat_session_review_required", "error": "Review the interrupted AI session before sending another message."})
 			return
 		}
 		ctx = context.WithValue(ctx, directorSnapshotKey{}, plannedSnapshot)
