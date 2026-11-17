@@ -1,4 +1,5 @@
 <script lang="ts">
+ import StyleReference from "$lib/brief/StyleReference.svelte";
   let { embedded = false,oncounts }:{embedded?:boolean;oncounts?:(characters:number,media:number)=>void}=$props();
   import {nodeTools} from '$lib/canvas/tools.mjs';
   import LibraryPreview from './LibraryPreview.svelte';
@@ -89,8 +90,6 @@
   let styleForm = $state({ style_prompt: '', palette: '', lighting: '', audience: '', tone: '' });
   let reingestOpen = $state(false);
   let deleteTarget: any = $state(null);
-  // Ingest derives the style FROM the story — gate it until one exists.
-  let hasStory = $state(true);
 
   // --- lightbox / detail ---
   let detail: any = $state(null);
@@ -100,15 +99,6 @@
   let describeTarget: any = $state(null);
   let describeText = $state('');
   let describeBusy = $state(false);
-
-  async function loadStoryPresence() {
-    try {
-      const [scenes, scripts] = await Promise.all([get('/scenes'), get('/scripts')]);
-      hasStory = (scenes?.length ?? 0) > 0 || (scripts?.length ?? 0) > 0;
-    } catch {
-      hasStory = true; // fail open — the backend will still reject sensibly
-    }
-  }
 
   async function loadTypes() {
     try {
@@ -141,24 +131,7 @@
     }
   }
 
-  async function ingestStyle() {
-    styleBusy = 'ingest';
-    const source=styleSource;styleSource=null;reingestOpen = false;
-    try {
-      await runBackgroundOp('/style/ingest', source?{asset_ids:[source.id]}:undefined, {
-        label: 'Style ingest',
-        onDone: async () => {
-          styleBusy = '';
-          await loadStyle(); // reloads the panel and reseeds the form
-          styleEditing = false;
-        },
-        onFail: () => (styleBusy = '')
-      });
-    } catch (e: any) {
-      styleBusy = '';
-      toast.error(e.message);
-    }
-  }
+  function ingestStyle(){styleSource=null;reingestOpen=true}
 
   async function saveStyle() {
     styleBusy = 'save';
@@ -237,7 +210,6 @@
       .catch((e) => (error = e.message))
       .finally(() => (loaded = true));
     loadStyle();
-    loadStoryPresence();
     loadTypes();
   });
 
@@ -397,23 +369,16 @@
         <div class="flex gap-2">
           <Button
             size="sm"
-            disabled={styleBusy === 'ingest' || !hasStory}
-            title={!hasStory
-              ? 'Write a script first — the style is derived from your story (先写剧本，再从故事提炼风格)'
-              : undefined}
+            disabled={!!styleBusy}
             onclick={ingestStyle}
           >
-            <Wand2 class="size-3 mr-1" />{styleBusy === 'ingest' ? 'Deriving…' : 'Ingest from story'}
+            <Wand2 class="size-3 mr-1" />Analyze a reference
           </Button>
           <Button variant="outline" size="sm" onclick={() => (styleEditing = true)}>
             Create manually
           </Button>
         </div>
-        {#if !hasStory}
-          <p class="text-xs text-muted-foreground mt-2">
-            Write a script first — the style is derived from your story (先写剧本，再从故事提炼风格).
-          </p>
-        {/if}
+
       {:else}
         <div class="grid gap-3">
           <div class="grid gap-1.5">
@@ -446,7 +411,7 @@
               {styleBusy === 'save' ? 'Saving…' : 'Save'}
             </Button>
             <Button variant="outline" size="sm" disabled={!!styleBusy} onclick={() => {styleSource=null;reingestOpen=true}}>
-              <Wand2 class="size-3 mr-1" />{styleBusy === 'ingest' ? 'Deriving…' : 'Re-ingest from story'}
+              <Wand2 class="size-3 mr-1" />Analyze a reference
             </Button>
           </div>
         </div>
@@ -577,20 +542,7 @@
 </Dialog.Root>
 
 <Dialog.Root open={reingestOpen} onOpenChange={(open) => !open && (reingestOpen = false)}>
-  <Dialog.Content>
-    <Dialog.Header>
-      <Dialog.Title>{styleSource?'Derive style from this image?':'Re-ingest style from story?'}</Dialog.Title>
-      <Dialog.Description>
-        {styleSource?`Replace the project’s visual style using “${styleSource.name}”?`:'Replace the project’s visual style using its image references?'} This uses the configured vision provider and may incur charges. Existing images remain in Library.
-      </Dialog.Description>
-    </Dialog.Header>
-    <Dialog.Footer>
-      <Button variant="outline" size="sm" onclick={() => (reingestOpen = false)}>Cancel</Button>
-      <Button size="sm" disabled={!!styleBusy} onclick={ingestStyle}>
-        <Wand2 class="size-3 mr-1" />Re-ingest
-      </Button>
-    </Dialog.Footer>
-  </Dialog.Content>
+ <Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-xl"><Dialog.Header><Dialog.Title>Style reference</Dialog.Title><Dialog.Description>Extract editable visual direction from an image, video or public link.</Dialog.Description></Dialog.Header><StyleReference initialAssetID={styleSource?.id??''} onsaved={async()=>{reingestOpen=false;styleSource=null;await loadStyle()}}/></Dialog.Content>
 </Dialog.Root>
 
 <Dialog.Root open={deleteTarget !== null} onOpenChange={(open) => !open && (deleteTarget = null)}>

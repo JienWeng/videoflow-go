@@ -103,7 +103,8 @@
     onfocus,
     onop,
     onsuggest,
-    onbriefchange
+    onbriefchange,
+    onreference
   }: {
     intent: Intent;
     options: Options;
@@ -114,6 +115,7 @@
     onop?: (label: string, ctx: RunContext) => OpHandle | undefined;
     onsuggest?: (text: string) => void;
  onbriefchange?:(brief:ReturnType<typeof normalizeBrief>)=>void;
+ onreference?:(preset:any,style:any)=>void;
   } = $props();
 
   let intent = $derived(normalizeChatIntent(rawIntent));
@@ -484,7 +486,7 @@
             {/if}
           </div>
         {/if}
-        <CreativeBriefEditor bind:value={creationBrief} bind:confirmed={briefConfirmed} disabled={busy||developing} onchange={editBrief}/>
+        <CreativeBriefEditor bind:value={creationBrief} bind:confirmed={briefConfirmed} disabled={busy||developing} onchange={editBrief} onstyleapplied={onreference}/>
 
       {/if}
 

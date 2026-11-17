@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"videoflow-go/internal/agents"
 	"videoflow-go/internal/models"
 	"videoflow-go/internal/presets"
@@ -79,6 +80,9 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	style, _ := s.database.GetStyleGuide(projectID)
 	availableStyles := []map[string]string{}
+	if style != nil && strings.TrimSpace(style.StylePrompt) != "" {
+		availableStyles = append(availableStyles, map[string]string{"id": "project-style", "name": style.Name, "description": style.StylePrompt})
+	}
 	for _, p := range presets.Builtins().Presets {
 		availableStyles = append(availableStyles, map[string]string{"id": p.ID, "name": p.Name, "description": p.Description})
 	}

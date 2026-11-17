@@ -11,6 +11,11 @@ import (
 	"time"
 )
 
+// DownloadReference fetches public reference material without credentials or local-network access.
+func DownloadReference(ctx context.Context, raw string, limit int64) ([]byte, error) {
+	return publicMedia(ctx, raw, limit)
+}
+
 // Remote output URLs never receive provider credentials and cannot reach local services.
 // Explicit loopback mock API bases are allowed only by constructor-injected test clients.
 func publicMedia(ctx context.Context, raw string, limit int64, apiBase ...string) ([]byte, error) {

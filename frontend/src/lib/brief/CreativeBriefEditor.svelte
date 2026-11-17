@@ -1,7 +1,8 @@
 <script lang="ts">
+ import StyleReference from './StyleReference.svelte';
  import {onMount} from 'svelte';import{get}from'$lib/api';import{Button}from'$lib/components/ui/button';import StyleCards from'./StyleCards.svelte';import{normalizeBrief,missingBriefFields}from'./brief.mjs';
  type Brief=ReturnType<typeof normalizeBrief>;
- let {value=$bindable(normalizeBrief()),confirmed=$bindable(false),disabled=false,onchange}:{value?:Brief;confirmed?:boolean;disabled?:boolean;onchange?:(brief:Brief)=>void}=$props();
+ let {value=$bindable(normalizeBrief()),confirmed=$bindable(false),disabled=false,onchange,onstyleapplied}:{value?:Brief;confirmed?:boolean;disabled?:boolean;onchange?:(brief:Brief)=>void;onstyleapplied?:(preset:any,style:any)=>void}=$props();
  let catalog=$state<any>(null),loading=$state(false),error=$state(''),step=$state(0),attempted=$state(false);
  const labels=['Look & mood','Delivery','Length & scenes','Confirm'];
  const options=$derived(catalog?[...(catalog.project_style?[{...catalog.project_style,name:`Project style${catalog.project_style.name?' · '+catalog.project_style.name:''}`}]:[]),...(catalog.presets??[])]:[]);
@@ -20,6 +21,7 @@
  <nav aria-label="Creative brief steps" class="grid grid-cols-2 gap-1">{#each labels as label,index}<button type="button" class={`min-h-11 rounded-md px-2 text-left text-xs ${step===index?'bg-accent font-medium':'text-muted-foreground hover:bg-accent/50'}`} aria-current={step===index?'step':undefined} disabled={disabled} onclick={()=>{step=index;attempted=false}}>{index+1}. {label}</button>{/each}</nav>
  <fieldset disabled={disabled} class="min-w-0 space-y-3">
  {#if step===0}
+ <details class="rounded-md border border-border p-2"><summary class="min-h-11 cursor-pointer py-3 text-sm font-medium">Use an image, video or link</summary><StyleReference {disabled} onsaved={async(p,style)=>{await load();change({style_preset_id:p.id,style_fingerprint:p.fingerprint,tone:value.tone||style.tone,audience:value.audience||style.audience});onstyleapplied?.(p,style)}}/></details>
  <Button type="button" size="sm" variant="ghost" disabled={disabled||loading} onclick={load}>{loading?'Loading styles…':'Refresh styles'}</Button>
  {#if catalog}<StyleCards presets={options} selected={value.style_preset_id} disabled={disabled||loading} onselect={p=>change({style_preset_id:p.id,style_fingerprint:p.fingerprint??''})}/>{:else if !error}<p role="status" class="text-sm text-muted-foreground">Loading visual styles…</p>{/if}
  <p class="text-xs text-muted-foreground">This look applies to this story. It does not overwrite your project default.</p>

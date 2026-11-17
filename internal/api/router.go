@@ -264,6 +264,7 @@ func (s *Server) setupRoutes() {
 	s.router.Patch("/style", s.handleUpdateStyle)
 	s.router.Put("/style", s.handleUpdateStyle)
 	s.router.Post("/style/ingest", s.handleIngestStyle)
+	s.router.Post("/style/reference", s.handleAnalyzeStyleReference)
 
 	// Settings
 	s.router.Get("/settings/app", s.handleGetAppSettings)

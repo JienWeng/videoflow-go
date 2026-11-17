@@ -1,4 +1,15 @@
 <script lang="ts">
+ import StyleReference from '$lib/brief/StyleReference.svelte';
+ import * as Dialog from '$lib/components/ui/dialog';
+ import Paperclip from '@lucide/svelte/icons/paperclip';
+ let referenceOpen=$state(false);
+ let referenceURL=$state('');
+ function referenceSaved(preset:any,style:any){
+  referenceOpen=false;input='';
+  const current=activeCreativeBrief()?[...messages].reverse().find(m=>m.intent?.action==='generate_script'&&!m.dismissed):undefined;
+  if(current){const brief={...activeCreativeBrief(),style_preset_id:preset.id,style_fingerprint:preset.fingerprint};current.intent={...current.intent,creation_brief:brief};void send('Use the saved project reference style for this story and keep my other choices.');}
+  else{messages.push({role:'assistant',text:`Reference style saved: ${style.name}. ${style.style_prompt} Tell me your story idea and we can use this project style.`});reusePrompt('Help me plan a story using the project reference style: ');}
+ }
  import {completeSceneRenders} from "$lib/production/completion.mjs";
   import {conversationTurns,conversationView} from './history.mjs';
   import {subscribeJobs} from '$lib/sse';
@@ -661,6 +672,8 @@
   async function send(text?: string) {
     const message = (text ?? input).trim();
     if (!message || busy || pendingOps.length || historyLoading || sessionRequired || historyError) return;
+    const referenceLink=message.match(/https:\/\/[^\s<>]+/i)?.[0];
+    if(referenceLink&&(message===referenceLink||/\b(style|reference|look)\b/i.test(message))){referenceURL=referenceLink;referenceOpen=true;return;}
     const generation=conversationGeneration;
     input = '';
     if(isEmpty)messages=[];
@@ -877,6 +890,7 @@
               <ActionCard
                 intent={m.intent}
  onbriefchange={brief=>m.intent={...m.intent,creation_brief:brief,idea:brief.idea}}
+ onreference={referenceSaved}
                 options={m.options}
                 projectState={m.state}
                 onfocus={onguide??onfocus}
@@ -913,6 +927,7 @@
       <InputGroup.Root class="rounded-2xl bg-background shadow-none has-disabled:opacity-100 has-disabled:bg-background dark:has-disabled:bg-background">
         <InputGroup.Textarea aria-label="Message story assistant" bind:value={input} class="min-h-24 max-h-40 px-3 pt-3" placeholder={selected ? `What should change in ${selected.label}?` : 'Tell me your idea…'} onkeydown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();void send();}}} />
         <InputGroup.Addon align="block-end" class="gap-2">
+          <InputGroup.Button type="button" size="icon-sm" aria-label="Attach style reference" disabled={busy||pendingOps.length>0} onclick={()=>{referenceURL='';referenceOpen=true}}><Paperclip class="size-4"/></InputGroup.Button>
           <DropdownMenu.Root><DropdownMenu.Trigger>{#snippet child({props})}<InputGroup.Button {...props} type="button" size="sm" aria-label="Assistant mode" disabled={busy}>{reviewMode?'Review':'Chat'}<ChevronDown class="size-3.5" /></InputGroup.Button>{/snippet}</DropdownMenu.Trigger>
             <DropdownMenu.Content align="start" side="top" class="w-64 max-w-[calc(100vw-2rem)]">
               <DropdownMenu.RadioGroup value={reviewMode?'specialists':'assistant'} onValueChange={value=>reviewMode=value==='specialists'}>
@@ -932,3 +947,4 @@
     <p class="mt-2 px-1 text-[11px] text-muted-foreground">Enter to send · Shift + Enter for a new line</p>
   </div>
 </div>
+<Dialog.Root bind:open={referenceOpen}><Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-xl"><Dialog.Header><Dialog.Title>Style reference</Dialog.Title><Dialog.Description>Start with an image, video or public link. Edit the extracted direction before using it.</Dialog.Description></Dialog.Header><StyleReference initialURL={referenceURL} onsaved={referenceSaved}/></Dialog.Content></Dialog.Root>

@@ -1,4 +1,5 @@
 <script lang="ts">
+ import StyleReference from '$lib/brief/StyleReference.svelte';
   import { onMount } from 'svelte';
  import StyleCards from '$lib/brief/StyleCards.svelte';
   import { get, patch } from '$lib/api';
@@ -91,6 +92,7 @@
     {#if error}<Button variant="outline" onclick={load}>Retry loading style</Button>
     {:else}<p role="status" class="text-sm text-muted-foreground">Loading project style…</p>{/if}
   {:else}
+    <details class="mb-4 rounded-md border border-border p-3"><summary class="min-h-11 cursor-pointer py-3 text-sm font-medium">Create a look from an image, video or link</summary>{#if dirty}<p class="text-sm text-muted-foreground">Save or discard your current style edits before replacing the project style.</p>{/if}<StyleReference disabled={disabled||saving||dirty} onsaved={async()=>{try{sessionStorage.removeItem(key)}catch{}await load()}}/></details>
     <form onsubmit={(event) => { event.preventDefault(); void save(); }} class="space-y-4">
       <fieldset disabled={disabled || saving} class="min-w-0 space-y-4">
         <p class="text-sm"><span class="text-muted-foreground">Current look:</span> {form.name||'Custom project style'}{dirty?' · Unsaved changes':''}</p>
