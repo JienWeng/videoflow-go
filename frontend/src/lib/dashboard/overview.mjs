@@ -33,8 +33,6 @@ export function makeOverview(snapshot, now = Date.now()) {
   if (uncertainJobs.length) attention.push(issue('uncertain-renders', 'Review an unfinished render request', 'Check existing provider work before starting another render.', '/render', 'Review renders', true));
   if (uncertainOps.length) attention.push(issue('uncertain-requests', 'Review an interrupted generation request', 'Open the saved workflow and review its status before starting again.', operationHref(uncertainOps[0]), 'Review request', true));
   if (selected?.status === 'review_required') attention.push(issue('session-review', 'Your AI session needs review', 'Review the interrupted request before continuing.', '/director', 'Review session', true));
-  const pendingReferences = assets.filter(asset => asset.metadata_json?.consistency_review === 'pending');
-  if (pendingReferences.length) attention.push(issue('reference-review', `${pendingReferences.length} ${pendingReferences.length === 1 ? 'reference needs' : 'references need'} approval`, 'Check the generated images before rendering the scene.', '/assets', 'Review references', true));
   const target = job => job.shot_id ? `shot:${job.shot_id}` : job.scene_id ? `scene:${job.scene_id}` : null;
   const failed = jobs.filter(job => job.status === 'failed' && now - timestamp(job) >= 0 && now - timestamp(job) < 86400000 && !jobs.some(later => later.status === 'succeeded' && target(job) && target(later) === target(job) && timestamp(later) > timestamp(job)));
   if (failed.length) attention.push(issue('failed-renders', `${failed.length} ${failed.length === 1 ? 'render failed' : 'renders failed'} in the last 24 hours`, 'Open the saved error and review the request before running again.', '/render', 'View renders', true));

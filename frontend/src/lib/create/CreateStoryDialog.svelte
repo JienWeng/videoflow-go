@@ -8,7 +8,7 @@
 </script>
 <Dialog.Root open={storyCreation.open} onOpenChange={value=>{if(value)storyCreation.open=true;else close()}}>
   <Dialog.Content class="flex max-h-[90dvh] flex-col overflow-hidden sm:max-w-3xl" showCloseButton={false} overlayClass="bg-black/55 supports-backdrop-filter:backdrop-blur-none" onEscapeKeydown={event=>{event.preventDefault();close()}} onInteractOutside={event=>{event.preventDefault();close()}}>
-    <Dialog.Header><Dialog.Title>Create story</Dialog.Title><Dialog.Description>Plan your story and storyboard. Review references before rendering.</Dialog.Description></Dialog.Header>
+    <Dialog.Header><Dialog.Title>Create story</Dialog.Title><Dialog.Description>Create your story, references and storyboard together.</Dialog.Description></Dialog.Header>
     <div class="min-h-0 flex-1 overflow-y-auto pr-1"><StoryCreator embedded bind:this={creator}/></div>
     <div class="flex shrink-0 justify-end border-t border-border pt-4"><Button variant="outline" class="min-h-11" onclick={close}>Close</Button></div>
   </Dialog.Content>

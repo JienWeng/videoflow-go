@@ -40,10 +40,10 @@ test('recent activity is sorted and deduplicated without inventing timestamps', 
   assert.deepEqual(model.recent.map(item => item.id), ['job:j', 'op:op']);
   assert.equal(model.runningCount, 1);
 });
-test('uncertain work and pending reference reviews have recovery links, never retries', () => {
+test('uncertain work has recovery links while pending images do not demand approval', () => {
   const model = makeOverview(snapshot({ jobs: [{ id: 'j', status: 'reconciliation_required' }], assets: [{ id: 'a', metadata_json: { consistency_review: 'pending' } }] }), now);
   assert.equal(model.primary.href, '/render');
-  assert(model.attention.some(item => item.id === 'reference-review' && item.href === '/assets'));
+  assert(!model.attention.some(item => item.id === 'reference-review'));
   assert.equal(model.attention.some(item => /retry|resubmit/i.test(item.label)), false);
 });
 test('old failures and failures followed by successful renders do not create alert fatigue', () => {
