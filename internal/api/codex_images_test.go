@@ -43,7 +43,7 @@ assert '--image' in sys.argv
 assert 'OPENAI_API_KEY' not in __import__('os').environ
 open(` + fmt.Sprintf("%q", path) + `, 'wb').write(base64.b64decode('` + encoded + `'))
 print(json.dumps({'type':'thread.started','thread_id':'isolated-image'}))
-print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':json.dumps({'status':'generated','path':` + fmt.Sprintf("%q", path) + `})}}))
+print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':json.dumps({'status':'generated','path':` + fmt.Sprintf("%q", "/generated_images/new.png") + `})}}))
 print(json.dumps({'type':'turn.completed'}))
 `
 	os.WriteFile(cli, []byte(script), 0700)
@@ -175,5 +175,38 @@ func TestCodexFirstPreflightDoesNotRequireImageAPI(t *testing.T) {
 	json.Unmarshal(response.Body.Bytes(), &result)
 	if !result.Ready || !result.Native {
 		t.Fatal(response.Body.String())
+	}
+}
+
+func TestNativeImageVirtualPathResolvesOnlyFreshContainedRaster(t *testing.T) {
+	root := t.TempDir()
+	folder := filepath.Join(root, "turn")
+	if err := os.MkdirAll(folder, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(folder, "result.png")
+	var buffer bytes.Buffer
+	if err := png.Encode(&buffer, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, buffer.Bytes(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	alias := "/generated_images/turn/result.png"
+	got, err := readNativeImage(root, alias, map[string]bool{})
+	if err != nil || !bytes.Equal(got.Data, buffer.Bytes()) {
+		t.Fatalf("virtual image not imported: %v", err)
+	}
+	for _, candidate := range []string{alias, "/generated_images/../private.png", "/tmp/generated_images/turn/result.png"} {
+		if _, err := readNativeImage(root, candidate, map[string]bool{path: true}); err == nil {
+			t.Fatalf("unsafe or old image accepted: %s", candidate)
+		}
+	}
+	link := filepath.Join(folder, "link.png")
+	if err := os.Symlink(path, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readNativeImage(root, "/generated_images/turn/link.png", map[string]bool{}); err == nil {
+		t.Fatal("symlink accepted")
 	}
 }

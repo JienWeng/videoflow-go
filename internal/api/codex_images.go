@@ -56,6 +56,12 @@ func readNativeImage(root, path string, before map[string]bool) (providers.Gener
 	if err != nil {
 		return empty, err
 	}
+	// image_gen may report its virtual /generated_images/ path rather than
+	// CODEX_HOME's physical path. Resolve only that exact namespace; the
+	// containment, freshness and symlink checks below remain authoritative.
+	if strings.HasPrefix(path, "/generated_images/") {
+		path = filepath.Join(root, strings.TrimPrefix(path, "/generated_images/"))
+	}
 	path, err = filepath.Abs(path)
 	if err != nil {
 		return empty, err
