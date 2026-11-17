@@ -25,7 +25,7 @@
  async function reviewReference(approved:boolean){if(!detail)return;reviewBusy=true;try{const updated=await post(`/assets/${detail.id}/review`,{approved,expected_updated_at:detail.updated_at});assets=assets.map((a:any)=>a.id===updated.id?updated:a);detail=updated;toast.success(approved?'Reference approved for reuse':'Reference rejected');}catch(e){toast.error((e as Error).message)}finally{reviewBusy=false}}
 
  function closeDetail(){if(identityBusy||reviewBusy)return;if(detail&&assetDetailsDirty()&&!window.confirm('Discard unsaved identity changes?'))return;detail=null;}
- function openDetail(asset:any){if(detail&&detail.id!==asset.id&&assetDetailsDirty()&&!window.confirm('Discard unsaved identity changes?'))return;detail=asset;assetNameDraft=asset.name;assetDescriptionDraft=asset.description??'';void loadUsage(asset.id);identityTraits=Object.entries(asset.metadata_json?.locked_traits??{}).map(([name,value])=>({name,value:String(value)}));}
+ function openDetail(asset:any){if(detail&&detail.id!==asset.id&&assetDetailsDirty()&&!window.confirm('Discard unsaved identity changes?'))return;if(detail?.id!==asset.id)detailedView=false;detail=asset;assetNameDraft=asset.name;assetDescriptionDraft=asset.description??'';void loadUsage(asset.id);identityTraits=Object.entries(asset.metadata_json?.locked_traits??{}).map(([name,value])=>({name,value:String(value)}));}
  async function saveIdentity(){if(!detail)return;identityBusy=true;try{const traits:Record<string,string>={};for(const row of identityTraits){if(!row.name.trim()||!row.value.trim())throw new Error('Each identity trait needs a name and value');if(traits[row.name.trim()])throw new Error('Trait names must be unique');traits[row.name.trim()]=row.value.trim()}const updated=await patch(`/assets/${detail.id}`,{expected_updated_at:detail.updated_at,name:assetNameDraft,description:assetDescriptionDraft,locked_traits:traits});assets=assets.map((a:any)=>a.id===updated.id?updated:a);detail=updated;assetNameDraft=updated.name;assetDescriptionDraft=updated.description??'';identityTraits=Object.entries(updated.metadata_json?.locked_traits??{}).map(([name,value])=>({name,value:String(value)}));toast.success('Asset details saved');}catch(e){toast.error((e as Error).message)}finally{identityBusy=false}}
 
   import { protectDraft } from '$lib/protect-draft';
@@ -91,6 +91,7 @@
 
   // --- lightbox / detail ---
   let detail: any = $state(null);
+  let detailedView = $state(false);
 
   // --- describe with AI ---
   let describeTarget: any = $state(null);
@@ -457,15 +458,16 @@
   <Dialog.Content class="max-h-[90vh] overflow-y-auto max-w-4xl sm:max-w-4xl">
     <Dialog.Header>
       <Dialog.Title class="truncate">{detail?.name || detail?.id}</Dialog.Title>
-      <Dialog.Description>{canonical(detail?.type)} · {detail?.id}</Dialog.Description>
+      <Dialog.Description>{canonical(detail?.type).replaceAll('_',' ')}</Dialog.Description>
+      <div class="flex gap-1 pt-2" role="group" aria-label="Asset view"><Button size="sm" variant={!detailedView?'secondary':'ghost'} aria-pressed={!detailedView} onclick={()=>detailedView=false}>Simple</Button><Button size="sm" variant={detailedView?'secondary':'ghost'} aria-pressed={detailedView} onclick={()=>detailedView=true}>Details{assetDetailsDirty()?' · Unsaved':''}</Button></div>
     </Dialog.Header>
     {#if detail}
-      <div class="grid gap-4 md:grid-cols-[minmax(0,1fr)_260px]">
-        <div class="flex items-center justify-center bg-muted rounded-md min-h-[240px]">
+      <div class="grid items-start gap-6 md:grid-cols-[minmax(0,1fr)_280px]">
+        <div class="flex items-center justify-center bg-muted rounded-md h-[45dvh] md:h-[60dvh] overflow-hidden">
           {#if mediaKind(detail)==='video'}
             <!-- svelte-ignore a11y_media_has_caption -->
             <video controls preload="metadata" src={mediaUrl(detail.file_path)}
-              class="max-h-[70vh] w-full rounded-md bg-black object-contain"></video>
+              class="h-full w-full rounded-md bg-black object-contain"></video>
           {:else if mediaKind(detail)==='audio'}
             {#if mediaUrl(detail.file_path)}
               <audio controls preload="metadata" src={mediaUrl(detail.file_path)} class="w-full"></audio>
@@ -473,27 +475,25 @@
               <p class="p-8 text-sm text-muted-foreground">This audio file has no playable local URL.</p>
             {/if}
           {:else if mediaUrl(detail.file_path) && mediaKind(detail)==='image'}
-            <img class="max-h-[70vh] w-auto max-w-full rounded-md object-contain"
+            <img class="h-full w-full rounded-md object-contain"
               src={mediaUrl(detail.file_path)} alt={detail.name || detail.id} />
           {:else}
             <div class="p-8 text-sm text-muted-foreground">This file type cannot be previewed here.</div>
           {/if}
         </div>
         <div class="space-y-3 text-xs">
- {#if detail.metadata_json?.consistency_review}<section aria-label="Reference consistency review"><h3 class="font-semibold">Reference review · {detail.metadata_json.consistency_review}</h3><p class="mt-2 text-muted-foreground">Compare this image with the current scene, shots, visual style, characters, reference assets and locked traits. Approve only when their appearance is consistent. Rejection keeps the image for inspection and prevents reuse.</p>{#if detail.metadata_json.scene_id}<a class="mt-2 inline-block underline" href={`/scenes?scene_id=${encodeURIComponent(detail.metadata_json.scene_id)}`}>Open scene {detail.metadata_json.scene_id}</a>{/if}<div class="mt-3 flex gap-2"><Button size="sm" disabled={reviewBusy||identityBusy||assetDetailsDirty()||(detail.metadata_json.consistency_review==='approved'&&!usage[detail.id]?.review_stale)} onclick={()=>reviewReference(true)}>{usage[detail.id]?.review_stale?'Approve for current scene':'Approve reference'}</Button><Button size="sm" variant="outline" disabled={reviewBusy||identityBusy||assetDetailsDirty()||detail.metadata_json.consistency_review==='rejected'} onclick={()=>reviewReference(false)}>Reject reference</Button></div></section>{/if}
+ {#if detail.metadata_json?.consistency_review}<section aria-label="Reference consistency review"><h3 class="font-semibold">Reference review · {detail.metadata_json.consistency_review}</h3><p class="mt-2 text-muted-foreground">Check the appearance before using this reference.</p><details class="mt-2"><summary class="cursor-pointer py-2">Review guidance</summary><p class="mt-2 text-muted-foreground">Compare with your characters, scene and visual style. Rejecting keeps the image for inspection and prevents reuse.</p></details>{#if detail.metadata_json.scene_id}<a class="mt-2 inline-block underline" href={`/scenes?scene_id=${encodeURIComponent(detail.metadata_json.scene_id)}`}>Open scene {detail.metadata_json.scene_id}</a>{/if}<div class="mt-3 flex flex-wrap gap-2"><Button size="sm" disabled={reviewBusy||identityBusy||assetDetailsDirty()||(detail.metadata_json.consistency_review==='approved'&&!usage[detail.id]?.review_stale)} onclick={()=>reviewReference(true)}>{usage[detail.id]?.review_stale?'Approve for current scene':'Approve reference'}</Button><Button size="sm" variant="outline" disabled={reviewBusy||identityBusy||assetDetailsDirty()||detail.metadata_json.consistency_review==='rejected'} onclick={()=>reviewReference(false)}>Reject reference</Button></div></section>{/if}
+ {#if detailedView}
  {#if ['prop','location'].includes(detail.type)}<section aria-label="Asset versions"><h3 class="font-semibold">Versions</h3><p class="mt-2 text-xs text-muted-foreground">Generate a candidate with the same identity locks. Scenes keep their selected version until you explicitly replace it.</p><ul class="mt-2 space-y-1">{#each assets.filter(a=>versionGroup(a)===versionGroup(detail)) as version}<li><button type="button" class="min-h-11 text-left underline underline-offset-4" disabled={version.id===detail.id} onclick={()=>openDetail(version)}>{version.name} · {version.id===detail.id?'Viewing':version.metadata_json?.consistency_review==='pending'?'Needs review':version.metadata_json?.consistency_review==='rejected'?'Rejected':'Approved'}</button></li>{/each}</ul><Button variant="outline" size="sm" disabled={!!regenerating||identityBusy||reviewBusy} onclick={()=>requestRegeneration(detail)}>{regenerating===detail.id?'Generating version…':'Generate new version'}</Button></section>{/if}
- <section aria-label="Asset usage"><h3 class="font-semibold">Used in this project</h3>{#if usageError[detail.id]}<p class="mt-2 text-muted-foreground">{usageError[detail.id]}</p><Button variant="outline" size="sm" onclick={()=>loadUsage(detail.id)}>Reload usage</Button>{:else if !usage[detail.id]}<p class="mt-2 text-muted-foreground" role="status">Checking usage…</p>{:else if usage[detail.id].uses.length}<ul class="mt-2 space-y-2">{#each usage[detail.id].uses as use}<li>{#if use.kind==='scene'}<a class="inline-flex min-h-11 items-center underline underline-offset-4" href={`/scenes?scene_id=${encodeURIComponent(use.id)}`}>{use.name} · Scene studio</a>{:else if use.kind==='character'}<a class="inline-flex min-h-11 items-center underline underline-offset-4" href={`/characters/${encodeURIComponent(use.id)}`}>{use.name} · Character</a>{:else}<span>{use.name} · {use.kind}</span>{/if}</li>{/each}</ul><p class="mt-2 text-xs text-muted-foreground">This shared asset cannot be deleted while it is in use. Remove a scene binding in its studio; existing renders retain their original references.</p>{:else}<p class="mt-2 text-muted-foreground">No active bindings. This asset is available for reuse.</p>{/if}</section>
+ {/if}
+ <details><summary class="cursor-pointer py-2 font-semibold">Used in this project</summary><section aria-label="Asset usage">{#if usageError[detail.id]}<p class="mt-2 text-muted-foreground">{usageError[detail.id]}</p><Button variant="outline" size="sm" onclick={()=>loadUsage(detail.id)}>Reload usage</Button>{:else if !usage[detail.id]}<p class="mt-2 text-muted-foreground" role="status">Checking usage…</p>{:else if usage[detail.id].uses.length}<ul class="mt-2 space-y-2">{#each usage[detail.id].uses as use}<li>{#if use.kind==='scene'}<a class="inline-flex min-h-11 items-center underline underline-offset-4" href={`/scenes?scene_id=${encodeURIComponent(use.id)}`}>{use.name} · Scene studio</a>{:else if use.kind==='character'}<a class="inline-flex min-h-11 items-center underline underline-offset-4" href={`/characters/${encodeURIComponent(use.id)}`}>{use.name} · Character</a>{:else}<span>{use.name} · {use.kind}</span>{/if}</li>{/each}</ul><p class="mt-2 text-xs text-muted-foreground">This shared asset cannot be deleted while it is in use. Remove a scene binding in its studio; existing renders retain their original references.</p>{:else}<p class="mt-2 text-muted-foreground">No active bindings. This asset is available for reuse.</p>{/if}</section>
+ </details>
+ {#if detailedView}
  <section aria-label="Asset identity locks"><h3 class="font-semibold">Asset details &amp; identity</h3><div class="mt-3 space-y-3"><label class="block text-sm">Asset name<input class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2" disabled={identityBusy||reviewBusy} bind:value={assetNameDraft}/></label><label class="block text-sm">Asset description<textarea class="mt-1 min-h-24 w-full rounded-md border border-input bg-background px-3 py-2" disabled={identityBusy||reviewBusy} bind:value={assetDescriptionDraft}></textarea></label></div><p class="text-muted-foreground">Keep specific traits across scenes, for example kind: car and color: red. Select this reference in each scene studio. Appearance changes require a new reference review.</p>
  {#each identityTraits as row,i}<div class="mt-2 flex gap-2"><input aria-label={`Trait ${i+1} name`} class="min-w-0 w-1/3 rounded border p-2" disabled={identityBusy||reviewBusy} bind:value={row.name} placeholder="color"/><input aria-label={`Trait ${i+1} value`} class="min-w-0 flex-1 rounded border p-2" disabled={identityBusy||reviewBusy} bind:value={row.value} placeholder="red"/><button aria-label={`Remove trait ${i+1}`} disabled={identityBusy||reviewBusy} onclick={()=>identityTraits=identityTraits.filter((_,n)=>n!==i)}>Remove</button></div>{/each}
  <Button size="sm" variant="outline" disabled={identityBusy||identityTraits.length>=32} onclick={()=>identityTraits=[...identityTraits,{name:'',value:''}]}>Add trait</Button><Button size="sm" disabled={identityBusy||reviewBusy||!assetDetailsDirty()} onclick={saveIdentity}>{identityBusy?'Saving…':'Save asset details'}</Button></section>
 
           {#each nodeTools('asset',detail.id,detail).filter((tool:any)=>tool.href.startsWith('/compositions')) as tool}<Button variant="outline" href={tool.href}>{tool.label}</Button>{/each}
-          {#if detail.description}
-            <div>
-              <div class="text-muted-foreground mb-0.5">Description</div>
-              <div>{detail.description}</div>
-            </div>
-          {/if}
           {#if detail.character_id}
             <div>
               <div class="text-muted-foreground mb-0.5">Character</div>
@@ -508,6 +508,7 @@
               </div>
             </div>
           {/if}
+          <details><summary class="cursor-pointer py-2 font-semibold">Technical information</summary><p class="mb-2 break-all text-muted-foreground">{detail.id}</p>
           <div>
             <div class="text-muted-foreground mb-0.5">File</div>
             <div class="break-all">{detail.file_path ?? '—'}</div>
@@ -524,6 +525,7 @@
               <pre class="whitespace-pre-wrap break-all rounded-md bg-muted p-2 text-[11px]">{JSON.stringify(detail.metadata_json, null, 2)}</pre>
             </div>
           {/if}
+          </details>
           <div class="flex flex-wrap gap-1 pt-1">
             <Button variant="outline" size="sm" onclick={() => openDescribe(detail)}>
               <Sparkles class="size-3 mr-1" />Describe with AI
@@ -538,6 +540,7 @@
               <Trash2 class="size-3 mr-1" />Delete
             </Button>
           </div>
+          {/if}
         </div>
       </div>
     {/if}
