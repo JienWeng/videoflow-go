@@ -39,6 +39,8 @@
   } from './transform';
   import { layout, layoutFresh } from './layout';
   import EntityNode from './EntityNode.svelte';
+  import Connections from './Connections.svelte';
+  import {connectionRoute,editableConnection,relationshipLabels} from './connections.mjs';
   import FlowHelper from './FlowHelper.svelte';
   import CanvasMenu from './CanvasMenu.svelte';
   import NodePanel from './NodePanel.svelte';
@@ -47,6 +49,8 @@
 
   let nodes = $state.raw<Node[]>([]);
   let edges = $state.raw<Edge[]>([]);
+  let connectionsOpen=$state(false);
+  let connectionBusy=$state(false);
   let flow: ReturnType<typeof useSvelteFlow> | undefined;
   let canvasRoot: HTMLDivElement | undefined = $state();
 
@@ -116,7 +120,7 @@
       return {
         ...e,
         selected: e.id === selE,
-        label: showLabel ? rel : undefined,
+        label: showLabel ? (relationshipLabels[rel]??rel) : undefined,
         // The Svelte edge label is an HTML div; labelStyle is applied as its
         // style string, so the chip background lives here (React-flow's
         // labelBgStyle/labelBgPadding props are ignored by Svelte Flow).
@@ -239,50 +243,26 @@
   }
 
   async function handleConnect(conn: Connection) {
-    const sk = kindOf(conn.source);
-    const tk = kindOf(conn.target);
-    try {
-      if (sk === 'character' && tk === 'scene') {
-        await post(`/scenes/${conn.target}/cast/${conn.source}`);
-      } else if (sk === 'scene' && tk === 'character') {
-        await post(`/scenes/${conn.source}/cast/${conn.target}`);
-      } else if (sk === 'asset' && tk === 'shot') {
-        await post(`/shots/${conn.target}/assets/${conn.source}`);
-      } else if (sk === 'shot' && tk === 'asset') {
-        await post(`/shots/${conn.source}/assets/${conn.target}`);
-      } else {
-        // Invalid pair: the dropped edge was never committed to the DOM by
-        // xyflow's onconnect path the way a node delete is, so there's nothing
-        // to undo — just tell the user. No refresh() (it would needlessly
-        // re-fetch and reset the viewport on a no-op).
-        toast.error('Connect character↔scene or asset↔shot');
-        return;
-      }
-      toast.success('Connected');
-      await refresh();
-    } catch (err: any) {
-      toast.error(err.message);
-      await refresh();
-    }
+    if(connectionBusy)return;
+    const route=connectionRoute(nodes.find(n=>n.id===conn.source),nodes.find(n=>n.id===conn.target));
+    if(!route){toast.error('Connect scene cast, scene props or locations, or shot assets. Generated links are automatic.');return;}
+    if(edges.some(e=>((e.source===conn.source&&e.target===conn.target)||(e.target===conn.source&&e.source===conn.target))&&editableConnection(e,nodes.find(n=>n.id===conn.source),nodes.find(n=>n.id===conn.target)))){toast.info('These items are already connected');return;}
+    connectionBusy=true;
+    try{
+      const body=route.scene?{expected_updated_at:(await get(`/scenes/${route.scene}`)).updated_at}:undefined;
+      await post(route.path,body);toast.success(route.label+' connected');await refresh();
+    }catch(err:any){toast.error(err.message);await refresh();}finally{connectionBusy=false;}
   }
 
-  /** Detach a single relationship edge. Shared by the keyboard gesture and the
-   * native ondelete path. Returns true if it mapped to a real detach. */
-  async function detachEdge(edge: Edge): Promise<boolean> {
-    const sk = kindOf(edge.source);
-    const tk = kindOf(edge.target);
-    if (sk === 'scene' && tk === 'character') {
-      await del(`/scenes/${edge.source}/cast/${edge.target}`);
-    } else if (sk === 'character' && tk === 'scene') {
-      await del(`/scenes/${edge.target}/cast/${edge.source}`);
-    } else if (sk === 'shot' && tk === 'asset') {
-      await del(`/shots/${edge.source}/assets/${edge.target}`);
-    } else if (sk === 'asset' && tk === 'shot') {
-      await del(`/shots/${edge.target}/assets/${edge.source}`);
-    } else {
-      return false;
-    }
-    return true;
+  async function detachEdge(edge:Edge):Promise<boolean>{
+    const route=editableConnection(edge,nodes.find(n=>n.id===edge.source),nodes.find(n=>n.id===edge.target));
+    if(!route)return false;
+    const body=route.scene?{expected_updated_at:(await get(`/scenes/${route.scene}`)).updated_at}:undefined;
+    await del(route.path,body);return true;
+  }
+  async function disconnect(edge:Edge){
+    if(connectionBusy)return;connectionBusy=true;
+    try{if(await detachEdge(edge))toast.success('Disconnected');await refresh();}catch(err:any){toast.error(err.message);await refresh();}finally{connectionBusy=false;}
   }
 
   async function handleDelete({
@@ -409,6 +389,7 @@
     deleteKey={null}
     {colorMode}
     proOptions={{ hideAttribution: true }}
+    isValidConnection={(conn)=>!!connectionRoute(nodes.find(n=>n.id===conn.source),nodes.find(n=>n.id===conn.target))}
     onconnect={handleConnect}
     ondelete={handleDelete}
     onnodeclick={({ node }) => {
@@ -521,7 +502,8 @@
       {#if legendOpen}<section aria-label="Canvas guide" class="mt-2 space-y-3 rounded-lg border border-border bg-popover p-3 text-sm text-popover-foreground"><p>Select an item to edit it. Drag the background to move around; use Fit all to return.</p><p class="text-xs text-muted-foreground">Connect a character to a scene, or an asset to a shot, by dragging between the side handles. Right-click an item for more actions.</p><div class="flex flex-wrap gap-x-4 gap-y-2">{#each LEGEND_KINDS as kind}<span class="flex items-center gap-2 text-xs"><span class="size-2 rounded-full" style={`background:${kindColor(kind)}`}></span>{KIND_LABELS[kind]}</span>{/each}</div></section>{/if}
     </Panel>
 
-    {#if panelNode}<Panel position="bottom-center" class="z-10 max-w-[calc(100%-6rem)]"><div role="toolbar" aria-label="Selected item actions" class="flex flex-wrap items-center gap-1 rounded-xl border border-border bg-card p-2"><span class="max-w-40 truncate px-2 text-xs font-medium">{panelNode.data?.label}</span><Button variant="ghost" size="sm" onclick={()=>oninspect?oninspect():onselect(panelNode)}>Details</Button>{#if panelNode.data?.kind==='scene'&&onopenscene}<Button variant="ghost" size="sm" onclick={()=>onopenscene?.(panelNode!.id)}>Scene stages</Button>{/if}{#if panelNode.data?.kind==='output'}<Button variant="ghost" size="sm" href={`/editor/${panelNode.id}`}>Edit video</Button>{/if}<Button variant="ghost" size="sm" onclick={focusConnections} aria-label="Focus selected item and connections"><Focus class="size-3.5"/>Connections</Button><Button variant="ghost" size="icon" aria-label="Clear selection" onclick={()=>selectNode(null)}><X class="size-4"/></Button></div></Panel>{/if}
+    {#if panelNode&&connectionsOpen}<Panel position="top-right" class="z-20"><Connections node={panelNode} {nodes} {edges} busy={connectionBusy} onconnect={(source,target)=>handleConnect({source,target,sourceHandle:null,targetHandle:null})} ondetach={disconnect} onselect={selectNode} onclose={()=>connectionsOpen=false}/></Panel>{/if}
+    {#if panelNode}<Panel position="bottom-center" class="z-10 max-w-[calc(100%-6rem)]"><div role="toolbar" aria-label="Selected item actions" class="flex flex-wrap items-center gap-1 rounded-xl border border-border bg-card p-2"><span class="max-w-40 truncate px-2 text-xs font-medium">{panelNode.data?.label}</span><Button variant="ghost" size="sm" onclick={()=>oninspect?oninspect():onselect(panelNode)}>Details</Button>{#if panelNode.data?.kind==='scene'&&onopenscene}<Button variant="ghost" size="sm" onclick={()=>onopenscene?.(panelNode!.id)}>Scene stages</Button>{/if}{#if panelNode.data?.kind==='output'}<Button variant="ghost" size="sm" href={`/editor/${panelNode.id}`}>Edit video</Button>{/if}<Button variant="ghost" size="sm" onclick={()=>{connectionsOpen=!connectionsOpen;if(connectionsOpen)focusConnections();}} aria-expanded={connectionsOpen} aria-label="Manage selected item connections"><Focus class="size-3.5"/>Connections</Button><Button variant="ghost" size="icon" aria-label="Clear selection" onclick={()=>selectNode(null)}><X class="size-4"/></Button></div></Panel>{/if}
 
     <Background />
     <Controls showFitView={false} />

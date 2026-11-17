@@ -1,0 +1,4 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {connectionRoute,editableConnection} from './connections.mjs';
+const n=(id,kind,asset_type)=>({id,data:{kind,asset_type}});
+test('editable pairs normalize either drag direction',()=>{for(const [a,b] of [[n('s','scene'),n('c','character')],[n('h','shot'),n('a','asset')],[n('s','scene'),n('a','asset','prop')],[n('s','scene'),n('a','asset','location')]]){assert(connectionRoute(a,b));assert.deepEqual(connectionRoute(a,b),connectionRoute(b,a));}});
+test('incompatible pairs, self links and generated provenance are protected',()=>{const s=n('s','scene'),a=n('a','asset','storyboard');assert.equal(connectionRoute(s,a),null);assert.equal(connectionRoute(s,s),null);assert.equal(connectionRoute(s,n('o','output')),null);assert.equal(editableConnection({data:{rel:'reference'}},n('c','character'),n('a','asset')),null);assert.equal(editableConnection({data:{rel:'prop'}},s,n('a','asset','prop')),null);});

@@ -49,7 +49,7 @@ func TestChatUsesOwnedSelectionAndPinsCompatibleAction(t *testing.T) {
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
 		raw, _ := json.Marshal(payload)
-		sawContext = strings.Contains(string(raw), "selected_item") && strings.Contains(string(raw), "crimson car")
+		sawContext = strings.Contains(string(raw), "selected_item") && strings.Contains(string(raw), "crimson car") && strings.Contains(string(raw), "canvas") && strings.Contains(string(raw), "connected camera test")
 		content := `{"reply":"Refine selected scene","action":"refine_scene","scene_id":"wrong-scene"}`
 		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": content}}}})
 	})
@@ -58,6 +58,10 @@ func TestChatUsesOwnedSelectionAndPinsCompatibleAction(t *testing.T) {
 		ID string `json:"id"`
 	}
 	json.Unmarshal(created.Body.Bytes(), &scene)
+	shot := call(t, s, "POST", "/scenes/"+scene.ID+"/shots", `{"shot_order":1,"duration":4,"prompt":"connected camera test"}`)
+	if shot.Code != 201 {
+		t.Fatalf("seed shot: %d %s", shot.Code, shot.Body.String())
+	}
 	payload, _ := json.Marshal(map[string]any{"message": "Make the lighting warmer", "selected": map[string]string{"kind": "scene", "id": scene.ID}})
 	result := call(t, s, "POST", "/chat", string(payload))
 	if result.Code != 200 {

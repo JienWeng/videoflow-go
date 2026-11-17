@@ -62,9 +62,11 @@ export function toFlow(g: ApiGraph): { nodes: Node[]; edges: Edge[] } {
   const edges: Edge[] = g.edges.map((e) => {
     const color = edgeColor(e.label);
     return {
-      id: `${e.source}->${e.target}`,
+      id: `${e.source}->${e.target}:${e.label}`,
       source: e.source,
       target: e.target,
+      sourceHandle: 'r',
+      targetHandle: 'l',
       // Relationship label is kept in `data.rel` always; the visible `label`
       // is toggled on by EntityCanvas only on hover/selection to avoid clutter.
       data: { rel: e.label || '' },

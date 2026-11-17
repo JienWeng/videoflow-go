@@ -62,8 +62,9 @@
     id="l"
     type="source"
     position={Position.Left}
+    isConnectable={!isDerived}
     class="entity-handle"
-    title="Drag to connect"
+    title={isDerived?'Generated relationship':'Connect cast, scene props or locations, or shot assets'}
   />
   <div class="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground"><Icon class="size-3 shrink-0" /><span>{KIND_LABELS[kind] ?? kind}</span>{#if data.duration}<span class="ml-auto">{data.duration}s</span>{/if}</div>
   <div class="flex items-center gap-1.5">
@@ -82,8 +83,9 @@
     id="r"
     type="source"
     position={Position.Right}
+    isConnectable={!isDerived}
     class="entity-handle"
-    title="Drag to connect"
+    title={isDerived?'Generated relationship':'Connect cast, scene props or locations, or shot assets'}
   />
 </div>
 

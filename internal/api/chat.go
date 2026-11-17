@@ -64,8 +64,13 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 		assetContext = append(assetContext, map[string]any{"id": a.ID, "name": a.Name, "type": a.Type, "character_id": a.CharacterID, "description": a.Description, "metadata": a.MetadataJSON})
 	}
+	graph, graphErr := s.database.GetGraphData(projectID)
+	if graphErr != nil {
+		http.Error(w, "could not load project connections", 500)
+		return
+	}
 	style, _ := s.database.GetStyleGuide(projectID)
-	contextJSON, _ := json.Marshal(map[string]any{"style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext})
+	contextJSON, _ := json.Marshal(map[string]any{"style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext, "canvas": graph})
 	ctx := r.Context()
 	var plannedSnapshot *directorContext
 	if s.cfg.UseLocalText {

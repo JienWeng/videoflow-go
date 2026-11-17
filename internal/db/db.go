@@ -1392,7 +1392,7 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 				nodes = append(nodes, models.GraphNode{
 					ID:    sh.ID,
 					Type:  "shot",
-					Label: fmt.Sprintf("#%d %s", sh.ShotOrder+1, sh.Prompt),
+					Label: fmt.Sprintf("#%d %s", sh.ShotOrder, sh.Prompt),
 					Data: map[string]interface{}{
 						"scene_id":   sh.SceneID,
 						"shot_order": sh.ShotOrder,
@@ -1434,7 +1434,9 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 				Type:  "render_job",
 				Label: fmt.Sprintf("%s (%s)", j.Status, modelName),
 				Data: map[string]interface{}{
-					"status": j.Status,
+					"status":   j.Status,
+					"scene_id": j.SceneID,
+					"shot_id":  j.ShotID,
 				},
 			})
 			parentID := ""
@@ -1500,8 +1502,20 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 		knownNodes[n.ID] = true
 	}
 	validEdges := []models.GraphEdge{}
+	used := map[string]bool{}
 	for _, e := range edges {
-		if knownNodes[e.Source] && knownNodes[e.Target] {
+		if e.Label == "uses" {
+			used[e.Source+"\x00"+e.Target] = true
+		}
+	}
+	seen := map[string]bool{}
+	for _, e := range edges {
+		pair := e.Source + "\x00" + e.Target
+		key := pair + "\x00" + e.Label
+		// A current usage supersedes generation provenance on the same pair.
+		provenance := e.Label == "storyboard" || e.Label == "prop" || e.Label == "location" || e.Label == "background" || e.Label == "other"
+		if knownNodes[e.Source] && knownNodes[e.Target] && !seen[key] && !(provenance && used[pair]) {
+			seen[key] = true
 			validEdges = append(validEdges, e)
 		}
 	}
