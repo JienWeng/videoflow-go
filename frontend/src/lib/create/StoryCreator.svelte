@@ -1,4 +1,9 @@
 <script lang="ts">
+ import CreativeBriefEditor from '$lib/brief/CreativeBriefEditor.svelte';
+ import {normalizeBrief,confirmedBriefRequest,missingBriefFields}from'$lib/brief/brief.mjs';
+ let creativeBrief=$state(normalizeBrief()),briefConfirmed=$state(false);
+ function syncBrief(brief:ReturnType<typeof normalizeBrief>){creativeBrief=brief;briefConfirmed=false;styleTouched=true;if(brief.style_preset_id)style=brief.style_preset_id;if(brief.aspect_ratio)aspectRatio=brief.aspect_ratio;if(brief.scene_count)sceneCount=brief.scene_count;if(brief.language)language=brief.language;duration=brief.target_duration?String(brief.target_duration):'';instruction=brief.instruction;}
+
  import ProductionControls from "$lib/production/ProductionControls.svelte";
  let productionPlans=$state<Record<string,string>>({}),productionBlocked=$state<Record<string,boolean>>({}),productionVersions=$state<Record<string,boolean>>({}),productionQuotes=$state<Record<string,{calls:number;seconds:number;storyboards:number}>>({});
   let { embedded = false }:{embedded?:boolean}=$props();
@@ -181,6 +186,7 @@
   async function createVideo(e: SubmitEvent) {
     e.preventDefault();
     if (!idea.trim() || busy) return;
+ if(!briefConfirmed||missingBriefFields({...creativeBrief,idea:idea.trim()}).length){opError='Complete and confirm the creative brief before creating';return;}
     busy = true;
     opError = '';
     stages = [];
@@ -192,18 +198,11 @@
     }
     try {
       const response = await post('/videos/generate?background=true', {
-        idea: idea.trim(),
+        ...confirmedBriefRequest({...creativeBrief,idea:idea.trim()},briefConfirmed),
         review_before_render:true,
-        scene_count:sceneCount,
-        style,
-        ...(styleOptions.length?{style_preset_id:style}:{}),
-        aspect_ratio: aspectRatio,
-        language,
-        conversation_mode: conversationMode,
         character_ids:selectedCharacters,
-        create_characters:createCharacters,
-        ...(duration ? { target_duration: Number(duration) } : {}),
-        ...(instruction.trim() ? { instruction: instruction.trim() } : {})
+        create_characters:createCharacters
+
       });
       submitted=true;
       opId = response.op_id;
@@ -273,65 +272,29 @@
         <label class="mb-2 block text-sm font-medium" for="idea">What video do you want to make?</label>
         <textarea
           id="idea"
-          bind:value={idea}
+          value={idea}
+          oninput={e=>{idea=e.currentTarget.value;creativeBrief={...creativeBrief,idea};briefConfirmed=false}}
           required
           placeholder="A warm 2D story about two siblings learning why families celebrate the Mid-Autumn Festival…"
           class="min-h-40 w-full resize-y rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring"
         ></textarea>
       </div>
 
-      <label class="grid gap-1 text-sm"><span class="font-medium">Number of scene clips</span><input type="number" min="1" max="20" bind:value={sceneCount} class="rounded-lg border bg-background px-3 py-2"/><span class="text-xs text-muted-foreground">Each scene generates its own image and video. Start with one clip to test your setup.</span></label>
+
       <fieldset class="space-y-2 rounded-lg border p-3"><legend class="text-sm font-medium">Characters in this story</legend>
-       <label class="flex items-start gap-2 text-sm"><input class="mt-1" type="checkbox" bind:checked={createCharacters}/><span>Create missing characters from the story</span></label>
+       <label class="flex items-start gap-2 text-sm"><input class="mt-1" type="checkbox" bind:checked={createCharacters} onchange={()=>briefConfirmed=false}/><span>Create missing characters from the story</span></label>
        <p class="text-xs leading-relaxed text-muted-foreground">{#if preflight?.character_references===false}New character profiles are saved when needed. Add reference images in Library to guide their appearance. Voice setup is separate.{:else}New character profiles are saved when needed. Reference sheets are generated automatically for story characters without images. Essential props and locations are matched against Library; missing images are generated. These image calls may incur provider charges. Scene images follow automatically. Voice setup is separate.{/if}</p>
        {#if characters.length}
-       {#each characters as character(character.id)}<label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:group={selectedCharacters} value={character.id}/>{character.name}</label>{/each}
+       {#each characters as character(character.id)}<label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:group={selectedCharacters} onchange={()=>briefConfirmed=false} value={character.id}/>{character.name}</label>{/each}
        <p class="text-xs text-muted-foreground">Select existing characters to reuse them. Their saved identities stay unchanged.</p>
        {/if}
       </fieldset>
       {#if styleOptions.find(p=>p.id===style)}{@const selected=styleOptions.find(p=>p.id===style)}<details class="text-sm"><summary class="cursor-pointer text-muted-foreground">About {selected.name}</summary><p class="mt-2">{selected.description}</p><dl class="mt-2 space-y-2">{#each Object.entries(selected.guidance??{}) as [stage,text]}<div><dt class="font-medium capitalize">{stage}</dt><dd class="text-muted-foreground">{String(text)}</dd></div>{/each}</dl><a href="/settings#presets" class="mt-2 inline-block underline">Manage preset packs</a></details>{/if}
-      <div class="grid gap-3 sm:grid-cols-2">
-        <label class="grid gap-1.5 text-sm">
-          <span class="font-medium">Visual style</span>
-          <select bind:value={style} onchange={()=>styleTouched=true} class="rounded-lg border border-input bg-background px-3 py-2 text-sm">
-            {#if preflight?.has_project_style||defaultStyle==='project-style'}<option value="project-style">Project style</option>{/if}
-            {#if styleOptions.length}{#each styleOptions as option(option.id)}<option value={option.id}>{option.name}{option.id.startsWith('community:')?' · Community':''}</option>{/each}
-            {:else}<option value="2d-picture-book">2D picture book</option><option value="cinematic">Cinematic</option>{/if}
-          </select>
-          {#if presetError}<span role="status" class="text-xs text-muted-foreground">{presetError}</span>{/if}
-
-        </label>
-        <label class="grid gap-1.5 text-sm">
-          <span class="font-medium">Format</span>
-          <select bind:value={aspectRatio} class="rounded-lg border border-input bg-background px-3 py-2 text-sm">
-            <option value="9:16">Vertical · 9:16</option>
-            <option value="16:9">Landscape · 16:9</option>
-            <option value="1:1">Square · 1:1</option>
-            <option value="3:4">Portrait · 3:4</option>
-            <option value="4:3">Landscape · 4:3</option>
-            <option value="21:9">Ultrawide · 21:9</option>
-          </select>
-        </label>
-        <label class="grid gap-1.5 text-sm">
-          <span class="font-medium">Language</span>
-          <select bind:value={language} class="rounded-lg border border-input bg-background px-3 py-2 text-sm">
-            <option>English</option>
-            <option>Chinese</option>
-            <option>Malay</option>
-          </select>
-        </label>
-        <div class="grid gap-1.5 text-sm">
-          <span class="font-medium">Dialogue</span>
-          <span class="text-muted-foreground">Conversational dialogue is applied to generated scenes.</span>
-        </div>
-      </div>
+      <CreativeBriefEditor bind:value={creativeBrief} bind:confirmed={briefConfirmed} disabled={busy} onchange={syncBrief}/>
 
       <div class="rounded-lg border border-border bg-card p-4 text-sm">
-        <h2 class="font-medium">Before you create</h2>
-        <p class="mt-2 text-muted-foreground">
-          Request brief: {language} dialogue, {aspectRatio} format, {preflight?.effective_style ?? style} visual style.
-          {#if instruction.trim()} Direction: {instruction.trim()}{:else} No extra direction added.{/if}
-        </p>
+        <h2 class="font-medium">Generation setup</h2>
+        <p class="mt-2 text-muted-foreground">Uses the confirmed creative brief above. Existing cast: {selectedCharacters.length}. {createCharacters?'Missing story characters can be created automatically.':'Use the selected existing cast.'}</p>
         {#if preflightError}
           <p class="mt-2 text-destructive">Could not check provider setup: {preflightError}</p>
         {:else if !preflight}
@@ -362,13 +325,9 @@
       <details class="rounded-lg border border-border px-4 py-3 text-sm">
         <summary class="cursor-pointer font-medium">More options</summary>
         <div class="mt-3 grid gap-3 sm:grid-cols-2">
-          <label class="grid gap-1.5">
-            <span class="text-muted-foreground">Target duration in seconds</span>
-            <input type="number" min={sceneCount} max="300" bind:value={duration} placeholder="Automatic" class="rounded-lg border border-input bg-background px-3 py-2" />
-          </label>
           <label class="grid gap-1.5 sm:col-span-2">
             <span class="text-muted-foreground">Direction for the AI</span>
-            <input bind:value={instruction} placeholder="Warm, clear dialogue with short lines…" class="rounded-lg border border-input bg-background px-3 py-2" />
+            <input value={instruction} oninput={e=>{instruction=e.currentTarget.value;creativeBrief={...creativeBrief,instruction};briefConfirmed=false}} placeholder="Warm, clear dialogue with short lines…" class="rounded-lg border border-input bg-background px-3 py-2" />
           </label>
         </div>
       </details>
@@ -379,7 +338,7 @@
 
       {@render resultSummary()}
 
-      <Button type="submit" size="lg" class="w-full sm:w-auto" disabled={!idea.trim() || !preflight || preflight.missing.length > 0 || !!preflightError}>
+      <Button type="submit" size="lg" class="w-full sm:w-auto" disabled={!briefConfirmed||missingBriefFields({...creativeBrief,idea:idea.trim()}).length>0||!idea.trim() || !preflight || preflight.missing.length > 0 || !!preflightError}>
         <Sparkles class="mr-2 size-4" />Create video
       </Button>
     </form>

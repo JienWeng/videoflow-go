@@ -73,7 +73,18 @@ func (s *Server) handlePresetCatalog(w http.ResponseWriter, r *http.Request) {
 	}
 	project, _ := s.activeProjectID(r.Context())
 	_, hasStyle := s.effectiveStyle(project, "")
-	writeJSON(w, 200, map[string]any{"has_project_style": hasStyle, "presets": options, "packs": list, "built_in_count": 6})
+	entries := []map[string]any{}
+	for _, p := range options {
+		var entry map[string]any
+		_ = json.Unmarshal(voiceJSON(p), &entry)
+		entry["fingerprint"] = creativeStyleFingerprint(p)
+		entries = append(entries, entry)
+	}
+	var projectStyle any
+	if style, e := s.database.GetStyleGuide(project); e == nil && hasStyle {
+		projectStyle = map[string]any{"id": "project-style", "name": style.Name, "description": style.StylePrompt, "fingerprint": creativeStyleFingerprint(style)}
+	}
+	writeJSON(w, 200, map[string]any{"has_project_style": hasStyle, "project_style": projectStyle, "presets": entries, "packs": list, "built_in_count": 6})
 }
 func (s *Server) handlePresetPack(w http.ResponseWriter, r *http.Request) {
 	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, presets.MaxBytes))

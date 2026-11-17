@@ -11,6 +11,13 @@ import (
 )
 
 type generationBrief struct {
+	BriefVersion       int             `json:"brief_version,omitempty"`
+	BriefConfirmed     bool            `json:"brief_confirmed,omitempty"`
+	StyleFingerprint   string          `json:"style_fingerprint,omitempty"`
+	Tone               string          `json:"tone,omitempty"`
+	Audience           string          `json:"audience,omitempty"`
+	Platform           string          `json:"platform,omitempty"`
+	Resolution         string          `json:"resolution,omitempty"`
 	ReviewBeforeRender bool            `json:"review_before_render,omitempty"`
 	PresetID           string          `json:"style_preset_id,omitempty"`
 	CreativePreset     *presets.Preset `json:"creative_preset,omitempty"`
@@ -38,6 +45,9 @@ func (s *Server) effectiveStyle(projectID, choice string) (string, bool) {
 	return "warm 2D children's picture-book illustration, clean shapes, expressive faces", false
 }
 func (s *Server) prepareBrief(project string, b *generationBrief) error {
+	if err := s.confirmedCreativeBrief(project, b); err != nil {
+		return err
+	}
 	if strings.TrimSpace(b.Idea) == "" || len(b.Idea) > 20000 || len(b.Instruction) > 5000 {
 		return fmt.Errorf("a story idea of at most 20000 characters is required")
 	}
@@ -114,6 +124,9 @@ func (s *Server) prepareBrief(project string, b *generationBrief) error {
 // prepareSavedBrief validates server-persisted scenes without resolving a newer catalog.
 func (s *Server) prepareSavedBrief(project string, b *generationBrief) error {
 	snapshot, id, style := b.CreativePreset, b.PresetID, b.Style
+	version := b.BriefVersion
+	b.BriefVersion = 0
+	defer func() { b.BriefVersion = version }()
 	b.PresetID = ""
 	if err := s.prepareBrief(project, b); err != nil {
 		return err
@@ -126,12 +139,27 @@ func (s *Server) prepareSavedBrief(project string, b *generationBrief) error {
 	return nil
 }
 func (b generationBrief) prompt() string {
-	return fmt.Sprintf("%s\nVisual style: %s\nSpoken language: %s\nMode: %s\nDirection: %s\n%s", b.Idea, b.Style, b.Language, b.ConversationMode, b.Instruction, b.CharacterNotes)
+	text := fmt.Sprintf("%s\nVisual style: %s\nSpoken language: %s\nMode: %s\nDirection: %s\n%s", b.Idea, b.Style, b.Language, b.ConversationMode, b.Instruction, b.CharacterNotes)
+	if direction := b.creativeDirection(); direction != "" {
+		text += "\n" + direction
+	}
+	return text
+}
+
+func (b generationBrief) creativeDirection() string {
+	if b.BriefVersion != 1 {
+		return ""
+	}
+	return fmt.Sprintf("Confirmed story-specific creative direction: visual style=%s; tone=%s; audience=%s; destination platform=%s; format=%s; resolution=%s; total duration=%ds; scenes=%d. Preserve these choices over project defaults while keeping locked character/object identities. Platform is a delivery target, not authorization to publish.", b.Style, b.Tone, b.Audience, b.Platform, b.AspectRatio, b.Resolution, b.TargetDuration, b.SceneCount)
 }
 func (b generationBrief) context(ctx context.Context) context.Context {
+	ctx = agents.WithCreativeDirection(ctx, b.creativeDirection())
 	return presets.With(agents.WithStoryCharacters(agents.WithDialogueLanguage(ctx, b.Language), b.CreateCharacters), b.CreativePreset)
 }
 func (s *Server) persistDraft(project string, b generationBrief, draft *agents.ScriptDraft) (*models.Script, []models.Scene, error) {
+	if err := applyConfirmedDraft(b, draft); err != nil {
+		return nil, nil, err
+	}
 	characters, bindings, err := s.prepareStoryCharacters(project, b, draft)
 	if err != nil {
 		return nil, nil, err

@@ -39,6 +39,7 @@ type productionLine struct {
 	ShotID  string `json:"shot_id"`
 }
 type productionPlan struct {
+	Resolution       string             `json:"resolution"`
 	Lines            []productionLine   `json:"lines"`
 	ID               string             `json:"id"`
 	SceneID          string             `json:"scene_id"`
@@ -87,7 +88,7 @@ func (s *Server) productionVideoModel(ctx context.Context) (string, *providers.M
 	provider, model := s.routes().MediaSelection("video")
 	// These are the same documented capabilities used by the existing adapter.
 	if (provider == "fal" && (model == providers.FalVideoModel || model == "bytedance/seedance-2.0/fast/text-to-video")) || (provider == "byteplus" && model == providers.BytePlusVideoModel) {
-		m := &providers.Model{ID: model, GenerateAudio: true}
+		m := &providers.Model{ID: model, GenerateAudio: true, Resolutions: []string{"480p", "720p"}}
 		for i := 4; i <= 15; i++ {
 			m.Durations = append(m.Durations, i)
 		}
@@ -189,6 +190,20 @@ func (s *Server) sceneProductionPlan(ctx context.Context, scene *models.Scene) (
 		return p, err
 	}
 	p.Provider, p.Model, p.AudioSupported = provider, model.ID, model.GenerateAudio
+	p.Resolution = sceneBrief(scene).Resolution
+	if p.Resolution == "" {
+		p.Resolution = "auto"
+	}
+	if p.Resolution != "auto" {
+		supported := false
+		for _, r := range model.Resolutions {
+			supported = supported || r == p.Resolution
+		}
+		if !supported {
+			return p, fmt.Errorf("selected model does not support the requested %s size; choose a compatible model or model-default resolution", p.Resolution)
+		}
+	}
+
 	if p.Settings.AudioMode == "" {
 		p.Settings.AudioMode = "saved"
 		if model.GenerateAudio {
@@ -218,7 +233,11 @@ func (s *Server) sceneProductionPlan(ctx context.Context, scene *models.Scene) (
 	}
 	p.StoryboardReady = refs["storyboard_ready"] == true
 	p.ReferencesReady = refs["references_ready"] == true
-	raw := voiceJSON(map[string]any{"scene_id": scene.ID, "project": scene.ProjectID, "scene_revision": refs["scene_input_revision"], "identity_revision": refs["context_revision"], "settings": p.Settings, "provider": provider, "model": model.ID, "units": p.Units})
+	identity := map[string]any{"scene_id": scene.ID, "project": scene.ProjectID, "scene_revision": refs["scene_input_revision"], "identity_revision": refs["context_revision"], "settings": p.Settings, "resolution": p.Resolution, "provider": provider, "model": model.ID, "units": p.Units}
+	if p.Resolution == "auto" {
+		delete(identity, "resolution")
+	} // Preserve existing default-resolution plan IDs.
+	raw := voiceJSON(identity)
 	hash := sha256.Sum256(raw)
 	p.ID = hex.EncodeToString(hash[:])
 	jobs, err := s.database.ListRenderJobs(*scene.ProjectID)

@@ -6,14 +6,17 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"videoflow-go/internal/agents"
 	"videoflow-go/internal/models"
+	"videoflow-go/internal/presets"
 )
 
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Message  string              `json:"message"`
-		History  []map[string]string `json:"history"`
-		Selected *chatSelection      `json:"selected"`
+		CreationBrief *agents.CreativeBrief `json:"creation_brief"`
+		Message       string                `json:"message"`
+		History       []map[string]string   `json:"history"`
+		Selected      *chatSelection        `json:"selected"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Message == "" {
 		http.Error(w, "message is required", http.StatusBadRequest)
@@ -75,7 +78,18 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	style, _ := s.database.GetStyleGuide(projectID)
-	contextJSON, _ := json.Marshal(map[string]any{"style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "missing_voices_setup": "inline_render_card", "render_audio_modes": []string{"native", "saved", "silent"}, "native_audio_requires_saved_voices": false, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false, "exact_dialogue_requires_speech_and_lipsync": true}})
+	availableStyles := []map[string]string{}
+	for _, p := range presets.Builtins().Presets {
+		availableStyles = append(availableStyles, map[string]string{"id": p.ID, "name": p.Name, "description": p.Description})
+	}
+	if packs, _, e := s.presetPacks(); e == nil {
+		for _, pack := range packs {
+			for _, p := range pack.Presets {
+				availableStyles = append(availableStyles, map[string]string{"id": "community:" + pack.ID + ":" + p.ID, "name": p.Name, "description": p.Description})
+			}
+		}
+	}
+	contextJSON, _ := json.Marshal(map[string]any{"available_visual_styles": availableStyles, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "missing_voices_setup": "inline_render_card", "render_audio_modes": []string{"native", "saved", "silent"}, "native_audio_requires_saved_voices": false, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false, "exact_dialogue_requires_speech_and_lipsync": true}})
 	ctx := r.Context()
 	var plannedSnapshot *directorContext
 	if s.cfg.UseLocalText {
@@ -124,11 +138,27 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		"scene_count": 1,
 	}
 
+	if action == "generate_script" {
+		brief := mergeCreativeBrief(body.CreationBrief, res.CreationBrief, body.Message)
+		if brief.PresetID == "project-style" {
+			if style != nil {
+				brief.StyleFingerprint = creativeStyleFingerprint(style)
+			}
+		} else if brief.PresetID != "" {
+			if p, e := s.findPreset(brief.PresetID); e == nil {
+				brief.StyleFingerprint = creativeStyleFingerprint(p)
+			}
+		}
+		intent["creation_brief"] = brief
+		intent["idea"] = brief.Idea
+		intent["scene_count"] = brief.SceneCount
+		intent["reply"] = creativeBriefQuestion(brief)
+	}
 	switch res.AssetType {
 	case "prop", "location", "background", "other":
 		intent["asset_type"] = res.AssetType
 	}
-	if res.SceneCount >= 1 && res.SceneCount <= 20 {
+	if action != "generate_script" && res.SceneCount >= 1 && res.SceneCount <= 20 {
 		intent["scene_count"] = res.SceneCount
 	}
 	for _, scene := range scenes {

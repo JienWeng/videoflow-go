@@ -55,7 +55,7 @@ func (s *Server) generateMatchingStoryboard(ctx context.Context, scene *models.S
 	}
 	brief := sceneBrief(scene)
 	if profile, e := s.database.GetStyleGuide(*scene.ProjectID); e == nil && profile.StylePrompt != "" {
-		if brief.CreativePreset == nil {
+		if brief.CreativePreset == nil && brief.BriefVersion == 0 {
 			brief.Style = s.stylePrompt(scene.ProjectID)
 		}
 	}

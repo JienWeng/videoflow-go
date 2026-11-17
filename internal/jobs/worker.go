@@ -242,7 +242,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 				if value, ok := brief["language"].(string); ok && value != "" {
 					language = value
 				}
-				for _, key := range []string{"style", "instruction", "conversation_mode", "character_notes"} {
+				for _, key := range []string{"style", "tone", "audience", "platform", "instruction", "conversation_mode", "character_notes"} {
 					if value, ok := brief[key].(string); ok && value != "" {
 						prompt += "\n" + key + ": " + value
 					}

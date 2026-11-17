@@ -223,6 +223,22 @@ func (s *Server) prepareDirectorVideoJob(ctx context.Context, job *models.Render
 	if json.Unmarshal(job.RequestJSON, &payload) != nil || payload == nil {
 		return fmt.Errorf("invalid frozen video request")
 	}
+	if job.SceneID != nil && payload["resolution"] == nil {
+		if scene, e := s.database.GetScene(*job.SceneID); e == nil {
+			resolution := sceneBrief(scene).Resolution
+			if resolution != "" && resolution != "auto" {
+				payload["resolution"] = resolution
+			}
+		}
+	}
+	if job.SceneID != nil {
+		if scene, e := s.database.GetScene(*job.SceneID); e == nil {
+			brief := sceneBrief(scene)
+			if direction := brief.creativeDirection(); direction != "" {
+				payload["prompt"] = stringPrompt(payload["prompt"]) + "\n" + direction
+			}
+		}
+	}
 	delete(payload, "request_fingerprint")
 	digest := sha256.Sum256(voiceJSON(map[string]any{"provider": job.Provider, "model": job.Model, "endpoint": job.ProviderEndpoint, "request": payload}))
 	payload["request_fingerprint"] = hex.EncodeToString(digest[:])

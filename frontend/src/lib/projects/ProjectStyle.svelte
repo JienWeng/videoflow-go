@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+ import StyleCards from '$lib/brief/StyleCards.svelte';
   import { get, patch } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
@@ -32,7 +33,7 @@
       hasSavedStyle = !!catalog.has_project_style;
       form = clean(style);
       baseline = JSON.stringify(form);
-      selected = '';
+      selected=presets.find(p=>p.style_prompt===form.style_prompt)?.id??'';
       try {
         const draft = JSON.parse(sessionStorage.getItem(key) || 'null');
         if (draft?.form && typeof draft.baseline === 'string') {
@@ -55,12 +56,6 @@
       else sessionStorage.removeItem(key);
     } catch { /* Storage is optional. */ }
   });
-  function choosePreset(event: Event) {
-    selected = (event.currentTarget as HTMLSelectElement).value;
-    const preset = presets.find(p => p.id === selected);
-    if (preset) form = { ...form, name: preset.name, style_prompt: preset.style_prompt };
-    message = '';
-  }
   async function save() {
     saving = true;
     onSavingChange?.(true);
@@ -98,15 +93,8 @@
   {:else}
     <form onsubmit={(event) => { event.preventDefault(); void save(); }} class="space-y-4">
       <fieldset disabled={disabled || saving} class="min-w-0 space-y-4">
-        <div class="grid gap-4 md:grid-cols-2">
-          <label class="grid gap-1.5 text-sm font-medium">Start from a preset
-            <select value={selected} onchange={choosePreset} class="h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              <option value="">Current / custom style</option>
-              {#each presets as preset (preset.id)}<option value={preset.id}>{preset.name}{preset.id.startsWith('community:') ? ' · Community' : ''}</option>{/each}
-            </select>
-          </label>
-          
-        </div>
+        <p class="text-sm"><span class="text-muted-foreground">Current look:</span> {form.name||'Custom project style'}{dirty?' · Unsaved changes':''}</p>
+        <StyleCards {presets} {selected} disabled={disabled||saving} onselect={preset=>{selected=preset.id;form={...form,name:preset.name,style_prompt:preset.style_prompt??''};message=''}}/>
         {#if preview}
           <div class="space-y-2 text-sm">
             <p class="max-w-prose text-muted-foreground">{preview.description}</p>

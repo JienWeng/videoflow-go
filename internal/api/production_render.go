@@ -88,6 +88,12 @@ func (s *Server) renderProductionPlan(ctx context.Context, scene *models.Scene, 
 		job := sceneRenderJob(*scene.ProjectID, current)
 		// Padding is generated to satisfy model minimums and trimmed during assembly.
 		job.RequestJSON = voiceJSON(map[string]any{"duration": unit.Duration, "aspect_ratio": current.AspectRatio, "audio_mode": plan.Settings.AudioMode, "music_prompt": plan.Settings.MusicPrompt, "render_plan_id": plan.ID, "render_unit": unit, "prompt": current.Title + ". " + current.Summary + "\nRender only this consecutive part of the scene. Follow this local shot schedule:" + unit.Prompt})
+		if plan.Resolution != "" && plan.Resolution != "auto" {
+			var payload map[string]any
+			_ = json.Unmarshal(job.RequestJSON, &payload)
+			payload["resolution"] = plan.Resolution
+			job.RequestJSON = voiceJSON(payload)
+		}
 		if err = s.prepareDirectorVideoJob(ctx, job); err != nil {
 			return nil, err
 		}

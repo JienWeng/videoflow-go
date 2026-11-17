@@ -1,4 +1,6 @@
 <script lang="ts">
+ import CreativeBriefEditor from '$lib/brief/CreativeBriefEditor.svelte';
+ import {normalizeBrief,missingBriefFields,confirmedBriefRequest} from '$lib/brief/brief.mjs';
  let newRenderVersion = $state(false);
  const operationScope=new AbortController();
  onDestroy(()=>operationScope.abort());
@@ -27,6 +29,7 @@
   }
 
   interface Intent {
+ creation_brief?:any;
     action: string;
     asset_type?:string;
     director_proposal?: string;
@@ -99,7 +102,8 @@
     onran,
     onfocus,
     onop,
-    onsuggest
+    onsuggest,
+    onbriefchange
   }: {
     intent: Intent;
     options: Options;
@@ -109,6 +113,7 @@
     /** Called when a background op launches; returns done/fail callbacks. */
     onop?: (label: string, ctx: RunContext) => OpHandle | undefined;
     onsuggest?: (text: string) => void;
+ onbriefchange?:(brief:ReturnType<typeof normalizeBrief>)=>void;
   } = $props();
 
   let intent = $derived(normalizeChatIntent(rawIntent));
@@ -121,8 +126,9 @@
   let sceneSetupBlocking=$state(true);
   // svelte-ignore state_referenced_locally
   let idea = $state(intent.idea ?? '');
-  // svelte-ignore state_referenced_locally
-  let sceneCount = $state<number | ''>(intent.scene_count ?? '');
+ let creationBrief=$state(untrack(()=>normalizeBrief(intent.creation_brief,intent.idea??'')));
+ let briefConfirmed=$state(false);
+ function editBrief(brief:ReturnType<typeof normalizeBrief>){creationBrief=brief;briefConfirmed=false;onbriefchange?.(JSON.parse(JSON.stringify(brief)))}
   // svelte-ignore state_referenced_locally
   let characterId=$state(intent.character_id??'');
   let storyFormat=$state(untrack(()=>intent.action==='generate_image'?'1:1':'9:16'));
@@ -208,7 +214,7 @@
       case 'generate_image':return !!idea.trim();
       case 'generate_character_reference':return !!characterId;
       case 'generate_script':
-        return idea.trim().length > 0;
+        return creationBrief.idea.trim().length>0&&missingBriefFields(creationBrief).length===0&&briefConfirmed;
       case 'generate_scenes':
       case 'generate_shots':
       case 'storyboard':
@@ -246,6 +252,7 @@
       const result: IdeaOptions = await post('/ideas/develop', { idea: idea.trim() });
       ideaOptions = result;
       selectedIdea = result.recommended_index ?? 0;
+ idea=composedIdea();editBrief({...creationBrief,idea});
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -302,7 +309,7 @@
     };
     switch (intent.action) {
       case 'generate_script':
-        return runInBackground('/videos/generate?background=true',{idea:ideaOptions?composedIdea():idea.trim(),character_ids:castIds,create_characters:true,review_before_render:true,scene_count:sceneCount||1,aspect_ratio:storyFormat,style_preset_id:'project-style'},'Story & reference images',op=>op.result_json?.scene_ids?.[0],ctx);
+        {if(!ready){toast.error('Complete and confirm the creative brief first');return;}const brief=confirmedBriefRequest(creationBrief,briefConfirmed);briefConfirmed=false;return runInBackground('/videos/generate?background=true',{...brief,character_ids:castIds,create_characters:true,review_before_render:true},'Story & reference images',op=>op.result_json?.scene_ids?.[0],ctx);}
       case 'generate_image':return runInBackground('/assets/generate',{prompt:idea.trim(),aspect_ratio:storyFormat,type:imageType},'Image generation',op=>op.result_json?.asset_ids?.[0],ctx);
       case 'generate_character_reference':
         return runInBackground(`/characters/${characterId}/reference-sheets`,{},'Character reference',()=>characterId,ctx);
@@ -447,7 +454,7 @@
         {#if !ideaOptions}
           <div>
             <label class={labelClass} for="idea-{intent.action}">Idea</label>
-            <Textarea id="idea-{intent.action}" bind:value={idea} rows={3} class="bg-muted/50" placeholder="Describe the video idea…" />
+            <Textarea id="idea-{intent.action}" value={creationBrief.idea} oninput={e=>{idea=e.currentTarget.value;editBrief({...creationBrief,idea})}} rows={3} class="bg-muted/50" placeholder="Describe the video idea…" />
           </div>
         {:else}
           <div class="space-y-2">
@@ -457,7 +464,7 @@
                 class="w-full rounded-md border p-2.5 text-left text-sm transition-colors {selectedIdea === i
                   ? 'border-primary bg-primary/5'
                   : 'border-input hover:border-muted-foreground/40'}"
-                onclick={() => (selectedIdea = i)}
+                onclick={()=>{selectedIdea=i;idea=composedIdea();editBrief({...creationBrief,idea})}}
               >
                 <div class="flex items-center gap-1.5 flex-wrap">
                   <span class="font-bold">{o.title}</span>
@@ -477,19 +484,15 @@
             {/if}
           </div>
         {/if}
-        <div>
-          <label class={labelClass} for="scenes-{intent.action}">Scenes (optional)</label>
-          <input id="scenes-{intent.action}" type="number" min="1" max="20"
-            bind:value={sceneCount} placeholder="auto" class={selectClass} />
-          <p class="text-xs text-muted-foreground mt-1">Creates the story, shots, missing characters and reference images using the project style. Reference and storyboard images are generated automatically. Image calls may incur provider charges; video rendering stays separate.</p>
-        </div>
+        <CreativeBriefEditor bind:value={creationBrief} bind:confirmed={briefConfirmed} disabled={busy||developing} onchange={editBrief}/>
+
       {/if}
 
       {#if intent.action==='generate_image'}<label class="grid gap-1 text-xs">Image type<select class={selectClass} bind:value={imageType}><option value="other">General image</option><option value="prop">Prop</option><option value="location">Location</option><option value="background">Background</option></select></label><label class="grid gap-1 text-xs">Image prompt<Textarea bind:value={idea} rows={3}/></label><label class="grid gap-1 text-xs">Format<select class={selectClass} bind:value={storyFormat}><option value="1:1">Square · 1:1</option><option value="9:16">Vertical · 9:16</option><option value="16:9">Landscape · 16:9</option></select></label><p class="text-xs text-muted-foreground">Uses the current project style. Generated images are ready to use. Provider calls may incur charges.</p>{/if}
       {#if intent.action==='generate_character_reference'}<div><label class={labelClass} for="reference-character">Character</label><select id="reference-character" class={selectClass} bind:value={characterId}><option value="">Choose a character…</option>{#each options.characters as c(c.id)}<option value={c.id}>{c.name}</option>{/each}</select><p class="mt-2 text-xs text-muted-foreground">Generates a full-body reference candidate. Review it before use. Provider calls may incur charges.</p></div>{/if}
-      {#if intent.action==='generate_script'}<label class="grid gap-1 text-xs">Format<select class={selectClass} bind:value={storyFormat}><option value="9:16">Vertical · 9:16</option><option value="16:9">Landscape · 16:9</option><option value="1:1">Square · 1:1</option></select></label><p class="text-xs text-muted-foreground">Uses your saved project style. <a class="underline" href="/projects">Edit project style</a></p>{/if}
+
       {#if intent.action === 'generate_script' && options.characters.length}
-      <fieldset class="space-y-1"><legend class="text-xs">Cast</legend>{#each options.characters as character(character.id)}<label class="flex items-center gap-2 text-xs"><input type="checkbox" bind:group={castIds} value={character.id}/>{character.name}</label>{/each}</fieldset>
+      <fieldset class="space-y-1"><legend class="text-xs">Cast</legend>{#each options.characters as character(character.id)}<label class="flex items-center gap-2 text-xs"><input type="checkbox" bind:group={castIds} value={character.id} onchange={()=>briefConfirmed=false}/>{character.name}</label>{/each}</fieldset>
       {/if}
       {#if ['generate_scenes', 'generate_shots', 'storyboard', 'render_scene', 'render_shot', 'generate_assets', 'refine_scene', 'refine_shot', 'delete_scene', 'plan_assets'].includes(intent.action)}
         <div>
@@ -610,7 +613,7 @@
       <div class="flex items-center gap-1.5 pt-1">
         {#if intent.action === 'generate_script' && !ideaOptions}
           <Button size="sm" class="rounded-full px-4" disabled={busy||developing||!ready} onclick={run}>{#if busy}<LoaderCircle class="size-4 mr-1 animate-spin"/>{:else}<Play class="size-4 mr-1"/>{/if}{busy?'Running…':'Create story & references'}</Button>
-          <Button size="sm" variant="outline" class="rounded-full px-3" disabled={busy||developing||!ready} onclick={developIdeas}><Lightbulb class="size-4 mr-1"/>{developing?'Exploring…':'Explore ideas first'}</Button>
+          <Button size="sm" variant="outline" class="rounded-full px-3" disabled={busy||developing||!idea.trim()} onclick={developIdeas}><Lightbulb class="size-4 mr-1"/>{developing?'Exploring…':'Explore ideas first'}</Button>
         {:else if intent.action === 'generate_script'}
           <Button size="sm" class="rounded-full px-4" disabled={busy} onclick={run}>
             {#if busy}

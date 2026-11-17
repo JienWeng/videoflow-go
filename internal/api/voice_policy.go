@@ -118,6 +118,9 @@ func (s *Server) applyDirectorVoicePolicy(ctx context.Context, job *models.Rende
 		payload["generate_audio"] = true
 		payload["voice_policy"] = map[string]any{"mode": "native", "project_id": *job.ProjectID, "exact_voice_identity": false}
 		prompt := stringPrompt(payload["prompt"]) + "\nGenerate synchronized dialogue, ambience and sound effects. Native speaker identity and exact word/cut timing are best effort, not a saved-voice guarantee."
+		if mode == "narration" {
+			prompt += "\nUse off-screen narration rather than on-screen character dialogue."
+		}
 		if mode == "silent" {
 			prompt += " No spoken dialogue or narration."
 		}
@@ -152,10 +155,13 @@ func (s *Server) applyDirectorVoicePolicy(ctx context.Context, job *models.Rende
 				}
 			}
 			if strings.TrimSpace(line.Text) != "" && mode != "silent" {
-				if err := s.voiceCharacter(*job.ProjectID, line.CharacterID); err != nil {
+				speaker := line.CharacterID
+				if speaker == "" && !line.Visible {
+					speaker = "Narrator"
+				} else if err := s.voiceCharacter(*job.ProjectID, speaker); err != nil {
 					return fmt.Errorf("native dialogue speaker is not in this project")
 				}
-				prompt += fmt.Sprintf("\nSpeaker %s (%s): %s", line.CharacterID, line.Language, line.Text)
+				prompt += fmt.Sprintf("\nSpeaker %s (%s): %s", speaker, line.Language, line.Text)
 			}
 		}
 		if strings.TrimSpace(music) != "" {

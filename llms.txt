@@ -108,3 +108,10 @@ Open a scene from Studio or /scenes?scene_id=<id>. Its Scene references section 
 ## Connected video, sound and music
 
 See docs/CONNECTED-VIDEO-WORKFLOW.md. Video & sound in chat and Scene Studio selects native/saved/silent audio and shows a read-only paid-call plan. Supported Seedance native audio needs no saved voice IDs. Automatic grouping minimizes calls and generated seconds; identical planned clips are reused. Explicit rendering revalidates the displayed plan. Assemble clips & add music opens ordered, trimmed outputs with clip audio preserved; full-story assembly joins matching scene formats. Upload or choose music, set volume/fades, save and export locally. Native sound quality/identity/timing remains model-dependent; exact saved voices/lip-sync and timed captions use the existing separate tools. Opening or saving options never starts generation.
+
+
+## Creative brief before story generation
+
+In Chat or Create story, choose a visible visual-style card and specify tone, audience, destination platform, aspect ratio, video size, spoken language/speech mode, total duration and scene count. Chat asks for missing groups and retains the original idea through follow-up answers. Use suggested settings only when you want those editable recommendations. Confirm the displayed brief, then choose Create story & references; confirming or editing alone does not generate media. Editing choices clears confirmation. Per-story styling does not overwrite the project default. Project defaults are edited with the style cards on Projects.
+
+The version-1 generation contract validates complete confirmed choices and the displayed style fingerprint before provider work. It stores the brief with the scenes, honors total duration/format and forwards creative direction and supported resolution to rendering. Existing scene workflows and legacy API clients remain compatible. Actual visual quality, translated speech and platform suitability still require checking the generated result. No publishing is implied by a destination platform.

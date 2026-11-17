@@ -65,6 +65,7 @@
     sessionReview?: boolean;
     activity?: unknown[];
     dismissed?: boolean;
+ briefSuperseded?:boolean;
     text: string;
     intent?: any;
     options?: any;
@@ -157,8 +158,8 @@
   /** Drop the non-serializable / refetched parts (state, callbacks live in
    * the template anyway — cards re-render fine from intent + options). */
   function serializableMsg(m: Msg) {
-    const { role, text, intent, options, warnings, chips, op, thumbs, retry, activity, dismissed,repairContext,sessionReview,storyOperationId,storyStage,storyReady,referenceIds,castIds,setupSceneId } = m;
-    return { role, text, intent, options, warnings, chips, op, thumbs, retry, activity:normalizeActivity(activity), dismissed,repairContext,sessionReview,storyOperationId,storyStage,storyReady,referenceIds,castIds,setupSceneId };
+    const { role, text, intent, options, warnings, chips, op, thumbs, retry, activity, dismissed,briefSuperseded,repairContext,sessionReview,storyOperationId,storyStage,storyReady,referenceIds,castIds,setupSceneId } = m;
+    return { role, text, intent, options, warnings, chips, op, thumbs, retry, activity:normalizeActivity(activity), dismissed,briefSuperseded,repairContext,sessionReview,storyOperationId,storyStage,storyReady,referenceIds,castIds,setupSceneId };
   }
 
   let conversationGeneration=0;
@@ -651,6 +652,12 @@
 
   let repairingContext=$state(false);
   async function repairContext(message:Msg){if(!activeSessionId||repairingContext)return;repairingContext=true;const generation=conversationGeneration;try{const result=await post(`/director/sessions/${activeSessionId}/repair-context`,{});if(generation!==conversationGeneration)return;message.repairContext=false;message.sessionReview=!!result.review_required;message.text=result.review_required?'Unavailable references removed. Review the interrupted AI session before sending again.':'Unavailable references removed. Your message is ready to retry.';reusePrompt(message.retry??'');void refreshCapabilities();}catch(e){if(generation===conversationGeneration)message.text=`Could not repair context. ${String(e)}`;}finally{repairingContext=false}}
+ function activeCreativeBrief(){
+  for(let i=messages.length-1;i>=0;i--){const m=messages[i];if(m.intent?.action!=='generate_script'||m.dismissed)continue;
+   if(messages.slice(i+1).some(next=>next.op?.label==='Story & reference images'&&next.op.status!=='failed'))return undefined;
+   return m.intent.creation_brief??(m.intent.idea?{idea:m.intent.idea}:undefined);
+  }
+ }
   async function send(text?: string) {
     const message = (text ?? input).trim();
     if (!message || busy || pendingOps.length || historyLoading || sessionRequired || historyError) return;
@@ -665,10 +672,11 @@
     const reviewIndex=messages.length;
     if(useSpecialists)messages.push({role:'assistant',text:'Specialist review requested. No story changes will run.',activity:normalizeActivity((capabilities.subagents.roles??[]).map((role:any)=>({kind:'subagent',title:role.name,status:'pending'})))});
     try {
-      const r = await post(useSpecialists?'/chat/review':'/chat', { message, ...(useSpecialists?{}:{history}), selected: selected ? {id:selected.id,kind:selected.kind} : null });
+      const r = await post(useSpecialists?'/chat/review':'/chat', { message, ...(useSpecialists?{}:{history,creation_brief:activeCreativeBrief()}), selected: selected ? {id:selected.id,kind:selected.kind} : null });
       if(generation!==conversationGeneration)return;
       if(useSpecialists){messages[reviewIndex]={role:'assistant',text:r.reply,activity:subagentEvents(r.subagents??[])};void refreshCapabilities();return;}
       const intent = { ...r.intent };
+      if(intent.action==='generate_script'){for(const m of messages)if(m.intent?.action==='generate_script'&&!m.dismissed){m.dismissed=true;m.briefSuperseded=true;}}
       messages.push({
         role: 'assistant',
         text: intent.reply,
@@ -868,6 +876,7 @@
             {#if m.intent && m.intent.action !== 'unknown' && !m.dismissed}
               <ActionCard
                 intent={m.intent}
+ onbriefchange={brief=>m.intent={...m.intent,creation_brief:brief,idea:brief.idea}}
                 options={m.options}
                 projectState={m.state}
                 onfocus={onguide??onfocus}
@@ -876,7 +885,7 @@
                 onsuggest={(text) => { input=text; focusComposer(); }}
               />
               <Button variant="ghost" size="sm" class="self-start" onclick={()=>m.dismissed=true}>Dismiss proposal</Button>
-            {:else if m.dismissed}<p class="text-xs text-muted-foreground">Proposal dismissed from this view.</p>{/if}
+            {:else if m.dismissed}<p class="text-xs text-muted-foreground">{m.briefSuperseded?'Earlier creative brief · updated below':'Proposal dismissed from this view.'}</p>{/if}
             {#if m.role==='user'}<Message.Footer><Button size="sm" variant="ghost" disabled={busy} onclick={()=>reusePrompt(m.text)}>Reuse prompt</Button><Button size="sm" variant="ghost" disabled={busy} aria-pressed={checkpointPrompts.includes(m.text)} onclick={()=>toggleCheckpoint(m)}>{checkpointPrompts.includes(m.text)?'Remove prompt checkpoint':'Save prompt checkpoint'}</Button></Message.Footer>{/if}
           </Message.Content>
         </Message.Root>

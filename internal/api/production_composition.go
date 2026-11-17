@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/go-chi/chi/v5"
+	"math"
 	"net/http"
 	"sort"
 	"videoflow-go/internal/composition"
@@ -24,6 +25,10 @@ func (s *Server) sceneCompositionDraft(ctx context.Context, scene *models.Scene)
 		m.Width, m.Height = 720, 960
 	case "21:9":
 		m.Width, m.Height = 1680, 720
+	}
+	if sceneBrief(scene).Resolution == "480p" {
+		m.Width = int(math.Round(float64(m.Width)*480/720/2)) * 2
+		m.Height = int(math.Round(float64(m.Height)*480/720/2)) * 2
 	}
 	paths, _, err := s.compositionSources(*scene.ProjectID)
 	if err != nil {
