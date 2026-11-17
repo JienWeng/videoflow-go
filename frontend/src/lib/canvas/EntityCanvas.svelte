@@ -78,8 +78,9 @@
   $effect(()=>{if(finderOpen)void tick().then(()=>finderInput?.focus());});
   function closeFinder(){finderOpen=false;finderButton?.focus();}
   function findItem(id:string){if(focusNode(id))closeFinder();}
-  function fitAll(){flow?.fitView({duration:reducedMotion?0:250,padding:.2,maxZoom:1.1,minZoom:.1});}
-  function focusConnections(){if(!panelNode)return;const ids=new Set([panelNode.id]);for(const e of edges){if(e.source===panelNode.id)ids.add(e.target);if(e.target===panelNode.id)ids.add(e.source);}flow?.fitView({nodes:[...ids].map(id=>({id})),duration:reducedMotion?0:250,padding:.25,maxZoom:1.2});}
+  const fitPadding={top:'160px',bottom:'112px',left:'32px',right:'32px'} as const;
+  function fitAll(){flow?.fitView({duration:reducedMotion?0:250,padding:fitPadding,maxZoom:1.1,minZoom:.1});}
+  function focusConnections(){if(!panelNode)return;const ids=new Set([panelNode.id]);for(const e of edges){if(e.source===panelNode.id)ids.add(e.target);if(e.target===panelNode.id)ids.add(e.source);}flow?.fitView({nodes:[...ids].map(id=>({id})),duration:reducedMotion?0:250,padding:fitPadding,maxZoom:1.2});}
   function undoArrange(){if(!previousLayout)return;const positions=previousLayout;nodes=nodes.map(n=>({...n,position:positions[n.id]??n.position}));savePositions(nodes);previousLayout=null;fitAll();}
   // The node whose detail panel is open (docked inside this canvas pane). Driven
   // by clicks/context-menu so the panel never covers the chat or the minimap.
@@ -154,8 +155,8 @@
       const { nodes: n, edges: e } = toFlow(g);
       const firstLoad = !loaded;
       // Pinned (saved) nodes keep their spots; fresh nodes get collision-free
-      // dagre positions. After autoArrange clears the saved store, this is a
-      // pure dagre layout until the user drags a node again.
+      // stage positions. After autoArrange clears the saved store, this is a
+      // semantic stage layout until the user drags a node again.
       nodes = layoutFresh(n, e, loadPositions()).map(node=>({...node,selected:node.id===selectedNodeId,data:{...node.data,...(node.data.kind==='character'?{onReferenceImages:()=>openCharacterReferences(node)}:{})}}));
       // Re-apply the current highlight so a background refresh (SSE job update)
       // while a node panel is open doesn't flash the dimming/labels away.
@@ -181,7 +182,7 @@
   export function focusNode(id: string): boolean {
     const node=nodes.find(n=>n.id===id);
     if(!node || !selectNode(node))return false;
-    flow?.fitView({nodes:[{id}],duration:reducedMotion?0:250,maxZoom:1.2,padding:.3});
+    flow?.fitView({nodes:[{id}],duration:reducedMotion?0:250,maxZoom:1.2,padding:fitPadding});
     return true;
   }
 
@@ -207,7 +208,7 @@
     flow?.fitView({
       nodes: [...around].map((id) => ({ id })),
       duration: reducedMotion ? 0 : 250,
-      padding: 0.25,
+      padding: fitPadding,
       maxZoom: 1.1
     });
   }
@@ -403,7 +404,7 @@
     {nodeTypes}
     connectionMode={ConnectionMode.Loose}
     fitView
-    fitViewOptions={{ padding: 0.2, maxZoom: 1.1 }}
+    fitViewOptions={{ padding: fitPadding, maxZoom: 1.1 }}
     minZoom={0.1}
     deleteKey={null}
     {colorMode}

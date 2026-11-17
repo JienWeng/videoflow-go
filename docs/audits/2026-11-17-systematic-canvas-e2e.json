@@ -1,0 +1,24 @@
+{
+  "checks": [
+    "1440: initial layout respects manual position",
+    "1440: Arrange groups ordered shots, storyboard and character/reference pairs",
+    "1440: repeated Arrange is deterministic",
+    "1440: Undo restores manual position",
+    "390: initial layout respects manual position",
+    "390: Arrange groups ordered shots, storyboard and character/reference pairs",
+    "390: repeated Arrange is deterministic",
+    "390: Undo restores manual position"
+  ],
+  "axe": [
+    {
+      "width": 1440,
+      "violations": []
+    },
+    {
+      "width": 390,
+      "violations": []
+    }
+  ],
+  "errors": [],
+  "writes": []
+}
