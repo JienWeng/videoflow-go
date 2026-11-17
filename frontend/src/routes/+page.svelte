@@ -1,5 +1,5 @@
 <script lang="ts">
-  import {clampWindow,readWindowLayout} from '$lib/shell/assistant-window.mjs';
+  import {clampWindow,readWindowLayout,clampWindowHeight,windowHeightLimits} from '$lib/shell/assistant-window.mjs';
   import GripHorizontal from '@lucide/svelte/icons/grip-horizontal';
   import PanelRight from '@lucide/svelte/icons/panel-right';
   import PanelsTopLeft from '@lucide/svelte/icons/panels-top-left';
@@ -34,9 +34,11 @@
   let windowPosition=$state<{x:number;y:number}|null>(null);
   let studioSize=$state({width:1024,height:735});
   let moveHandle:HTMLButtonElement|null=$state(null);
-  const floatingHeight=$derived(Math.max(0,Math.min(680,Math.floor(studioSize.height*.88),studioSize.height-24)));
+  let preferredHeight=$state<number|null>(null);
+  const floatingHeight=$derived(clampWindowHeight(preferredHeight??Math.min(680,Math.floor(studioSize.height*.88)),studioSize.height));
   const floatingPosition=$derived(clampWindow(windowPosition??{x:Infinity,y:Infinity},studioSize,panelWidth,floatingHeight));
-  function saveWindowLayout(){try{localStorage.setItem('videoflow.assistant.window',JSON.stringify({mode:windowMode,...(windowPosition??floatingPosition),width:panelWidth}));}catch{/* Layout remains usable when storage is unavailable. */}}
+  const heightLimits=$derived(windowHeightLimits(studioSize.height,floatingPosition.y));
+  function saveWindowLayout(){try{localStorage.setItem('videoflow.assistant.window',JSON.stringify({mode:windowMode,...(windowPosition??floatingPosition),width:panelWidth,...(preferredHeight===null?{}:{height:preferredHeight})}));}catch{/* Layout remains usable when storage is unavailable. */}}
   function toggleWindowMode(){windowPosition=floatingPosition;windowMode=windowMode==='docked'?'floating':'docked';saveWindowLayout();if(windowMode==='floating')void tick().then(()=>moveHandle?.focus());}
   function moveWindow(x:number,y:number){windowPosition=clampWindow({x,y},studioSize,panelWidth,floatingHeight);}
   function undockAtCurrentPosition(){
@@ -67,7 +69,7 @@
     if(event.key==='Home'){next.x=12;next.y=12;}else if(event.key==='End'){next.x=Infinity;next.y=Infinity;}else if(event.key==='ArrowLeft')next.x-=step;else if(event.key==='ArrowRight')next.x+=step;else if(event.key==='ArrowUp')next.y-=step;else next.y+=step;
     moveWindow(next.x,next.y);saveWindowLayout();
   }
-  onMount(()=>{try{const saved=readWindowLayout(localStorage.getItem('videoflow.assistant.window'));if(saved){windowMode=saved.mode;windowPosition=saved.position;if(saved.width)panelWidth=saved.width;}}catch{/* Use the docked default. */}});
+  onMount(()=>{try{const saved=readWindowLayout(localStorage.getItem('videoflow.assistant.window'));if(saved){windowMode=saved.mode;windowPosition=saved.position;if(saved.width)panelWidth=saved.width;if(saved.height)preferredHeight=saved.height;}}catch{/* Use the docked default. */}});
   let studioElement: HTMLDivElement | null=$state(null), maxPanelWidth=$state(760);
   const minPanelWidth=$derived(Math.min(340,maxPanelWidth));
   $effect(()=>{
@@ -83,6 +85,20 @@
     observer.observe(studioElement);return()=>observer.disconnect();
   });
   function resizePanel(value:number){const old=panelWidth;const position=floatingPosition;panelWidth=Math.round(Math.max(minPanelWidth,Math.min(value,maxPanelWidth)));if(windowMode==='floating')moveWindow(position.x+old-panelWidth,position.y);panelExpanded=false;saveWindowLayout();}
+  function resizeHeight(value:number){
+    const position=floatingPosition;
+    preferredHeight=clampWindowHeight(value,studioSize.height,position.y);
+    windowPosition=position;saveWindowLayout();
+  }
+  function dragHeight(event:PointerEvent){
+    if(event.button!==0||window.innerWidth<768||windowMode!=='floating')return;
+    event.preventDefault();const target=event.currentTarget as HTMLElement;
+    target.setPointerCapture(event.pointerId);
+    const start=event.clientY,height=floatingHeight;
+    const move=(next:PointerEvent)=>resizeHeight(height+next.clientY-start);
+    const end=()=>{target.removeEventListener('pointermove',move);target.removeEventListener('pointerup',end);target.removeEventListener('pointercancel',end);target.removeEventListener('lostpointercapture',end);saveWindowLayout();};
+    target.addEventListener('pointermove',move);target.addEventListener('pointerup',end);target.addEventListener('pointercancel',end);target.addEventListener('lostpointercapture',end);
+  }
   function togglePanelSize(){
     if(panelExpanded){resizePanel(restoreWidth);return;}
     restoreWidth=panelWidth;resizePanel(maxPanelWidth);panelExpanded=true;
@@ -125,6 +141,7 @@
   function startStory(){storyCreation.show();}
   async function editScene(id:string){setWorkspace('story');await tick();await story?.openScene(id);}
   function beforeSelect(next:Node|null){return next?.id===selected?.id || details?.canLeave()!==false;}
+  async function guideNode(id:string){await focusNode(id);tab='chat';assistantOpen=true;mobileView='workbench';}
   function select(next:Node|null){const changed=next?.id!==selected?.id;selected=next;if(!next)tab='chat';if(next&&changed){setWorkspace('studio');tab='details';mobileView='workbench';assistantOpen=true;}}
   function clear(){canvas?.clearSelection();tab='chat';}
   onMount(()=>{palette.setHandlers({onfocus:focusNode,onnewstory:startStory});if(page.url.searchParams.has('new_story'))void tick().then(async()=>{await startStory();const url=new URL(window.location.href);url.searchParams.delete('new_story');replaceState(url,page.state);});const stop=subscribeJobs(refresh,refresh);return()=>{stop();palette.clearHandlers()}});
@@ -174,9 +191,12 @@
       </div>{/if}
       <div id="panel-details" role="tabpanel" aria-labelledby="wb-details" class="min-h-0 flex-1 {tab==='details'?'':'hidden'}"><NodePanel onopencharacterrefs={id=>{void canvas?.openReferenceImages(id)}} bind:this={details} embedded node={selected} onclose={clear} onsaved={refresh} onopenscene={editScene} />{#if !selected}<div class="p-6"><h3 class="font-medium">Select something to edit</h3><p class="mt-2 text-sm text-muted-foreground">Click a scene, shot, character or asset. Its current details and editing options appear here.</p><Button variant="outline" class="mt-4 md:hidden" onclick={()=>mobileView='canvas'}>Back to canvas</Button></div>{/if}</div>
       <div id="panel-chat" role={selected?'tabpanel':undefined} aria-label={selected?undefined:'Conversation'} aria-labelledby={selected?'wb-chat':undefined} class="flex min-h-0 flex-1 flex-col {tab==='chat'?'':'hidden'}">
-        <div class="min-h-0 flex-1"><ChatPanel embedded bind:this={chat} selected={context} onclear={clear} onfocus={focusNode} onmutate={refresh} /></div>
+        <div class="min-h-0 flex-1"><ChatPanel embedded bind:this={chat} selected={context} onclear={clear} onfocus={focusNode} onguide={guideNode} onmutate={refresh} /></div>
       </div>
     </aside>
+    {#if windowMode==='floating'&&assistantOpen}<!-- Focusable ARIA window splitter, with required value and keyboard controls. -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+    <div role="separator" tabindex="0" aria-label="Resize assistant height" aria-orientation="horizontal" aria-controls="assistant-workbench" aria-valuemin={heightLimits.min} aria-valuemax={heightLimits.max} aria-valuenow={floatingHeight} class="assistant-height-resizer hidden cursor-row-resize touch-none items-center justify-center rounded-lg hover:bg-accent focus-visible:bg-accent focus-visible:outline-2 focus-visible:outline-ring md:flex" onpointerdown={dragHeight} onkeydown={e=>{if(['ArrowUp','ArrowDown','Home','End'].includes(e.key)){e.preventDefault();resizeHeight(e.key==='Home'?heightLimits.min:e.key==='End'?heightLimits.max:floatingHeight+(e.key==='ArrowDown'?32:-32));}}}><span class="h-0.5 w-8 rounded-full bg-muted-foreground/50"></span></div>{/if}
     {#if !assistantOpen}<Button bind:ref={openAssistantButton} class="absolute right-4 bottom-4 z-20 min-h-11 rounded-xl shadow-lg" onclick={openAssistant} aria-label="Open assistant"><MessageSquare class="size-4" />Open assistant</Button>{/if}
   </div>
   {/if}
@@ -191,6 +211,7 @@
     .assistant-visible.assistant-docked .canvas-pane {margin-right:calc(var(--panel-width) + 32px);}
     .assistant-panel {position:absolute;right:16px;top:24px;bottom:16px;width:var(--panel-width);max-width:calc(100% - 248px);border:1px solid var(--border);border-radius:16px;box-shadow:0 12px 36px rgb(0 0 0 / .18);z-index:30;}
     .assistant-floating .assistant-panel {left:var(--window-x);top:var(--window-y);right:auto;bottom:auto;height:var(--window-height);max-width:calc(100% - 24px);}
+    .assistant-height-resizer {position:absolute;left:calc(var(--window-x) + 20px);top:calc(var(--window-y) + var(--window-height) - 5px);width:calc(var(--panel-width) - 40px);height:10px;z-index:31;}
     .assistant-resizer {position:absolute;right:calc(var(--panel-width) + 18px);top:44px;bottom:36px;z-index:31;}
     .assistant-floating .assistant-resizer {left:calc(var(--window-x) - 10px);right:auto;top:calc(var(--window-y) + 20px);bottom:auto;height:calc(var(--window-height) - 40px);}
   }

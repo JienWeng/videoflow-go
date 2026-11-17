@@ -1,5 +1,5 @@
 const supported = new Set([
- 'generate_script','generate_scenes','generate_shots','storyboard','render_scene',
+ 'generate_image','generate_character_reference','generate_script','generate_scenes','generate_shots','storyboard','render_scene',
  'render_shot','caption','retry_render','generate_assets','refine_scene','refine_shot',
  'delete_scene','style_ingest','plan_assets'
 ]);

@@ -120,6 +120,9 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 		}
 		ctx = guidedStoryContext(ctx, project, brief.CharacterIDs)
 		ctx = context.WithValue(brief.context(ctx), mediaRoutesKey{}, routes)
+		if brief.ReviewBeforeRender {
+			ctx = context.WithValue(ctx, imageReviewKey{}, true)
+		}
 		stages := []string{}
 		createdCharacters := []string{}
 		savedScriptID := ""
@@ -239,13 +242,13 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 		}
 
 		record("visuals")
-		if s.cfg.UseLocalText {
+		if s.cfg.UseLocalText || brief.ReviewBeforeRender {
 			sceneIDs := []string{}
 			for i := range scenes {
 				scene := &scenes[i]
 				sceneIDs = append(sceneIDs, scene.ID)
 			}
-			raw, _ := json.Marshal(map[string]any{"project_id": project, "script_id": script.ID, "scene_ids": sceneIDs, "stages": stages, "status": "awaiting_reference_review", "cast_character_ids": cast, "character_reference_ids": characterReferences, "story_asset_ids": storyAssets, "story_assets": assetDecisions, "automatic_assets": true, "character_references": true, "brief": brief, "media_routes": routes, "created_character_ids": createdCharacters})
+			raw, _ := json.Marshal(map[string]any{"project_id": project, "script_id": script.ID, "scene_ids": sceneIDs, "stages": stages, "status": "awaiting_reference_review", "cast_character_ids": cast, "character_reference_ids": characterReferences, "story_asset_ids": storyAssets, "story_assets": assetDecisions, "automatic_assets": s.cfg.UseLocalText, "character_references": s.cfg.UseLocalText, "brief": brief, "media_routes": routes, "created_character_ids": createdCharacters})
 			if err = s.database.UpdateOp(op.ID, "succeeded", raw, nil); err != nil {
 				fail(err)
 			}

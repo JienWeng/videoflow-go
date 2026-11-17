@@ -11,6 +11,7 @@
   import * as Dialog from '$lib/components/ui/dialog';
   import { toast } from 'svelte-sonner';
   import { FolderPlus, Pencil, Trash2, Check, X, Download, Upload } from '@lucide/svelte';
+  import ProjectStyle from '$lib/projects/ProjectStyle.svelte';
 
   let projects: any[] = $state([]);
   let loaded = $state(false);
@@ -193,6 +194,9 @@
       {/each}
     </div>
   {:else}
+    {#each projects.filter(p => p.is_active) as active (active.id)}
+      <ProjectStyle projectId={active.id} projectName={active.name} disabled={!!busy} onSavingChange={(saving) => busy = saving ? 'save-style' : ''} />
+    {/each}
     <div class="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
       {#each projects as p (p.id)}
         <Card>

@@ -90,7 +90,7 @@ func (s *Server) generateCharacterSheet(ctx context.Context, c *models.Character
 			}
 		}
 	}
-	prompt := fmt.Sprintf("Character reference sheet showing front, side and full body views of %s. Appearance: %s. Description: %s. Visual rules: %s", c.Name, c.Appearance, c.Description, c.VisualRulesJSON)
+	prompt := fmt.Sprintf("Character reference sheet showing front, side and full body views of %s. Show the entire character from head to feet/paws, including ears and tail; leave margins and never crop limbs. Appearance: %s. Description: %s. Visual rules: %s", c.Name, c.Appearance, c.Description, c.VisualRulesJSON)
 	if style != "" {
 		prompt += "\nVisual style: " + style
 	}

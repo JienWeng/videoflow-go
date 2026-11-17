@@ -129,7 +129,13 @@ prompt=sys.stdin.read()
 if 'Plan an editable VideoFlow version-1 composition manifest only' in prompt:
  result=json.loads(prompt.rsplit('Current manifest: ',1)[1].split('\nRequested edit:',1)[0])
 elif 'VideoFlow Studio assistant' in prompt:
- result={'action':'generate_script','reply':'Review this two-scene story proposal, then run it.','scene_count':2}
+ message=prompt.split('User message: ',1)[-1].split('\nProject context: ',1)[0]
+ if 'Generate a full-body character reference image for' in message:
+  result={'action':'generate_character_reference','reply':'Review this character reference request.'}
+ elif 'Generate an image of a red collar' in message:
+  result={'action':'generate_image','asset_type':'prop','reply':'Review this image request.'}
+ else:
+  result={'action':'generate_script','reply':'Review this two-scene story proposal, then run it.','scene_count':2}
 elif 'scriptwriter' in prompt:
  if 'lost puppy' in prompt:
   result={'title':'Home','summary':'Pip finds his mother','characters':[],'scenes':[{'title':'Reunion','summary':'A lost puppy returns home','duration':1,'aspect_ratio':'16:9','character_ids':[],'spoken_lines':[]}]}

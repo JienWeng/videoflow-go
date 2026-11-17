@@ -14,12 +14,27 @@ export function clampWindow(position,bounds,width,height) {
 /**
  * Read only known local layout fields. Malformed storage must not hide the window.
  * @param {string|null} raw
- * @returns {{mode:'docked'|'floating',position:{x:number,y:number}|null,width?:number}|null}
+ * @returns {{mode:'docked'|'floating',position:{x:number,y:number}|null,width?:number,height?:number}|null}
  */
 export function readWindowLayout(raw) {
  try {
   const value=JSON.parse(raw??'null');
   if(!value||!['docked','floating'].includes(value.mode))return null;
-  return {mode:value.mode,position:Number.isFinite(value.x)&&Number.isFinite(value.y)?{x:value.x,y:value.y}:null,width:Number.isFinite(value.width)&&value.width>=240&&value.width<=760?value.width:undefined};
+  return {mode:value.mode,position:Number.isFinite(value.x)&&Number.isFinite(value.y)?{x:value.x,y:value.y}:null,width:Number.isFinite(value.width)&&value.width>=240&&value.width<=760?value.width:undefined,height:Number.isFinite(value.height)&&value.height>=360&&value.height<=10000?value.height:undefined};
  } catch {return null;}
+}
+
+/**
+ * Bound a preferred height to the available workspace, optionally keeping its top fixed.
+ * @param {number} workspaceHeight
+ * @param {number} [top]
+ */
+export function windowHeightLimits(workspaceHeight, top = 12) {
+ const max=Math.max(0,Math.floor(workspaceHeight-Math.max(12,top)-12));
+ return {min:Math.min(360,max),max};
+}
+/** @param {number} height @param {number} workspaceHeight @param {number} [top] */
+export function clampWindowHeight(height, workspaceHeight, top = 12) {
+ const {min,max}=windowHeightLimits(workspaceHeight,top);
+ return Math.round(Math.max(min,Math.min(Number.isFinite(height)?height:680,max)));
 }

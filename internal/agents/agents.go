@@ -319,6 +319,7 @@ func (a *AgentEngine) GenerateShots(ctx context.Context, title, summary string, 
 // --- Classify Chat Intent ---
 
 type ChatIntentResponse struct {
+	AssetType   string `json:"asset_type,omitempty"`
 	Reply       string `json:"reply"`
 	Action      string `json:"action"` // canonical action-card action, or none
 	SceneCount  int    `json:"scene_count,omitempty"`
@@ -331,7 +332,9 @@ func (a *AgentEngine) Chat(ctx context.Context, message string, history []map[st
 	system := `You are the VideoFlow Studio assistant. Help the user direct their story, build characters, scenes, and shots.
 Respond in JSON with a natural conversational 'reply' and an 'action'.
 Use generate_script to write a new story, script, or scene from an idea. Do not return create_script or add_scene.
-Other supported actions: generate_scenes (expand an existing scene), generate_shots, storyboard,
+Use generate_character_reference to generate or regenerate a full-body reference image of an existing character; set character_id from context. Use generate_assets for scene props/locations and storyboard for scene images. Never say images were generated until a tool result confirms it. Ask the user to review references before moving to storyboards or rendering.
+Use generate_image for a standalone image, prop, or background when no scene is needed; set asset_type to prop, location, background or other. The user supplies/edits the prompt and format before approving.
+Other supported actions: generate_image, generate_character_reference, generate_scenes (expand an existing scene), generate_shots, storyboard,
 render_scene, render_shot, caption, retry_render, generate_assets, refine_scene, refine_shot,
 delete_scene, style_ingest, plan_assets. Use none for conversation or requests that cannot be performed.
 Never invent action names or IDs. Set scene_count only when the user specifies a scene count; otherwise use 1. Select scene_id, character_id or output_id only from the supplied project context when the request identifies that item. The user reviews and runs the action card; do not claim it has already executed.`

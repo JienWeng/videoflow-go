@@ -44,7 +44,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	for _, sc := range scenes {
 		sceneOptions = append(sceneOptions, map[string]interface{}{
 			"id":    sc.ID,
-			"title": sc.Title,
+			"title": sc.Title, "summary": sc.Summary, "duration": sc.Duration, "character_ids": sc.CharacterIDsJSON,
 		})
 	}
 
@@ -52,11 +52,20 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	for _, c := range chars {
 		charOptions = append(charOptions, map[string]interface{}{
 			"id":   c.ID,
-			"name": c.Name,
+			"name": c.Name, "description": c.Description, "appearance": c.Appearance, "personality": c.Personality, "visual_rules": c.VisualRulesJSON, "voice_rules": c.VoiceRulesJSON, "reference_asset_ids": c.ReferenceAssetIDsJSON,
 		})
 	}
 
-	contextJSON, _ := json.Marshal(map[string]any{"scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext})
+	assets, _ := s.database.ListAssets(projectID)
+	assetContext := []map[string]any{}
+	for i, a := range assets {
+		if i >= 64 {
+			break
+		}
+		assetContext = append(assetContext, map[string]any{"id": a.ID, "name": a.Name, "type": a.Type, "character_id": a.CharacterID, "description": a.Description, "metadata": a.MetadataJSON})
+	}
+	style, _ := s.database.GetStyleGuide(projectID)
+	contextJSON, _ := json.Marshal(map[string]any{"style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext})
 	ctx := r.Context()
 	var plannedSnapshot *directorContext
 	if s.cfg.UseLocalText {
@@ -105,6 +114,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		"scene_count": 1,
 	}
 
+	switch res.AssetType {
+	case "prop", "location", "background", "other":
+		intent["asset_type"] = res.AssetType
+	}
 	if res.SceneCount >= 1 && res.SceneCount <= 20 {
 		intent["scene_count"] = res.SceneCount
 	}
@@ -194,7 +207,7 @@ func canonicalChatAction(action string) string {
 	switch action {
 	case "create_script", "add_scene":
 		return "generate_script"
-	case "generate_script", "generate_scenes", "generate_shots", "storyboard", "render_scene", "render_shot", "caption", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
+	case "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "storyboard", "render_scene", "render_shot", "caption", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
 		return action
 	default:
 		return "unknown"

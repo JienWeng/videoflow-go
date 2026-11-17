@@ -11,20 +11,21 @@ import (
 )
 
 type generationBrief struct {
-	PresetID          string          `json:"style_preset_id,omitempty"`
-	CreativePreset    *presets.Preset `json:"creative_preset,omitempty"`
-	Idea              string          `json:"idea"`
-	TargetDuration    int             `json:"target_duration"`
-	SceneCount        int             `json:"scene_count"`
-	Style             string          `json:"style"`
-	AspectRatio       string          `json:"aspect_ratio"`
-	Language          string          `json:"language"`
-	ConversationMode  string          `json:"conversation_mode"`
-	Instruction       string          `json:"instruction"`
-	CharacterIDs      []string        `json:"character_ids"`
-	CreateCharacters  bool            `json:"create_characters"`
-	CharacterNotes    string          `json:"character_notes,omitempty"`
-	ReferenceAssetIDs []string        `json:"reference_asset_ids,omitempty"`
+	ReviewBeforeRender bool            `json:"review_before_render,omitempty"`
+	PresetID           string          `json:"style_preset_id,omitempty"`
+	CreativePreset     *presets.Preset `json:"creative_preset,omitempty"`
+	Idea               string          `json:"idea"`
+	TargetDuration     int             `json:"target_duration"`
+	SceneCount         int             `json:"scene_count"`
+	Style              string          `json:"style"`
+	AspectRatio        string          `json:"aspect_ratio"`
+	Language           string          `json:"language"`
+	ConversationMode   string          `json:"conversation_mode"`
+	Instruction        string          `json:"instruction"`
+	CharacterIDs       []string        `json:"character_ids"`
+	CreateCharacters   bool            `json:"create_characters"`
+	CharacterNotes     string          `json:"character_notes,omitempty"`
+	ReferenceAssetIDs  []string        `json:"reference_asset_ids,omitempty"`
 }
 
 func (s *Server) effectiveStyle(projectID, choice string) (string, bool) {

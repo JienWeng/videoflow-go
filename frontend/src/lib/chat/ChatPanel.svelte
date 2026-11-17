@@ -1,4 +1,7 @@
 <script lang="ts">
+  import {subscribeJobs} from '$lib/sse';
+  import {runBackgroundOp} from '$lib/ops';
+  import {workflowNext,storyReferencesApproved,hasPendingSceneReferences} from './workflow.mjs';
   import {protectDraft} from '$lib/protect-draft';
   import {storyCreation} from '$lib/create/story-creation.svelte';
   import { onMount, tick } from 'svelte';
@@ -39,6 +42,7 @@
     send?: string;
     fill?: string;
     href?: string;
+    focusId?:string;
   }
 
   /** In-chat progress row for a background op (storyboard/assets/shots/caption). */
@@ -53,6 +57,7 @@
   interface Msg {
     role: 'user' | 'assistant';
     retry?: string;
+    storyOperationId?:string;storyStage?:string;storyReady?:boolean;referenceIds?:string[];castIds?:string[];
     repairContext?: boolean;
     sessionReview?: boolean;
     activity?: unknown[];
@@ -80,6 +85,7 @@
 
   let {
     onfocus,
+    onguide,
     onmutate,
     onhide,
     onclear,
@@ -89,6 +95,7 @@
     selected = null
   }: {
     onfocus?: (id: string) => void;
+    onguide?: (id:string)=>void;
     onmutate?: () => void | Promise<void>;
     onhide?: () => void;
     onclear?: () => void;
@@ -147,8 +154,8 @@
   /** Drop the non-serializable / refetched parts (state, callbacks live in
    * the template anyway — cards re-render fine from intent + options). */
   function serializableMsg(m: Msg) {
-    const { role, text, intent, options, warnings, chips, op, thumbs, retry, activity, dismissed,repairContext,sessionReview } = m;
-    return { role, text, intent, options, warnings, chips, op, thumbs, retry, activity:normalizeActivity(activity), dismissed,repairContext,sessionReview };
+    const { role, text, intent, options, warnings, chips, op, thumbs, retry, activity, dismissed,repairContext,sessionReview,storyOperationId,storyStage,storyReady,referenceIds,castIds } = m;
+    return { role, text, intent, options, warnings, chips, op, thumbs, retry, activity:normalizeActivity(activity), dismissed,repairContext,sessionReview,storyOperationId,storyStage,storyReady,referenceIds,castIds };
   }
 
   let conversationGeneration=0;
@@ -247,11 +254,12 @@
     /** The next pipeline action for a single scene, if it isn't done yet. */
     function sceneNextChip(sceneId: string, label: string): Chip | null {
       if (!scenesWithShots.has(sceneId))
-        return { label: `Plan shots for ${label}`, send: `Plan shots for ${label}` };
+        return { label: `Plan shots for ${label}`, focusId:sceneId, send: `Plan shots for ${label}` };
       if (!scenesWithStoryboard.has(sceneId))
-        return { label: `Prepare keyframes for ${label}`, send: `Prepare keyframes for ${label}` };
+        return { label: `Prepare keyframes for ${label}`, focusId:sceneId, send: `Prepare keyframes for ${label}` };
+      if(hasPendingSceneReferences(graph,sceneId))return {label:`Review images for ${label}`,href:`/scenes?scene_id=${encodeURIComponent(sceneId)}`,focusId:sceneId};
       if (!renderedScenes.has(sceneId))
-        return { label: `Render《${label}》`, send: `render scene 《${label}》` };
+        return { label: `Render《${label}》`, focusId:sceneId, send: `render scene 《${label}》` };
       return null;
     }
 
@@ -353,12 +361,14 @@
     return out.slice(0, 4);
   }
 
+  const guidedSteps=$derived(workflowNext(graphData));
   let chips = $derived(computeChips(graphData, styleData, selected));
 
   async function refreshChips() {
     try {
       const [graph, style] = await Promise.all([get('/graph'), get('/style').catch(() => null)]);
       graphData = graph;
+      await refreshStoryApprovals();
       styleData = style;
     } catch {
       graphData = null;
@@ -369,6 +379,7 @@
   let inputWrapper = $state<HTMLDivElement | null>(null);
 
   function applyChip(c: Chip) {
+    if(c.focusId)(onguide??onfocus)?.(c.focusId);
     if (c.fill) {
       input = c.fill;
       inputWrapper?.querySelector('textarea')?.focus();
@@ -380,16 +391,19 @@
 
   onMount(() => {
     refreshChips();
-    initPersistence();
-    const update=()=>initPersistence();
+    void initPersistence().then(restoreGuidedOperation);
+    const update=()=>{void initPersistence().then(restoreGuidedOperation)};
+    const stop=subscribeJobs(()=>{void refreshChips()},()=>{void refreshChips()});
     window.addEventListener('videoflow-session-changed',update);
-    return ()=>window.removeEventListener('videoflow-session-changed',update);
+    window.addEventListener('focus',refreshChips);
+    return ()=>{stop();window.removeEventListener('videoflow-session-changed',update);window.removeEventListener('focus',refreshChips)};
   });
 
   /** Context passed up by ActionCard after a successful run. */
   interface RunContext {
     action: string;
     sceneId?: string;
+    characterId?:string;
     outputId?: string;
   }
 
@@ -432,16 +446,47 @@
   async function attachOpResults(m: Msg | undefined, ctx: RunContext, result: any) {
     if (!m) return;
     const rj = result?.result_json ?? {};
+    if(ctx.action==='generate_script'){
+      m.storyOperationId=result.id??m.storyOperationId;
+      m.storyStage=rj.status;m.castIds=rj.cast_character_ids??[];m.referenceIds=rj.story_asset_ids??[];
+      m.text=rj.status==='awaiting_character_review'?'Your story and reference images are ready. Review each character, prop and location image, then continue storyboarding.':rj.status==='awaiting_reference_review'?'Your storyboard images are ready. Review and approve them in each scene before rendering.':'Story planning completed. Review the saved work before continuing.';
+      m.chips=[{label:'Review story progress',href:`/create?op_id=${encodeURIComponent(m.storyOperationId??'')}`}];
+      const scene=rj.scene_ids?.[0];if(scene)m.chips.push({label:'Show story on canvas',focusId:scene,fill:'Review the next step for this story.'});
+      await refreshStoryApprovals();return;
+    }
+    if(ctx.action==='generate_character_reference'){
+      m.text='Character reference generated. Review the full image before using it in scenes.';m.chips=[{label:'Review character image',href:`/characters/${encodeURIComponent(ctx.characterId??'')}#np-character-references`,focusId:ctx.characterId}];return;
+    }
     if (ctx.action === 'caption') {
       const outputId = rj.output_id ?? result?.output_id ?? ctx.outputId;
       if (outputId)
         m.chips = [{ label: 'Open in editor', href: `/editor/${outputId}` }];
-    } else if (ctx.action === 'storyboard' || ctx.action === 'generate_assets') {
+    } else if (ctx.action === 'storyboard' || ctx.action === 'generate_assets' || ctx.action==='generate_image') {
       const ids: string[] = rj.asset_ids ?? (rj.asset_id ? [rj.asset_id] : []);
       const thumbs = await assetThumbs(ids);
       if (thumbs.length) m.thumbs = thumbs;
       m.chips = [{ label: 'View in Assets', href: '/assets' }];
     }
+  }
+
+  async function refreshStoryApprovals(){
+    const pending=messages.filter(m=>m.storyStage==='awaiting_character_review');if(!pending.length)return;
+    try{const generation=conversationGeneration;const [characters,assets,ops]=await Promise.all([get('/characters'),get('/assets'),Promise.all(pending.map(m=>m.storyOperationId?get(`/ops/${encodeURIComponent(m.storyOperationId)}`):Promise.resolve(null)))]);if(generation!==conversationGeneration)return;
+      pending.forEach((m,i)=>{const op=ops[i],state=op?.result_json;
+        if(state?.status==='awaiting_character_review'){m.referenceIds=state.story_asset_ids??[];m.castIds=state.cast_character_ids??[]}
+        if(op?.status==='succeeded'&&state?.status==='awaiting_reference_review'){m.storyStage=state.status;m.text='Your storyboard images are ready. Review and approve them in each scene before rendering.';return}
+        m.storyReady=op?.status!=='running'&&storyReferencesApproved(m.castIds??[],m.referenceIds??[],characters,assets);
+      });
+    }catch{for(const m of pending)m.storyReady=false}
+  }
+  async function restoreGuidedOperation(){const generation=conversationGeneration;try{const project=await get('/projects/active');const ops=await get(`/ops?project_id=${encodeURIComponent(project.id)}&kind=video_generation&limit=1`);if(generation!==conversationGeneration)return;const op=ops?.[0];if(op?.status!=='succeeded'||!['awaiting_character_review','awaiting_reference_review'].includes(op.result_json?.status)||messages.some(m=>m.storyOperationId===op.id))return;const m:Msg={role:'assistant',text:''};messages.push(m);await attachOpResults(messages[messages.length-1],{action:'generate_script'},op)}catch{/* Regular chat stays usable if progress cannot be restored. */}}
+  let continuingStory=$state(false);
+  async function continueStory(m:Msg){
+    if(!m.storyOperationId||continuingStory||!m.storyReady)return;
+    continuingStory=true;const generation=conversationGeneration;
+    m.op={id:m.storyOperationId,label:'Storyboard images',status:'running'};
+    const settle=()=>{continuingStory=false};
+    try{await runBackgroundOp(`/videos/generate/${m.storyOperationId}/continue`,{}, {label:'Storyboard images',onDone:async op=>{settle();if(generation!==conversationGeneration)return;if(m.op)m.op.status='done';await attachOpResults(m,{action:'generate_script'},op);await onmutate?.();await refreshChips()},onFail:op=>{settle();if(generation!==conversationGeneration)return;if(m.op){m.op.status='failed';m.op.detail=op.error??'Storyboarding needs attention.'}m.text=op.error??'Storyboarding needs attention. Review the existing work before retrying.'}})}catch(e){settle();if(generation===conversationGeneration){if(m.op)m.op.status='failed';m.text=String(e)}}
   }
 
   /** ActionCard launched a background op: append the in-chat progress row. */
@@ -556,6 +601,7 @@
     await onmutate?.();
     await refreshChips();
     if (!ctx) return;
+    if(ctx.action==='generate_script'||ctx.action==='generate_character_reference')return;
     const follow = buildFollowUp(ctx);
     if (follow) messages.push(follow);
   }
@@ -597,7 +643,7 @@
   async function repairContext(message:Msg){if(!activeSessionId||repairingContext)return;repairingContext=true;const generation=conversationGeneration;try{const result=await post(`/director/sessions/${activeSessionId}/repair-context`,{});if(generation!==conversationGeneration)return;message.repairContext=false;message.sessionReview=!!result.review_required;message.text=result.review_required?'Unavailable references removed. Review the interrupted AI session before sending again.':'Unavailable references removed. Your message is ready to retry.';reusePrompt(message.retry??'');void refreshCapabilities();}catch(e){if(generation===conversationGeneration)message.text=`Could not repair context. ${String(e)}`;}finally{repairingContext=false}}
   async function send(text?: string) {
     const message = (text ?? input).trim();
-    if (!message || busy || historyLoading || sessionRequired || historyError) return;
+    if (!message || busy || pendingOps.length || historyLoading || sessionRequired || historyError) return;
     const generation=conversationGeneration;
     input = '';
     if(isEmpty)messages=[];
@@ -653,6 +699,7 @@
         {c.label}
         <ArrowUpRight class="size-3" />
       </Button>
+      {#if c.focusId}<Button variant="ghost" size="sm" aria-label={'Show on canvas: '+c.label} onclick={()=>(onguide??onfocus)?.(c.focusId!)}>Show on canvas</Button>{/if}
     {:else if c.fill}
       <!-- Pre-fill chip: outline + dashed + pen, so it reads as "edit then send"
            rather than "run now" (the solid send chips below). -->
@@ -776,6 +823,7 @@
             {#if m.intent?.action==='unknown' && m.state?.next_steps?.length}<ol class="list-decimal space-y-1 pl-5 text-sm">{#each m.state.next_steps as step}<li>{step}</li>{/each}</ol>{/if}
             {#if m.repairContext}<Button variant="outline" size="sm" class="mt-2" disabled={busy||repairingContext} onclick={()=>repairContext(m)}>{repairingContext?'Repairing…':'Repair chat context'}</Button>{/if}
             {#if m.sessionReview}<Button variant="outline" size="sm" class="mt-2" href="/director">Review AI session</Button>{/if}
+            {#if m.storyStage==='awaiting_character_review'}<div class="space-y-2"><p class="text-xs text-muted-foreground">{m.storyReady?'References approved. Continue to scene images.':'Approve every character, prop and location image before continuing.'}</p><Button size="sm" disabled={!m.storyReady||continuingStory||busy} onclick={()=>continueStory(m)}>{continuingStory?'Creating storyboard images…':'Continue storyboarding'}</Button></div>{/if}
             {#if m.retry&&!m.repairContext&&!m.sessionReview}<Button variant="outline" size="sm" class="mt-2" disabled={busy} onclick={()=>reusePrompt(m.retry??'')}>Edit and retry</Button>{/if}
             <ActivityView events={messageActivity(m)} />
             {#if normalizeActivity(m.activity).some(e=>e.kind==='subagent'&&e.status==='done')}<Button variant="outline" size="sm" class="self-start" disabled={busy} onclick={()=>prepareReviewChanges(m)}>Prepare changes from review</Button>{/if}
@@ -813,7 +861,7 @@
                 intent={m.intent}
                 options={m.options}
                 projectState={m.state}
-                {onfocus}
+                onfocus={onguide??onfocus}
                 onran={handleRan}
                 onop={handleOpStart}
                 onsuggest={(text) => { input=text; focusComposer(); }}
@@ -827,6 +875,7 @@
         </MessageScroller.Item>
       {/each}
       {/if}
+      {#if guidedSteps.length&&!busy}<section aria-label="Suggested next steps" class="space-y-2 border-t pt-3"><h4 class="text-sm font-medium">Next step</h4><div class="flex flex-wrap gap-2">{@render chipRow(guidedSteps)}</div><p class="text-xs text-muted-foreground">Suggestions focus the canvas and prepare your request. Review the proposal before running it.</p></section>{/if}
       {#if busy&&!reviewMode}
         <MessageScroller.Item messageId="working"><Message.Root><Message.Content><div role="status" class="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />Working on your story…</div></Message.Content></Message.Root></MessageScroller.Item>
       {/if}
@@ -841,7 +890,7 @@
       {#if selected}<Attachment.Root size="sm" class="min-w-0 max-w-full"><Attachment.Content class="min-w-0"><Attachment.Title class="truncate" title={selected.label}>{selected.kind.replace('_',' ')}: {selected.label}</Attachment.Title></Attachment.Content>{#if onclear}<Attachment.Actions><Attachment.Action aria-label="Clear selection" class="size-9 shrink-0" onclick={onclear}><X class="size-3.5" /></Attachment.Action></Attachment.Actions>{/if}</Attachment.Root>{:else}<span></span>{/if}
       {#if embedded&&!isEmpty}<Button variant="ghost" size="icon" class="size-9 shrink-0 text-muted-foreground" aria-label="Clear chat" title="Clear visible chat; saved session history is kept" disabled={busy||historyLoading||isEmpty} onclick={clearChat}><Eraser class="size-4" /></Button>{/if}
     </div>{/if}
-    {#if chips.length&&(!isEmpty||selected)}<div aria-label="Suggested prompts" class="mb-2 flex flex-wrap items-center gap-2">{@render chipRow(chips)}</div>{/if}
+    {#if !guidedSteps.length&&chips.length&&(!isEmpty||selected)}<div aria-label="Suggested prompts" class="mb-2 flex flex-wrap items-center gap-2">{@render chipRow(chips)}</div>{/if}
     <form onsubmit={e=>{e.preventDefault();void send();}}>
       <InputGroup.Root class="rounded-2xl bg-background shadow-none has-disabled:opacity-100 has-disabled:bg-background dark:has-disabled:bg-background">
         <InputGroup.Textarea aria-label="Message story assistant" bind:value={input} class="min-h-24 max-h-40 px-3 pt-3" placeholder={selected ? `What should change in ${selected.label}?` : 'Tell me your idea…'} onkeydown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();void send();}}} />
@@ -857,7 +906,7 @@
             </DropdownMenu.Content>
           </DropdownMenu.Root>
           <!-- Stop is offered only when the backend has a concrete local session to cancel. -->
-          {#if busy&&activeSessionId}<InputGroup.Button type="button" size="sm" variant="outline" class="ml-auto" aria-label="Stop planning" disabled={cancelling} onclick={stopPlanning}>{cancelling?'Stopping…':'Stop'}</InputGroup.Button>{:else}<InputGroup.Button type="submit" size="icon-sm" variant="default" class="ml-auto" aria-label="Send message" disabled={busy||historyLoading||sessionRequired||!!historyError||!input.trim()}>{#if busy}<LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />{:else}<ArrowUp class="size-4" />{/if}</InputGroup.Button>{/if}
+          {#if busy&&activeSessionId}<InputGroup.Button type="button" size="sm" variant="outline" class="ml-auto" aria-label="Stop planning" disabled={cancelling} onclick={stopPlanning}>{cancelling?'Stopping…':'Stop'}</InputGroup.Button>{:else}<InputGroup.Button type="submit" size="icon-sm" variant="default" class="ml-auto" aria-label="Send message" disabled={busy||pendingOps.length>0||historyLoading||sessionRequired||!!historyError||!input.trim()}>{#if busy}<LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />{:else}<ArrowUp class="size-4" />{/if}</InputGroup.Button>{/if}
         </InputGroup.Addon>
       </InputGroup.Root>
     </form>

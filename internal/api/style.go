@@ -48,6 +48,10 @@ func (s *Server) handleUpdateStyle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+	if style.ProjectID != nil && *style.ProjectID != projectID {
+		http.Error(w, "project changed; reload before saving its style", 409)
+		return
+	}
 	style.ProjectID = &projectID
 	if err := s.database.UpsertStyleGuide(&style); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

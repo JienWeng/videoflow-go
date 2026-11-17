@@ -222,7 +222,7 @@ func (s *Server) generateAssets(ctx context.Context, projectID *string, characte
 			fields["director_context"] = frozenIdentity
 			metadata, _ = json.Marshal(fields)
 		}
-		if s.cfg.UseLocalText {
+		if s.cfg.UseLocalText || ctx.Value(imageReviewKey{}) == true {
 			var reviewMeta map[string]any
 			_ = json.Unmarshal(metadata, &reviewMeta)
 			reviewMeta["consistency_review"] = "pending"

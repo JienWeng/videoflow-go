@@ -220,6 +220,7 @@ func (s *Server) setupRoutes() {
 	s.router.Get("/scripts", s.handleListScripts)
 
 	// Assets
+	s.router.Post("/assets/generate", s.handleGenerateImage)
 	s.router.Get("/assets", s.handleListAssets)
 	s.router.Get("/assets/types", s.handleAssetTypes)
 	s.router.Post("/assets/upload", s.handleUploadAsset)

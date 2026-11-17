@@ -19,6 +19,7 @@ type directorSelection struct {
 	AssetIDs           []string `json:"asset_ids"`
 }
 type directorContext struct {
+	Style      *models.StyleGuide `json:"style,omitempty"`
 	Selection  *directorSelection `json:"selection,omitempty"`
 	ProjectID  string             `json:"project_id"`
 	Revision   string             `json:"revision"`
@@ -47,6 +48,9 @@ func (s *Server) buildDirectorContext(project string, selection directorSelectio
 		return nil, fmt.Errorf("choose at most 8 characters and 32 explicit assets")
 	}
 	result := &directorContext{ProjectID: project, Characters: []models.Character{}, Assets: []directorAsset{}, Warnings: []string{}}
+	if style, e := s.database.GetStyleGuide(project); e == nil {
+		result.Style = style
+	}
 	seenCharacters := map[string]bool{}
 	assetIDs := append([]string{}, selection.AssetIDs...)
 	for _, id := range selection.CharacterIDs {

@@ -189,6 +189,7 @@
     try {
       const response = await post('/videos/generate?background=true', {
         idea: idea.trim(),
+        review_before_render:true,
         scene_count:sceneCount,
         style,
         ...(styleOptions.length?{style_preset_id:style}:{}),

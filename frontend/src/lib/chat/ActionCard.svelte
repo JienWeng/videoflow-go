@@ -1,7 +1,7 @@
 <script lang="ts">
  const operationScope=new AbortController();
  onDestroy(()=>operationScope.abort());
- import {onDestroy} from 'svelte';
+ import {onDestroy,untrack} from 'svelte';
   import { del as apiDel, get, post as apiPost } from '$lib/api';
   import { normalizeChatIntent } from './intent.mjs';
   import { runBackgroundOp, type Op } from '$lib/ops';
@@ -25,6 +25,7 @@
 
   interface Intent {
     action: string;
+    asset_type?:string;
     director_proposal?: string;
     scene_id?: string | null;
     character_id?: string | null;
@@ -61,6 +62,7 @@
   /** Passed up with the result so the chat can propose the next step. */
   interface RunContext {
     action: string;
+    characterId?:string;
     sceneId?: string;
     outputId?: string;
   }
@@ -118,6 +120,10 @@
   // svelte-ignore state_referenced_locally
   let sceneCount = $state<number | ''>(intent.scene_count ?? '');
   // svelte-ignore state_referenced_locally
+  let characterId=$state(intent.character_id??'');
+  let storyFormat=$state(untrack(()=>intent.action==='generate_image'?'1:1':'9:16'));
+  let imageType=$state(untrack(()=>intent.asset_type??'other'));
+  // svelte-ignore state_referenced_locally
   let castIds:string[]=$state(intent.character_id?[intent.character_id]:[]);
   // svelte-ignore state_referenced_locally
   let sceneId = $state(intent.scene_id ?? '');
@@ -140,7 +146,9 @@
   let developing = $state(false);
 
   const labels: Record<string, string> = {
-    generate_script: 'Generate script',
+    generate_script: 'Create story & references',
+    generate_image:'Generate image',
+    generate_character_reference:'Generate character reference',
     generate_scenes: 'Expand scene',
     generate_shots: 'Generate shots',
     storyboard: 'Generate storyboard',
@@ -193,6 +201,8 @@
 
   const ready = $derived.by(() => {
     switch (intent.action) {
+      case 'generate_image':return !!idea.trim();
+      case 'generate_character_reference':return !!characterId;
       case 'generate_script':
         return idea.trim().length > 0;
       case 'generate_scenes':
@@ -282,10 +292,16 @@
   async function run() {
     const ctx: RunContext = {
       action: intent.action,
+      characterId:characterId||undefined,
       sceneId: sceneId || undefined,
       outputId: outputId || undefined
     };
     switch (intent.action) {
+      case 'generate_script':
+        return runInBackground('/videos/generate?background=true',{idea:ideaOptions?composedIdea():idea.trim(),character_ids:castIds,create_characters:true,review_before_render:true,scene_count:sceneCount||1,aspect_ratio:storyFormat,style_preset_id:'project-style'},'Story & reference images',op=>op.result_json?.scene_ids?.[0],ctx);
+      case 'generate_image':return runInBackground('/assets/generate',{prompt:idea.trim(),aspect_ratio:storyFormat,type:imageType},'Image generation',op=>op.result_json?.asset_ids?.[0],ctx);
+      case 'generate_character_reference':
+        return runInBackground(`/characters/${characterId}/reference-sheets`,{},'Character reference',()=>characterId,ctx);
       case 'storyboard':
         return runInBackground(
           `/scenes/${sceneId}/storyboard`,
@@ -326,15 +342,6 @@
       let result: any;
       let focusId: string | undefined;
       switch (intent.action) {
-        case 'generate_script':
-          result = await post('/scripts/generate', {
-            idea: ideaOptions ? composedIdea() : idea.trim(),
-            character_ids:castIds,
-            ...(sceneCount ? { scene_count: sceneCount } : {})
-          });
-          focusId = result.scenes?.at(-1)?.id;
-          toast.success(`Script generated — ${result.scenes?.length ?? 0} scenes`);
-          break;
         case 'generate_scenes':
           result = await post(`/scenes/${sceneId}/generate`, {});
           focusId = result.id ?? sceneId;
@@ -474,10 +481,13 @@
           <label class={labelClass} for="scenes-{intent.action}">Scenes (optional)</label>
           <input id="scenes-{intent.action}" type="number" min="1" max="20"
             bind:value={sceneCount} placeholder="auto" class={selectClass} />
-          <p class="text-xs text-muted-foreground mt-1">1 scene = 1 video</p>
+          <p class="text-xs text-muted-foreground mt-1">Creates the story, shots, missing characters and reference images using the project style. Review references before storyboarding. Image calls may incur provider charges; video rendering stays separate.</p>
         </div>
       {/if}
 
+      {#if intent.action==='generate_image'}<label class="grid gap-1 text-xs">Image type<select class={selectClass} bind:value={imageType}><option value="other">General image</option><option value="prop">Prop</option><option value="location">Location</option><option value="background">Background</option></select></label><label class="grid gap-1 text-xs">Image prompt<Textarea bind:value={idea} rows={3}/></label><label class="grid gap-1 text-xs">Format<select class={selectClass} bind:value={storyFormat}><option value="1:1">Square · 1:1</option><option value="9:16">Vertical · 9:16</option><option value="16:9">Landscape · 16:9</option></select></label><p class="text-xs text-muted-foreground">Uses the current project style. Review the generated image before reuse. Provider calls may incur charges.</p>{/if}
+      {#if intent.action==='generate_character_reference'}<div><label class={labelClass} for="reference-character">Character</label><select id="reference-character" class={selectClass} bind:value={characterId}><option value="">Choose a character…</option>{#each options.characters as c(c.id)}<option value={c.id}>{c.name}</option>{/each}</select><p class="mt-2 text-xs text-muted-foreground">Generates a full-body reference candidate. Review it before use. Provider calls may incur charges.</p></div>{/if}
+      {#if intent.action==='generate_script'}<label class="grid gap-1 text-xs">Format<select class={selectClass} bind:value={storyFormat}><option value="9:16">Vertical · 9:16</option><option value="16:9">Landscape · 16:9</option><option value="1:1">Square · 1:1</option></select></label><p class="text-xs text-muted-foreground">Uses your saved project style. <a class="underline" href="/projects">Edit project style</a></p>{/if}
       {#if intent.action === 'generate_script' && options.characters.length}
       <fieldset class="space-y-1"><legend class="text-xs">Cast</legend>{#each options.characters as character(character.id)}<label class="flex items-center gap-2 text-xs"><input type="checkbox" bind:group={castIds} value={character.id}/>{character.name}</label>{/each}</fieldset>
       {/if}
@@ -598,29 +608,8 @@
 
       <div class="flex items-center gap-1.5 pt-1">
         {#if intent.action === 'generate_script' && !ideaOptions}
-          <Button
-            size="sm"
-            class="rounded-full px-4"
-            disabled={busy || developing || !ready}
-            onclick={developIdeas}
-          >
-            {#if developing}
-              <LoaderCircle class="size-4 mr-1 animate-spin" />
-            {:else}
-              <Lightbulb class="size-4 mr-1" />
-            {/if}
-            {developing ? 'Developing…' : 'Develop ideas'}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            class="rounded-full px-3"
-            disabled={busy || developing || !ready}
-            onclick={run}
-          >
-            {#if busy}<LoaderCircle class="size-4 mr-1 animate-spin" />{/if}
-            {busy ? 'Running…' : 'Skip — generate directly'}
-          </Button>
+          <Button size="sm" class="rounded-full px-4" disabled={busy||developing||!ready} onclick={run}>{#if busy}<LoaderCircle class="size-4 mr-1 animate-spin"/>{:else}<Play class="size-4 mr-1"/>{/if}{busy?'Running…':'Create story & references'}</Button>
+          <Button size="sm" variant="outline" class="rounded-full px-3" disabled={busy||developing||!ready} onclick={developIdeas}><Lightbulb class="size-4 mr-1"/>{developing?'Exploring…':'Explore ideas first'}</Button>
         {:else if intent.action === 'generate_script'}
           <Button size="sm" class="rounded-full px-4" disabled={busy} onclick={run}>
             {#if busy}
@@ -628,7 +617,7 @@
             {:else}
               <Play class="size-4 mr-1" />
             {/if}
-            {busy ? 'Running…' : 'Generate script'}
+            {busy ? 'Running…' : 'Create story & references'}
           </Button>
           <Button
             size="sm"
