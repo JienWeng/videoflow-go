@@ -90,7 +90,7 @@ func (s *Server) handleRegenerateAsset(w http.ResponseWriter, r *http.Request) {
 			metadata["source_asset_id"] = source.ID
 			metadata["source_updated_at"] = source.UpdatedAt
 			metadata["variant_group_id"] = assetVariantGroup(source)
-			metadata["consistency_review"] = "pending"
+			metadata["consistency_review"] = "ready"
 			if identity["locked_traits"] != nil {
 				metadata["locked_traits"] = identity["locked_traits"]
 			}

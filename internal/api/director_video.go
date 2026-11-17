@@ -84,7 +84,7 @@ func (s *Server) freezeDirectorVideo(ctx context.Context, job *models.RenderJob)
 			return err
 		}
 		if !models.ReferenceApproved(asset.MetadataJSON) {
-			return fmt.Errorf("reference %s requires consistency review in Assets before video generation", asset.Name)
+			return fmt.Errorf("reference %s is excluded from generation; replace it in Library", asset.Name)
 		}
 		if !item.Available {
 			return fmt.Errorf("selected reference %s is unavailable", asset.Name)
@@ -141,17 +141,17 @@ func (s *Server) freezeDirectorVideo(ctx context.Context, job *models.RenderJob)
 			}
 		}
 		if keyframe == nil && unreviewed {
-			return fmt.Errorf("generated keyframes await consistency review; approve a matching reference in Assets before Render")
+			return fmt.Errorf("matching keyframes are excluded; generate a replacement before Render")
 		}
 	}
 	if sceneID != "" && hasSceneBoards && keyframe == nil {
-		return fmt.Errorf("scene inputs or references changed; review or regenerate a matching storyboard before rendering")
+		return fmt.Errorf("scene inputs or references changed; regenerate a matching storyboard before rendering")
 	}
 	if sceneID == "" && keyframe == nil && len(visual) == 1 {
 		keyframe = &visual[0]
 	}
 	if len(visual) > 0 && keyframe == nil {
-		return fmt.Errorf("selected identities require a reviewed combined keyframe; generate and approve it before video rendering")
+		return fmt.Errorf("selected identities require a combined keyframe; generate it before video rendering")
 	}
 	if keyframe != nil {
 		if payload["frame_images"] != nil || payload["input_references"] != nil {

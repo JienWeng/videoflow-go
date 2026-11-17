@@ -257,7 +257,7 @@
         return { label: `Plan shots for ${label}`, focusId:sceneId, send: `Plan shots for ${label}` };
       if (!scenesWithStoryboard.has(sceneId))
         return { label: `Prepare keyframes for ${label}`, focusId:sceneId, send: `Prepare keyframes for ${label}` };
-      if(hasPendingSceneReferences(graph,sceneId))return {label:`Review images for ${label}`,href:`/scenes?scene_id=${encodeURIComponent(sceneId)}`,focusId:sceneId};
+      if(hasPendingSceneReferences(graph,sceneId))return {label:`Replace excluded images for ${label}`,href:`/scenes?scene_id=${encodeURIComponent(sceneId)}`,focusId:sceneId};
       if (!renderedScenes.has(sceneId))
         return { label: `Render《${label}》`, focusId:sceneId, send: `render scene 《${label}》` };
       return null;
@@ -449,13 +449,13 @@
     if(ctx.action==='generate_script'){
       m.storyOperationId=result.id??m.storyOperationId;
       m.storyStage=rj.status;m.castIds=rj.cast_character_ids??[];m.referenceIds=rj.story_asset_ids??[];
-      m.text=rj.status==='awaiting_character_review'?'Your story and reference images are ready. Review each character, prop and location image, then continue storyboarding.':rj.status==='awaiting_reference_review'?'Your storyboard images are ready. Review and approve them in each scene before rendering.':'Story planning completed. Review the saved work before continuing.';
-      m.chips=[{label:'Review story progress',href:`/create?op_id=${encodeURIComponent(m.storyOperationId??'')}`}];
-      const scene=rj.scene_ids?.[0];if(scene)m.chips.push({label:'Show story on canvas',focusId:scene,fill:'Review the next step for this story.'});
+      m.text=rj.status==='awaiting_character_review'?'Your saved story can continue to storyboarding. Images do not need approval.':['awaiting_reference_review','ready_to_render'].includes(rj.status)?'Your story and images are ready. You can adjust them or render a scene.':'Story planning completed. Review the saved work before continuing.';
+      m.chips=[{label:'Open story progress',href:`/create?op_id=${encodeURIComponent(m.storyOperationId??'')}`}];
+      const scene=rj.scene_ids?.[0];if(scene)m.chips.push({label:'Show story on canvas',focusId:scene,fill:'What is the next step for this story?'});
       await refreshStoryApprovals();return;
     }
     if(ctx.action==='generate_character_reference'){
-      m.text='Character reference generated. Review the full image before using it in scenes.';m.chips=[{label:'Review character image',href:`/characters/${encodeURIComponent(ctx.characterId??'')}#np-character-references`,focusId:ctx.characterId}];return;
+      m.text='Character reference generated and ready to use.';m.chips=[{label:'View character image',href:`/characters/${encodeURIComponent(ctx.characterId??'')}#np-character-references`,focusId:ctx.characterId}];return;
     }
     if (ctx.action === 'caption') {
       const outputId = rj.output_id ?? result?.output_id ?? ctx.outputId;
@@ -474,12 +474,12 @@
     try{const generation=conversationGeneration;const [characters,assets,ops]=await Promise.all([get('/characters'),get('/assets'),Promise.all(pending.map(m=>m.storyOperationId?get(`/ops/${encodeURIComponent(m.storyOperationId)}`):Promise.resolve(null)))]);if(generation!==conversationGeneration)return;
       pending.forEach((m,i)=>{const op=ops[i],state=op?.result_json;
         if(state?.status==='awaiting_character_review'){m.referenceIds=state.story_asset_ids??[];m.castIds=state.cast_character_ids??[]}
-        if(op?.status==='succeeded'&&state?.status==='awaiting_reference_review'){m.storyStage=state.status;m.text='Your storyboard images are ready. Review and approve them in each scene before rendering.';return}
+        if(op?.status==='succeeded'&&state?.status==='awaiting_reference_review'){m.storyStage=state.status;m.text='Your story and images are ready. You can adjust them or render a scene.';return}
         m.storyReady=op?.status!=='running'&&storyReferencesApproved(m.castIds??[],m.referenceIds??[],characters,assets);
       });
     }catch{for(const m of pending)m.storyReady=false}
   }
-  async function restoreGuidedOperation(){const generation=conversationGeneration;try{const project=await get('/projects/active');const ops=await get(`/ops?project_id=${encodeURIComponent(project.id)}&kind=video_generation&limit=1`);if(generation!==conversationGeneration)return;const op=ops?.[0];if(op?.status!=='succeeded'||!['awaiting_character_review','awaiting_reference_review'].includes(op.result_json?.status)||messages.some(m=>m.storyOperationId===op.id))return;const m:Msg={role:'assistant',text:''};messages.push(m);await attachOpResults(messages[messages.length-1],{action:'generate_script'},op)}catch{/* Regular chat stays usable if progress cannot be restored. */}}
+  async function restoreGuidedOperation(){const generation=conversationGeneration;try{const project=await get('/projects/active');const ops=await get(`/ops?project_id=${encodeURIComponent(project.id)}&kind=video_generation&limit=1`);if(generation!==conversationGeneration)return;const op=ops?.[0];if(op?.status!=='succeeded'||!['awaiting_character_review','awaiting_reference_review','ready_to_render'].includes(op.result_json?.status)||messages.some(m=>m.storyOperationId===op.id))return;const m:Msg={role:'assistant',text:''};messages.push(m);await attachOpResults(messages[messages.length-1],{action:'generate_script'},op)}catch{/* Regular chat stays usable if progress cannot be restored. */}}
   let continuingStory=$state(false);
   async function continueStory(m:Msg){
     if(!m.storyOperationId||continuingStory||!m.storyReady)return;
@@ -823,7 +823,7 @@
             {#if m.intent?.action==='unknown' && m.state?.next_steps?.length}<ol class="list-decimal space-y-1 pl-5 text-sm">{#each m.state.next_steps as step}<li>{step}</li>{/each}</ol>{/if}
             {#if m.repairContext}<Button variant="outline" size="sm" class="mt-2" disabled={busy||repairingContext} onclick={()=>repairContext(m)}>{repairingContext?'Repairing…':'Repair chat context'}</Button>{/if}
             {#if m.sessionReview}<Button variant="outline" size="sm" class="mt-2" href="/director">Review AI session</Button>{/if}
-            {#if m.storyStage==='awaiting_character_review'}<div class="space-y-2"><p class="text-xs text-muted-foreground">{m.storyReady?'References approved. Continue to scene images.':'Approve every character, prop and location image before continuing.'}</p><Button size="sm" disabled={!m.storyReady||continuingStory||busy} onclick={()=>continueStory(m)}>{continuingStory?'Creating storyboard images…':'Continue storyboarding'}</Button></div>{/if}
+            {#if m.storyStage==='awaiting_character_review'}<div class="space-y-2"><p class="text-xs text-muted-foreground">{m.storyReady?'References ready. Continue to scene images.':'Replace missing or excluded images before continuing.'}</p><Button size="sm" disabled={!m.storyReady||continuingStory||busy} onclick={()=>continueStory(m)}>{continuingStory?'Creating storyboard images…':'Continue storyboarding'}</Button></div>{/if}
             {#if m.retry&&!m.repairContext&&!m.sessionReview}<Button variant="outline" size="sm" class="mt-2" disabled={busy} onclick={()=>reusePrompt(m.retry??'')}>Edit and retry</Button>{/if}
             <ActivityView events={messageActivity(m)} />
             {#if normalizeActivity(m.activity).some(e=>e.kind==='subagent'&&e.status==='done')}<Button variant="outline" size="sm" class="self-start" disabled={busy} onclick={()=>prepareReviewChanges(m)}>Prepare changes from review</Button>{/if}

@@ -45,7 +45,7 @@ func (s *Server) directorImageInputs(ctx context.Context, project *string, refer
 			return nil, "", e
 		}
 		if !models.ReferenceApproved(assetState.MetadataJSON) {
-			return nil, "", fmt.Errorf("reference %s requires consistency review in Assets", item.Name)
+			return nil, "", fmt.Errorf("reference %s is excluded from generation; replace it in Library", item.Name)
 		}
 		if !item.Available {
 			return nil, "", fmt.Errorf("approved reference %s is unavailable; repair selection before generation", item.Name)
@@ -116,7 +116,9 @@ func (s *Server) handleAssetIdentity(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if changed {
-		meta["consistency_review"] = "pending"
+		if meta["consistency_review"] != "rejected" {
+			meta["consistency_review"] = "ready"
+		}
 		delete(meta, "consistency_reviewed_at")
 	}
 	meta["locked_traits"] = body.LockedTraits

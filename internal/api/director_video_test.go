@@ -40,17 +40,17 @@ func TestOrdinaryRenderCapturesIdentityAndRechecksBeforeSubmission(t *testing.T)
 		t.Fatal("locked attributes not captured")
 	}
 }
-func TestFrozenVideoRejectsUnreviewedReference(t *testing.T) {
+func TestFrozenVideoRejectsExcludedReference(t *testing.T) {
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("no provider") })
 	s.cfg.UseLocalText = true
 	project, _ := s.database.GetActiveProjectID()
 	path := filepath.Join(s.cfg.StorageRoot, "pending.png")
 	os.WriteFile(path, []byte("pending"), 0600)
-	a := &models.Asset{ProjectID: &project, Type: "storyboard", FilePath: path, MetadataJSON: []byte(`{"consistency_review":"pending"}`)}
+	a := &models.Asset{ProjectID: &project, Type: "storyboard", FilePath: path, MetadataJSON: []byte(`{"consistency_review":"rejected"}`)}
 	s.database.CreateAsset(a)
 	ctx := context.WithValue(context.Background(), directorBindingKey{}, directorBinding{ProjectID: project, Selection: directorSelection{AssetIDs: []string{a.ID}}})
 	job := &models.RenderJob{ProjectID: &project, RequestJSON: json.RawMessage(`{"prompt":"not approved"}`)}
-	if err := s.freezeDirectorVideo(ctx, job); err == nil || !strings.Contains(err.Error(), "review") {
+	if err := s.freezeDirectorVideo(ctx, job); err == nil || !strings.Contains(err.Error(), "excluded") {
 		t.Fatal("unreviewed generated ref accepted", err)
 	}
 }

@@ -225,7 +225,7 @@ func (s *Server) generateAssets(ctx context.Context, projectID *string, characte
 		if s.cfg.UseLocalText || ctx.Value(imageReviewKey{}) == true {
 			var reviewMeta map[string]any
 			_ = json.Unmarshal(metadata, &reviewMeta)
-			reviewMeta["consistency_review"] = "pending"
+			reviewMeta["consistency_review"] = "ready"
 			metadata, _ = json.Marshal(reviewMeta)
 		}
 		asset := models.Asset{ID: id, ProjectID: projectID, CharacterID: characterID, Type: kind, Name: name, Description: descriptionPrompt, FilePath: filepath.ToSlash(filepath.Join("storage", "assets", id+ext)), TagsJSON: json.RawMessage(`[]`), MetadataJSON: metadata}

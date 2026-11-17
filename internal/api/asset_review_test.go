@@ -39,7 +39,7 @@ func TestAssetReviewRequiresOwnershipAndExactRevision(t *testing.T) {
 		t.Fatal(cross.Code, cross.Body.String())
 	}
 }
-func TestLocalPipelineStopsForGeneratedReferenceReview(t *testing.T) {
+func TestLocalPipelinePreparesImagesWithoutAutoRendering(t *testing.T) {
 	var videos atomic.Int32
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -88,11 +88,11 @@ print(json.dumps({'type':'turn.completed'}))
 			t.Fatal(*op.Error)
 		}
 		if op.Status == "succeeded" {
-			if !strings.Contains(string(op.ResultJSON), "awaiting_reference_review") {
+			if !strings.Contains(string(op.ResultJSON), "ready_to_render") {
 				t.Fatal(string(op.ResultJSON))
 			}
 			assets, _ := s.database.ListAssets(project)
-			if len(assets) != 1 || !strings.Contains(string(assets[0].MetadataJSON), `"consistency_review":"pending"`) {
+			if len(assets) != 1 || !strings.Contains(string(assets[0].MetadataJSON), `"consistency_review":"ready"`) {
 				t.Fatal(assets)
 			}
 			jobs, _ := s.database.ListRenderJobs(project)

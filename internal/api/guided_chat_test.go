@@ -85,12 +85,12 @@ func TestRemoteGuidedReviewNeverQueuesVideo(t *testing.T) {
 			t.Fatal(op.Error)
 		}
 		if op.Status == "succeeded" {
-			if !strings.Contains(string(op.ResultJSON), "awaiting_reference_review") {
+			if !strings.Contains(string(op.ResultJSON), "ready_to_render") {
 				t.Fatal(string(op.ResultJSON))
 			}
 			project, _ := s.database.GetActiveProjectID()
 			assets, _ := s.database.ListAssets(project)
-			if len(assets) == 0 || !strings.Contains(string(assets[0].MetadataJSON), `"consistency_review":"pending"`) {
+			if len(assets) == 0 || !strings.Contains(string(assets[0].MetadataJSON), `"consistency_review":"ready"`) {
 				t.Fatal("reviewable storyboards missing", assets)
 			}
 			jobs, _ := s.database.ListRenderJobs(project)

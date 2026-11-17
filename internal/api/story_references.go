@@ -224,7 +224,7 @@ func (s *Server) handleContinueStory(w http.ResponseWriter, r *http.Request) {
 	}
 	var state storyContinuation
 	if json.Unmarshal(op.ResultJSON, &state) != nil || op.Status != "succeeded" || state.Status != "awaiting_character_review" || !s.cfg.UseLocalText || state.ProjectID != project {
-		http.Error(w, "this story is not waiting for character review", 409)
+		http.Error(w, "this story is not paused before storyboarding", 409)
 		return
 	}
 	scenes := []models.Scene{}
@@ -278,7 +278,7 @@ func (s *Server) handleContinueStory(w http.ResponseWriter, r *http.Request) {
 		for _, id := range refs {
 			asset, e := s.database.GetAsset(id)
 			if e != nil || asset.ProjectID == nil || *asset.ProjectID != project || !models.ReferenceApproved(asset.MetadataJSON) {
-				http.Error(w, "approve each character reference before continuing", 409)
+				http.Error(w, "replace missing or excluded character references before continuing", 409)
 				return
 			}
 			if _, e = s.imageURL(asset); e != nil {
@@ -290,7 +290,7 @@ func (s *Server) handleContinueStory(w http.ResponseWriter, r *http.Request) {
 	for _, id := range state.AssetReferences {
 		asset, e := s.database.GetAsset(id)
 		if e != nil || asset.ProjectID == nil || *asset.ProjectID != project || !models.ReferenceApproved(asset.MetadataJSON) {
-			http.Error(w, "approve each prop and location reference before continuing", 409)
+			http.Error(w, "replace missing or excluded props and locations before continuing", 409)
 			return
 		}
 		if _, e = s.imageURL(asset); e != nil {
@@ -361,7 +361,7 @@ func (s *Server) handleContinueStory(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		state.Stages = append(state.Stages, "visuals")
-		state.Status = "awaiting_reference_review"
+		state.Status = "ready_to_render"
 		raw, _ := json.Marshal(state)
 		s.database.UpdateOp(op.ID, "succeeded", raw, nil)
 	}()
@@ -381,7 +381,7 @@ func (s *Server) handleExcludeStoryAsset(w http.ResponseWriter, r *http.Request)
 	}
 	var state storyContinuation
 	if json.Unmarshal(op.ResultJSON, &state) != nil || op.Status != "succeeded" || state.Status != "awaiting_character_review" || state.ProjectID != project {
-		http.Error(w, "story is not waiting for review", 409)
+		http.Error(w, "story is not paused before storyboarding", 409)
 		return
 	}
 	var body struct {

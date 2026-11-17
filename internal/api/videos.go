@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -227,14 +228,11 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			record("characters")
-			if !approved || len(storyAssets) > 0 {
-				raw, _ := json.Marshal(storyContinuation{ProjectID: project, ScriptID: script.ID, SceneIDs: savedSceneIDs, Stages: stages, Brief: brief, Routes: routes, Created: createdCharacters, Cast: cast, References: characterReferences, CharacterReferences: true, AssetReferences: storyAssets, AssetDecisions: assetDecisions, AutomaticAssets: true, Status: "awaiting_character_review"})
-				if err = s.database.UpdateOp(op.ID, "succeeded", raw, nil); err != nil {
-					fail(err)
-				}
+			if !approved {
+				fail(fmt.Errorf("story references are unavailable or excluded"))
 				return
 			}
-			record("character_review")
+
 		}
 		if err = s.generateStoryboards(ctx, scenes); err != nil {
 			fail(err)
@@ -248,7 +246,7 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 				scene := &scenes[i]
 				sceneIDs = append(sceneIDs, scene.ID)
 			}
-			raw, _ := json.Marshal(map[string]any{"project_id": project, "script_id": script.ID, "scene_ids": sceneIDs, "stages": stages, "status": "awaiting_reference_review", "cast_character_ids": cast, "character_reference_ids": characterReferences, "story_asset_ids": storyAssets, "story_assets": assetDecisions, "automatic_assets": s.cfg.UseLocalText, "character_references": s.cfg.UseLocalText, "brief": brief, "media_routes": routes, "created_character_ids": createdCharacters})
+			raw, _ := json.Marshal(map[string]any{"project_id": project, "script_id": script.ID, "scene_ids": sceneIDs, "stages": stages, "status": "ready_to_render", "cast_character_ids": cast, "character_reference_ids": characterReferences, "story_asset_ids": storyAssets, "story_assets": assetDecisions, "automatic_assets": s.cfg.UseLocalText, "character_references": s.cfg.UseLocalText, "brief": brief, "media_routes": routes, "created_character_ids": createdCharacters})
 			if err = s.database.UpdateOp(op.ID, "succeeded", raw, nil); err != nil {
 				fail(err)
 			}

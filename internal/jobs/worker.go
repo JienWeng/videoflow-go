@@ -354,7 +354,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 					}
 				}
 				if blockedReview && payload["frame_images"] == nil {
-					return fmt.Errorf("generated reference needs explicit consistency review before video generation")
+					return fmt.Errorf("generated reference is excluded; replace it before video generation")
 				}
 			}
 		}

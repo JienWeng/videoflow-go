@@ -28,12 +28,12 @@ func TestCharacterReferenceRegenerationFromRejectedDrafts(t *testing.T) {
 					var payload map[string]any
 					json.NewDecoder(r.Body).Decode(&payload)
 					raw, _ := json.Marshal(payload["input_references"])
-					expectedCount := 0
+					expectedCount := 2
 					if hasApproved {
-						expectedCount = 2
+						expectedCount = 4
 					}
 					if strings.Count(string(raw), "image_url") != expectedCount || (hasApproved && !strings.Contains(string(raw), expectedURL)) {
-						t.Error("regeneration did not use exactly the approved reference", string(raw))
+						t.Error("regeneration did not use usable existing references", string(raw))
 					}
 					if fail {
 						http.Error(w, "fixture provider failed", 500)
@@ -112,8 +112,8 @@ print(json.dumps({'type':'turn.completed'}))
 				t.Fatal("invalid candidate bindings", refs, images.Load())
 			}
 			candidate, _ := s.database.GetAsset(refs[len(refs)-1])
-			if candidate.CharacterID == nil || *candidate.CharacterID != c.ID || models.ReferenceApproved(candidate.MetadataJSON) {
-				t.Fatal("candidate ownership/review gate lost")
+			if candidate.CharacterID == nil || *candidate.CharacterID != c.ID || !models.ReferenceApproved(candidate.MetadataJSON) {
+				t.Fatal("candidate ownership or automatic usability lost")
 			}
 			for _, id := range originals {
 				if _, err := s.database.GetAsset(id); err != nil {

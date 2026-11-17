@@ -72,7 +72,7 @@
   {#if preview}
     <img src={preview} alt={String(data.label ?? '')} loading="lazy" class="mt-1 h-16 w-full rounded object-cover" />
   {/if}
-  {#if kind==='character'&&data.onReferenceImages}<button type="button" class="nodrag nopan mt-2 flex min-h-8 w-full items-center justify-center gap-1.5 rounded-md border border-border px-2 text-xs text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring" aria-label={`Reference images for ${data.label}`} onclick={event=>{event.stopPropagation();(data.onReferenceImages as ()=>void)()}}><RefreshCw class="size-3"/>Reference images</button>{#if ['pending','rejected'].includes(String(data.reference_review))}<p class="mt-1 text-xs text-muted-foreground">Review needed</p>{/if}{/if}
+  {#if kind==='character'&&data.onReferenceImages}<button type="button" class="nodrag nopan mt-2 flex min-h-8 w-full items-center justify-center gap-1.5 rounded-md border border-border px-2 text-xs text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring" aria-label={`Reference images for ${data.label}`} onclick={event=>{event.stopPropagation();(data.onReferenceImages as ()=>void)()}}><RefreshCw class="size-3"/>Reference images</button>{#if data.reference_review==='rejected'}<p class="mt-1 text-xs text-muted-foreground">Image excluded</p>{/if}{/if}
   {#if status}
     <div class="mt-1">
       <Badge variant={badgeVariant}>{status}</Badge>

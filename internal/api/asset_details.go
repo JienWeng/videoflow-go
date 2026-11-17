@@ -76,7 +76,9 @@ func (s *Server) handleUpdateAssetDetails(w http.ResponseWriter, r *http.Request
 		meta["locked_traits"] = body.Locks
 	}
 	if changed {
-		meta["consistency_review"] = "pending"
+		if meta["consistency_review"] != "rejected" {
+			meta["consistency_review"] = "ready"
+		}
 		delete(meta, "consistency_reviewed_at")
 	}
 	asset.MetadataJSON, _ = json.Marshal(meta)

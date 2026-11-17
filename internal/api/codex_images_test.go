@@ -54,7 +54,7 @@ print(json.dumps({'type':'turn.completed'}))
 	}
 	var metadata map[string]any
 	json.Unmarshal(assets[0].MetadataJSON, &metadata)
-	if metadata["provider"] != "codex" || metadata["consistency_review"] != "pending" {
+	if metadata["provider"] != "codex" || metadata["consistency_review"] != "ready" {
 		t.Fatal(metadata)
 	}
 	if _, err = s.imageURL(&assets[0]); err != nil {

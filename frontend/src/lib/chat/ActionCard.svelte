@@ -481,7 +481,7 @@
           <label class={labelClass} for="scenes-{intent.action}">Scenes (optional)</label>
           <input id="scenes-{intent.action}" type="number" min="1" max="20"
             bind:value={sceneCount} placeholder="auto" class={selectClass} />
-          <p class="text-xs text-muted-foreground mt-1">Creates the story, shots, missing characters and reference images using the project style. Review references before storyboarding. Image calls may incur provider charges; video rendering stays separate.</p>
+          <p class="text-xs text-muted-foreground mt-1">Creates the story, shots, missing characters and reference images using the project style. Reference and storyboard images are generated automatically. Image calls may incur provider charges; video rendering stays separate.</p>
         </div>
       {/if}
 

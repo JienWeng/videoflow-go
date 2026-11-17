@@ -49,21 +49,21 @@ func TestStorySceneBriefContainsOnlyItsOwnActorsAndReferences(t *testing.T) {
 	}
 }
 
-func TestGuidedRenderScopeAvoidsStaleCastButKeepsReferenceApproval(t *testing.T) {
+func TestGuidedRenderScopeAvoidsStaleCastButKeepsExcludedReferenceGuard(t *testing.T) {
 	s, project, _, _ := storyCharacterFixture(t, false, `{}`)
 	s.cfg.UseLocalText = true
-	asset := &models.Asset{ProjectID: &project, Type: "storyboard", MetadataJSON: []byte(`{"consistency_review":"pending"}`)}
+	asset := &models.Asset{ProjectID: &project, Type: "storyboard", MetadataJSON: []byte(`{"consistency_review":"rejected"}`)}
 	s.database.CreateAsset(asset)
 	refs, _ := json.Marshal([]string{asset.ID})
 	scene := &models.Scene{ProjectID: &project, Title: "Scene", CharacterIDsJSON: []byte(`[]`), AssetIDsJSON: refs}
 	s.database.CreateScene(scene)
 	ctx := context.WithValue(context.Background(), directorBindingKey{}, directorBinding{ProjectID: project, Selection: directorSelection{CharacterIDs: []string{"deleted-character"}}})
 	job := &models.RenderJob{ProjectID: &project, SceneID: &scene.ID, RequestJSON: []byte(`{}`)}
-	if err := s.freezeDirectorVideo(ctx, job); err == nil || !strings.Contains(err.Error(), "review") {
+	if err := s.freezeDirectorVideo(ctx, job); err == nil || !strings.Contains(err.Error(), "excluded") {
 		t.Fatal("scene scope must ignore incidental selection and retain approval", err)
 	}
 
-	if err := s.freezeDirectorVideo(guidedStoryContext(ctx, project, nil), job); err == nil || !strings.Contains(err.Error(), "review") {
+	if err := s.freezeDirectorVideo(guidedStoryContext(ctx, project, nil), job); err == nil || !strings.Contains(err.Error(), "excluded") {
 		t.Fatal("guided rendering lost its approval gate", err)
 	}
 }
@@ -210,7 +210,7 @@ func runGuidedStoryCharacterPipeline(t *testing.T, imageFailure bool, options ..
 			if images.Load() <= 2 && len(refs) != 0 {
 				t.Error("character sheet inherited another actor's references")
 			}
-			if images.Load() == 3 {
+			if images.Load() >= 3 {
 				expected := 2
 				if opts.reuseProp {
 					expected = 3
@@ -274,7 +274,6 @@ print(json.dumps({'type':'turn.completed'}))
 		ID string `json:"op_id"`
 	}
 	json.Unmarshal(w.Body.Bytes(), &start)
-	resumed := false
 	deadline := time.Now().Add(12 * time.Second)
 	for time.Now().Before(deadline) {
 		op, _ := s.database.GetOp(start.ID)
@@ -311,98 +310,12 @@ print(json.dumps({'type':'turn.completed'}))
 		}
 		if op.Status == "succeeded" {
 
-			if !resumed {
-				if !strings.Contains(string(op.ResultJSON), "awaiting_character_review") {
-					t.Fatal("missing automatic character reference review checkpoint", string(op.ResultJSON))
-				}
-				chars, _ := s.database.ListCharacters(project)
-				if images.Load() != 2 || videos.Load() != 0 || len(chars) != 2 {
-					t.Fatal("unexpected calls before character approval", images.Load(), videos.Load())
-				}
-
-				other, _ := s.database.CreateProject("Other", " ")
-				s.database.ActivateProject(other.ID)
-				cross := call(t, s, "POST", "/videos/generate/"+start.ID+"/continue", `{}`)
-				if cross.Code != 404 {
-					t.Fatal("cross-project continuation accepted", cross.Code)
-				}
-				s.database.ActivateProject(project)
-				if opts.replaceReference {
-					c := &chars[0]
-					var old []string
-					json.Unmarshal(c.ReferenceAssetIDsJSON, &old)
-					path := filepath.Join(s.cfg.StorageRoot, "replacement.png")
-					os.WriteFile(path, []byte{137, 80, 78, 71, 13, 10, 26, 10, 99}, 0600)
-					asset := &models.Asset{ProjectID: &project, CharacterID: &c.ID, Type: "character_reference", Name: "Approved replacement", FilePath: "storage/replacement.png", MetadataJSON: []byte(`{"consistency_review":"approved"}`)}
-					s.database.CreateAsset(asset)
-					replacementURL, _ = s.imageURL(asset)
-					c.ReferenceAssetIDsJSON, _ = json.Marshal([]string{asset.ID})
-					s.database.UpdateCharacter(c)
-					scenes, _ := s.database.ListScenes(project)
-					brief := sceneBrief(&scenes[0])
-					brief.ReferenceAssetIDs = old
-					var document map[string]any
-					json.Unmarshal(scenes[0].SceneJSON, &document)
-					document["generation_brief"] = brief
-					scenes[0].SceneJSON, _ = json.Marshal(document)
-					s.database.UpdateScene(&scenes[0])
-				}
-				blocked := call(t, s, "POST", "/videos/generate/"+start.ID+"/continue", `{}`)
-				if blocked.Code != 409 || images.Load() != 2 {
-					t.Fatal("unapproved characters reached storyboarding", blocked.Code, blocked.Body.String())
-				}
-				for _, c := range chars {
-					var refs []string
-					json.Unmarshal(c.ReferenceAssetIDsJSON, &refs)
-					if len(refs) != 1 {
-						t.Fatal("reference sheet not bound", c.Name, string(c.ReferenceAssetIDsJSON))
-					}
-					asset, _ := s.database.GetAsset(refs[0])
-					if asset.CharacterID == nil || *asset.CharacterID != c.ID || asset.Type != "character_reference" || (models.ReferenceApproved(asset.MetadataJSON) && asset.Name != "Approved replacement") {
-						t.Fatal("invalid generated character binding or premature approval")
-					}
-					body, _ := json.Marshal(map[string]any{"approved": true, "expected_updated_at": asset.UpdatedAt})
-					review := call(t, s, "POST", "/assets/"+asset.ID+"/review", string(body))
-					if review.Code != 200 {
-						t.Fatal(review.Code, review.Body.String())
-					}
-				}
-
-				ids := []string{}
-				for _, c := range chars {
-					ids = append(ids, c.ID)
-				}
-				reused, approved, e := s.storyCharacterReferences(guidedStoryContext(context.Background(), project, ids), project, ids, "same style")
-				if e != nil || !approved || len(reused) != 2 || images.Load() != 2 {
-					t.Fatal("existing sheets were regenerated or not reused", e, reused, images.Load())
-				}
-				if opts.reuseProp {
-					if blocked := call(t, s, "POST", "/videos/generate/"+start.ID+"/continue", `{}`); blocked.Code != 409 {
-						t.Fatal("unapproved prop passed", blocked.Code)
-					}
-					prop, _ = s.database.GetAsset(prop.ID)
-					body, _ := json.Marshal(map[string]any{"approved": true, "expected_updated_at": prop.UpdatedAt})
-					if review := call(t, s, "POST", "/assets/"+prop.ID+"/review", string(body)); review.Code != 200 {
-						t.Fatal(review.Code, review.Body.String())
-					}
-				}
-				continued := call(t, s, "POST", "/videos/generate/"+start.ID+"/continue", `{}`)
-				if continued.Code != 202 {
-					t.Fatal(continued.Code, continued.Body.String())
-				}
-				duplicate := call(t, s, "POST", "/videos/generate/"+start.ID+"/continue", `{}`)
-				if duplicate.Code != 409 {
-					t.Fatal("duplicate continuation accepted", duplicate.Code, duplicate.Body.String())
-				}
-				resumed = true
-				continue
-			}
 			if imageFailure {
 				t.Fatal("expected image-stage failure")
 			}
 			chars, _ := s.database.ListCharacters(project)
-			if len(chars) != 2 || images.Load() != 3 || videos.Load() != 0 || !strings.Contains(string(op.ResultJSON), "awaiting_reference_review") {
-				t.Fatal("cast/approval gate lost", len(chars), images.Load(), videos.Load(), string(op.ResultJSON))
+			if len(chars) != 2 || images.Load() != 3 || videos.Load() != 0 || !strings.Contains(string(op.ResultJSON), "ready_to_render") {
+				t.Fatal("automatic story workflow lost", len(chars), images.Load(), videos.Load(), string(op.ResultJSON))
 			}
 			scenes, err := s.database.ListScenes(project)
 			if err != nil {
@@ -424,12 +337,54 @@ print(json.dumps({'type':'turn.completed'}))
 					t.Fatalf("shot timing %d does not match scene %d", total, scene.Duration)
 				}
 			}
+			ids := []string{}
+			for _, c := range chars {
+				ids = append(ids, c.ID)
+			}
+			reused, usable, reuseErr := s.storyCharacterReferences(guidedStoryContext(context.Background(), project, ids), project, ids, "same style")
+			if reuseErr != nil || !usable || len(reused) != 2 || images.Load() != 3 {
+				t.Fatal("references were not reused without review", reuseErr, images.Load())
+			}
 			if opts.replaceReference {
+				// Previously paused operations remain resumable without image approval.
+				c := &chars[0]
+				path := filepath.Join(s.cfg.StorageRoot, "replacement.png")
+				os.WriteFile(path, []byte{137, 80, 78, 71, 13, 10, 26, 10, 99}, 0600)
+				asset := &models.Asset{ProjectID: &project, CharacterID: &c.ID, Type: "character_reference", Name: "Replacement", FilePath: "storage/replacement.png", MetadataJSON: []byte(`{"consistency_review":"pending"}`)}
+				s.database.CreateAsset(asset)
+				replacementURL, _ = s.imageURL(asset)
+				c.ReferenceAssetIDsJSON, _ = json.Marshal([]string{asset.ID})
+				s.database.UpdateCharacter(c)
+				var state storyContinuation
+				json.Unmarshal(op.ResultJSON, &state)
+				state.Status = "awaiting_character_review"
+				raw, _ := json.Marshal(state)
+				s.database.UpdateOp(op.ID, "succeeded", raw, nil)
+				resumed := call(t, s, "POST", "/videos/generate/"+op.ID+"/continue", `{}`)
+				if resumed.Code != 202 {
+					t.Fatal(resumed.Code, resumed.Body.String())
+				}
+				duplicate := call(t, s, "POST", "/videos/generate/"+op.ID+"/continue", `{}`)
+				if duplicate.Code != 409 {
+					t.Fatal("duplicate continuation", duplicate.Code)
+				}
+				deadline := time.Now().Add(5 * time.Second)
+				for time.Now().Before(deadline) {
+					next, _ := s.database.GetOp(op.ID)
+					if next.Status == "succeeded" {
+						break
+					}
+					if next.Status == "failed" {
+						t.Fatal("legacy continuation failed", string(next.ResultJSON), next.Error)
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
 				payload, _ := storyboardPayload.Load().(string)
-				if !strings.Contains(payload, replacementURL) {
-					t.Fatal("replacement sheet not used", payload)
+				if images.Load() != 4 || !strings.Contains(payload, replacementURL) || videos.Load() != 0 {
+					t.Fatal("legacy replacement not used", images.Load(), payload)
 				}
 			}
+
 			selection, _ := s.database.GetDirectorSelection(session.ID)
 			if !strings.Contains(string(selection), "char_deleted") {
 				t.Fatal("guided creation rewrote saved session references")

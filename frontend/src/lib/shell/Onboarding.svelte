@@ -67,7 +67,7 @@
   const steps = [
     'Set up your AI session and media providers in Settings.',
     'Describe your story and review the scenes and storyboard images.',
-    'Approve the references, render each scene, then assemble clips in Videos.'
+    'Generate your images, render each scene, then assemble clips in Videos.'
   ];
 </script>
 

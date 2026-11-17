@@ -171,7 +171,7 @@ func TestAssetVersionPreservesOldScenesAndLocks(t *testing.T) {
 	next, _ := s.database.GetAsset(result.IDs[0])
 	var metadata map[string]any
 	json.Unmarshal(next.MetadataJSON, &metadata)
-	if metadata["source_asset_id"] != a.ID || metadata["variant_group_id"] != a.ID || metadata["consistency_review"] != "pending" || metadata["locked_traits"].(map[string]any)["color"] != "red" {
+	if metadata["source_asset_id"] != a.ID || metadata["variant_group_id"] != a.ID || metadata["consistency_review"] != "ready" || metadata["locked_traits"].(map[string]any)["color"] != "red" {
 		t.Fatal(metadata)
 	}
 	saved, _ := s.database.GetScene(scene.ID)
@@ -203,9 +203,20 @@ func TestAssetDetailsEditPreservesLocksAndRequiresReview(t *testing.T) {
 		t.Fatal(response.Code, response.Body.String())
 	}
 	saved, _ := s.database.GetAsset(a.ID)
-	if saved.Description != "Small red leather collar" || !strings.Contains(string(saved.MetadataJSON), `"consistency_review":"pending"`) || !strings.Contains(string(saved.MetadataJSON), `"keep":true`) {
+	if saved.Description != "Small red leather collar" || !strings.Contains(string(saved.MetadataJSON), `"consistency_review":"ready"`) || !strings.Contains(string(saved.MetadataJSON), `"keep":true`) {
 		t.Fatal("identity or review lost", saved)
 	}
+	saved.MetadataJSON = []byte(`{"consistency_review":"rejected","locked_traits":{"color":"red"}}`)
+	s.database.UpdateAsset(saved)
+	response = call(t, s, "PATCH", "/assets/"+saved.ID, fmt.Sprintf(`{"expected_updated_at":%q,"name":"Excluded collar","description":"Edited description","locked_traits":{"color":"red"}}`, saved.UpdatedAt.Format(time.RFC3339Nano)))
+	if response.Code != 200 {
+		t.Fatal(response.Code, response.Body.String())
+	}
+	saved, _ = s.database.GetAsset(saved.ID)
+	if !strings.Contains(string(saved.MetadataJSON), `"consistency_review":"rejected"`) {
+		t.Fatal("editing silently re-enabled an excluded image")
+	}
+
 }
 
 func TestSceneRenderUsesNewestReviewedMatchingStoryboard(t *testing.T) {

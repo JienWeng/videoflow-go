@@ -216,7 +216,11 @@ func (d *DB) ReplaceUnapprovedCharacterReferences(id, project string, created []
 		if err = tx.QueryRow(`SELECT metadata_json FROM assets WHERE id=? AND project_id=?`, ref, project).Scan(&meta); err != nil {
 			return err
 		}
-		if models.ReferenceApproved([]byte(meta)) && !seen[ref] {
+		var state struct {
+			Review string `json:"consistency_review"`
+		}
+		json.Unmarshal([]byte(meta), &state)
+		if (state.Review == "" || state.Review == "approved") && !seen[ref] {
 			next = append(next, ref)
 			seen[ref] = true
 		}

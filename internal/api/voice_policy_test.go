@@ -107,7 +107,7 @@ func TestDirectorNativeVoicePolicyRejectsOrdinaryVideo(t *testing.T) {
 	}
 }
 
-func TestNativeVoiceRejectsPendingGeneratedReferenceBeforePreparation(t *testing.T) {
+func TestNativeVoiceRejectsExcludedGeneratedReferenceBeforePreparation(t *testing.T) {
 	var paid atomic.Int32
 	s := voiceFixture(t, func(w http.ResponseWriter, r *http.Request) { paid.Add(1) })
 	c := voiceCharacter(t, s)
@@ -117,7 +117,7 @@ func TestNativeVoiceRejectsPendingGeneratedReferenceBeforePreparation(t *testing
 	call(t, s, "PUT", "/voice/scripts/main", fmt.Sprintf(`{"revision":0,"data":{"approved":true,"lines":[{"id":"u","character_id":%q,"language":"en","text":"Hello."}]}}`, c))
 	path := filepath.Join(s.cfg.StorageRoot, "pending.png")
 	os.WriteFile(path, []byte("\x89PNG\r\n\x1a\n"), 0600)
-	image := &models.Asset{ProjectID: &project, Name: "Pending generated reference", Type: "storyboard", FilePath: path, MetadataJSON: json.RawMessage(`{"consistency_review":"pending"}`)}
+	image := &models.Asset{ProjectID: &project, Name: "Pending generated reference", Type: "storyboard", FilePath: path, MetadataJSON: json.RawMessage(`{"consistency_review":"rejected"}`)}
 	s.database.CreateAsset(image)
 	body := fmt.Sprintf(`{"kind":"native_reference","script_id":"main","line_id":"u","image_asset_ids":[%q],"prompt":"Hello","duration":5}`, image.ID)
 	r := call(t, s, "POST", "/voice/tasks/prepare", body)
