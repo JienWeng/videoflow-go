@@ -152,7 +152,7 @@
     generate_scenes: 'Expand scene',
     generate_shots: 'Generate shots',
     storyboard: 'Generate storyboard',
-    render_scene: 'Render scene',
+    render_scene: 'Update storyboard & render',
     render_shot: 'Render shot',
     caption: 'Burn saved captions',
     retry_render: 'Fix & re-render',
@@ -310,6 +310,7 @@
           (op) => op.result_json?.asset_id ?? op.scene_id ?? sceneId,
           ctx
         );
+      case 'render_scene':return runInBackground(`/scenes/${sceneId}/render`,{prepare_storyboard:true,use_scene_cast:true},'Update storyboard & render',op=>op.result_json?.job_id,ctx);
       case 'generate_shots':
         return runInBackground(
           `/scenes/${sceneId}/shots/generate`,
@@ -346,11 +347,6 @@
           result = await post(`/scenes/${sceneId}/generate`, {});
           focusId = result.id ?? sceneId;
           toast.success('Scene expanded');
-          break;
-        case 'render_scene':
-          result = await post(`/scenes/${sceneId}/render`);
-          focusId = result.job_id;
-          toast.success(`Render started — job ${result.job_id}`);
           break;
         case 'render_shot':
           result = await post('/render/from-shot', { scene_id: sceneId, shot_id: shotId });
@@ -518,6 +514,7 @@
         </div>
       {/if}
 
+      {#if intent.action==='render_scene'}<p class="text-xs text-muted-foreground">Updates a missing or outdated storyboard before starting video. Image and video generation may use account quota or provider credits.</p>{/if}
       {#if intent.action === 'generate_shots'}
         <label class="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
           <input type="checkbox" class="w-auto" bind:checked={autoAssets} />

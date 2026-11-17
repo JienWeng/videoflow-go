@@ -108,6 +108,9 @@ func (s *Server) stylePrompt(projectID *string) string {
 
 func (s *Server) generateAssets(ctx context.Context, projectID *string, characterID *string, sceneID, name, kind, prompt, aspect string, references []string) ([]models.Asset, error) {
 	descriptionPrompt := prompt
+	if notes, ok := ctx.Value(storyboardShotsKey{}).(string); ok {
+		prompt += notes
+	}
 	prompt += presets.Prompt(presets.From(ctx), "image")
 	sceneRevision := ""
 	if sceneID != "" {

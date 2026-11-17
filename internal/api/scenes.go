@@ -367,10 +367,15 @@ func (s *Server) handleRenderScene(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var options struct {
-		UseSceneCast bool `json:"use_scene_cast"`
+		UseSceneCast      bool `json:"use_scene_cast"`
+		PrepareStoryboard bool `json:"prepare_storyboard"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&options); err != nil && err != io.EOF {
 		http.Error(w, "invalid render options", 400)
+		return
+	}
+	if options.PrepareStoryboard {
+		s.operation(w, r, &models.Op{Kind: "scene_render", SceneID: &sceneID, ProjectID: &projectID}, func(ctx context.Context) (any, error) { return s.prepareAndRenderScene(ctx, projectID, sceneID) })
 		return
 	}
 	ctx := r.Context()
@@ -413,34 +418,7 @@ func (s *Server) handleStoryboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.operation(w, r, &models.Op{Kind: "storyboard", SceneID: &sceneID, ProjectID: scene.ProjectID}, func(ctx context.Context) (any, error) {
-		ctx, err = s.bindSceneInputs(ctx, scene)
-		if err != nil {
-			return nil, err
-		}
-		refs, err := s.sceneReferences(scene)
-		if err != nil {
-			return nil, err
-		}
-		brief := sceneBrief(scene)
-		if profile, e := s.database.GetStyleGuide(*scene.ProjectID); e == nil && profile.StylePrompt != "" {
-			if brief.CreativePreset == nil {
-				brief.Style = s.stylePrompt(scene.ProjectID)
-			}
-		}
-		assets, err := s.generateAssets(brief.context(ctx), scene.ProjectID, nil, scene.ID, scene.Title+" storyboard", "storyboard", "Storyboard keyframe of "+scene.Title+". "+scene.Summary+"\n"+brief.prompt(), scene.AspectRatio, refs)
-		if err != nil {
-			return nil, err
-		}
-		ids := []string{}
-		_ = json.Unmarshal(scene.AssetIDsJSON, &ids)
-		for _, asset := range assets {
-			ids = append(ids, asset.ID)
-		}
-		scene.AssetIDsJSON, _ = json.Marshal(ids)
-		if err = s.database.UpdateScene(scene); err != nil {
-			return nil, err
-		}
-		return map[string]any{"scene_id": scene.ID, "asset_id": assets[0].ID, "storyboard_url": "/" + assets[0].FilePath}, nil
+		return s.generateMatchingStoryboard(ctx, scene)
 	})
 }
 

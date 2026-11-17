@@ -393,12 +393,7 @@
     }
   }
 
-  const renderScene = (s: any) =>
-    run(
-      `render-${s.id}`,
-      () => post(`/scenes/${s.id}/render`),
-      'Render job submitted — track it on the Render page.'
-    );
+  async function renderScene(s:any){const key=`render-${s.id}`;if(busy[key])return;busy[key]=true;error='';try{await runBackgroundOp(`/scenes/${s.id}/render`,{prepare_storyboard:true,use_scene_cast:true},{signal:operationScope.signal,label:'Update storyboard & render',onDone:async()=>{busy[key]=false;await refresh();toast.success('Render queued. Track it in Videos.')},onFail:op=>{busy[key]=false;error=op.error??'Render preparation failed.'}})}catch(e){busy[key]=false;error=String(e);toast.error(error)}}
 
   // Pipeline stepper: one entry per stage, computed from data already loaded.
   // Each stage's "done" uses the later-done rule so the stepper never shows an

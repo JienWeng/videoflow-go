@@ -194,6 +194,11 @@ func (s *Server) generateStoryboards(ctx context.Context, scenes []models.Scene)
 		if err != nil {
 			return err
 		}
+		shotNotes, shotErr := s.storyboardShotNotes(scene.ID)
+		if shotErr != nil {
+			return shotErr
+		}
+		sceneCtx = context.WithValue(sceneCtx, storyboardShotsKey{}, shotNotes)
 		images, err := s.generateAssets(sceneCtx, scene.ProjectID, nil, scene.ID, scene.Title+" keyframe", "storyboard", scene.Title+". "+scene.Summary+"\n"+brief.prompt(), scene.AspectRatio, refs)
 		if err != nil {
 			return err

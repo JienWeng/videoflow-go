@@ -7,6 +7,7 @@
   import { Button } from '$lib/components/ui/button';
   import GenerationProgress from '$lib/create/GenerationProgress.svelte';
   import { get, post, mediaUrl } from '$lib/api';
+  import {runBackgroundOp} from '$lib/ops';
 
   let idea = $state('');
   let submitted=$state(false);
@@ -27,6 +28,7 @@
   let selectedCharacters:string[]=$state([]);
   let createCharacters=$state(true);
   let instruction = $state('');
+  const renderScope=new AbortController();
   let busy = $state(false);
   let opId = $state('');
   let opStatus = $state('');
@@ -46,7 +48,7 @@
  let reviewAssets:any[]=$state([]);let reviewLoading=$state(false);let renderingScene=$state('');
  async function refreshReviewAssets(){reviewLoading=true;try{const [assets,cast]=await Promise.all([get('/assets'),get('/characters')]);reviewAssets=assets;characters=cast;return true}catch(e){opError=String(e);return false}finally{reviewLoading=false}}
 
- async function renderReviewedScene(id:string){renderingScene=id;try{await post(`/scenes/${id}/render`, {use_scene_cast:true});await goto('/render')}catch(e){opError=String(e)}finally{renderingScene=''}}
+ async function renderReviewedScene(id:string){if(renderingScene)return;renderingScene=id;try{await runBackgroundOp(`/scenes/${id}/render`,{use_scene_cast:true,prepare_storyboard:true},{signal:renderScope.signal,label:'Update storyboard & render',onDone:async()=>{renderingScene='';await goto('/render')},onFail:op=>{renderingScene='';opError=op.error??'Render preparation failed.'}})}catch(e){renderingScene='';opError=String(e)}}
 
   let poller: ReturnType<typeof setInterval> | null = null;
   let renderPoller: ReturnType<typeof setInterval> | null = null;
@@ -218,7 +220,7 @@
     if (['failed','reconciliation_required'].includes(opStatus)) busy = false;
   });
 
-  onDestroy(() => { stopPolling(); stopRenderPolling(); });
+  onDestroy(() => { renderScope.abort();stopPolling(); stopRenderPolling(); });
 </script>
 
 <svelte:head>{#if !embedded}<title>Guided creator · VideoFlow</title>{/if}</svelte:head>
@@ -233,7 +235,7 @@
             {#if missingCharacterReferences()}<p role="alert" class="mt-3 text-sm">Some story characters need reference images. <a class="underline underline-offset-4" href="/library?tab=characters">Open Characters</a> to add or generate them, then refresh here.</p>{/if}<ul class="mt-4 space-y-3">{#each referenceIds() as id}{@const asset=reviewAssets.find(a=>a.id===id)}{@const character=characters.find(c=>c.id===asset?.character_id)}{@const decision=lastResult.story_assets?.find((item:any)=>item.asset_id===id)}<li class="flex flex-wrap items-center justify-between gap-3"><a class="inline-flex min-h-11 items-center gap-3 underline underline-offset-4" href={`/library?tab=media&asset_id=${encodeURIComponent(id)}`}>{#if asset?.file_path}<img class="size-12 rounded-md object-cover" src={mediaUrl(asset.file_path)??''} alt=""/>{/if}View {character?.name??asset?.name??'reference image'}</a>{#if decision}<span class="text-xs text-muted-foreground" title={decision.reason}>{decision.reuse?'Reused from Library':'Generated'}{#if decision.reason}<span class="block">{decision.reason}</span>{/if}</span><Button type="button" variant="ghost" size="sm" disabled={continuingStory} onclick={()=>excludeAsset(id)}>Remove from story</Button>{/if}<span class="text-xs text-muted-foreground">{asset&&asset.metadata_json?.consistency_review!=='rejected'?'Ready':'Excluded'}</span></li>{/each}</ul>
             <div class="mt-4 flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={reviewLoading||continuingStory} onclick={refreshReviewAssets}>{reviewLoading?'Checking…':'Refresh images'}</Button><Button type="button" disabled={!charactersApproved()||reviewLoading||continuingStory} onclick={continueStory}>{continuingStory?'Continuing…':'Continue storyboarding'}</Button></div><p class="mt-2 text-xs leading-relaxed text-muted-foreground">Continuing generates scene images and may incur provider charges. Video rendering stays separate.</p>
           {:else if ['awaiting_reference_review','ready_to_render'].includes(lastResult.status)}
- <p class="font-medium">Your story and images are ready.</p><p class="mt-1 text-muted-foreground">You can adjust or regenerate images at any time. Video generation starts when you choose Render scene.</p><div class="mt-3 space-y-3">{#each lastResult.scene_ids??[] as sceneID,i}<div class="flex flex-wrap items-center gap-2"><span>Scene {i+1}</span><a class="underline" href={`/library?tab=media&scene_id=${encodeURIComponent(sceneID)}`}>View images</a><Button type="button" size="sm" disabled={!!renderingScene} onclick={()=>renderReviewedScene(sceneID)}>Render scene {i+1}</Button></div>{/each}<Button type="button" variant="outline" size="sm" disabled={reviewLoading} onclick={refreshReviewAssets}>Refresh images</Button></div>
+ <p class="font-medium">Your story and images are ready.</p><p class="mt-1 text-muted-foreground">You can adjust or regenerate images at any time. A missing or outdated storyboard is updated when you choose Render scene. Image and video calls may incur charges.</p><div class="mt-3 space-y-3">{#each lastResult.scene_ids??[] as sceneID,i}<div class="flex flex-wrap items-center gap-2"><span>Scene {i+1}</span><a class="underline" href={`/library?tab=media&scene_id=${encodeURIComponent(sceneID)}`}>View images</a><Button type="button" size="sm" disabled={!!renderingScene} onclick={()=>renderReviewedScene(sceneID)}>Render scene {i+1}</Button></div>{/each}<Button type="button" variant="outline" size="sm" disabled={reviewLoading} onclick={refreshReviewAssets}>Refresh images</Button></div>
  {:else}
  <p class="font-medium">{['failed','reconciliation_required'].includes(opStatus) ? 'Existing work is preserved.' : opStatus === 'completed' ? 'Video complete.' : 'Render jobs submitted.'}</p>
           <p class="mt-1 text-muted-foreground">Open existing scenes to inspect completed work. Creating again starts a new pipeline and may repeat paid stages.</p>
