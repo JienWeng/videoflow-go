@@ -26,7 +26,7 @@ func SafeEnvironment(environment []string) []string {
 	for _, entry := range environment {
 		name, _, _ := strings.Cut(entry, "=")
 		switch name {
-		case "FISH_API_KEY", "FAL_KEY", "BYTEPLUS_API_KEY", "OPENROUTER_API_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN":
+		case "ELEVENLABS_API_KEY", "FISH_API_KEY", "FAL_KEY", "BYTEPLUS_API_KEY", "OPENROUTER_API_KEY", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN":
 			continue
 		}
 		result = append(result, entry)

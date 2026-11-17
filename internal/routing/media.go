@@ -13,6 +13,8 @@ func ValidProviderURL(provider, raw string) bool {
 	switch provider {
 	case "openrouter":
 		return ValidBaseURL(raw)
+	case "elevenlabs":
+		return strings.TrimRight(raw, "/") == providers.ElevenURL
 	case "fish":
 		return strings.TrimRight(raw, "/") == providers.FishURL
 	case "fal":
@@ -24,6 +26,12 @@ func ValidProviderURL(provider, raw string) bool {
 }
 func (r Resolver) mediaCredentials(name string) (key, endpoint string, fromDB bool, err error) {
 	switch name {
+	case "elevenlabs":
+		key = r.Config.ElevenAPIKey
+		endpoint = r.Config.ElevenBaseURL
+		if endpoint == "" {
+			endpoint = providers.ElevenURL
+		}
 	case "fish":
 		key = r.Config.FishAPIKey
 		endpoint = r.Config.FishBaseURL

@@ -24,7 +24,7 @@ func ValidBaseURL(raw string) bool {
 }
 
 func (r Resolver) Credentials(name string) (key, endpoint string, fromDB bool, err error) {
-	if name == "fal" || name == "byteplus" || name == "fish" {
+	if name == "fal" || name == "byteplus" || name == "fish" || name == "elevenlabs" {
 		return r.mediaCredentials(name)
 	}
 	endpoint = r.Config.OpenRouterBaseURL
@@ -79,7 +79,7 @@ func (r Resolver) Credentials(name string) (key, endpoint string, fromDB bool, e
 }
 
 func (r Resolver) Client(name string) (*providers.OpenRouterClient, error) {
-	if name == "fal" || name == "byteplus" || name == "fish" {
+	if name == "fal" || name == "byteplus" || name == "fish" || name == "elevenlabs" {
 		return nil, fmt.Errorf("%s is a media provider; text/vision/transcription use OpenRouter", name)
 	}
 	key, endpoint, _, err := r.Credentials(name)

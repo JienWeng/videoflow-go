@@ -84,6 +84,11 @@ func TestFishSpeechWorkflowRequiresExplicitRunAndFencesDuplicates(t *testing.T) 
 
 func TestFishSettingsKeepKeyPrivateAndRejectForeignEndpoint(t *testing.T) {
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("configuration check contacted provider") })
+	schema := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"paths":{"/v1/tts":{"post":{"parameters":[{"name":"model","schema":{"default":"s2.1-pro","enum":["s2.1-pro"]}}]}}}}`))
+	}))
+	defer schema.Close()
+	s.cfg.FishSchemaURL = schema.URL
 	saved := call(t, s, "PUT", "/settings/providers/fish", `{"api_key":"fish-private-test-secret","base_url":"https://api.fish.audio"}`)
 	if saved.Code != 200 || strings.Contains(saved.Body.String(), "fish-private-test-secret") {
 		t.Fatal(saved.Code, saved.Body.String())

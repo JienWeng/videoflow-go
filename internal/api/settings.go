@@ -25,12 +25,13 @@ type ProviderPresetInfo struct {
 }
 
 var presetCatalog = map[string]ProviderPresetInfo{
+	"elevenlabs": {Label: "ElevenLabs", Protocol: "speech", URL: providers.ElevenURL, DefaultModel: "auto", EnvKey: "ELEVENLABS_API_KEY"},
 	"fish":       {Label: "Fish Audio", Protocol: "speech", URL: providers.FishURL, DefaultModel: "s2.1-pro", SuggestedModels: []string{"s2.1-pro", "s2.1-pro-free", "s2-pro"}, EnvKey: "FISH_API_KEY"},
 	"fal":        {Label: "fal.ai", Protocol: "media", URL: providers.FalURL, DefaultModel: providers.FalVideoModel, SuggestedModels: []string{providers.FalVideoModel, providers.FalImageModel}, EnvKey: "FAL_KEY"},
 	"byteplus":   {Label: "BytePlus ModelArk (Seedance)", Protocol: "video", URL: providers.BytePlusURL, DefaultModel: providers.BytePlusVideoModel, SuggestedModels: []string{providers.BytePlusVideoModel}, EnvKey: "BYTEPLUS_API_KEY"},
 	"openrouter": {Label: "OpenRouter", Protocol: "chat", URL: providers.OpenRouterURL, DefaultModel: "openai/gpt-4o-mini", SuggestedModels: []string{"openai/gpt-4o-mini", "meta-llama/llama-3.3-70b-instruct"}, EnvKey: "OPENROUTER_API_KEY"},
 }
-var presetOrder = []string{"fal", "openrouter", "byteplus", "fish"}
+var presetOrder = []string{"fal", "openrouter", "byteplus", "fish", "elevenlabs"}
 
 func maskKey(raw string) string {
 	if raw == "" {
@@ -419,7 +420,7 @@ func (s *Server) handlePutProviderConfig(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleTestProvider(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
-	if name == "fal" || name == "byteplus" || name == "fish" {
+	if name == "fal" || name == "byteplus" || name == "fish" || name == "elevenlabs" {
 		_, _, _, err := s.routes().Credentials(name)
 		var message any
 		if err != nil {

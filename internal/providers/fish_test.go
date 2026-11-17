@@ -28,7 +28,7 @@ func TestFishSpeechUsesExplicitVoiceModelAndBearer(t *testing.T) {
 	if _, err := c.Speech(context.Background(), "s2.1-pro", map[string]any{"text": "Hello", "reference_id": "voice-123", "format": "mp3"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Speech(context.Background(), "unknown", map[string]any{"text": "Hello", "reference_id": "voice-123"}); err == nil {
+	if _, err := c.Speech(context.Background(), "../unknown", map[string]any{"text": "Hello", "reference_id": "voice-123"}); err == nil {
 		t.Fatal("unknown model accepted")
 	}
 	if calls != 1 {

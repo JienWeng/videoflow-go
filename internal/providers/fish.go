@@ -13,7 +13,7 @@ import (
 const FishURL = "https://api.fish.audio"
 
 func FishModel(model string) bool {
-	return model == "s2.1-pro" || model == "s2.1-pro-free" || model == "s2-pro"
+	return model == "s2.1-pro" || model == "s2.1-pro-free" || model == "s2-pro" || model == "drama-3" || model == "s1"
 }
 
 type FishClient struct{ mediaHTTP }

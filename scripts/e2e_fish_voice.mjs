@@ -14,6 +14,8 @@ try{for(const width of[1440,390]){
  else if(p==='/settings/providers/fish'){if(method==='PUT'){assert.equal(request.postDataJSON().api_key,'fixture-fish-key');configured=true}body={name:'fish',configured,from_db:configured,masked_key:configured?'••••key':'',base_url:'https://api.fish.audio'}}
  else if(p==='/settings/providers/fish/test')body={ok:configured,checked:'configuration',credentials_verified:false,generation_tested:false};
  else if(p==='/settings/app')body={all_text_local:true,default_aspect_ratio:'16:9',default_scene_duration:5,dialogue_language:'English',caption_style:'clean',caption_language:'auto',render_negatives:[],media_model_preferences:{}};
+ else if(p==='/voice/catalog/fish/models')body={models:[{id:'s2.1-pro',name:'S2.1 Pro',default:true},{id:'s2.1-pro-free',name:'Free tier'}],checked_at:'2026-11-17T10:00:00Z'};
+ else if(p==='/voice/preferences')body={primary_provider:'fal'};
  else if(p==='/voice/state')body={project_id:'p',profiles:profile?[{id:'c',revision:1,data:profile}]:[],scripts:[{id:'main',revision:1,data:{approved:true,lines:[{id:'line',character_id:'c',language:'en',text:'Come home, Pip!',visible:true}]}}],tasks};
  else if(p==='/voice/profiles/c'){profile=request.postDataJSON().data;assert.equal(profile.provider,'fish');assert.equal(profile.voice_id,'fish-voice-id');assert.equal(profile.model,'s2.1-pro-free');body={id:'c',revision:1,data:profile}}
  else if(p==='/voice/tasks/prepare'){assert.equal(request.postDataJSON().kind,'speech');tasks=[{id:'task',kind:'speech',model:'fish/s2.1-pro-free',status:'draft',fingerprint:'exact',bindings:[]}];body=tasks[0]}

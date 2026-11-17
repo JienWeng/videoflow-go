@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SpeechPicker from '$lib/voices/SpeechPicker.svelte';
   import { protectDraft } from '$lib/protect-draft';
   import { onMount } from 'svelte';
   import {page} from '$app/state';
@@ -14,6 +15,9 @@
   type Document<T> = { id: string; revision: number; data: T };
   type VoiceTask = { id: string; kind: string; model: string; status: string; fingerprint: string; upstream_id: string; error?: string; preview?: Record<string, unknown>; bindings: {kind: string; id: string; revision?: number}[]; result?: any };
   let project = $state('');
+  let primary=$state('fal');
+  const providerName=(p:string)=>p==='elevenlabs'?'ElevenLabs':p==='fish'?'Fish Audio':'fal.ai';
+  async function setPrimary(p:string){try{await put('/voice/preferences',{primary_provider:p});primary=p;for(const c of characters){const f=profileForms[c.id];if(f&&!profileFor(c.id)&&JSON.stringify(f)===profileBaselines[c.id]){f.provider=p;f.model='auto';f.mode='saved';profileBaselines[c.id]=JSON.stringify(f)}}}catch(e){error=String(e)}}
   let profiles = $state<Document<Profile>[]>([]);
   let profileForms = $state<Record<string, Profile>>({});
   let scripts = $state<Document<{ approved: boolean; lines: Line[] }>[]>([]);
@@ -63,6 +67,7 @@
     const state = await get(project ? scoped('/voice/state') : '/voice/state');
     if (project && state.project_id !== project) throw new Error('Project changed. Reload this workspace.');
     project = state.project_id;
+    primary=state.primary_provider??'fal';
     profiles = state.profiles;
     scripts = state.scripts;
     tasks = state.tasks;
@@ -71,7 +76,7 @@
     const details = await Promise.all(jobs.filter((j: any) => j.status === 'succeeded').map((j: any) => get(`/render-jobs/${j.id}`)));
     outputs = details.flatMap((d: any) => d.outputs.map((o: any) => ({ ...o, model: d.job.model })));
     if (reset) {
-      profileForms = Object.fromEntries(characters.map(c => [c.id, cloneValue(profileFor(c.id)?.data ?? { provider:'fal',model:'s2.1-pro',mode: 'saved', sample_asset_id: '', voice_id: '', approved: false })]));
+      profileForms = Object.fromEntries(characters.map(c => [c.id, cloneValue(profileFor(c.id)?.data ?? { provider:primary,model:'auto',mode: 'saved', sample_asset_id: '', voice_id: '', approved: false })]));
       profileBaselines = Object.fromEntries(Object.entries(profileForms).map(([id,value]) => [id,JSON.stringify(value)]));
       loadScript(scriptID);
     }
@@ -135,6 +140,7 @@
     <div><h1>Voice & dialogue</h1><p>Set character voices, approve dialogue, then prepare speech for your video.</p></div>
     <Button variant="outline" disabled={!!busy} onclick={() => action('refresh', () => refresh())}><RefreshCw size={15} /> Refresh</Button>
   </header>
+  <div class="mb-4 flex flex-wrap items-center gap-3"><label>Primary speech provider<select aria-label="Primary speech provider" value={primary} onchange={e=>{const p=e.currentTarget.value;e.currentTarget.value=primary;void setPrimary(p)}}><option value="fal">fal.ai</option><option value="fish">Fish Audio</option><option value="elevenlabs">ElevenLabs</option></select></label><Badge>Primary · {providerName(primary)}</Badge><p class="text-xs text-muted-foreground">Default for new character voices. Existing saved voices keep their provider.</p></div>
   <nav class="links" aria-label="Voice workflow"><a href="/library?tab=characters">Back to Characters</a><a href="/?view=story">Story</a><a href="/render">Videos</a></nav>
   {#if error}<div role="alert" class="message error">{error}</div>{/if}
   {#if notice}<div role="status" class="message">{notice}</div>{/if}
@@ -149,17 +155,17 @@
         {#if profile}
         {@const sample = assets.find(a => a.id === profile.sample_asset_id)}
         <article class="panel">
-          <div class="row"><h3>{character.name}</h3><Badge variant="secondary">revision {profileFor(character.id)?.revision ?? 0}</Badge></div>
-          <label>Speech provider<select aria-label="Speech provider" value={profile.provider??'fal'} onchange={e=>{profile.provider=e.currentTarget.value;profile.approved=false;profile.voice_id='';profile.sample_asset_id='';if(profile.provider==='fish'){profile.mode='saved';profile.model='s2.1-pro';}}}><option value="fal">fal.ai · MiniMax</option><option value="fish">Fish Audio</option></select></label>
-          {#if profile.provider==='fish'}<label>Speech model<select aria-label="Speech model" bind:value={profile.model} onchange={()=>profile.approved=false}><option value="s2.1-pro">S2.1 Pro</option><option value="s2.1-pro-free">S2.1 Pro · developer free tier</option><option value="s2-pro">S2 Pro</option></select></label><p class="hint"><a href="/settings#connections">Configure Fish Audio API key</a> · <a href="https://fish.audio/discovery" target="_blank" rel="noreferrer">Find or create a Fish Audio voice</a></p>{:else}
+          <div class="row"><h3>{character.name}</h3>{#if (profile.provider??'fal')===primary}<Badge>Primary provider</Badge>{/if}<Badge variant="secondary">revision {profileFor(character.id)?.revision ?? 0}</Badge></div>
+          <label>Speech provider<select aria-label="Speech provider" value={profile.provider??'fal'} onchange={e=>{profile.provider=e.currentTarget.value;profile.approved=false;profile.voice_id='';profile.sample_asset_id='';if(profile.provider==='fish'||profile.provider==='elevenlabs'){profile.mode='saved';profile.model='auto';}}}><option value="fal">fal.ai · MiniMax</option><option value="fish">Fish Audio</option><option value="elevenlabs">ElevenLabs</option></select></label>
+          {#if profile.provider==='fish'||profile.provider==='elevenlabs'}<SpeechPicker provider={profile.provider} character={character.id} bind:model={profile.model} bind:voice={profile.voice_id} onchange={()=>profile.approved=false}/><p class="hint"><a href="/settings#connections">Configure speech provider API keys</a></p>{:else}
           <label>Voice mode<select bind:value={profile.mode} onchange={() => profile.approved = false}><option value="saved">Saved character voice (default)</option><option value="native_reference">Native reference audio → video</option></select></label>
           <label>Approved audio sample<select bind:value={profile.sample_asset_id} onchange={() => profile.approved = false}><option value="">Select an uploaded sample</option>{#each sampleAssets as a}<option value={a.id}>{a.name}</option>{/each}</select></label>
           <label class="upload">Upload sample<input type="file" accept="audio/wav,audio/mpeg,audio/flac,audio/mp4,.wav,.mp3,.flac,.m4a" disabled={!!busy} onchange={e => uploadSample(character.id, e)} /></label>
           {#if sample}<audio controls preload="none" src={mediaUrl(sample.file_path) ?? ''}></audio>{/if}
           {/if}
-          {#if profile.mode === 'saved'}<label>Provider voice ID<input bind:value={profile.voice_id} placeholder={profile.provider==='fish'?'Fish Audio voice model ID (reference_id)':'Bind an existing MiniMax voice ID, or create from sample'} onchange={() => profile.approved = false} /></label>{#if profile.provider!=='fish'}<p class="hint">Voice creation needs a sample of at least 10 seconds. Use the created voice with speech within 7 days to retain it.</p>{/if}{:else}<p class="hint">Native video uses a WAV/MP3 sample up to 15 seconds and 15 MB plus an approved visual reference. Review identity and spoken wording after generation.</p>{/if}
+          {#if profile.mode === 'saved'}<label>Provider voice ID<input bind:value={profile.voice_id} placeholder={profile.provider==='fish'?'Fish Audio voice model ID (reference_id)':profile.provider==='elevenlabs'?'Choose an ElevenLabs voice above, or enter its ID':'Bind an existing MiniMax voice ID, or create from sample'} onchange={() => profile.approved = false} /></label>{#if !['fish','elevenlabs'].includes(profile.provider??'fal')}<p class="hint">Voice creation needs a sample of at least 10 seconds. Use the created voice with speech within 7 days to retain it.</p>{/if}{:else}<p class="hint">Native video uses a WAV/MP3 sample up to 15 seconds and 15 MB plus an approved visual reference. Review identity and spoken wording after generation.</p>{/if}
           <label class="check"><input type="checkbox" bind:checked={profile.approved} /> I approve this character's sample / provider voice ID.</label>
-          <div class="actions"><Button disabled={!!busy} onclick={() => action(`profile-${character.id}`, () => saveProfile(character.id))}>Save voice revision</Button>{#if profile.mode === 'saved'&&profile.provider!=='fish'}<Button variant="outline" disabled={!!busy || !profileFor(character.id)?.data.approved || !profileFor(character.id)?.data.sample_asset_id} onclick={() => action(`clone-${character.id}`, () => prepare('clone', { character_id: character.id }))}>Prepare voice creation</Button>{/if}</div>
+          <div class="actions"><Button disabled={!!busy} onclick={() => action(`profile-${character.id}`, () => saveProfile(character.id))}>Save voice revision</Button>{#if profile.mode === 'saved'&&!['fish','elevenlabs'].includes(profile.provider??'fal')}<Button variant="outline" disabled={!!busy || !profileFor(character.id)?.data.approved || !profileFor(character.id)?.data.sample_asset_id} onclick={() => action(`clone-${character.id}`, () => prepare('clone', { character_id: character.id }))}>Prepare voice creation</Button>{/if}</div>
         </article>
         {/if}
       {/each}
@@ -201,11 +207,11 @@
     <div class="section-head"><div><h2 id="requests-heading">Prepared actions and saved receipts</h2></div><p>Only Run submits paid work. Refresh and reconciliation retrieve existing work and never resubmit.</p></div>
     {#if !tasks.length}<p class="empty">Prepare an action above to review its exact source revisions and provider route.</p>{/if}
     {#each tasks as task (task.id)}
-      <article class="panel task"><div class="row"><h3>{task.kind.replaceAll('_', ' ')}</h3><Badge variant="secondary">{task.status}</Badge></div><p class="route">fal / {task.model}</p><p class="hint">{task.bindings.map(b => `${b.kind}: ${b.id}${b.revision ? ` @ revision ${b.revision}` : ''}`).join(' · ')}</p><p class="hint">Local task {task.id}{#if task.upstream_id}<br />Upstream request {task.upstream_id}{/if}</p>
+      <article class="panel task"><div class="row"><h3>{task.kind.replaceAll('_', ' ')}</h3><Badge variant="secondary">{task.status}</Badge></div><p class="route">{providerName(task.model.startsWith('elevenlabs/')?'elevenlabs':task.model.startsWith('fish/')?'fish':'fal')} / {task.model.replace(/^(fish|elevenlabs)\//,'')}</p><p class="hint">{task.bindings.map(b => `${b.kind}: ${b.id}${b.revision ? ` @ revision ${b.revision}` : ''}`).join(' · ')}</p><p class="hint">Local task {task.id}{#if task.upstream_id}<br />Upstream request {task.upstream_id}{/if}</p>
         {#if task.preview && Object.keys(task.preview).length}<details><summary>Exact approved payload</summary><pre class="payload">{JSON.stringify(task.preview, null, 2)}</pre></details>{/if}
         {#if task.error}<p class="message error">{task.error}</p>{/if}
         {#if task.status === 'draft'}<p>Run approves this exact prepared action and may incur provider charges. Editing a source revision requires preparing a new action.</p><Button disabled={!!busy} onclick={() => action(task.id, () => taskAction(task, 'run', { confirmed: true, fingerprint: task.fingerprint }))}><Play size={15} /> Run paid {task.kind.replaceAll('_', ' ')}</Button>
-        {:else if ['submitting', 'uncertain'].includes(task.status) && !task.upstream_id}{#if task.model.startsWith('fish/')}<p>Fish Audio speech is synchronous. Check Fish Audio activity for this uncertain request; it will not be retried automatically.</p>{:else}<p>Submission is fenced. Review fal activity, then attach the existing request ID.</p><label>Existing fal request ID<input bind:value={reconciliation[task.id]} /></label><Button variant="outline" disabled={!!busy || !reconciliation[task.id]} onclick={() => action(task.id, () => taskAction(task, 'reconcile', { reviewed: true, upstream_id: reconciliation[task.id] }))}>Reconcile reviewed receipt</Button>{/if}
+        {:else if ['submitting', 'uncertain'].includes(task.status) && !task.upstream_id}{#if (task.model.startsWith('fish/')||task.model.startsWith('elevenlabs/'))}<p>Saved-voice speech is synchronous. Check the selected provider’s activity for this uncertain request; it will not be retried automatically.</p>{:else}<p>Submission is fenced. Review fal activity, then attach the existing request ID.</p><label>Existing fal request ID<input bind:value={reconciliation[task.id]} /></label><Button variant="outline" disabled={!!busy || !reconciliation[task.id]} onclick={() => action(task.id, () => taskAction(task, 'reconcile', { reviewed: true, upstream_id: reconciliation[task.id] }))}>Reconcile reviewed receipt</Button>{/if}
         {:else if task.upstream_id && !['completed', 'review_required', 'failed'].includes(task.status)}<Button variant="outline" disabled={!!busy} onclick={() => action(task.id, () => taskAction(task, 'refresh'))}><RefreshCw size={14} /> Refresh existing request</Button>{/if}
         {#if resultURL(task) && task.kind !== 'native_reference' && task.kind !== 'lipsync'}<audio controls preload="none" src={resultURL(task) ?? ''}></audio>{/if}
         {#if task.result?.output_id}<a href={`/editor/${task.result.output_id}`}>Review generated video <ArrowRight size={14} /></a>{/if}
