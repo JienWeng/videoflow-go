@@ -21,6 +21,7 @@
   import { onMount, tick } from 'svelte';
   import { APIError, get, mediaUrl, post } from '$lib/api';
   import ActionCard from '$lib/chat/ActionCard.svelte';
+  import Response from '$lib/components/ai-elements/response/response.svelte';
   import { Button } from '$lib/components/ui/button';
   import * as Tooltip from '$lib/components/ui/tooltip';
   import * as Message from '$lib/components/ui/message';
@@ -238,6 +239,7 @@
 
   let graphData = $state<any>(null);
   let styleData = $state<any>(null);
+  let progressData = $state<any>(null);
 
   /**
    * One pass over /graph (scenes, shots, storyboards and render jobs are all
@@ -273,7 +275,7 @@
         return { label: `Prepare keyframes for ${label}`, focusId:sceneId, send: `Prepare keyframes for ${label}` };
       if(hasPendingSceneReferences(graph,sceneId))return {label:`Replace excluded images for ${label}`,href:`/scenes?scene_id=${encodeURIComponent(sceneId)}`,focusId:sceneId};
       if (!renderedScenes.has(sceneId))
-        return { label: `Render《${label}》`, focusId:sceneId, send: `render scene 《${label}》` };
+        return { label: `Render “${label}”`, focusId:sceneId, send: `Render scene “${label}”` };
       return null;
     }
 
@@ -345,18 +347,27 @@
       if (!style?.style_prompt) {
         out.push({ label: 'Ingest style from story', send: 'ingest style from story' });
       }
-      const noShots = scenes.find((s) => !scenesWithShots.has(s.id));
+      // The shared progress check decides the next step so chips match Studio and the assistant.
+      const next = progressData?.next;
+      if (next) {
+        const step = next.next;
+        if (step.action === 'open_videos') out.push({ label: `${step.label} · ${next.title}`, href: '/render' });
+        else if (step.action === 'open_editor') out.push({ label: `${step.label} · ${next.title}`, href: `/compositions?scene_id=${encodeURIComponent(next.scene_id)}` });
+        else if (step.action === 'ask_assistant') out.push({ label: `Why is “${next.title}” stuck?`, send: `Why is “${next.title}” stuck, and what should I do next?` });
+        else out.push({ label: `${step.label} · ${next.title}`, focusId: next.scene_id, send: `${step.label} for “${next.title}”` });
+      }
+      const noShots = next ? null : scenes.find((s) => !scenesWithShots.has(s.id));
       if (noShots) out.push({ label: `Plan shots for ${noShots.label}`, send: `Plan shots for ${noShots.label}` });
-      const noStoryboard = scenes.find(
+      const noStoryboard = next ? null : scenes.find(
         (s) => scenesWithShots.has(s.id) && !scenesWithStoryboard.has(s.id)
       );
       if (noStoryboard)
         out.push({ label: `Prepare keyframes for ${noStoryboard.label}`, send: `Prepare keyframes for ${noStoryboard.label}` });
-      const notRendered = scenes.find(
+      const notRendered = next ? null : scenes.find(
         (s) => scenesWithStoryboard.has(s.id) && !renderedScenes.has(s.id)
       );
       if (notRendered)
-        out.push({ label: `Render《${notRendered.label}》`, send: `render scene 《${notRendered.label}》` });
+        out.push({ label: `Render “${notRendered.label}”`, send: `Render scene “${notRendered.label}”` });
 
       // QA found issues on an output → offer a retry.
       if (outputs.some((o) => Array.isArray(o.data?.qa_issues) && o.data.qa_issues.length)) {
@@ -380,8 +391,9 @@
 
   async function refreshChips() {
     try {
-      const [graph, style] = await Promise.all([get('/graph'), get('/style').catch(() => null)]);
+      const [graph, style, progress] = await Promise.all([get('/graph'), get('/style').catch(() => null), get('/production/progress').catch(() => null)]);
       graphData = graph;
+      progressData = progress;
       await refreshStoryApprovals();
       styleData = style;
     } catch {
@@ -557,8 +569,8 @@
     function sceneComplete(title: string): Msg {
       return {
         role: 'assistant',
-        text: `《${title}》 is fully rendered.`,
-        chips: [captionsChip, { label: '写一个新故事…', fill: 'Write a new story: ' }]
+        text: `“${title}” is fully rendered.`,
+        chips: [captionsChip, { label: 'Start another story', fill: 'Write a new story: ' }]
       };
     }
 
@@ -586,8 +598,8 @@
         if (!next) return sceneComplete(title);
         return {
           role: 'assistant',
-          text: `Done — next for 《${title}》:`,
-          chips: [next, { label: `改进场景《${title}》…`, fill: `改进场景《${title}》：` }]
+          text: `Done. Next for “${title}”:`,
+          chips: [next, { label: `Change “${title}”…`, fill: `Change scene “${title}”: ` }]
         };
       }
       case 'render_scene':
@@ -857,12 +869,12 @@
       {:else}
       {#each messages as m, i (i)}
         <MessageScroller.Item messageId={'turn-'+i}>
-        <Message.Root align={m.role==='user'?'end':'start'}>
+        <Message.Root align={m.role==='user'?'end':'start'} class="group/turn">
           <Message.Content>
             <Message.Header class="text-xs font-medium text-muted-foreground">{m.role === 'user' ? 'You' : 'Story assistant'}</Message.Header>
 
             {#if m.text}
-              <Bubble.Root align={m.role==='user'?'end':'start'} variant={m.role==='user'?'muted':'ghost'}><Bubble.Content class="whitespace-pre-wrap break-words leading-relaxed">{m.text}</Bubble.Content></Bubble.Root>
+              <Bubble.Root align={m.role==='user'?'end':'start'} variant={m.role==='user'?'muted':'ghost'}>{#if m.role==='assistant'}<Bubble.Content class="break-words leading-relaxed"><Response content={m.text} class="text-sm [&_p]:my-2 [&_ul]:my-2 [&_ol]:my-2" /></Bubble.Content>{:else}<Bubble.Content class="whitespace-pre-wrap break-words leading-relaxed">{m.text}</Bubble.Content>{/if}</Bubble.Root>
               {#if m.role==='assistant'&&(m.setupSceneId||missingVoiceCharacter(m.text))}<Button variant="outline" size="sm" disabled={busy} onclick={()=>openSceneSetup(m)}>Set up scene voices here</Button>{/if}
             {/if}
             {#if m.intent?.action==='unknown' && m.state?.next_steps?.length}<ol class="list-decimal space-y-1 pl-5 text-sm">{#each m.state.next_steps as step}<li>{step}</li>{/each}</ol>{/if}
@@ -918,10 +930,10 @@
               />
               <Button variant="ghost" size="sm" class="self-start" onclick={()=>m.dismissed=true}>Dismiss proposal</Button>
             {:else if m.dismissed}<p class="text-xs text-muted-foreground">{m.briefSuperseded?'Earlier creative brief · updated below':'Proposal dismissed from this view.'}</p>{/if}
-            {#if m.role==='user'}<Message.Footer><Button size="sm" variant="ghost" disabled={busy} onclick={()=>reusePrompt(m.text)}>Reuse prompt</Button><Button size="sm" variant="ghost" disabled={busy} aria-pressed={checkpointPrompts.includes(m.text)} onclick={()=>toggleCheckpoint(m)}>{checkpointPrompts.includes(m.text)?'Remove prompt checkpoint':'Save prompt checkpoint'}</Button></Message.Footer>{/if}
+            {#if m.role==='user'}<Message.Footer class="opacity-0 transition-opacity group-hover/turn:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100"><Button size="sm" variant="ghost" class="h-7 px-2 text-xs text-muted-foreground" disabled={busy} title="Put this message back in the box to edit and send again" onclick={()=>reusePrompt(m.text)}>Edit &amp; resend</Button><Button size="sm" variant="ghost" class="h-7 px-2 text-xs text-muted-foreground" disabled={busy} aria-pressed={checkpointPrompts.includes(m.text)} title="Keep this prompt handy to reuse later" onclick={()=>toggleCheckpoint(m)}>{checkpointPrompts.includes(m.text)?'Unsave':'Save prompt'}</Button></Message.Footer>{/if}
           </Message.Content>
         </Message.Root>
-        {#if m.role==='user'&&checkpointPrompts.includes(m.text)}<Marker.Root variant="separator"><Marker.Content class="flex flex-wrap items-center gap-2">Prompt checkpoint<Button variant="outline" size="sm" onclick={()=>reusePrompt(m.text)}>Use prompt</Button><span class="text-xs text-muted-foreground">Restores text only; saved work and conversation stay unchanged.</span></Marker.Content></Marker.Root>{/if}
+        {#if m.role==='user'&&checkpointPrompts.includes(m.text)}<Marker.Root variant="separator"><Marker.Content class="flex flex-wrap items-center gap-2">Saved prompt<Button variant="outline" size="sm" onclick={()=>reusePrompt(m.text)}>Use prompt</Button></Marker.Content></Marker.Root>{/if}
         </MessageScroller.Item>
       {/each}
       {/if}
