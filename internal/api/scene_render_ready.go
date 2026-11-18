@@ -96,7 +96,7 @@ func (s *Server) storyboardShotNotes(id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	notes := "\nCurrent shot plan:"
+	notes := "\nCurrent shot plan (story context only). Draw ONE single full-frame image of the opening moment, as a still from shot 1. Never a collage, contact sheet, comic panels, storyboard grid or split screen:"
 	for _, shot := range shots {
 		notes += fmt.Sprintf("\nShot %d (%d seconds): %s", shot.ShotOrder, shot.Duration, shot.Prompt)
 		if shot.Camera != nil {

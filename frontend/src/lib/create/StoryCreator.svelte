@@ -138,6 +138,19 @@
     }
   }
 
+  // The dialog needs an AI session to plan the story. Start one here instead of sending
+  // people away (leaving would discard their draft).
+  let startingSession=$state(false),sessionError=$state('');
+  async function startSession(){
+    startingSession=true;sessionError='';
+    try{
+      const status=await get('/director/status');
+      const engine=(status.engines??[]).find((e:any)=>e.installed&&e.signed_in)?.engine;
+      if(!engine){sessionError='Connect Codex or Claude Code first (Settings → AI connections).';return}
+      await post('/director/sessions',{engine,title:'Story planning'});
+      await loadPreflight(aspectRatio,style);
+    }catch(e:any){sessionError=e.message??String(e)}finally{startingSession=false}
+  }
   let preflightSequence=0;
   async function loadPreflight(ratio: string, styleChoice: string) {
     const sequence=++preflightSequence;
@@ -320,10 +333,11 @@
           {#each preflight.warnings ?? [] as warning}
             <p class="mt-2 text-amber-700 dark:text-amber-300">Unverified route: {warning.reason}</p>
           {/each}
+          {#if sessionError}<p role="alert" class="mt-2 text-destructive">{sessionError}</p>{/if}
           {#if preflight.missing.length}
             <ul class="mt-2 list-disc space-y-1 pl-5 text-destructive">
               {#each preflight.missing as item}
-                <li>{item.reason} <a class="underline" href={item.setting}>{item.setting?.startsWith('/director') ? 'Open AI sessions' : 'Open settings'}</a></li>
+                <li>{item.reason} {#if item.setting?.startsWith('/director')}<Button size="sm" variant="outline" class="ml-1" disabled={startingSession} onclick={startSession}>{startingSession?'Starting…':'Start a session now'}</Button> <a class="underline" href={item.setting}>or choose one</a>{:else}<a class="underline" href={item.setting}>Open settings</a>{/if}</li>
               {/each}
             </ul>
           {:else}

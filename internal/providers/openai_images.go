@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"strings"
 )
 
@@ -120,7 +121,8 @@ func (c *OpenAIImages) edit(ctx context.Context, fields map[string]string, refs 
 			return nil, fmt.Errorf("invalid image reference")
 		}
 		var ext string
-		switch http.DetectContentType(data) {
+		mediaType := http.DetectContentType(data)
+		switch mediaType {
 		case "image/png":
 			ext = "png"
 		case "image/jpeg":
@@ -133,7 +135,12 @@ func (c *OpenAIImages) edit(ctx context.Context, fields map[string]string, refs 
 		if body.Len()+len(data) > 64<<20 {
 			return nil, fmt.Errorf("OpenAI image references exceed 64 MiB combined")
 		}
-		part, err := writer.CreateFormFile("image[]", fmt.Sprintf("reference-%d.%s", i+1, ext))
+		// CreateFormFile always labels the part application/octet-stream, which the
+		// images API rejects; send the real image type.
+		partHeader := textproto.MIMEHeader{}
+		partHeader.Set("Content-Disposition", fmt.Sprintf(`form-data; name="image[]"; filename="reference-%d.%s"`, i+1, ext))
+		partHeader.Set("Content-Type", mediaType)
+		part, err := writer.CreatePart(partHeader)
 		if err != nil {
 			return nil, err
 		}

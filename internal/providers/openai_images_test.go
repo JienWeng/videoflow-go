@@ -29,6 +29,9 @@ func TestOpenAIImageGenerationAndReferenceEdit(t *testing.T) {
 				defer r.MultipartForm.RemoveAll()
 				if r.FormValue("model") != OpenAIImageModel || r.FormValue("size") != "864x1536" || len(r.MultipartForm.File["image[]"]) != 1 {
 					t.Error("missing model, portrait size or attached reference")
+				} else if got := r.MultipartForm.File["image[]"][0].Header.Get("Content-Type"); got != "image/png" {
+					// The images API rejects application/octet-stream parts.
+					t.Errorf("reference sent as %q, want image/png", got)
 				}
 			} else {
 				var fields map[string]string
