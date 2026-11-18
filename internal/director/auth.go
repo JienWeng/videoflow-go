@@ -98,10 +98,17 @@ func (m *AuthManager) Status(ctx context.Context, engine string) AuthState {
 	if ok && time.Since(cached.at) < authCacheTTL {
 		state.SignedIn, state.Method = cached.signedIn, cached.method
 	} else {
-		state.SignedIn, state.Method = m.check(ctx, engine, path)
-		m.mu.Lock()
-		m.cache[engine] = cachedAuth{state.SignedIn, state.Method, time.Now()}
-		m.mu.Unlock()
+		var definitive bool
+		state.SignedIn, state.Method, definitive = m.check(ctx, engine, path)
+		// Only remember answers the CLI actually gave. A check cut short (the browser
+		// navigated away, or the CLI was slow) must not read as "signed out" for 30s.
+		if definitive {
+			m.mu.Lock()
+			m.cache[engine] = cachedAuth{state.SignedIn, state.Method, time.Now()}
+			m.mu.Unlock()
+		} else if ok {
+			state.SignedIn, state.Method = cached.signedIn, cached.method
+		}
 	}
 	m.mu.Lock()
 	if l := m.logins[engine]; l != nil {
@@ -112,9 +119,11 @@ func (m *AuthManager) Status(ctx context.Context, engine string) AuthState {
 	return state
 }
 
-func (m *AuthManager) check(ctx context.Context, engine, path string) (signedIn bool, method string) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+func (m *AuthManager) check(ctx context.Context, engine, path string) (signedIn bool, method string, definitive bool) {
+	// Detached from the HTTP request so a page change can't kill the check midway.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
+	defer func() { definitive = ctx.Err() == nil }()
 	if engine == "claude" {
 		out, _ := exec.CommandContext(ctx, path, "auth", "status").Output()
 		var s struct {
@@ -134,7 +143,7 @@ func (m *AuthManager) check(ctx context.Context, engine, path string) (signedIn 
 			}
 		}
 	}
-	return signedIn, method
+	return signedIn, method, true
 }
 
 func friendlyMethod(method string) string {

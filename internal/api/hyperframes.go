@@ -236,7 +236,7 @@ func (s *Server) handleCompositionRun(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		meta, _ := json.Marshal(map[string]interface{}{"composition_revision": revision, "source_manifest": filepath.Join(dir, "manifest.json"), "hyperframes_version": composition.RuntimeVersion, "source_assets": append(m.Clips, m.Audio...), "caption_bindings": m.CaptionBindings})
-		a := &models.Asset{ID: derivedID, ProjectID: &project, Type: "output_video", Name: "Composition " + revision[:12] + ".mp4", FilePath: derivedPath, TagsJSON: []byte("[]"), MetadataJSON: meta}
+		a := &models.Asset{ID: derivedID, ProjectID: &project, Type: "output_video", Name: "Edited video · " + time.Now().Format("Jan 2, 3:04 PM") + ".mp4", FilePath: derivedPath, TagsJSON: []byte("[]"), MetadataJSON: meta}
 		if e = s.database.CreateUploadedAsset(a); e != nil {
 			http.Error(w, e.Error(), 500)
 			return

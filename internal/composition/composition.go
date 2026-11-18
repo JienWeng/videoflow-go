@@ -276,14 +276,21 @@ func Save(root, project string, m Manifest, sources map[string]string) (string, 
 }
 func Document(m Manifest) string {
 	var b strings.Builder
-	captionSize := 28
+	// Caption size follows the video's short side so text reads the same on a
+	// 640p preview and a 1080p export (about 5% of the short side by default).
+	short := m.Width
+	if m.Height < short {
+		short = m.Height
+	}
+	factor := 0.05
 	switch m.CaptionStyle {
 	case "compact":
-		captionSize = 20
+		factor = 0.036
 	case "large":
-		captionSize = 40
+		factor = 0.07
 	}
-	fmt.Fprintf(&b, `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src 'self' blob:; img-src 'self' blob: data:; script-src 'self' 'unsafe-inline' blob:; connect-src 'self'; worker-src blob:; font-src 'self'; style-src 'unsafe-inline'"><style>@font-face{font-family:VideoFlowCaptions;src:url(assets/captions.woff2)}html,body{margin:0;background:#111}#root{position:relative;overflow:hidden;width:%dpx;height:%dpx}.clip{position:absolute;inset:0;width:100%%;height:100%%;object-fit:contain}.caption{inset:auto 5%% 8%%;height:auto;width:90%%;color:white;text-align:center;font:%dpx VideoFlowCaptions,sans-serif;text-shadow:0 2px 4px black}</style></head><body><div id="root" data-composition-id="root" data-no-timeline data-width="%d" data-height="%d" data-duration="%g" data-fps="%d">`, m.Width, m.Height, captionSize, m.Width, m.Height, m.Duration, m.FPS)
+	captionSize := int(float64(short)*factor + 0.5)
+	fmt.Fprintf(&b, `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src 'self' blob:; img-src 'self' blob: data:; script-src 'self' 'unsafe-inline' blob:; connect-src 'self'; worker-src blob:; font-src 'self'; style-src 'unsafe-inline'"><style>@font-face{font-family:VideoFlowCaptions;src:url(assets/captions.woff2)}html,body{margin:0;background:#111}#root{position:relative;overflow:hidden;width:%dpx;height:%dpx}.clip{position:absolute;inset:0;width:100%%;height:100%%;object-fit:contain}.caption{inset:auto 5%% 8%%;height:auto;width:90%%;color:white;text-align:center;font:700 %dpx/1.25 VideoFlowCaptions,sans-serif;text-shadow:-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000,0 3px 8px rgba(0,0,0,.8)}</style></head><body><div id="root" data-composition-id="root" data-no-timeline data-width="%d" data-height="%d" data-duration="%g" data-fps="%d">`, m.Width, m.Height, captionSize, m.Width, m.Height, m.Duration, m.FPS)
 	for _, group := range []struct {
 		clips []Clip
 		audio bool

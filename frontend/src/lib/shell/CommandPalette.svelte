@@ -148,7 +148,7 @@
 
     out.push({id:'nav-sessions',label:'Manage AI sessions',hint:'assistant setup and saved conversations',group:'Go to',icon:SlidersHorizontal,href:'/director'});
     out.push({id:'nav-voices',label:'Voice & dialogue',hint:'character voices, speech and script captions',group:'Go to',icon:Users,href:'/voices'});
-    out.push({id:'nav-composition',label:'Edit final video',hint:'composition layers and saved edits',group:'Go to',icon:Film,href:'/compositions'});
+    out.push({id:'nav-composition',label:'Edit video',hint:'timeline, captions, music and export',group:'Go to',icon:Film,href:'/?view=edit'});
 
     // --- Entities from the graph ----------------------------------------
     const nodes: any[] = graph?.nodes ?? [];
@@ -228,7 +228,26 @@
   const filtered = $derived.by(() => {
     const q = query.trim();
     if (!q) return items;
-    return items.filter((it) => fuzzy(q, `${it.label} ${it.hint ?? ''} ${it.group}`));
+    // Best matches first: a word in the title beats a word in the hint beats loose letters.
+    const needle = q.toLowerCase();
+    const score = (it: any): number => {
+      const label = String(it.label).toLowerCase(), hint = String(it.hint ?? '').toLowerCase();
+      if (label.startsWith(needle)) return 5;
+      if (label.split(/[\s·\-–—/]+/).some((w) => w.startsWith(needle))) return 4;
+      if (label.includes(needle)) return 3;
+      if (hint.split(/[\s,·\-–—/]+/).some((w) => w.startsWith(needle))) return 2;
+      if (needle.length <= 3 && fuzzy(q, label)) return 1; // initials like “vf”
+      return 0;
+    };
+    const ranked = items
+      .map((it, index) => ({ it, index, s: score(it) }))
+      .filter((x) => x.s > 0)
+      .sort((a, b) => b.s - a.s || a.index - b.index)
+      .map((x) => x.it);
+    // Sections are shown together, best-matching section first, so keyboard order matches the screen.
+    const groupOrder: string[] = [];
+    for (const it of ranked) if (!groupOrder.includes(it.group)) groupOrder.push(it.group);
+    return groupOrder.flatMap((g) => ranked.filter((it) => it.group === g));
   });
 
   // Keep the active index in range as the filtered list shrinks.

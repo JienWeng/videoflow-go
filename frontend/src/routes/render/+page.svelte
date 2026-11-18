@@ -22,7 +22,8 @@
     Download,
     Star,
     Loader2,
-    ListVideo
+    ListVideo,
+    Film
   } from '@lucide/svelte';
 
   let assemblyIDs:string[]=$state([]);
@@ -122,10 +123,16 @@
     return status === 'pending' || status === 'running';
   }
 
+  // Videos exported from the editor are project assets, not scene renders.
+  let editedVideos: any[] = $state([]);
   async function refresh() {
-    [jobs, scenes, scripts] = await Promise.all([
-      get('/render-jobs'), get('/scenes'), get('/scripts')
+    let allAssets: any[] = [];
+    [jobs, scenes, scripts, allAssets] = await Promise.all([
+      get('/render-jobs'), get('/scenes'), get('/scripts'), get('/assets').catch(() => [])
     ]);
+    editedVideos = (allAssets ?? [])
+      .filter((a: any) => a.type === 'output_video' && a.metadata_json?.composition_revision)
+      .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)));
     const done = jobs.filter((j) => j.status === 'succeeded');
     for (const j of done) {
       if (!outputs[j.id]) {
@@ -265,8 +272,9 @@
   // when the selected scene's activity disappears.
   $effect(() => {
     if (!loaded) return;
+    if (selectedId === '__edited__' && editedVideos.length) return;
     if (selectedId !== null && groups.some((g) => g.sceneId === selectedId)) return;
-    selectedId = groups.length ? groups[0].sceneId : null;
+    selectedId = groups.length ? groups[0].sceneId : editedVideos.length ? '__edited__' : null;
   });
 
   function sceneOutputs(g: SceneGroup): { job: any; out: any }[] {
@@ -371,7 +379,7 @@
   <!-- Page header -->
   <div class="shrink-0 px-6 pt-6 pb-4">
     <div class="flex flex-wrap items-start justify-between gap-3">
-      <div><h1 class="text-lg font-semibold">Videos</h1><p class="mt-0.5 text-sm text-muted-foreground">Everything you've rendered, by scene. Watch, download, or combine them in the editor.</p></div>
+      <div><h1 class="text-lg font-semibold">Videos</h1><p class="mt-0.5 text-sm text-muted-foreground">Your scene videos and edited exports. Watch, download, or combine them in the editor.</p></div>
       <div class="flex flex-wrap gap-2"><Button variant="ghost" href="/voices">Voices</Button><Button href="/?view=edit"><Clapperboard class="size-4" />Edit & combine</Button></div>
     </div>
   </div>
@@ -414,7 +422,7 @@
               <Button size="sm" variant="secondary"
                 onclick={() => { error = ''; refresh().catch((e) => (error = e.message)); }}>Retry</Button>
             </div>
-          {:else if groups.length === 0}
+          {:else if groups.length === 0 && !editedVideos.length}
             <div class="rounded-lg border border-dashed border-border p-3">
               <div class="flex items-center gap-2 mb-1">
                 <Clapperboard class="size-4" />
@@ -425,6 +433,13 @@
               </p>
             </div>
           {:else}
+            {#if editedVideos.length}
+              <button type="button" aria-pressed={selectedId === '__edited__'} onclick={() => selectGroup('__edited__')}
+                class="flex w-full items-start gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors {selectedId === '__edited__' ? 'border-primary/60 bg-accent' : 'border-transparent hover:border-border hover:bg-accent/50'}">
+                <div class="flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-muted/30 text-muted-foreground"><Film class="size-4" /></div>
+                <div class="min-w-0 flex-1"><span class="block truncate text-sm font-medium">Edited videos</span><p class="mt-0.5 truncate text-xs text-muted-foreground">{editedVideos.length} exported from the editor</p></div>
+              </button>
+            {/if}
             {#each groups as g (g.sceneId)}
               <button
                 type="button"
@@ -472,6 +487,19 @@
             <div class="flex flex-wrap gap-4">
               <Skeleton class="h-44 w-[320px] rounded-lg" />
               <Skeleton class="h-44 w-[320px] rounded-lg" />
+            </div>
+          </div>
+        {:else if selectedId === '__edited__' && editedVideos.length}
+          <div class="p-5">
+            <div class="mb-4 flex flex-wrap items-center gap-2"><h2 class="truncate text-base font-semibold">Edited videos</h2><Button size="sm" variant="ghost" href="/?view=edit">Open editor</Button><Badge variant="secondary" class="ml-auto">{editedVideos.length} video{editedVideos.length === 1 ? '' : 's'}</Badge></div>
+            <div class="flex flex-wrap gap-4">
+              {#each editedVideos as v (v.id)}
+                <div class="w-[320px] flex-none">
+                  <VideoPreview path={v.file_path} />
+                  <p class="mt-2 truncate text-sm font-medium" title={v.name}>{v.name}</p>
+                  <div class="mt-1.5 flex gap-1"><Button size="sm" variant="secondary" class="flex-1" href={mediaUrl(v.file_path) ?? ''} download><Download class="mr-1 size-3" />Download</Button></div>
+                </div>
+              {/each}
             </div>
           </div>
         {:else if selectedGroup}

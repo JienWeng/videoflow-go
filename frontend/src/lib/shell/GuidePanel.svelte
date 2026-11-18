@@ -46,7 +46,8 @@
       <Sheet.Description>Your path from idea to finished video.</Sheet.Description>
     </Sheet.Header>
     <div class="space-y-6 px-4 pb-6">
-      <ol class="space-y-1" aria-label="Getting started checklist" aria-busy={loading}>
+      {#if loading && !progress}<p class="text-sm text-muted-foreground" role="status">Checking your project…</p>{/if}
+      <ol class="space-y-1 transition-opacity {loading && !progress ? 'pointer-events-none opacity-40' : ''}" aria-label="Getting started checklist" aria-busy={loading}>
         {#each items as item, i}
           <li class="flex gap-3 rounded-lg p-3 {i === current ? 'bg-accent/60' : ''}">
             <span class="mt-0.5 shrink-0" aria-hidden="true">{#if item.done}<Check class="size-5 text-emerald-500" />{:else}<Circle class="size-5 {i === current ? 'text-primary' : 'text-muted-foreground/50'}" />{/if}</span>
