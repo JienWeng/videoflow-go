@@ -4,14 +4,13 @@
    * driven by the timeline selection.
    */
   import { patch, post } from '$lib/api';
-  import { runBackgroundOp } from '$lib/ops';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
   import { Textarea } from '$lib/components/ui/textarea';
   import { Separator } from '$lib/components/ui/separator';
   import { toast } from 'svelte-sonner';
-  import { ArrowUpToLine, RefreshCw, ShieldCheck, Sparkles, Trash2 } from '@lucide/svelte';
+  import { ArrowUpToLine, RefreshCw, Sparkles, Trash2 } from '@lucide/svelte';
   import type { EditorOutput, SceneRef, Segment, Selection, Shot } from './types';
 
   let {
@@ -28,7 +27,6 @@
     ondeletecaption,
     onmergeprev,
     onretried,
-    onqarun,
     ontranscribe
   }: {
     selection: Selection;
@@ -45,15 +43,12 @@
     ondeletecaption: (i: number) => void;
     onmergeprev: (i: number) => void;
     onretried: () => void;
-    /** Called after a quality check completes so the parent can reload the score. */
-    onqarun?: () => void;
     /** Auto-transcribe (whisper -> editable segments). Lives in the editor;
      * surfaced here too for consistency. Optional -> backward compatible. */
     ontranscribe?: () => void;
   } = $props();
 
   // QA state, derived from the output (no qa_status on EditorOutput yet -> infer).
-  const scored = $derived(output.score != null);
 
   const seg = $derived(selection?.kind === 'caption' ? segments[selection.index] : null);
   const shot = $derived(selection?.kind === 'shot' ? shots[selection.index] : null);
@@ -113,30 +108,12 @@
     retrying = true;
     try {
       const res = await post(`/outputs/${output.id}/retry`);
-      toast.success(`Corrective re-render started — job ${res.job_id}`);
+      toast.success('New take started. Track it in Videos.');
       onretried();
     } catch (err: any) {
       toast.error(err.message);
     } finally {
       retrying = false;
-    }
-  }
-
-  let qaRunning = $state(false);
-  async function runQualityCheck() {
-    qaRunning = true;
-    try {
-      await runBackgroundOp(`/outputs/${output.id}/run-qa`, undefined, {
-        label: 'Quality check',
-        onDone: () => {
-          qaRunning = false;
-          onqarun?.();
-        },
-        onFail: () => (qaRunning = false)
-      });
-    } catch (err: any) {
-      qaRunning = false;
-      toast.error(err.message);
     }
   }
 </script>
@@ -272,35 +249,13 @@
       </div>
     {/if}
     <div class="grid gap-1.5">
-      <Label>QA score</Label>
-      <p class="text-sm">{scored ? `${output.score}/10` : 'not scored'}</p>
-    </div>
-    {#if !scored}
-      <Button
-        variant="outline"
-        size="sm"
-        title="Score this take against the scene requirements — unlocks Fix & re-render"
-        disabled={qaRunning}
-        onclick={runQualityCheck}
-      >
-        <ShieldCheck class="mr-1 size-3.5" />
-        {qaRunning ? 'Checking…' : 'Run quality check'}
-      </Button>
-    {/if}
-    {#if output.qa_issues.length}
-      <div class="grid gap-1.5">
-        <Label>Issues</Label>
-        <ul class="space-y-1 text-xs text-muted-foreground">
-          {#each output.qa_issues as issue (issue)}
-            <li title={issue}>- {issue}</li>
-          {/each}
-        </ul>
-      </div>
-      <Button variant="secondary" size="sm" disabled={retrying} onclick={fixAndRerender}>
+      <Label>Not happy with this take?</Label>
+      <p class="text-xs text-muted-foreground">Generate a new version from the same scene setup. The video model gives a different result each time. This is a paid video call.</p>
+      <Button variant="outline" size="sm" class="justify-self-start" disabled={retrying} onclick={() => { if (window.confirm('Make another take of this scene? This uses one paid video call with the same settings.')) void fixAndRerender(); }}>
         <RefreshCw class="mr-1 size-3.5 {retrying ? 'animate-spin' : ''}" />
-        {retrying ? 'Submitting…' : 'Fix & re-render'}
+        {retrying ? 'Submitting…' : 'Make another take'}
       </Button>
-    {/if}
+    </div>
     <Separator />
     {#if scene}
       <div class="grid gap-1.5">

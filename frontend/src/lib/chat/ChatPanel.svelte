@@ -338,9 +338,6 @@
         }
       } else if (sel.kind === 'output') {
         out.push({ label: 'Add captions to this video', send: 'Add captions to this video' });
-        const qa = byId.get(sel.id)?.data?.qa_issues;
-        if (Array.isArray(qa) && qa.length)
-          out.push({ label: 'Fix the latest render', send: 'fix the latest render' });
       } else if (sel.kind === 'character') {
         out.push({
           label: `Write a story featuring ${sel.label}`,
@@ -377,10 +374,6 @@
       if (notRendered)
         out.push({ label: `Render “${notRendered.label}”`, send: `Render scene “${notRendered.label}”` });
 
-      // QA found issues on an output → offer a retry.
-      if (outputs.some((o) => Array.isArray(o.data?.qa_issues) && o.data.qa_issues.length)) {
-        out.push({ label: 'Fix the latest render', send: 'fix the latest render' });
-      }
       // Latest output is missing burned-in captions.
       const latest = outputs[outputs.length - 1];
       if (latest && !latest.data?.captioned_path) {

@@ -365,12 +365,6 @@
         <h1 class="truncate text-sm font-semibold">{scene?.title ?? 'Video editor'}</h1>
         <p class="truncate font-mono text-[11px] text-muted-foreground">{output.id}</p>
       </div>
-      {#if output.score != null}
-        <Badge variant={output.score >= 7 ? 'default' : 'destructive'}>QA {output.score}/10</Badge>
-      {/if}
-      {#if output.qa_issues.length}
-        <Badge variant="outline">{output.qa_issues.length} issue{output.qa_issues.length === 1 ? '' : 's'}</Badge>
-      {/if}
       <div class="grow"></div>
       {#if dirty}
         <span class="text-xs text-muted-foreground">unsaved changes</span>
@@ -564,7 +558,6 @@
           ondeletecaption={deleteCaption}
           onmergeprev={mergePrevCaption}
           onretried={() => {}}
-          onqarun={() => void load()}
           ontranscribe={transcribe}
         />
       </aside>

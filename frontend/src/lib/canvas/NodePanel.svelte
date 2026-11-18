@@ -166,7 +166,7 @@
     retrying = true;
     try {
       const res = await post(`/outputs/${shown.id}/retry`);
-      toast.success(`Corrective re-render started — job ${res.job_id}`);
+      toast.success("New take started. Track it in Videos.");
       onsaved();
     } catch (err: any) {
       toast.error(err.message);
@@ -467,19 +467,11 @@
         <Separator />
 
         <div class="grid gap-1.5">
-          <Label>Quality check</Label>
-          <p class="text-sm">QA: {data.score ?? '—'}{data.score != null ? '/10' : ''}</p>
-          {#if data.qa_issues?.length}
-            <ul class="text-xs text-muted-foreground space-y-0.5">
-              {#each data.qa_issues.slice(0, 3) as issue (issue)}
-                <li class="truncate" title={issue}>- {issue}</li>
-              {/each}
-            </ul>
-            <Button variant="secondary" size="sm" disabled={retrying} onclick={fixAndRerender}>
-              <RefreshCw class="size-4 mr-1 {retrying ? 'animate-spin' : ''}" />
-              {retrying ? 'Submitting…' : 'Fix & re-render'}
-            </Button>
-          {/if}
+          <Label>Not happy with this take?</Label>
+          <p class="text-xs text-muted-foreground">Make a new version from the same scene setup. This is a paid video call.</p>
+          <Button variant="outline" size="sm" class="justify-self-start" disabled={retrying} onclick={() => { if (window.confirm('Make another take of this scene? This uses one paid video call with the same settings.')) void fixAndRerender(); }}>
+            <RefreshCw class="size-4 mr-1 {retrying ? 'animate-spin' : ''}" />{retrying ? 'Submitting…' : 'Make another take'}
+          </Button>
         </div>
 
         <Separator />
