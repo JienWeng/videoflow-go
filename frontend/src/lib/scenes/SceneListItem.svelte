@@ -10,7 +10,6 @@
     statusLine,
     accentDot,
     dirty = false,
-    steps,
     storyboard = null,
     onselect
   }: {
@@ -19,15 +18,10 @@
     statusLine: string;
     accentDot: string;
     dirty?: boolean;
-    steps: { key: string; label: string; done: boolean }[];
     storyboard?: any;
     onselect: () => void;
   } = $props();
 
-  // First not-done step → the "next" micro-indicator (null when all done). The
-  // parent computes each step's `done` with the later-done rule, so this never
-  // points at an "earlier" stage once a later one is complete.
-  const nextStep = $derived(steps.find((st) => !st.done) ?? null);
 </script>
 
 <button
@@ -66,21 +60,6 @@
     </div>
     <p class="mt-0.5 truncate text-xs text-muted-foreground">{statusLine}</p>
 
-    <!-- Stepper as 4 tiny dots + a faint "Next:" hint — the list is a monitor. -->
-    <div class="mt-1.5 flex items-center gap-1.5">
-      <div class="flex items-center gap-1">
-        {#each steps as st (st.key)}
-          <span
-            class="size-1.5 rounded-full {st.done ? 'bg-primary/70' : 'bg-border'}"
-            title={st.label}
-          ></span>
-        {/each}
-      </div>
-      {#if nextStep}
-        <span class="truncate text-[10px] text-muted-foreground">Next: {nextStep.label}</span>
-      {:else}
-        <span class="truncate text-[10px] text-emerald-600/80">Complete</span>
-      {/if}
-    </div>
+
   </div>
 </button>

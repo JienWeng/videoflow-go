@@ -750,10 +750,11 @@
   <!-- Page header (unchanged copy) -->
   <div class="px-6 pt-6 pb-3 shrink-0">
     {#if !embedded}<h1 class="text-lg font-semibold">Scene studios</h1>{/if}
-    <details class="mt-2"><summary class="min-h-10 cursor-pointer text-sm text-muted-foreground">Story options</summary><div class="flex flex-wrap items-center gap-2 pb-2">
+    <details class="mt-2"><summary class="min-h-10 cursor-pointer text-sm text-muted-foreground">Story dialogue tools</summary><div class="flex flex-wrap items-center gap-2 pb-2">
       <input
         bind:value={conversationInstruction}
-        placeholder="Conversational convert instruction (optional; leave empty for default)"
+        aria-label="Dialogue direction"
+        placeholder="Dialogue direction (optional)"
         class="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
       />
       <Button variant="outline" size="sm" disabled={busy['conv-all']} onclick={convertAllScenesConversationalGuarded}>
@@ -789,28 +790,24 @@
             {/if}
           </div>
 
-          <div class="flex flex-wrap gap-1">
-            {#each STAGE_FILTERS.filter(f=>!f.value||f.value===stageFilter||scenes.some(s=>stageOf(s)===f.value)) as f (f.value)}
-              <button type="button"
-                class="rounded-full px-2 py-0.5 text-[11px] transition-colors
-                  {stageFilter === f.value
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted text-muted-foreground hover:bg-accent'}"
-                onclick={() => (stageFilter = f.value)}>
-                {f.label}
-              </button>
-            {/each}
-          </div>
-          <div class="flex items-center gap-1" role="group" aria-label="Scene order">
-            <span class="mr-1 text-[11px] text-muted-foreground">Order:</span>
-            {#each [{ value: 'latest', label: 'Latest' }, { value: 'story', label: 'Story order' }] as option}
-              <button type="button" aria-pressed={sceneSort === option.value}
-                class="rounded-full px-2 py-0.5 text-[11px] transition-colors {sceneSort === option.value ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'}"
-                onclick={() => (sceneSort = option.value as 'latest' | 'story')}>
-                {option.label}
-              </button>
-            {/each}
-          </div>
+          <details class="rounded-md border border-border px-2.5">
+            <summary class="cursor-pointer py-2 text-xs font-medium">Filter & sort{stageFilter ? ' · Filtered' : ''}</summary>
+            <div class="space-y-2 pb-2">
+              <label class="grid gap-1 text-xs text-muted-foreground">Stage
+                <select bind:value={stageFilter} class="min-h-9 rounded border border-input bg-background px-2 text-sm text-foreground">
+                  {#each STAGE_FILTERS as filter (filter.value)}
+                    <option value={filter.value}>{filter.label}</option>
+                  {/each}
+                </select>
+              </label>
+              <label class="grid gap-1 text-xs text-muted-foreground">Order
+                <select bind:value={sceneSort} class="min-h-9 rounded border border-input bg-background px-2 text-sm text-foreground">
+                  <option value="latest">Latest</option>
+                  <option value="story">Story order</option>
+                </select>
+              </label>
+            </div>
+          </details>
         </div>
 
         <!-- The list itself -->
@@ -865,7 +862,6 @@
                 statusLine={statusLine(s)}
                 accentDot={accentDot(s)}
                 dirty={sceneDirty(s) || (shotsByScene[s.id] ?? []).some((sh: any) => shotDirty(sh))}
-                steps={sceneSteps(s).map((st) => ({ key: st.key, label: st.label, done: st.done }))}
                 storyboard={storyboards[s.id] ?? null}
                 onselect={() => selectScene(s.id)}
               />

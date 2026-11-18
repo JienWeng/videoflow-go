@@ -62,7 +62,7 @@
   // Stage disclosure follows saved work; generation controls live inside each stage.
   let referenceInfo:any=$state(null);
   let references: SceneReferences | undefined;
-  let storyboardSection = $state<HTMLDetailsElement>();
+  let scenePanel = $state<HTMLElement>();
   const currentStoryboard=$derived(referenceInfo?.storyboards?.find((a:any)=>a.id===referenceInfo.active_storyboard_id)??storyboard);
   let showAll=$state(false);
   let opened=$state<Record<string,boolean>>({});
@@ -71,12 +71,13 @@
   const isOpen=(key:string)=>opened[key]??section(key).open;
   let focusedShot='';
   $effect(()=>{const id=page.url.searchParams.get('shot_id');if(id&&shots.some((shot:any)=>shot.id===id)&&focusedShot!==id){focusedShot=id;opened={...opened,shots:true};void tick().then(()=>{const row=document.getElementById('scene-shot-'+id);row?.scrollIntoView({block:'center'});row?.focus()})}});
-  async function openStoryboard() {
-    showAll = true;
-    opened = {...opened, storyboard:true};
+  async function openStage(key: string) {
+    if (!section(key).visible) showAll = true;
+    opened = {...opened, [key]: true};
     await tick();
-    storyboardSection?.scrollIntoView({block:'start'});
-    storyboardSection?.querySelector('summary')?.focus({preventScroll:true});
+    const stage = scenePanel?.querySelector<HTMLElement>(`[data-stage="${key}"]`);
+    stage?.scrollIntoView({block:'start'});
+    stage?.querySelector('summary')?.focus({preventScroll:true});
   }
   async function refreshSceneLook() {
     await onReferencesChanged();
@@ -90,9 +91,16 @@
   );
   const currentIdx = $derived(laterDone ? -1 : firstNotDone);
   const current = $derived(currentIdx === -1 ? null : steps[currentIdx]);
+  const nextStage = $derived(
+    current?.key === 'expand' ? { key: 'scene', label: 'Review story & cast' }
+      : current?.key === 'shots' ? { key: 'shots', label: 'Set up shots' }
+      : current?.key === 'storyboard' || referenceInfo?.storyboard_ready === false
+        ? { key: 'storyboard', label: 'Review storyboard' }
+        : { key: 'render', label: current ? 'Review render plan' : 'View video options' }
+  );
 </script>
 
-<div class="p-5">
+<div class="p-4 sm:p-5" bind:this={scenePanel}>
   <!-- Status and identity stay visible; each stage owns its actions. -->
   <div class="flex flex-wrap items-start gap-4">
     {#if storyboard}
@@ -120,7 +128,7 @@
         {/if}
       </div>
 
-      <p class="text-xs text-muted-foreground">{current?`Next: ${current.label}`:'Video ready · earlier stages are available below'}</p>
+      <Button size="sm" onclick={() => openStage(nextStage.key)}>{nextStage.label}</Button>
     </div>
 
     <div class="flex shrink-0 items-center gap-2">
@@ -133,11 +141,11 @@
 
   <SceneStyle scene={s} projectStyle={style} disabled={sceneDirty}
     cast={characters.filter((character: {id: string}) => (s.character_ids_json ?? []).includes(character.id))}
-    onchanged={refreshSceneLook} onstoryboard={openStoryboard}/>
+    onchanged={refreshSceneLook} onstoryboard={() => openStage('storyboard')}/>
   <SceneReferences bind:this={references} sceneId={s.id} {characters} onchanged={onReferencesChanged} onstate={value=>referenceInfo=value}/>
 
   <div class="mt-5 space-y-3">
-    <div class="flex flex-wrap items-center justify-between gap-2"><p class="text-xs text-muted-foreground">Open an earlier stage to review or edit it.</p><Button variant="ghost" size="sm" aria-expanded={showAll} onclick={()=>showAll=!showAll}>{showAll?'Hide future stages':'Show all stages'}</Button></div>
+    <div class="flex flex-wrap items-center justify-between gap-2"><Button variant="ghost" size="sm" aria-expanded={showAll} onclick={()=>showAll=!showAll}>{showAll?'Hide future stages':'Show all stages'}</Button></div>
     <!-- Scene -->
     {#if section('scene').visible}<details class="border-t border-border pt-2" open={isOpen('scene')} ontoggle={event=>remember('scene',event)} data-stage="scene">
       <summary class="min-h-11 cursor-pointer py-3 text-sm font-semibold">{section('scene').label}</summary><div class="pb-4">
@@ -403,7 +411,7 @@
     </div></details>{/if}
 
     <!-- Storyboard -->
-    {#if section('storyboard').visible}<details class="border-t border-border pt-2" open={isOpen('storyboard')} ontoggle={event=>remember('storyboard',event)} bind:this={storyboardSection} data-stage="storyboard">
+    {#if section('storyboard').visible}<details class="border-t border-border pt-2" open={isOpen('storyboard')} ontoggle={event=>remember('storyboard',event)} data-stage="storyboard">
       <summary class="min-h-11 cursor-pointer py-3 text-sm font-semibold">{section('storyboard').label}</summary><div class="pb-4">
       <div class="flex flex-wrap items-center gap-2 mb-2">
         <Button variant="outline" size="sm"
