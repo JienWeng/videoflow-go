@@ -49,7 +49,11 @@
     // SvelteKit soft navigation reuses the root layout after project activation.
     const path = page.url.pathname;
     void path;
-    get('/projects/active').then((p) => (activeProject = p)).catch(() => {});
+    let latest=0;
+    const refresh=()=>{const request=++latest;get('/projects/active').then(p=>{if(request===latest)activeProject=p}).catch(()=>{})};
+    refresh();
+    window.addEventListener('videoflow:projects-changed',refresh);
+    return ()=>{latest++;window.removeEventListener('videoflow:projects-changed',refresh)};
   });
 
   let navigationOpen = $state(false);

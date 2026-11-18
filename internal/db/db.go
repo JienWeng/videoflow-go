@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -383,9 +384,49 @@ func (d *DB) UpdateProject(id, name, description string) error {
 	return err
 }
 
+var ErrProjectBusy = errors.New("project has work in progress; wait for it to finish before deleting")
+
 func (d *DB) DeleteProject(id string) error {
-	_, err := d.conn.Exec("DELETE FROM projects WHERE id = ?", id)
-	return err
+	tx, err := d.conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var active, busy bool
+	err = tx.QueryRow(`SELECT is_active,
+ EXISTS(SELECT 1 FROM ops WHERE project_id=? AND status='running') OR
+ EXISTS(SELECT 1 FROM render_jobs WHERE project_id=? AND status IN ('pending','queued','submitted','running','reconciliation_required')) OR
+ EXISTS(SELECT 1 FROM voice_tasks WHERE project_id=? AND status IN ('submitting','queued','running','uncertain')) OR
+ EXISTS(SELECT 1 FROM director_sessions WHERE project_id=? AND status='running')
+ FROM projects WHERE id=?`, id, id, id, id, id).Scan(&active, &busy)
+	if err != nil {
+		return err
+	}
+	if busy {
+		return ErrProjectBusy
+	}
+	for _, query := range []string{"DELETE FROM ops WHERE project_id=?", "DELETE FROM agent_settings WHERE project_id=?", "DELETE FROM projects WHERE id=?"} {
+		if _, err = tx.Exec(query, id); err != nil {
+			return err
+		}
+	}
+	if active {
+		res, err := tx.Exec(`UPDATE projects SET is_active=1 WHERE id=(SELECT id FROM projects ORDER BY updated_at DESC,id LIMIT 1)`)
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			now := time.Now().UTC()
+			if _, err = tx.Exec(`INSERT INTO projects(id,name,description,is_active,created_at,updated_at) VALUES(?, 'Default Project','Default workspace',1,?,?)`, "project_"+uuid.New().String()[:8], now, now); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
 }
 
 func (d *DB) ActivateProject(id string) error {

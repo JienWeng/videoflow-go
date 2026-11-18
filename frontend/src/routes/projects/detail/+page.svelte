@@ -5,6 +5,8 @@
  import {get,post} from '$lib/api';
  import {Button} from '$lib/components/ui/button';
  import {Badge} from '$lib/components/ui/badge';
+ import DeleteProject from '$lib/projects/DeleteProject.svelte';
+ let deleting=$state(false);
  import ProjectStyle from '$lib/projects/ProjectStyle.svelte';
  import {ArrowLeft,ArrowUpRight,Folder} from '@lucide/svelte';
  let projects:any[]=$state([]),loaded=$state(false),error=$state(''),busy=$state(false);
@@ -22,5 +24,7 @@
  <header class="mb-8 flex flex-wrap items-start justify-between gap-4"><div class="min-w-0"><div class="flex items-center gap-3"><Folder class="size-7 shrink-0 text-muted-foreground"/><h1 class="break-words text-2xl font-semibold tracking-tight">{project.name}</h1>{#if project.is_active}<Badge variant="secondary">Active</Badge>{/if}</div>{#if project.description}<p class="mt-3 max-w-prose break-words text-sm text-muted-foreground">{project.description}</p>{/if}</div><Button disabled={busy} onclick={()=>activate(true)}>Open in Studio<ArrowUpRight class="size-4"/></Button></header>
  <dl class="mb-8 grid grid-cols-3 gap-4 border-y border-border py-5">{#each [['Scenes',project.counts?.scenes??'—'],['Characters',project.counts?.characters??'—'],['Assets',project.counts?.assets??'—']] as [label,count]}<div><dt class="text-xs text-muted-foreground">{label}</dt><dd class="mt-1 text-2xl font-semibold tabular-nums">{count}</dd></div>{/each}</dl>
  {#if project.is_active}{#key project.id}<ProjectStyle projectId={project.id} projectName={project.name} disabled={busy} onSavingChange={saving=>busy=saving}/>{/key}{:else}<section class="rounded-lg border border-border p-5"><h2 class="text-base font-semibold">Project style</h2><p class="mt-2 text-sm text-muted-foreground">Make this your active project to edit its visual style.</p><Button variant="outline" class="mt-4" disabled={busy} onclick={()=>activate(false)}>Activate to edit style</Button></section>{/if}
+ <Button class="mt-8" variant="outline" disabled={busy} onclick={()=>deleting=true}>Delete project</Button>
+ {#if deleting}<DeleteProject {project} last={projects.length===1} onclose={()=>deleting=false} ondeleted={()=>goto('/projects')}/>{/if}
  {/if}
 </div>

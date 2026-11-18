@@ -1,9 +1,12 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
+	"videoflow-go/internal/db"
 
 	"videoflow-go/internal/models"
 
@@ -96,7 +99,13 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if err := s.database.DeleteProject(id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		status := 500
+		if errors.Is(err, sql.ErrNoRows) {
+			status = 404
+		} else if errors.Is(err, db.ErrProjectBusy) {
+			status = 409
+		}
+		http.Error(w, err.Error(), status)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})

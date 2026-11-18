@@ -18,7 +18,7 @@ try{for(const width of (process.env.E2E_WIDTH?[Number(process.env.E2E_WIDTH)]:[1
  else if(path==='/projects'&&method==='POST'){creates++;if(failCreate)return route.fulfill({status:503,body:'Fixture creation failed'});const data=req.postDataJSON();body={...data,id:'new',created_at:'2026-11-18',updated_at:'2026-11-18',is_active:false,counts:{}};projects.push(body)}
  else if(path.endsWith('/activate')){activations++;if(failActivate)return route.fulfill({status:503,body:'Fixture activation failed'});const id=path.split('/')[2];projects=projects.map(p=>({...p,is_active:p.id===id}));body={status:'ok'}}
  else if(method==='PATCH'&&path.startsWith('/projects/')){const p=projects.find(p=>p.id===path.split('/')[2]);Object.assign(p,req.postDataJSON());body=p}
- else if(method==='DELETE'&&path.startsWith('/projects/')){projects=projects.filter(p=>p.id!==path.split('/')[2]);body={status:'deleted'}}
+ else if(method==='DELETE'&&path.startsWith('/projects/')){projects=projects.filter(p=>p.id!==path.split('/')[2]);if(!projects.some(p=>p.is_active)&&projects.length)projects[0].is_active=true;body={status:'deleted'}}
  else if(path==='/projects/import'){projects.push({id:'import',name:'Imported story',is_active:false,created_at:'2026-11-18',counts:{}});body={id:'import'}}
  else if(path.endsWith('/export'))body={project:projects.find(p=>p.id===path.split('/')[2])};
  else if(path==='/projects/active')body=projects.find(p=>p.is_active);
@@ -46,5 +46,14 @@ try{for(const width of (process.env.E2E_WIDTH?[Number(process.env.E2E_WIDTH)]:[1
  await page.getByRole('button',{name:'Actions for Pip comes home'}).click();const downloaded=page.waitForEvent('download');await page.getByRole('menuitem',{name:'Export project',exact:true}).click();assert.equal((await downloaded).suggestedFilename(),'Pip_comes_home.json');
  await page.locator('input[type=file]').setInputFiles({name:'project.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({project:{name:'Imported story'}}))});await page.getByRole('link',{name:'Imported story',exact:true}).waitFor();
  await page.getByRole('button',{name:'Actions for Imported story'}).click();await page.getByRole('menuitem',{name:'Delete project',exact:true}).click();const deletion=page.getByRole('dialog',{name:'Delete “Imported story”?',exact:true});await deletion.getByRole('button',{name:'Delete project',exact:true}).click();await deletion.waitFor({state:'hidden'});await page.getByRole('link',{name:'Imported story',exact:true}).waitFor({state:'hidden'});
- failList=true;await page.reload();await page.getByRole('alert').filter({hasText:'Fixture list unavailable'}).waitFor();failList=false;await page.getByRole('button',{name:'Try again',exact:true}).click();await page.locator('a[href="/projects/detail?id=new"]').waitFor();assert.deepEqual(errors,[]);report.push({width,checks:['folder/table/search/sort','view persistence','detail isolation','explicit style activation','creation error preservation','dirty cancel','activation retry without duplication','rename','export','import','delete','list error retry','zero axe violations','no page overflow','no browser errors'],writes});console.log('PASS project browser',width);await ctx.close();
+ failList=true;await page.reload();await page.getByRole('alert').filter({hasText:'Fixture list unavailable'}).waitFor();failList=false;await page.getByRole('button',{name:'Try again',exact:true}).click();await page.locator('a[href="/projects/detail?id=new"]').waitFor();await page.locator('a[href="/projects/detail?id=new"]').first().click();
+ await page.getByRole('button',{name:'Delete project',exact:true}).click();
+ const activeDeletion=page.getByRole('dialog',{name:'Delete “New dog story”?',exact:true});
+ await activeDeletion.getByRole('button',{name:'Cancel'}).click();
+ assert(projects.some(p=>p.id==='new'&&p.is_active));
+ await page.getByRole('button',{name:'Delete project',exact:true}).click();
+ await activeDeletion.getByRole('button',{name:'Delete project',exact:true}).click();
+ await page.waitForURL('**/projects');
+ assert(!projects.some(p=>p.id==='new'));assert(projects.some(p=>p.is_active));
+ assert.deepEqual(errors,[]);report.push({width,checks:['folder/table/search/sort','view persistence','detail isolation','explicit style activation','creation error preservation','dirty cancel','activation retry without duplication','rename','export','import','delete','list error retry','zero axe violations','no page overflow','no browser errors'],writes});console.log('PASS project browser',width);await ctx.close();
 }}finally{await writeFile(out+'/report.json',JSON.stringify(report,null,2));await browser.close()}
