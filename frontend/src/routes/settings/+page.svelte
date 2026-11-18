@@ -1061,7 +1061,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                     saveApp({ caption_style: (e.currentTarget as HTMLSelectElement).value })}
                 >
                   {#each CAPTION_STYLES as s (s)}
-                    <option value={s}>{s}</option>
+                    <option value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
                   {/each}
                 </select>
               </div>

@@ -22,6 +22,8 @@
   import X from '@lucide/svelte/icons/x';
   import MessageSquare from '@lucide/svelte/icons/message-square';
   import Minimize2 from '@lucide/svelte/icons/minimize-2';
+  import Bot from '@lucide/svelte/icons/bot';
+  import Plus from '@lucide/svelte/icons/plus';
   import { Button } from '$lib/components/ui/button';
   import { palette } from '$lib/shell/palette.svelte';
   import { get } from '$lib/api';
@@ -150,15 +152,15 @@
 <svelte:head><title>{workspace==='overview'?'Project overview · VideoFlow':'VideoFlow Studio'}</title></svelte:head>
 <div class="flex h-full min-h-0 flex-col">
   <h1 class="sr-only">VideoFlow Studio</h1>
-  <header class="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-4 py-2 sm:px-6">
-    <nav data-tour="views" aria-label="Workspace view" class="flex w-full rounded-lg bg-muted/50 p-1 sm:w-auto">
-      <button class="min-h-10 flex-1 justify-center rounded-md px-3 text-sm inline-flex items-center sm:flex-none {workspace==='studio'?'bg-background font-semibold shadow-sm':'text-muted-foreground hover:text-foreground'}" aria-current={workspace==='studio'?'page':undefined} onclick={()=>setWorkspace('studio')}>Canvas</button>
-      <button class="min-h-10 flex-1 justify-center rounded-md px-3 text-sm inline-flex items-center sm:flex-none {workspace==='story'?'bg-background font-semibold shadow-sm':'text-muted-foreground hover:text-foreground'}" aria-current={workspace==='story'?'page':undefined} onclick={()=>setWorkspace('story')}>Story</button>
-      <a class="min-h-10 flex-1 justify-center rounded-md px-3 text-sm inline-flex items-center sm:flex-none {workspace==='edit'?'bg-background font-semibold shadow-sm':'text-muted-foreground hover:text-foreground'}" href="/?view=edit" aria-current={workspace==='edit'?'page':undefined}>Edit video</a>
+  <header class="flex min-h-16 shrink-0 items-center justify-between gap-x-2 border-b border-border px-2 py-2 sm:gap-x-4 sm:px-6">
+    <nav data-tour="views" aria-label="Workspace view" class="flex min-w-0 flex-1 rounded-lg bg-muted/50 p-1 sm:flex-none">
+      <button class="min-h-10 flex-1 justify-center whitespace-nowrap rounded-md px-2 text-sm sm:px-3 inline-flex items-center sm:flex-none {workspace==='studio'?'bg-background font-semibold shadow-sm':'text-muted-foreground hover:text-foreground'}" aria-current={workspace==='studio'?'page':undefined} onclick={()=>setWorkspace('studio')}>Canvas</button>
+      <button class="min-h-10 flex-1 justify-center whitespace-nowrap rounded-md px-2 text-sm sm:px-3 inline-flex items-center sm:flex-none {workspace==='story'?'bg-background font-semibold shadow-sm':'text-muted-foreground hover:text-foreground'}" aria-current={workspace==='story'?'page':undefined} onclick={()=>setWorkspace('story')}>Story</button>
+      <a class="min-h-10 flex-1 justify-center whitespace-nowrap rounded-md px-2 text-sm sm:px-3 inline-flex items-center sm:flex-none {workspace==='edit'?'bg-background font-semibold shadow-sm':'text-muted-foreground hover:text-foreground'}" href="/?view=edit" aria-current={workspace==='edit'?'page':undefined}>Edit video</a>
     </nav>
     <div class="ml-auto flex items-center gap-1">
-      {#if workspace!=='studio'||!assistantOpen}<Button variant="ghost" onclick={()=>{setWorkspace('studio');tab='chat';openAssistant()}}>Assistant</Button>{/if}
-      <Button data-tour="create-story" onclick={startStory}>Create story</Button>
+      {#if workspace!=='studio'||!assistantOpen}<Button variant="ghost" class="max-sm:size-10 max-sm:px-0" aria-label="Assistant" onclick={()=>{setWorkspace('studio');tab='chat';openAssistant()}}><Bot class="size-4 sm:hidden" /><span class="max-sm:sr-only">Assistant</span></Button>{/if}
+      <Button data-tour="create-story" class="max-sm:size-10 max-sm:px-0" aria-label="Create story" onclick={startStory}><Plus class="size-4 sm:hidden" /><span class="max-sm:sr-only">Create story</span></Button>
       <DropdownMenu.Root><DropdownMenu.Trigger class="inline-flex size-10 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Project menu"><MoreHorizontal class="size-4" /></DropdownMenu.Trigger><DropdownMenu.Content align="end">
       <DropdownMenu.Item onclick={()=>setWorkspace('overview')}>Project summary</DropdownMenu.Item>
       <DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/projects">Switch project</a>{/snippet}</DropdownMenu.Item>

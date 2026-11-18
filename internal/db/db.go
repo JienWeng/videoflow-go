@@ -324,7 +324,10 @@ func (d *DB) ListProjects() ([]models.Project, error) {
  SELECT p.id, p.name, p.description, p.is_active, p.created_at, p.updated_at,
  (SELECT COUNT(*) FROM scenes WHERE project_id = p.id),
  (SELECT COUNT(*) FROM characters WHERE project_id = p.id),
- (SELECT COUNT(*) FROM assets WHERE project_id = p.id)
+ (SELECT COUNT(*) FROM assets WHERE project_id = p.id),
+ COALESCE((SELECT file_path FROM assets WHERE project_id = p.id
+   AND (lower(file_path) LIKE '%.png' OR lower(file_path) LIKE '%.jpg' OR lower(file_path) LIKE '%.jpeg' OR lower(file_path) LIKE '%.webp')
+   ORDER BY CASE type WHEN 'storyboard' THEN 0 WHEN 'location' THEN 1 ELSE 2 END, created_at DESC LIMIT 1), '')
  FROM projects p ORDER BY p.created_at DESC
  `)
 	if err != nil {
@@ -337,7 +340,7 @@ func (d *DB) ListProjects() ([]models.Project, error) {
 		var p models.Project
 		var isAct int
 		var counts models.ProjectCounts
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &isAct, &p.CreatedAt, &p.UpdatedAt, &counts.Scenes, &counts.Characters, &counts.Assets); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &isAct, &p.CreatedAt, &p.UpdatedAt, &counts.Scenes, &counts.Characters, &counts.Assets, &p.Cover); err != nil {
 			return nil, err
 		}
 		p.Counts = &counts

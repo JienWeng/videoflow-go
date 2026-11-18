@@ -759,28 +759,32 @@
 
 <div class="story-workspace flex h-full min-h-0 flex-col {mobileDetail?'show-detail':''}">
   <!-- Page header (unchanged copy) -->
-  <div class="px-6 pt-6 pb-3 shrink-0">
+  <div class="px-6 pt-4 pb-3 shrink-0">
     {#if !embedded}<h1 class="text-lg font-semibold">Scene studios</h1>{/if}
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
     {#if progress?.total}
-      <div data-tour="progress" class="flex flex-wrap items-center gap-x-4 gap-y-2" role="status" aria-label="Project progress">
+      <div data-tour="progress" class="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2" role="status" aria-label="Project progress">
         <div class="flex min-w-0 items-center gap-3">
-          <div class="h-1.5 w-28 shrink-0 overflow-hidden rounded-full bg-muted" aria-hidden="true"><div class="h-full rounded-full bg-emerald-500/80" style:width={`${Math.round(100 * progress.video_ready / progress.total)}%`}></div></div>
+          <div class="h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-muted" aria-hidden="true"><div class="h-full rounded-full bg-emerald-500/80" style:width={`${Math.round(100 * progress.video_ready / progress.total)}%`}></div></div>
           <p class="text-sm">{progress.summary}</p>
         </div>
-        {#if progress.next}<Button size="sm" variant={progress.next.stage === 'needs_attention' ? 'default' : 'outline'} onclick={() => { selectedId = progress.next.scene_id; mobileDetail = true; }}>Next: {progress.next.next.label} · {progress.next.title}</Button>{/if}
+        {#if progress.next}<Button size="sm" variant={progress.next.stage === 'needs_attention' ? 'default' : 'outline'} onclick={() => { selectedId = progress.next.scene_id; mobileDetail = true; }}>Next: {progress.next.next.label} · {progress.next.title}</Button>
+        {:else if progress.video_ready === progress.total}<Button size="sm" href="/?view=edit">Open editor</Button>{/if}
       </div>
     {/if}
-    <details class="mt-2"><summary class="min-h-10 cursor-pointer text-sm text-muted-foreground">Story dialogue tools</summary><div class="flex flex-wrap items-center gap-2 pb-2">
+    <details class="dialogue-tools relative ml-auto"><summary class="inline-flex min-h-9 cursor-pointer list-none items-center gap-1.5 rounded-md px-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"><Sparkles class="size-3.5" />Dialogue tools</summary><div class="absolute right-0 top-full z-30 mt-1 w-80 max-w-[calc(100vw-2rem)] space-y-2 rounded-lg border border-border bg-popover p-3 shadow-lg">
+      <p class="text-xs text-muted-foreground">Rewrite every scene so characters talk to each other. Uses the AI writer.</p>
       <input
         bind:value={conversationInstruction}
         aria-label="Dialogue direction"
-        placeholder="Dialogue direction (optional)"
-        class="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+        placeholder="Direction, e.g. “more playful” (optional)"
+        class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
       />
-      <Button variant="outline" size="sm" disabled={busy['conv-all']} onclick={convertAllScenesConversationalGuarded}>
-        <Sparkles class="size-3.5 mr-1" />{busy['conv-all'] ? 'Converting…' : 'Make story conversational'}
+      <Button size="sm" class="w-full" disabled={busy['conv-all']} onclick={convertAllScenesConversationalGuarded}>
+        {busy['conv-all'] ? 'Rewriting…' : 'Make story conversational'}
       </Button>
     </div></details>
+    </div>
   </div>
 
   <PaneGroup direction="horizontal" class="flex-1 min-h-0 border-t border-border">

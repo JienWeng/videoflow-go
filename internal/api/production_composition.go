@@ -2,11 +2,13 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/go-chi/chi/v5"
 	"math"
 	"net/http"
 	"sort"
+	"strings"
 	"videoflow-go/internal/composition"
 	"videoflow-go/internal/models"
 )
@@ -70,7 +72,10 @@ func (s *Server) sceneCompositionDraft(ctx context.Context, scene *models.Scene)
 				}
 			}
 			if !found && hasPlan {
-				return m, fmt.Errorf("current scene clip %d is not ready; finish the render plan in Videos before assembling", unit.Index+1)
+				// The scene changed after it was rendered. Edit the latest finished take
+				// instead of refusing; the Story view already says a new render is suggested.
+				selected = latestCompleteScenePlan(jobs, scene.ID)
+				break
 			}
 		}
 	}
@@ -113,6 +118,66 @@ func (s *Server) sceneCompositionDraft(ctx context.Context, scene *models.Scene)
 	}
 	return m, nil
 }
+
+// latestCompleteScenePlan returns the newest render plan of a scene whose clips all
+// finished, in clip order. Jobs are listed newest first.
+func latestCompleteScenePlan(jobs []models.RenderJob, sceneID string) []struct {
+	job  models.RenderJob
+	unit renderUnit
+} {
+	type item = struct {
+		job  models.RenderJob
+		unit renderUnit
+	}
+	plans := map[string][]item{}
+	order := []string{}
+	for _, job := range jobs {
+		if job.SceneID == nil || *job.SceneID != sceneID || job.ShotID != nil || job.Status != "succeeded" {
+			continue
+		}
+		var r struct {
+			Plan string     `json:"render_plan_id"`
+			Unit renderUnit `json:"render_unit"`
+		}
+		_ = json.Unmarshal(job.RequestJSON, &r)
+		if r.Unit.Key == "" || r.Unit.Count < 1 {
+			continue
+		}
+		plan := r.Plan
+		if plan == "" {
+			plan = strings.SplitN(r.Unit.Key, ":", 2)[0]
+		}
+		if _, seen := plans[plan]; !seen {
+			order = append(order, plan)
+		}
+		plans[plan] = append(plans[plan], item{job, r.Unit})
+	}
+	for _, plan := range order {
+		items, byIndex := plans[plan], map[int]item{}
+		for _, it := range items {
+			if _, dup := byIndex[it.unit.Index]; !dup { // newest take of each clip
+				byIndex[it.unit.Index] = it
+			}
+		}
+		count := items[0].unit.Count
+		if len(byIndex) != count {
+			continue
+		}
+		out := make([]item, 0, count)
+		for i := 0; i < count; i++ {
+			it, ok := byIndex[i]
+			if !ok {
+				break
+			}
+			out = append(out, it)
+		}
+		if len(out) == count {
+			return out
+		}
+	}
+	return nil
+}
+
 func (s *Server) handleSceneCompositionDraft(w http.ResponseWriter, r *http.Request) {
 	scene, ok := s.productionScene(w, r)
 	if !ok {

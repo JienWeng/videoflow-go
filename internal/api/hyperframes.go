@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"net/http"
@@ -293,6 +294,12 @@ func (s *Server) compositionSources(project string) (map[string]string, []compos
 	if e != nil {
 		return nil, nil, e
 	}
+	sceneTitles := map[string]string{}
+	if scenes, err := s.database.ListScenes(project); err == nil {
+		for _, sc := range scenes {
+			sceneTitles[sc.ID] = sc.Title
+		}
+	}
 	for _, job := range jobs {
 		if job.ProjectID == nil || *job.ProjectID != project || job.Status != "succeeded" {
 			continue
@@ -301,8 +308,21 @@ func (s *Server) compositionSources(project string) (map[string]string, []compos
 		if e != nil {
 			return nil, nil, e
 		}
-		for _, out := range outputs {
-			add("output-"+out.ID, "Rendered output "+out.ID, "output_video", out.VideoPath)
+		name := "Scene video"
+		if job.SceneID != nil {
+			if title, ok := sceneTitles[*job.SceneID]; ok && title != "" {
+				name = title
+			}
+		}
+		if u := renderRequestUnit(job.RequestJSON); u.Count > 1 {
+			name = fmt.Sprintf("%s · part %d of %d", name, u.Index+1, u.Count)
+		}
+		for i, out := range outputs {
+			label := name
+			if i > 0 {
+				label = fmt.Sprintf("%s (take %d)", name, i+1)
+			}
+			add("output-"+out.ID, label, "output_video", out.VideoPath)
 		}
 	}
 	return paths, items, nil

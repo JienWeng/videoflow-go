@@ -4,7 +4,7 @@
   import { onMount,onDestroy } from 'svelte';
   import {goto} from '$app/navigation';
   import {runBackgroundOp} from '$lib/ops';
-  import { get, post, API_BASE } from '$lib/api';
+  import { get, post, API_BASE, mediaUrl } from '$lib/api';
   import { subscribeJobs } from '$lib/sse';
   import VideoPreview from '$lib/components/VideoPreview.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -298,6 +298,10 @@
     return 'bg-border';
   }
 
+  function statusLabel(status: string): string {
+    return ({ succeeded: 'Done', failed: 'Failed', running: 'Rendering', queued: 'Waiting', pending: 'Waiting', reconciliation_required: 'Needs a check' } as Record<string, string>)[status] ?? status;
+  }
+
   function selectGroup(id: string) {
     selectedId = id;
   }
@@ -320,8 +324,8 @@
 {#snippet jobRow(j: any)}
   <div class="py-1 text-xs">
     <div class="flex flex-wrap items-center gap-2">
-      <Badge variant={statusVariant(j.status)} class={isActive(j.status) ? 'animate-pulse' : ''}>{j.status}</Badge>
-      <span class="text-muted-foreground">{j.model?.split('/').slice(-2).join('/')}</span>
+      <Badge variant={statusVariant(j.status)} class={isActive(j.status) ? 'animate-pulse' : ''}>{statusLabel(j.status)}</Badge>
+      <span class="text-muted-foreground" title={j.model}>{j.provider || 'Video'} render</span>
       <span class="text-muted-foreground">{relativeTime(j.created_at)}</span>
       {#if j.status === 'reconciliation_required'}
       <p class="text-xs text-destructive">Submission outcome is unknown. Check your provider account before generating again.</p>
@@ -365,16 +369,11 @@
 
 <div class="flex h-full flex-col">
   <!-- Page header -->
-  <div class="px-6 pt-6 pb-3 shrink-0">
-    <div class="flex flex-wrap items-center justify-between gap-3"><h1 class="text-lg font-semibold">Videos</h1><div class="flex flex-wrap gap-2"><Button variant="outline" href="/voices">Dialogue & captions</Button><Button variant="outline" href="/compositions">Edit final video</Button></div></div>
-  </div>
-
-  <div class="mx-4 my-2 flex flex-wrap items-center gap-3 rounded-md border p-3 text-xs">
-    <span>Select outputs below in playback order: {assemblyIDs.length} selected.</span>
-    <select aria-label="Combined video aspect ratio" bind:value={assemblyAspect} class="rounded border bg-background p-1"><option>9:16</option><option>16:9</option><option>1:1</option></select>
-    <label class="flex items-center gap-1"><input type="checkbox" bind:checked={assemblyCaptioned}/>Use captioned versions</label>
-    <Button size="sm" disabled={assembling||assemblyIDs.length<2} onclick={assemble}>{assembling?'Assembling…':'Assemble selected clips'}</Button>
-    {#if assemblyIDs.length}<button type="button" class="underline" onclick={()=>assemblyIDs=[]}>Clear order</button>{/if}
+  <div class="shrink-0 px-6 pt-6 pb-4">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div><h1 class="text-lg font-semibold">Videos</h1><p class="mt-0.5 text-sm text-muted-foreground">Everything you've rendered, by scene. Watch, download, or combine them in the editor.</p></div>
+      <div class="flex flex-wrap gap-2"><Button variant="ghost" href="/voices">Voices</Button><Button href="/?view=edit"><Clapperboard class="size-4" />Edit & combine</Button></div>
+    </div>
   </div>
   <PaneGroup direction="horizontal" class="flex-1 min-h-0 border-t border-border">
     <!-- LEFT: scenes with render activity (the monitor) -->
@@ -382,40 +381,7 @@
       <div class="flex h-full flex-col">
         <!-- Advanced single-shot render affordance -->
         <div class="shrink-0 border-b border-border p-3">
-          <Collapsible bind:open={showAdvanced} class="rounded-lg border border-border bg-card">
-            <CollapsibleTrigger
-              class="flex w-full items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-foreground [&[data-state=open]>svg]:rotate-180"
-            >
-              <Play class="size-4" />
-              Render a single shot
-              <ChevronDown class="size-4 ml-auto transition-transform" />
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <form class="px-3 pb-3 space-y-2.5" onsubmit={renderFromShot}>
-                <div>
-                  <label class="block text-xs text-muted-foreground mb-1" for="scene">Scene</label>
-                  <select id="scene" bind:value={sceneId} onchange={loadShots}
-                    class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm">
-                    <option value="">choose…</option>
-                    {#each scenes as s}<option value={s.id}>{s.title}</option>{/each}
-                  </select>
-                </div>
-                <div>
-                  <label class="block text-xs text-muted-foreground mb-1" for="shot">Shot (prompt-agent render)</label>
-                  <select id="shot" bind:value={shotId} disabled={!shots.length}
-                    class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm">
-                    <option value="">choose…</option>
-                    {#each shots as sh}<option value={sh.id}>#{sh.shot_order + 1} {sh.prompt.slice(0, 40)}</option>{/each}
-                  </select>
-                </div>
-                <Button type="submit" disabled={busy || !shotId} size="sm" class="w-full">
-                  <Play class="size-4 mr-1" />Render shot
-                </Button>
-                <p class="text-[11px] text-muted-foreground">Generate a scene clip on the Scenes page. Exact shot cuts require separately rendered clips and assembly.</p>
-              </form>
-            </CollapsibleContent>
-          </Collapsible>
-          <div class="mt-2 flex items-center gap-1" role="group" aria-label="Render scene order">
+          <div class="flex items-center gap-1" role="group" aria-label="Render scene order">
             <span class="mr-1 text-[11px] text-muted-foreground">Order:</span>
             {#each [{ value: 'latest', label: 'Latest' }, { value: 'story', label: 'Story order' }] as option}
               <button type="button" aria-pressed={groupSort === option.value}
@@ -455,8 +421,7 @@
                 <span class="font-medium text-sm">Render a scene to see it here</span>
               </div>
               <p class="text-sm text-muted-foreground">
-                Render a scene from the <span class="font-medium">Scenes</span> page (step 4), or
-                use <span class="font-medium">Render a single shot</span> above. — 还没有渲染。
+                Open a scene in <a class="underline" href="/?view=story">Story</a> and render it. Finished videos appear here.
               </p>
             </div>
           {:else}
@@ -471,8 +436,12 @@
                     ? 'border-primary/60 bg-accent'
                     : 'border-transparent hover:border-border hover:bg-accent/50'}"
               >
-                <div class="flex size-10 shrink-0 items-center justify-center rounded-md border border-dashed border-border bg-muted/30 text-muted-foreground/50">
-                  {#if g.active.length}
+                <div class="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/30 text-muted-foreground/50">
+                  {#if sceneOutputs(g)[0]?.out?.thumbnail_path && !g.active.length}
+                    <img src={mediaUrl(sceneOutputs(g)[0].out.thumbnail_path) ?? ''} alt="" class="size-full object-cover" />
+                  {:else if sceneOutputs(g)[0]?.out?.video_path && !g.active.length}
+                    <video src={(mediaUrl(sceneOutputs(g)[0].out.video_path) ?? '') + '#t=0.5'} class="size-full object-cover" preload="metadata" muted playsinline tabindex="-1" aria-hidden="true"></video>
+                  {:else if g.active.length}
                     <Loader2 class="size-4 animate-spin text-amber-500/80" />
                   {:else}
                     <Clapperboard class="size-4" />
@@ -511,13 +480,13 @@
             <div class="p-5">
               <!-- Header: scene title + at-a-glance counts -->
               <div class="flex flex-wrap items-center gap-2 mb-4">
-                <h2 class="font-semibold text-base truncate" title={g.title}>{g.title}</h2>{#if g.sceneId!=='__other__'&&g.succeeded}<Button size="sm" variant="outline" href={`/compositions?scene_id=${encodeURIComponent(g.sceneId)}`}>Assemble clips & add music</Button>{@const storyId=scenes.find((scene:any)=>scene.id===g.sceneId)?.script_id}{#if storyId}<Button size="sm" variant="ghost" href={`/compositions?script_id=${encodeURIComponent(storyId)}`}>Assemble full story</Button>{/if}{/if}
+                <h2 class="font-semibold text-base truncate" title={g.title}>{g.title}</h2>{#if g.sceneId!=='__other__'}<Button size="sm" variant="ghost" href={`/?view=story&scene_id=${encodeURIComponent(g.sceneId)}`}>Open scene</Button>{/if}
                 <div class="flex items-center gap-1.5 ml-auto">
                   {#if g.active.length}
                     <Badge variant="secondary" class="animate-pulse">{g.active.length} in progress</Badge>
                   {/if}
                   {#if g.succeeded}
-                    <Badge variant="default">{g.succeeded} rendered</Badge>
+                    <Badge variant="secondary">{g.succeeded} video{g.succeeded === 1 ? '' : 's'}</Badge>
                   {/if}
                   {#if g.failed}
                     <Badge variant="destructive">{g.failed} failed</Badge>
@@ -549,7 +518,6 @@
                 <div class="flex flex-wrap gap-4">
                   {#each sceneOutputs(g) as { out } (out.id)}
                     <div class="flex-none w-[320px] {out.selected ? 'rounded-lg ring-2 ring-primary ring-offset-2 ring-offset-background' : ''}">
-                      <label class="mb-2 flex items-center gap-2 text-xs"><input type="checkbox" checked={assemblyIDs.includes(out.id)} onchange={(event)=>{assemblyIDs=event.currentTarget.checked?[...assemblyIDs,out.id]:assemblyIDs.filter(id=>id!==out.id)}} disabled={assembling}/>Include in combined video {assemblyIDs.includes(out.id)?`(#${assemblyIDs.indexOf(out.id)+1})`:''}</label>
                       <div class="relative">
                         <VideoPreview
                           path={out.captioned_path || out.video_path}
@@ -558,18 +526,18 @@
                         />
                         {#if out.selected}
                           <Badge class="absolute left-2 top-2 gap-1">
-                            <Star class="size-3 fill-current" />keeper
+                            <Star class="size-3 fill-current" />Chosen take
                           </Badge>
                         {/if}
                         {#if out.captioned_path}
-                          <Badge variant="secondary" class="absolute right-2 top-2">captioned</Badge>
+                          <Badge variant="secondary" class="absolute right-2 top-2">Captions on</Badge>
                         {/if}
                       </div>
 
                       <!-- Primary: open in editor (the only place to finish a video) -->
                       <div class="mt-2">
-                        <Button size="sm" class="w-full" href={`/editor/${out.id}`} title="Open in editor">
-                          <Clapperboard class="size-3.5 mr-1.5" />Open in editor
+                        <Button size="sm" class="w-full" href={`/editor/${out.id}`} title="Edit captions, voices and details for this video">
+                          <Clapperboard class="size-3.5 mr-1.5" />Captions & details
                         </Button>
                       </div>
 
@@ -585,7 +553,7 @@
                             download
                             title="Download the captioned video"
                           >
-                            <Download class="size-3 mr-1" />Captioned
+                            <Download class="size-3 mr-1" />Download
                           </Button>
                         {/if}
                         <Button
@@ -596,7 +564,7 @@
                           download
                           title="Download the original (uncaptioned) video"
                         >
-                          <Download class="size-3 mr-1" />Raw
+                          <Download class="size-3 mr-1" />{out.captioned_path ? 'No captions' : 'Download'}
                         </Button>
                       </div>
                     </div>
@@ -617,7 +585,7 @@
                       class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground [&[data-state=open]>svg.chev]:rotate-180"
                     >
                       <History class="size-3" />
-                      history ({g.jobs.length})
+                      Render history ({g.jobs.length})
                       <ChevronDown class="chev size-3 transition-transform" />
                     </CollapsibleTrigger>
                     <CollapsibleContent>
@@ -643,8 +611,7 @@
             <ListVideo class="size-10 mb-3 opacity-40" />
             <p class="text-sm">No renders to show</p>
             <p class="text-xs mt-1 max-w-xs">
-              Render a scene from the <span class="font-medium">Scenes</span> page, or use
-              <span class="font-medium">Render a single shot</span> on the left.
+              Open a scene in <a class="underline" href="/?view=story">Story</a> and render it.
             </p>
           </div>
         {/if}
