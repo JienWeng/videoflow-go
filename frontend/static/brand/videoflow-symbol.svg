@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <title>VideoFlow</title>
+  <path fill="#F5EFE7" d="M9 14a8 8 0 0 1 8-8h23c8.837 0 16 7.163 16 16v3H44v-3a4 4 0 0 0-4-4H21v16L9 26V14Z"/>
+  <path fill="#F47D5B" d="M55 50a8 8 0 0 1-8 8H24c-8.837 0-16-7.163-16-16v-3h12v3a4 4 0 0 0 4 4h19V30l12 8v12Z"/>
+</svg>

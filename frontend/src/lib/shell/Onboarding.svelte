@@ -1,4 +1,5 @@
 <script lang="ts">
+ import BrandLogo from "./BrandLogo.svelte";
   /**
    * First-run welcome overlay. Points users to the simple Create video flow,
    * then gets out of the way. Dismissal is
@@ -13,7 +14,6 @@
   import {
     LayoutGrid,
     PanelLeft,
-    Sparkles,
     Command,
   } from '@lucide/svelte';
 
@@ -76,7 +76,7 @@
 <Dialog.Root {open} onOpenChange={(value) => { if (!value) dismiss(); }}>
     <Dialog.Content class="max-h-[calc(100dvh-2rem)] overflow-y-auto p-6 sm:max-w-xl" aria-describedby="onboarding-description">
       <div class="mb-1 flex items-center gap-2">
-        <Sparkles class="size-5 text-primary" />
+        <BrandLogo class="size-9" />
         <Dialog.Title class="text-lg font-semibold">Welcome to VideoFlow</Dialog.Title>
       </div>
       <Dialog.Description id="onboarding-description" class="mb-5 text-sm text-muted-foreground">Build a story, review the references, then choose what to render.</Dialog.Description>
