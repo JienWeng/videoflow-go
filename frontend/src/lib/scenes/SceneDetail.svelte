@@ -54,6 +54,7 @@
     onGenerateSelectedAssets,
     onGenerateStoryboard,
     onRenderScene,
+    progress = null,
     onDelete,
     onLightbox,
     onReferencesChanged
@@ -71,6 +72,7 @@
   const isOpen=(key:string)=>opened[key]??section(key).open;
   let focusedShot='';
   $effect(()=>{const id=page.url.searchParams.get('shot_id');if(id&&shots.some((shot:any)=>shot.id===id)&&focusedShot!==id){focusedShot=id;opened={...opened,shots:true};void tick().then(()=>{const row=document.getElementById('scene-shot-'+id);row?.scrollIntoView({block:'center'});row?.focus()})}});
+  const STAGE_FOR: Record<string,string> = { generate_shots: 'shots', generate_assets: 'assets', storyboard: 'storyboard', render_scene: 'render', retry_render: 'render' };
   async function openStage(key: string) {
     if (!section(key).visible) showAll = true;
     opened = {...opened, [key]: true};
@@ -128,7 +130,21 @@
         {/if}
       </div>
 
-      <Button size="sm" onclick={() => openStage(nextStage.key)}>{nextStage.label}</Button>
+      {#if progress}
+        <div class="rounded-lg border px-3 py-2.5 {progress.stage==='needs_attention'?'border-amber-500/60 bg-amber-500/5':'border-border bg-muted/20'}" role="status" aria-label="Scene progress">
+          <p class="text-sm font-medium">{progress.label}<span class="ml-2 text-xs font-normal text-muted-foreground">Step {Math.min(progress.step + 1, 4)} of 4</span></p>
+          <p class="mt-1 max-w-prose text-xs text-muted-foreground">{progress.detail}</p>
+          <div class="mt-2 flex flex-wrap gap-2">
+            {#if progress.next.action === 'open_videos'}<Button size="sm" href="/render">{progress.next.label}</Button>
+            {:else if progress.next.action === 'open_editor'}<Button size="sm" href={`/compositions?scene_id=${encodeURIComponent(s.id)}`}>{progress.next.label}</Button>
+            {:else if progress.next.action === 'ask_assistant'}<Button size="sm" onclick={() => window.dispatchEvent(new CustomEvent('videoflow-ask-assistant', { detail: { text: `Why is “${s.title}” stuck, and what should I do next?` } }))}>{progress.next.label}</Button>
+            {:else}<Button size="sm" onclick={() => openStage(STAGE_FOR[progress.next.action] ?? nextStage.key)}>{progress.next.label}</Button>{/if}
+            {#if progress.stage === 'needs_attention' && progress.next.action !== 'ask_assistant'}<Button size="sm" variant="ghost" onclick={() => window.dispatchEvent(new CustomEvent('videoflow-ask-assistant', { detail: { text: `Why did “${s.title}” stop, what is already saved, and what should I do next?` } }))}>Ask the assistant</Button>{/if}
+          </div>
+        </div>
+      {:else}
+        <Button size="sm" onclick={() => openStage(nextStage.key)}>{nextStage.label}</Button>
+      {/if}
     </div>
 
     <div class="flex shrink-0 items-center gap-2">

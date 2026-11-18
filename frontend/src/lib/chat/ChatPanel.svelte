@@ -408,9 +408,11 @@
     void initPersistence().then(restoreGuidedOperation);
     const update=()=>{void initPersistence().then(restoreGuidedOperation)};
     const stop=subscribeJobs(()=>{void refreshChips()},()=>{void refreshChips()});
+    const ask=(event:Event)=>{const text=(event as CustomEvent<{text?:string}>).detail?.text;if(text)reusePrompt(text);};
     window.addEventListener('videoflow-session-changed',update);
     window.addEventListener('focus',refreshChips);
-    return ()=>{stop();window.removeEventListener('videoflow-session-changed',update);window.removeEventListener('focus',refreshChips)};
+    window.addEventListener('videoflow-ask-assistant',ask);
+    return ()=>{stop();window.removeEventListener('videoflow-session-changed',update);window.removeEventListener('focus',refreshChips);window.removeEventListener('videoflow-ask-assistant',ask)};
   });
 
   /** Context passed up by ActionCard after a successful run. */

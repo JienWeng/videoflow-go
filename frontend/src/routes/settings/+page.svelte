@@ -195,10 +195,12 @@ media_model_preferences:Record<string,Record<string,string>>;
     { value: 'zh', label: 'Chinese' },
     { value: 'en', label: 'English' }
   ];
+  // The backend writes the language name into prompts, so save names; `code` reads older saves.
   const DIALOGUE_LANGUAGES = [
-    { value: 'zh', label: 'Chinese' },
-    { value: 'en', label: 'English' }
+    { value: 'Chinese', code: 'zh', label: 'Chinese' },
+    { value: 'English', code: 'en', label: 'English' }
   ];
+  const dialogueValue = (v: string) => DIALOGUE_LANGUAGES.find(l => l.value.toLowerCase() === String(v ?? '').toLowerCase() || l.code === v)?.value ?? v;
   const CUSTOM = '__custom__';
   const LOAD_MODELS = '__load_models__';
 
@@ -1027,11 +1029,11 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                   aria-label="Dialogue language"
                   class="w-48 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
                   disabled={busy === 'app'}
-                  value={app.dialogue_language}
+                  value={dialogueValue(app.dialogue_language)}
                   onchange={(e) =>
                     saveApp({ dialogue_language: (e.currentTarget as HTMLSelectElement).value })}
                 >
-                  {#if !DIALOGUE_LANGUAGES.some(l => l.value === app!.dialogue_language)}<option value={app.dialogue_language}>{app.dialogue_language}</option>{/if}
+                  {#if !DIALOGUE_LANGUAGES.some(l => l.value === dialogueValue(app!.dialogue_language))}<option value={app.dialogue_language}>{app.dialogue_language}</option>{/if}
                   {#each DIALOGUE_LANGUAGES as l (l.value)}
                     <option value={l.value}>{l.label}</option>
                   {/each}

@@ -185,6 +185,7 @@ func (s *Server) setupRoutes() {
 
 	// Scenes, Shots, Scripts & Ideas
 	s.router.Get("/scenes", s.handleListScenes)
+	s.router.Get("/production/progress", s.handleProjectProgress)
 	s.router.Post("/scenes", s.handleCreateScene)
 	s.router.Get("/scenes/{id}", s.handleGetScene)
 	s.router.Patch("/scenes/{id}", s.handleUpdateScene)

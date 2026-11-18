@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -1441,7 +1442,7 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 				nodes = append(nodes, models.GraphNode{
 					ID:    sh.ID,
 					Type:  "shot",
-					Label: fmt.Sprintf("#%d %s", sh.ShotOrder, sh.Prompt),
+					Label: fmt.Sprintf("#%d %s", sh.ShotOrder, displayPrompt(sh.Prompt)),
 					Data: map[string]interface{}{
 						"scene_id":   sh.SceneID,
 						"shot_order": sh.ShotOrder,
@@ -1937,3 +1938,8 @@ func (d *DB) CreateRenderJobs(jobs []*models.RenderJob) error {
 	}
 	return tx.Commit()
 }
+
+// Prompts keep internal IDs for generation; canvas labels show readable text only.
+var internalIDMention = regexp.MustCompile(`\s*\((?:char|asset|scene|shot)_[0-9a-f]{6,}\)`)
+
+func displayPrompt(prompt string) string { return internalIDMention.ReplaceAllString(prompt, "") }

@@ -36,6 +36,8 @@
 
   let scenes: any[] = $state([]);
   let scripts: any[] = $state([]);
+  let progress: any = $state(null);
+  const progressFor = (id: string) => progress?.scenes?.find((p: any) => p.scene_id === id) ?? null;
   let characters: any[] = $state([]);
   let shotsByScene: Record<string, any[]> = $state({});
   let storyboards: Record<string, any> = $state({});
@@ -240,10 +242,12 @@
     ]);
     characters = chars;
     scripts = freshScripts;
-    const [allAssets, jobs] = await Promise.all([
+    const [allAssets, jobs, freshProgress] = await Promise.all([
       get('/assets'),
-      get('/render-jobs').catch(() => [])
+      get('/render-jobs').catch(() => []),
+      get('/production/progress').catch(() => null)
     ]);
+    progress = freshProgress;
     generatedAssets=Object.fromEntries(freshScenes.map((scene:any)=>[scene.id,allAssets.filter((a:any)=>a.type!=='storyboard'&&(scene.asset_ids_json?.includes(a.id)||a.metadata_json?.scene_id===scene.id))]));
     storyboards = {};
     for (const a of allAssets) {
@@ -464,6 +468,13 @@
   function statusLine(s: any): string {
     const shots = shotsByScene[s.id]?.length ?? 0;
     const parts: string[] = [];
+    const p = progressFor(s.id);
+    if (p) {
+      parts.push(p.label);
+      if (shots > 0) parts.push(`${shots} shot${shots === 1 ? '' : 's'}`);
+      if (s.duration) parts.push(`${s.duration}s`);
+      return parts.join(' · ');
+    }
     if (renderedScenes[s.id]) parts.push('Rendered');
     else if (storyboards[s.id]) parts.push('Storyboard ready');
     else if (shots > 0) parts.push('Shots ready');
@@ -750,6 +761,15 @@
   <!-- Page header (unchanged copy) -->
   <div class="px-6 pt-6 pb-3 shrink-0">
     {#if !embedded}<h1 class="text-lg font-semibold">Scene studios</h1>{/if}
+    {#if progress?.total}
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-2" role="status" aria-label="Project progress">
+        <div class="flex min-w-0 items-center gap-3">
+          <div class="h-1.5 w-28 shrink-0 overflow-hidden rounded-full bg-muted" aria-hidden="true"><div class="h-full rounded-full bg-emerald-500/80" style:width={`${Math.round(100 * progress.video_ready / progress.total)}%`}></div></div>
+          <p class="text-sm">{progress.summary}</p>
+        </div>
+        {#if progress.next}<Button size="sm" variant={progress.next.stage === 'needs_attention' ? 'default' : 'outline'} onclick={() => { selectedId = progress.next.scene_id; mobileDetail = true; }}>Next: {progress.next.next.label} · {progress.next.title}</Button>{/if}
+      </div>
+    {/if}
     <details class="mt-2"><summary class="min-h-10 cursor-pointer text-sm text-muted-foreground">Story dialogue tools</summary><div class="flex flex-wrap items-center gap-2 pb-2">
       <input
         bind:value={conversationInstruction}
@@ -930,6 +950,7 @@
               onDelete={(s: any) => (deleteTarget = s)}
               onLightbox={(a: any) => (lightbox = a)}
               onReferencesChanged={refresh}
+              progress={progressFor(selectedScene.id)}
             />
           {/key}
         {:else}
