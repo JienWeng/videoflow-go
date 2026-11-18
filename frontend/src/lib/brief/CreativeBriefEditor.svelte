@@ -1,4 +1,5 @@
 <script lang="ts">
+ import BriefChoice from './BriefChoice.svelte';
  import StyleReference from './StyleReference.svelte';
  import {onMount} from 'svelte';import{get}from'$lib/api';import{Button}from'$lib/components/ui/button';import StyleCards from'./StyleCards.svelte';import{normalizeBrief,missingBriefFields}from'./brief.mjs';
  type Brief=ReturnType<typeof normalizeBrief>;
@@ -9,7 +10,7 @@
  const selected=$derived(options.find(p=>p.id===value.style_preset_id));
  const styleValid=$derived(!!selected?.fingerprint&&selected.fingerprint===value.style_fingerprint);
  const missing=$derived(missingBriefFields(value));
- const stepReady=$derived(step===0?styleValid&&!!value.tone.trim()&&!!value.audience.trim():step===1?!!value.platform.trim()&&!!value.aspect_ratio&&!!value.resolution&&!!value.language.trim()&&!!value.conversation_mode:step===2?value.scene_count>=1&&value.scene_count<=20&&value.target_duration>=value.scene_count&&value.target_duration<=600:missing.length===0&&styleValid);
+ const stepReady=$derived(step===0?styleValid&&!!value.tone.trim()&&!!value.audience.trim():step===1?!!value.platform.trim()&&!!value.aspect_ratio&&!!value.resolution&&!!value.language.trim()&&!!value.conversation_mode:step===2?Number.isInteger(value.scene_count)&&Number.isInteger(value.target_duration)&&value.scene_count>=1&&value.scene_count<=20&&value.target_duration>=value.scene_count&&value.target_duration<=600:missing.length===0&&styleValid);
  async function load(){error='';loading=true;confirmed=false;try{const result=await get('/style-presets');if(!Array.isArray(result?.presets))throw Error('Style catalog is unavailable');catalog=result;if(value.style_preset_id&&!styleValid)confirmed=false;}catch(e){error=String(e)}finally{loading=false}}
  onMount(()=>{void load();if(!missing.length)step=3});
  function change(patch:Partial<Brief>){value={...value,...patch};confirmed=false;attempted=false;onchange?.(JSON.parse(JSON.stringify(value)))}
@@ -28,13 +29,13 @@
  <label class="grid gap-1 text-sm">Storytelling method<select class={inputClass} value={value.storytelling_id||'custom'} onchange={e=>change({storytelling_id:e.currentTarget.value})}><option value="custom">Follow my story</option>{#each catalog?.storytelling_presets??[] as method}<option value={method.id}>{method.name}</option>{/each}</select></label>
  {#if value.storytelling_id&&value.storytelling_id!=='custom'}<p class="text-xs text-muted-foreground">{catalog?.storytelling_presets?.find((p:any)=>p.id===value.storytelling_id)?.description??'Saved storytelling method'}</p>{/if}
  <p class="text-xs text-muted-foreground">Storytelling shapes the pacing and direction. Your visual style stays separate.</p>
- <label class="grid gap-1 text-sm">Tone<input class={inputClass} maxlength="200" value={value.tone} oninput={e=>change({tone:e.currentTarget.value})} placeholder="Warm and hopeful, playful, suspenseful…"/></label>
- <label class="grid gap-1 text-sm">Audience<input class={inputClass} maxlength="200" value={value.audience} oninput={e=>change({audience:e.currentTarget.value})} placeholder="Families, young children, adults…"/></label>
+ <BriefChoice label="Tone" value={value.tone} options={['Documentary', 'Dramatic', 'Warm and hopeful', 'Playful', 'Suspenseful']} maxlength={200} onchange={v=>change({tone:v})}/>
+ <BriefChoice label="Audience" value={value.audience} options={['General audience', 'Families', 'Young children', 'Teens', 'Adults']} maxlength={200} onchange={v=>change({audience:v})}/>
  {:else if step===1}
- <label class="grid gap-1 text-sm">Destination platform<input class={inputClass} maxlength="120" value={value.platform} oninput={e=>change({platform:e.currentTarget.value})} placeholder="YouTube Shorts, TikTok, Instagram Reels…"/></label>
+ <BriefChoice label="Destination platform" value={value.platform} options={['YouTube', 'YouTube Shorts', 'TikTok', 'Instagram Reels', 'LinkedIn', 'Website']} maxlength={120} onchange={v=>change({platform:v})}/>
  <div class="grid grid-cols-2 gap-3"><label class="grid gap-1 text-sm">Format<select class={inputClass} value={value.aspect_ratio} onchange={e=>change({aspect_ratio:e.currentTarget.value})}><option value="">Choose format…</option><option value="9:16">Portrait · 9:16</option><option value="16:9">Landscape · 16:9</option><option value="1:1">Square · 1:1</option><option value="3:4">Portrait · 3:4</option><option value="4:3">Landscape · 4:3</option><option value="21:9">Ultrawide · 21:9</option></select></label><label class="grid gap-1 text-sm">Video size<select class={inputClass} value={value.resolution} onchange={e=>change({resolution:e.currentTarget.value})}><option value="">Choose size…</option><option value="720p">720p</option><option value="480p">480p</option><option value="auto">Model default</option></select></label></div>
  <p class="text-xs text-muted-foreground">Shorts, Reels and TikTok usually use portrait. Size support depends on the video model.</p>
- <label class="grid gap-1 text-sm">Spoken language<input class={inputClass} maxlength="80" value={value.language} oninput={e=>change({language:e.currentTarget.value})} placeholder="English, Mandarin, Malay…"/></label>
+ <BriefChoice label="Spoken language" value={value.language} options={['English', 'Malay', 'Mandarin', 'Tamil', 'Spanish', 'Japanese', 'French']} maxlength={80} onchange={v=>change({language:v})}/>
  <label class="grid gap-1 text-sm">Speech<select class={inputClass} value={value.conversation_mode} onchange={e=>change({conversation_mode:e.currentTarget.value})}><option value="">Choose speech…</option><option value="dialogue">Character dialogue</option><option value="narration">Narration</option><option value="silent">No speech</option></select></label>
  {:else if step===2}
  <label class="grid gap-1 text-sm">Total video duration (seconds)<input class={inputClass} type="number" min="1" max="600" step="1" value={value.target_duration||''} oninput={e=>change({target_duration:Number(e.currentTarget.value)})}/></label>

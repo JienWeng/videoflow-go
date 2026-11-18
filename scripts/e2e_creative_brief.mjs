@@ -25,16 +25,16 @@ try {for(const width of [1440,390]){
  else if(['/videos/generate','/scripts/generate'].includes(path)){generation.push(req.postDataJSON());return route.fulfill({status:400,body:'Fixture stops before generation'});}
  await route.fulfill({json:body});
  });
- const open=async()=>{await page.goto('http://127.0.0.1:8091/?view=studio');if(width===390)await page.getByRole('button',{name:/Workbench/}).click();};
+ const open=async()=>{await page.goto((process.env.VIDEOFLOW_TEST_URL || 'http://127.0.0.1:8091') + '/?view=studio');if(width===390)await page.getByRole('button',{name:/Workbench/}).click();};
  await open();const composer=()=>page.getByRole('textbox',{name:'Message story assistant',exact:true});
  await composer().fill(draft.idea);await composer().press('Enter');
- await page.getByRole('button',{name:/Picture book.*Choose style/}).click();await page.getByRole('combobox',{name:'Storytelling method',exact:true}).selectOption('drama');await page.getByLabel('Tone',{exact:true}).fill('Hopeful');await page.getByLabel('Audience',{exact:true}).fill('Families');
+ await page.getByRole('button',{name:/Picture book.*Choose style/}).click();await page.getByRole('combobox',{name:'Storytelling method',exact:true}).selectOption('drama');await page.getByLabel('Tone',{exact:true}).selectOption('__custom');await page.getByLabel('Custom tone',{exact:true}).fill('Hopeful');await page.getByLabel('Audience',{exact:true}).selectOption('Families');
  await page.getByRole('button',{name:'Continue',exact:true}).click();
- await page.getByLabel('Destination platform',{exact:true}).fill('YouTube Shorts');await page.getByRole('combobox',{name:'Format',exact:true}).selectOption('9:16');await page.getByRole('combobox',{name:'Video size',exact:true}).selectOption('720p');await page.getByLabel('Spoken language',{exact:true}).fill('Malay');await page.getByRole('combobox',{name:'Speech',exact:true}).selectOption('narration');
+ await page.getByLabel('Destination platform',{exact:true}).selectOption('YouTube Shorts');await page.getByRole('combobox',{name:'Format',exact:true}).selectOption('9:16');await page.getByRole('combobox',{name:'Video size',exact:true}).selectOption('720p');await page.getByLabel('Spoken language',{exact:true}).selectOption('Malay');await page.getByRole('combobox',{name:'Speech',exact:true}).selectOption('narration');
  await page.getByRole('button',{name:'Continue',exact:true}).click();await page.getByLabel('Total video duration (seconds)',{exact:true}).fill('12');await page.getByLabel('Number of scenes',{exact:true}).fill('2');
  await page.getByRole('button',{name:'Continue',exact:true}).click();assert(await page.getByRole('button',{name:'Create story & references',exact:true}).isDisabled());
  await page.getByLabel('These are the settings I want to use',{exact:true}).check();
- await page.getByRole('button',{name:'1. Look & mood',exact:true}).click();await page.getByLabel('Tone',{exact:true}).fill('Gentle and hopeful');assert(await page.getByRole('button',{name:'Create story & references',exact:true}).isDisabled());
+ await page.getByRole('button',{name:'1. Look & mood',exact:true}).click();await page.getByLabel('Custom tone',{exact:true}).fill('Gentle and hopeful');assert(await page.getByRole('button',{name:'Create story & references',exact:true}).isDisabled());
  await composer().fill('Keep these choices');await composer().press('Enter');await page.getByText('Earlier creative brief · updated below',{exact:true}).waitFor();
  assert.equal(requests.at(-1).creation_brief.idea,'A puppy finds Mama');assert.equal(requests.at(-1).creation_brief.scene_count,2);assert.equal(requests.at(-1).creation_brief.storytelling_id,'drama');assert.equal(requests.at(-1).creation_brief.tone,'Gentle and hopeful');
  assert.equal(await page.getByRole('button',{name:'Create story & references',exact:true}).count(),1);
