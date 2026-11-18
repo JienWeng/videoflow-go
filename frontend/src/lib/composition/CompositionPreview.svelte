@@ -20,6 +20,7 @@
  {:else if asset?.media_kind==='video'}<video data-clip={clip.id} src={mediaUrl(asset.url)??''} playsinline preload="metadata" onloadedmetadata={syncMedia} class="absolute inset-0 size-full" style={clipStyle(clip)+`;visibility:${active(clip)?'visible':'hidden'}`} onerror={()=>error='A source cannot be previewed in this browser. Try another supported file.'}><track kind="captions" /></video>{/if}
  {/each}
  {#each draft.audio as clip(clip.id)}{@const asset=source(clip.asset_id)}<audio data-clip={clip.id} src={mediaUrl(asset?.url)??''} preload="metadata" onloadedmetadata={syncMedia}><track kind="captions" /></audio>{/each}
+ {#each (draft.texts??[]).filter((t:any)=>time>=t.start&&time<t.end) as layer(layer.id)}<p class="absolute left-[5%] w-[90%] -translate-y-1/2 whitespace-pre-wrap text-center" style={`top:${layer.position==='top'?15:layer.position==='bottom'?80:50}%;color:${layer.color};background:${layer.background};font-family:${layer.font};font-size:${layer.size*previewWidth/draft.width}px`}>{layer.text}</p>{/each}
  {#each draft.captions.filter((c:any)=>time>=c.start&&time<c.end) as cue(cue.id)}<p class="absolute inset-x-[5%] bottom-[8%] text-center text-white" style={`font-size:${(draft.caption_style==='large'?40:draft.caption_style==='compact'?20:28)*previewWidth/draft.width}px;text-shadow:0 2px 4px black`}>{cue.text}</p>{/each}
  {#if !draft.clips.length}<p class="absolute inset-0 flex items-center justify-center p-6 text-center text-sm text-white">Add an image or video to preview your edit.</p>{/if}
  </div>

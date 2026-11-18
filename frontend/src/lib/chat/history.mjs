@@ -2,7 +2,7 @@
  * Internal planning/image turns are not conversation messages.
  * @param {any[]} turns
  */
-export function conversationTurns(turns){return turns.filter(t=>['chat','intent_agent','specialist_review'].includes(t.kind)&&typeof t.request_json?.user_message==='string'&&t.request_json.user_message.trim())}
+export function conversationTurns(turns){return turns.filter(t=>['chat','intent_agent','specialist_review','composition_planner'].includes(t.kind)&&typeof t.request_json?.user_message==='string'&&t.request_json.user_message.trim())}
 /** Preserve the richer current-tab view only when it matches the saved conversation.
  * New server messages always win over a stale panel snapshot.
  * @param {any[]} server @param {any} cached @returns {any[]}

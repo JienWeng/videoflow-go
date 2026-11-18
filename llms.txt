@@ -110,7 +110,15 @@ Open a scene from Studio or /scenes?scene_id=<id>. Its Scene references section 
 See docs/CONNECTED-VIDEO-WORKFLOW.md. Video & sound in chat and Scene Studio selects native/saved/silent audio and shows a read-only paid-call plan. Supported Seedance native audio needs no saved voice IDs. Automatic grouping minimizes calls and generated seconds; identical planned clips are reused. Explicit rendering revalidates the displayed plan. Assemble clips & add music opens ordered, trimmed outputs with clip audio preserved; full-story assembly joins matching scene formats. Upload or choose music, set volume/fades, save and export locally. Native sound quality/identity/timing remains model-dependent; exact saved voices/lip-sync and timed captions use the existing separate tools. Opening or saving options never starts generation.
 
 
-## Creative brief before story generation
+## Edit and finish in Studio
+
+Open Studio → Edit video, or an Assemble / Trim & arrange handoff. The same workspace contains preview, playhead, visual/audio tracks, editable settings and the main Codex/Claude chat. Mobile switches between Editor and Assistant without changing the draft. Drag clips to move them with snapping; arrow keys nudge by one frame and Shift by one second. AI edits are proposals with changed fields: Apply checks that the draft has not changed, then Undo remains available. Unsaved drafts recover per project and source. Saving and local rendering remain explicit.
+
+Finish your video provides final-mix transcription, music/mix and Save & export. Transcription uses the actual trimmed, placed and mixed audio through the configured transcription API; it can consume credits. Captions remain editable. Export retries do not rerun transcription or video generation. Caption language variants preserve timings; translation uses the selected local session and does not dub speech or alter lips. Layouts & brand adds four title layouts, bounded logo overlays, project colors/font family and safe version-1 community layout JSON import/export.
+
+Generate from references uses the supported fal Seedance Fast reference endpoint with actual image, video and audio files and numbered roles. Check its plan before Generate; changed inputs need another check, existing matching jobs are reused, and uncertain results require reconciliation. A completed reference clip can be added to the current edit. This is separate from style extraction and strict first/last-frame scene rendering. See docs/INTEGRATED-EDITING-STUDIO.md for input limits, APIs, verification and remaining capability boundaries.
+
+## Choose and confirm the story brief
 
 Use the paperclip in Chat, or “Use an image, video or link” in Look & mood, to start from a style reference. Library and Projects offer the same panel. Upload PNG/JPEG/GIF/WebP or MP4/MOV/WebM (up to 50 MB), select existing Library media, or enter a public HTTPS link. Pasting a link by itself or with “style/reference/look” into chat opens this panel. Public web pages supply only their Open Graph/Twitter preview image; login-only pages and sites without a usable preview require a clip or screenshot upload. No browser scripts are executed.
 

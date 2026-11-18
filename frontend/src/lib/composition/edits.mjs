@@ -5,4 +5,4 @@ export function splitClip(clip,time,id){if(!Number.isFinite(time)||time<=clip.st
 /** @param {any} clip @param {string} id */
 export function duplicateClip(clip,id){return {...structuredClone(clip),id,start:clip.start+clip.duration};}
 /** @param {any} clip */
-export function clipStyle(clip){const a={...defaults(),...clip.adjustments};return `object-fit:${a.fit==='cover'?'cover':'contain'};object-position:${a.x}% ${a.y}%;transform:scale(${a.scale});transform-origin:${a.x}% ${a.y}%;filter:brightness(${a.brightness}) contrast(${a.contrast}) saturate(${a.saturation});opacity:${a.opacity}`;}
+export function clipStyle(clip){const a={...defaults(),...clip.adjustments};const b=clip.overlay;const placement=b?`left:${b.x}%;top:${b.y}%;right:auto;bottom:auto;width:${b.width}%;height:${b.height}%;`:'';return `${placement}object-fit:${a.fit==='cover'?'cover':'contain'};object-position:${a.x}% ${a.y}%;transform:scale(${a.scale});transform-origin:${a.x}% ${a.y}%;filter:brightness(${a.brightness}) contrast(${a.contrast}) saturate(${a.saturation});opacity:${a.opacity}`;}

@@ -1,4 +1,5 @@
 <script lang="ts">
+ import {editChanges,applyEditProposal} from "$lib/composition/proposals.mjs";
  import StyleReference from '$lib/brief/StyleReference.svelte';
  import * as Dialog from '$lib/components/ui/dialog';
  import Paperclip from '@lucide/svelte/icons/paperclip';
@@ -68,6 +69,7 @@
   }
 
   interface Msg {
+ editProposal?:{base:string;manifest:any;changes:string[];applied?:boolean;error?:string};
     role: 'user' | 'assistant';
     retry?: string;
     setupSceneId?:string;
@@ -107,7 +109,8 @@
     onresize,
     embedded = false,
     expanded = false,
-    selected = null
+    selected = null,
+    editing
   }: {
     onfocus?: (id: string) => void;
     onguide?: (id:string)=>void;
@@ -118,6 +121,7 @@
     embedded?: boolean;
     expanded?: boolean;
     selected?: SelectedNode | null;
+    editing?:{draft:any;selected:string;apply:(draft:any)=>void};
   } = $props();
 
   const greeting = (): Msg => ({
@@ -169,8 +173,8 @@
   /** Drop the non-serializable / refetched parts (state, callbacks live in
    * the template anyway — cards re-render fine from intent + options). */
   function serializableMsg(m: Msg) {
-    const { role, text, intent, options, warnings, chips, op, thumbs, retry, activity, dismissed,briefSuperseded,repairContext,sessionReview,storyOperationId,storyStage,storyReady,referenceIds,castIds,setupSceneId } = m;
-    return { role, text, intent, options, warnings, chips, op, thumbs, retry, activity:normalizeActivity(activity), dismissed,briefSuperseded,repairContext,sessionReview,storyOperationId,storyStage,storyReady,referenceIds,castIds,setupSceneId };
+    const { role, text, intent, options, warnings, chips, op, thumbs, retry, activity,editProposal, dismissed,briefSuperseded,repairContext,sessionReview,storyOperationId,storyStage,storyReady,referenceIds,castIds,setupSceneId } = m;
+    return { role, text, intent, options, warnings, chips, op, thumbs, retry, activity:normalizeActivity(activity),editProposal, dismissed,briefSuperseded,repairContext,sessionReview,storyOperationId,storyStage,storyReady,referenceIds,castIds,setupSceneId };
   }
 
   let conversationGeneration=0;
@@ -189,7 +193,8 @@
         const restored:Msg[]=[];
         for(const turn of conversationTurns(turns)){
           if(turn.request_json?.user_message)restored.push({role:'user',text:turn.request_json.user_message});
-          if(turn.result_json?.reply)restored.push({role:'assistant',text:turn.result_json.reply,activity:subagentEvents(turn.result_json.subagents??[])});
+          if(turn.kind==='composition_planner'&&turn.status==='succeeded')restored.push({role:'assistant',text:'I prepared an edit proposal. Apply it to the current edit, then save or undo as needed.'});
+          else if(turn.result_json?.reply)restored.push({role:'assistant',text:turn.result_json.reply,activity:subagentEvents(turn.result_json.subagents??[])});
           else if(turn.error)restored.push({role:'assistant',text:turn.error});
         }
         const key='videoflow.chat.'+session.id;
@@ -681,10 +686,11 @@
     const history = messages.slice(-6).map((m) => ({ role: m.role, text: m.text }));
     messages.push({ role: 'user', text: message });
     busy = true;cancelling=false;cancelError='';
-    const useSpecialists=reviewMode&&specialistSupported;
+    const useSpecialists=!editing&&reviewMode&&specialistSupported;
     const reviewIndex=messages.length;
     if(useSpecialists)messages.push({role:'assistant',text:'Specialist review requested. No story changes will run.',activity:normalizeActivity((capabilities.subagents.roles??[]).map((role:any)=>({kind:'subagent',title:role.name,status:'pending'})))});
     try {
+      if(editing){const base=JSON.stringify(editing.draft);const result=await post('/director/composition-plan',{instruction:message,manifest:JSON.parse(base),selected_clip_id:editing.selected});if(generation!==conversationGeneration)return;messages.push({role:'assistant',text:'I prepared an edit proposal. Apply it to the current edit, then save or undo as needed.',editProposal:{base,manifest:result.manifest,changes:editChanges(JSON.parse(base),result.manifest)}});return;}
       const r = await post(useSpecialists?'/chat/review':'/chat', { message, ...(useSpecialists?{}:{history,creation_brief:activeCreativeBrief()}), selected: selected ? {id:selected.id,kind:selected.kind} : null });
       if(generation!==conversationGeneration)return;
       if(useSpecialists){messages[reviewIndex]={role:'assistant',text:r.reply,activity:subagentEvents(r.subagents??[])};void refreshCapabilities();return;}
@@ -830,10 +836,10 @@
       {:else if sessionRequired}<div class="space-y-3 py-4"><MessageSquare class="size-7 text-muted-foreground" /><h3 class="font-semibold">Connect your story assistant</h3><p class="text-sm text-muted-foreground">Choose a session above, or set up Codex or Claude Code to start planning.</p><Button variant="outline" href="/director">Set up AI session</Button></div>
       {:else if isEmpty}
         <div class="flex flex-col gap-4 py-3">
-          <h3 class="text-lg font-semibold">{selected?`Let’s work on ${selected.label}`:'Start with an idea'}</h3>
-          <p class="text-sm leading-relaxed text-muted-foreground">{selected?'Describe a change. You’ll review it before it runs.':'What story would you like to tell?'}</p>
+          <h3 class="text-lg font-semibold">{editing?'Shape your edit':selected?`Let’s work on ${selected.label}`:'Start with an idea'}</h3>
+          <p class="text-sm leading-relaxed text-muted-foreground">{editing?'Select a clip, describe a change, then apply the proposal.':selected?'Describe a change. You’ll review it before it runs.':'What story would you like to tell?'}</p>
           <div class="flex flex-wrap gap-2" aria-label="Conversation starters">
-            {#each (selected?[{title:'Suggest improvements',prompt:`Review ${selected.label} and suggest improvements. Do not run changes yet.`}]:[{title:'Build a story',prompt:'Help me plan a story about '},{title:'Plan the storyboard',prompt:'Help me plan storyboard shots for '},{title:'Develop a character',prompt:'Help me develop a character who '}]) as starter}
+            {#each (editing?[{title:'Tighten the opening',prompt:'Shorten the opening while keeping the story clear.'},{title:'Balance the music',prompt:'Set the background music to a quiet level below dialogue.'}]:selected?[{title:'Suggest improvements',prompt:`Review ${selected.label} and suggest improvements. Do not run changes yet.`}]:[{title:'Build a story',prompt:'Help me plan a story about '},{title:'Plan the storyboard',prompt:'Help me plan storyboard shots for '},{title:'Develop a character',prompt:'Help me develop a character who '}]) as starter}
               <button type="button" class="min-h-10 rounded-lg border border-border px-3 py-2 text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" onclick={()=>reusePrompt(starter.prompt)}>{starter.title}</button>
             {/each}
           </div>
@@ -886,7 +892,10 @@
                 {/each}
               </div>
             {/if}
-            {#if m.intent && m.intent.action !== 'unknown' && !m.dismissed}
+            {#if m.editProposal}<section class="mt-3 space-y-3 rounded-md border border-border p-3" aria-label="Proposed edit changes"><h3 class="text-sm font-medium">Proposed changes</h3><ul class="list-inside list-disc text-xs">{#each m.editProposal.changes as change}<li>{change}</li>{/each}</ul>{#if !m.editProposal.changes.length}<p class="text-xs text-muted-foreground">No changes proposed.</p>{/if}
+ {#if editing}<Button size="sm" disabled={!!m.editProposal.applied||!m.editProposal.changes.length} onclick={()=>{try{editing?.apply(applyEditProposal(editing.draft,m.editProposal));m.editProposal!.applied=true;}catch(e){m.editProposal!.error=String(e)}}}>{m.editProposal.applied?'Applied · Undo in editor':'Apply edit changes'}</Button>{:else}<a class="text-xs underline" href="/?view=edit">Open editing workspace</a>{/if}
+ {#if m.editProposal.error}<p role="alert" class="text-xs text-destructive">{m.editProposal.error}</p>{/if}</section>{/if}
+            {#if !editing && m.intent && m.intent.action !== 'unknown' && !m.dismissed}
               <ActionCard
                 intent={m.intent}
  onbriefchange={brief=>m.intent={...m.intent,creation_brief:brief,idea:brief.idea}}
@@ -907,7 +916,7 @@
         </MessageScroller.Item>
       {/each}
       {/if}
-      {#if guidedSteps.length&&!busy}<section aria-label="Suggested next steps" class="space-y-2 border-t pt-3"><h4 class="text-sm font-medium">Next step</h4><div class="flex flex-wrap gap-2">{@render chipRow(guidedSteps)}</div><p class="text-xs text-muted-foreground">Suggestions focus the canvas and prepare your request. Review the proposal before running it.</p></section>{/if}
+      {#if !editing&&guidedSteps.length&&!busy}<section aria-label="Suggested next steps" class="space-y-2 border-t pt-3"><h4 class="text-sm font-medium">Next step</h4><div class="flex flex-wrap gap-2">{@render chipRow(guidedSteps)}</div><p class="text-xs text-muted-foreground">Suggestions focus the canvas and prepare your request. Review the proposal before running it.</p></section>{/if}
       {#if busy&&!reviewMode}
         <MessageScroller.Item messageId="working"><Message.Root><Message.Content><div role="status" class="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />Working on your story…</div></Message.Content></Message.Root></MessageScroller.Item>
       {/if}
@@ -922,10 +931,10 @@
       {#if selected}<Attachment.Root size="sm" class="min-w-0 max-w-full"><Attachment.Content class="min-w-0"><Attachment.Title class="truncate" title={selected.label}>{selected.kind.replace('_',' ')}: {selected.label}</Attachment.Title></Attachment.Content>{#if onclear}<Attachment.Actions><Attachment.Action aria-label="Clear selection" class="size-9 shrink-0" onclick={onclear}><X class="size-3.5" /></Attachment.Action></Attachment.Actions>{/if}</Attachment.Root>{:else}<span></span>{/if}
       {#if embedded&&!isEmpty}<Button variant="ghost" size="icon" class="size-9 shrink-0 text-muted-foreground" aria-label="Clear chat" title="Clear visible chat; saved session history is kept" disabled={busy||historyLoading||isEmpty} onclick={clearChat}><Eraser class="size-4" /></Button>{/if}
     </div>{/if}
-    {#if !guidedSteps.length&&chips.length&&(!isEmpty||selected)}<div aria-label="Suggested prompts" class="mb-2 flex flex-wrap items-center gap-2">{@render chipRow(chips)}</div>{/if}
+    {#if !editing&&!guidedSteps.length&&chips.length&&(!isEmpty||selected)}<div aria-label="Suggested prompts" class="mb-2 flex flex-wrap items-center gap-2">{@render chipRow(chips)}</div>{/if}
     <form onsubmit={e=>{e.preventDefault();void send();}}>
       <InputGroup.Root class="rounded-2xl bg-background shadow-none has-disabled:opacity-100 has-disabled:bg-background dark:has-disabled:bg-background">
-        <InputGroup.Textarea aria-label="Message story assistant" bind:value={input} class="min-h-24 max-h-40 px-3 pt-3" placeholder={selected ? `What should change in ${selected.label}?` : 'Tell me your idea…'} onkeydown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();void send();}}} />
+        <InputGroup.Textarea aria-label="Message story assistant" bind:value={input} class="min-h-24 max-h-40 px-3 pt-3" placeholder={editing?'Describe an edit to this video…':selected ? `What should change in ${selected.label}?` : 'Tell me your idea…'} onkeydown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();void send();}}} />
         <InputGroup.Addon align="block-end" class="gap-2">
           <InputGroup.Button type="button" size="icon-sm" aria-label="Attach style reference" disabled={busy||pendingOps.length>0} onclick={()=>{referenceURL='';referenceOpen=true}}><Paperclip class="size-4"/></InputGroup.Button>
           <DropdownMenu.Root><DropdownMenu.Trigger>{#snippet child({props})}<InputGroup.Button {...props} type="button" size="sm" aria-label="Assistant mode" disabled={busy}>{reviewMode?'Review':'Chat'}<ChevronDown class="size-3.5" /></InputGroup.Button>{/snippet}</DropdownMenu.Trigger>

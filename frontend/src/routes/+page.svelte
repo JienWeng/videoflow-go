@@ -1,4 +1,5 @@
 <script lang="ts">
+ import EditingWorkspace from "$lib/studio/EditingWorkspace.svelte";
   import {clampWindow,readWindowLayout,clampWindowHeight,windowHeightLimits} from '$lib/shell/assistant-window.mjs';
   import GripHorizontal from '@lucide/svelte/icons/grip-horizontal';
   import PanelRight from '@lucide/svelte/icons/panel-right';
@@ -113,11 +114,11 @@
   }
   let selected=$state<Node|null>(null);
   let overview: ProjectOverview | undefined = $state();
-  const workspace = $derived((page.state as { studioView?: 'overview' | 'studio' | 'story' }).studioView ?? (page.url.searchParams.get('view') === 'overview' ? 'overview' : page.url.searchParams.get('view') === 'story' ? 'story' : 'studio'));
+  const workspace = $derived((page.state as { studioView?: 'overview' | 'studio' | 'story' | 'edit' }).studioView ?? (page.url.searchParams.get('view') === 'edit' ? 'edit' : page.url.searchParams.get('view') === 'overview' ? 'overview' : page.url.searchParams.get('view') === 'story' ? 'story' : 'studio'));
   let studioMounted = $state(false), overviewMounted = $state(false),storyMounted=$state(false);
   let story:StoryWorkspace|undefined=$state();
   let canvasRefreshPaused = $state(false);
-  $effect(() => { if(workspace==='studio')studioMounted=true;else if(workspace==='story')storyMounted=true;else overviewMounted=true; });
+  $effect(() => { if(workspace==='studio')studioMounted=true;else if(workspace==='story')storyMounted=true;else if(workspace==='overview')overviewMounted=true; });
   let tab=$state('chat'), mobileView=$state('canvas'), nodeCount=$state(-1), error=$state('');
   const context=$derived(selected?{id:selected.id,kind:String(selected.data?.kind??''),label:String(selected.data?.label??'')}:null);
   async function probe(){try{const g=await get('/graph');nodeCount=g.nodes?.length??0;error=''}catch(e){error=String(e)}}
@@ -154,6 +155,7 @@
       <DropdownMenu.Item onclick={()=>setWorkspace('overview')}>Project summary</DropdownMenu.Item>
       <DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/projects">Switch project</a>{/snippet}</DropdownMenu.Item>
     </DropdownMenu.Content></DropdownMenu.Root>
+    <a class="min-h-10 rounded-md px-3 py-2 text-sm" href="/?view=edit" aria-current={workspace==='edit'?'page':undefined}>Edit video</a>
     <div role="group" aria-label="Workspace view" class="flex rounded-lg bg-muted/40 p-1">
       <button class="min-h-10 rounded-md px-3 text-sm {workspace==='studio'?'bg-accent font-semibold':'text-muted-foreground hover:text-foreground'}" aria-pressed={workspace==='studio'} onclick={()=>setWorkspace('studio')}>Canvas</button>
       <button class="min-h-10 rounded-md px-3 text-sm {workspace==='story'?'bg-accent font-semibold':'text-muted-foreground hover:text-foreground'}" aria-pressed={workspace==='story'} onclick={()=>setWorkspace('story')}>Story</button>
@@ -161,6 +163,7 @@
     <div class="flex gap-1">{#if workspace==='story'}<Button variant="ghost" onclick={()=>{setWorkspace('studio');tab='chat';openAssistant()}}>Assistant</Button>{/if}<Button onclick={startStory}>Create story</Button></div>
   </header>
   {#if workspace==='studio'&&canvasRefreshPaused}<div role="status" class="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2 text-xs text-muted-foreground"><p>Your editing draft is kept. Save or discard it before refreshing the canvas.</p><Button variant="ghost" size="sm" disabled={details?.hasUnsavedChanges()} onclick={refreshStudio}>Refresh canvas</Button></div>{/if}
+  {#if workspace==='edit'}<section class="min-h-0 flex-1 overflow-auto" aria-label="Video editing workspace"><EditingWorkspace/></section>{/if}
   {#if overviewMounted}<section aria-label="Project overview" class="min-h-0 flex-1 overflow-auto {workspace==='overview'?'':'hidden'}"><ProjectOverview bind:this={overview} active={workspace==='overview'} onopenStudio={()=>setWorkspace('studio')} /></section>{/if}
   {#if storyMounted}<section aria-label="Story workspace" class="min-h-0 flex-1 {workspace==='story'?'':'hidden'}"><StoryWorkspace embedded bind:this={story}/></section>{/if}
   {#if studioMounted}
