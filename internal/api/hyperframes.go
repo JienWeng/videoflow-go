@@ -26,6 +26,7 @@ func (s *Server) registerCompositionRoutes() {
 	s.router.Post("/compositions/transcribe", s.handleCompositionTranscribe)
 	s.router.Post("/compositions/localize", s.handleLocalizeComposition)
 	s.router.Post("/compositions/captions/import", s.handleCompositionCaptionImport)
+	s.router.Post("/compositions/captions/from-script", s.handleCompositionScriptCaptions)
 	s.router.Get("/scenes/{id}/composition-sources", s.handleSceneCompositionSources)
 	s.router.Get("/scenes/{id}/composition-draft", s.handleSceneCompositionDraft)
 	s.router.Get("/scripts/{id}/composition-draft", s.handleScriptCompositionDraft)

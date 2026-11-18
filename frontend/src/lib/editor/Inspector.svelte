@@ -27,7 +27,8 @@
     ondeletecaption,
     onmergeprev,
     onretried,
-    ontranscribe
+    ontranscribe,
+    onscript
   }: {
     selection: Selection;
     segments: Segment[];
@@ -46,6 +47,8 @@
     /** Auto-transcribe (whisper -> editable segments). Lives in the editor;
      * surfaced here too for consistency. Optional -> backward compatible. */
     ontranscribe?: () => void;
+    /** Fill captions from the scene script (free, shot-level timing). */
+    onscript?: () => void;
   } = $props();
 
   // QA state, derived from the output (no qa_status on EditorOutput yet -> infer).
@@ -240,11 +243,12 @@
     {#if ontranscribe && segments.length === 0}
       <div class="grid gap-1.5 rounded-md border border-dashed border-border bg-muted/30 p-2.5">
         <p class="text-xs text-muted-foreground">
-          Auto-transcribe to add editable captions to the timeline.
+          Add captions from the scene's script (free), or transcribe the audio for exact timing (uses credits).
         </p>
-        <Button variant="secondary" size="sm" disabled={transcribing} onclick={ontranscribe}>
+        {#if onscript}<Button size="sm" onclick={onscript}>Captions from script</Button>{/if}
+        <Button variant="ghost" size="sm" disabled={transcribing} onclick={ontranscribe}>
           <Sparkles class="mr-1 size-3.5 {transcribing ? 'animate-pulse' : ''}" />
-          {transcribing ? 'Transcribing…' : 'Auto-transcribe'}
+          {transcribing ? 'Transcribing…' : 'Transcribe audio'}
         </Button>
       </div>
     {/if}

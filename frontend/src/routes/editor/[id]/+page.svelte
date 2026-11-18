@@ -248,6 +248,25 @@
     }
   }
 
+  // --- Captions from the scene script: free, shot-level timing, no audio processing ---
+  let scripting = $state(false);
+  async function captionsFromScript() {
+    if (!output || scripting) return;
+    if (hasCaptions && !confirm('Replace the current captions with the lines from your script? Save afterwards to keep them.')) return;
+    scripting = true;
+    try {
+      const r = await get(`/outputs/${output.id}/captions/from-script`);
+      segments = (r.segments ?? []).map((s: Segment) => ({ ...s, start: Number(s.start), end: Number(s.end), text: s.text ?? '' }));
+      selection = null;
+      markDirty();
+      toast.success('Captions added from your script. Check the timing, then save.');
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      scripting = false;
+    }
+  }
+
   // --- Auto-transcribe (whisper -> editable segments, NO burn) ---
   async function transcribe() {
     if (!output || transcribing) return;
@@ -390,8 +409,11 @@
         >
           {#each languages as l (l.value)}<option value={l.value}>{l.label}</option>{/each}
         </select>
+        <Button variant="default" size="sm" disabled={scripting || transcribing} onclick={captionsFromScript} title="Use the scene's script and shot timing. Free; timing is close but not word-exact.">
+          {scripting ? 'Adding…' : 'Captions from script'}
+        </Button>
         <Button
-          variant="secondary"
+          variant="ghost"
           size="sm"
           disabled={transcribing}
           onclick={transcribe}
@@ -403,8 +425,8 @@
           {transcribing
             ? 'Transcribing…'
             : hasCaptions
-              ? 'Re-transcribe'
-              : 'Auto-transcribe'}
+              ? 'Re-transcribe audio'
+              : 'Transcribe audio'}
         </Button>
       </div>
       <!-- Download: captioned copy when it exists, plus the raw original. -->
@@ -513,12 +535,15 @@
             class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-border bg-muted/30 px-4 py-3"
           >
             <p class="text-xs text-muted-foreground">
-              Auto-transcribe the voice track to add editable captions.
+              Add captions from your scene's script for free, or transcribe the audio for exact word timing (uses credits).
             </p>
-            <Button variant="secondary" size="sm" disabled={transcribing} onclick={transcribe}>
-              <Sparkles class="mr-1 size-3.5 {transcribing ? 'animate-pulse' : ''}" />
-              {transcribing ? 'Transcribing…' : 'Auto-transcribe'}
-            </Button>
+            <div class="flex flex-wrap gap-2">
+              <Button size="sm" disabled={scripting || transcribing} onclick={captionsFromScript}>{scripting ? 'Adding…' : 'Captions from script'}</Button>
+              <Button variant="ghost" size="sm" disabled={transcribing || scripting} onclick={transcribe}>
+                <Sparkles class="mr-1 size-3.5 {transcribing ? 'animate-pulse' : ''}" />
+                {transcribing ? 'Transcribing…' : 'Transcribe audio'}
+              </Button>
+            </div>
           </div>
         {/if}
 
@@ -559,6 +584,7 @@
           onmergeprev={mergePrevCaption}
           onretried={() => {}}
           ontranscribe={transcribe}
+          onscript={captionsFromScript}
         />
       </aside>
     </div>
