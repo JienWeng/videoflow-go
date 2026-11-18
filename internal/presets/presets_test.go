@@ -8,8 +8,8 @@ import (
 
 func TestPacks(t *testing.T) {
 	p := Builtins()
-	if len(p.Presets) != 6 {
-		t.Fatal("need six styles")
+	if len(p.Presets) != 8 {
+		t.Fatal("need eight styles")
 	}
 	b, _ := json.Marshal(p)
 	if _, err := Parse(b); err != nil {

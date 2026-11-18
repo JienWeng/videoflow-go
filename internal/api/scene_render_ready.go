@@ -54,11 +54,7 @@ func (s *Server) generateMatchingStoryboard(ctx context.Context, scene *models.S
 		return nil, err
 	}
 	brief := sceneBrief(scene)
-	if profile, e := s.database.GetStyleGuide(*scene.ProjectID); e == nil && profile.StylePrompt != "" {
-		if brief.CreativePreset == nil && brief.BriefVersion == 0 {
-			brief.Style = s.stylePrompt(scene.ProjectID)
-		}
-	}
+	brief.Style = s.sceneVisualStyle(scene)
 	shotNotes, err := s.storyboardShotNotes(scene.ID)
 	if err != nil {
 		return nil, err

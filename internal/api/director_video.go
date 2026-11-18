@@ -244,7 +244,11 @@ func (s *Server) prepareDirectorVideoJob(ctx context.Context, job *models.Render
 	if job.SceneID != nil {
 		if scene, e := s.database.GetScene(*job.SceneID); e == nil {
 			brief := sceneBrief(scene)
-			if direction := brief.creativeDirection(); direction != "" {
+			direction := brief.creativeDirection()
+			if brief.BriefVersion != 1 && brief.Style != "" {
+				direction += "\nVisual style: " + brief.Style
+			}
+			if strings.TrimSpace(direction) != "" {
 				payload["prompt"] = stringPrompt(payload["prompt"]) + "\n" + direction
 			}
 		}

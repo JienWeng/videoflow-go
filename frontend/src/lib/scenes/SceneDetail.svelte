@@ -3,6 +3,7 @@
  let productionPlanId=$state(''),productionBlocked=$state(true),productionNewVersion=$state(false),productionQuote=$state({calls:0,seconds:0,storyboards:0});
   import {page} from '$app/state';
   import {tick} from 'svelte';
+  import SceneStyle from './SceneStyle.svelte';
   import SceneReferences from './SceneReferences.svelte';
   import {sceneStages} from './stages.mjs';
   import { mediaUrl } from '$lib/api';
@@ -117,6 +118,7 @@
     </div>
   </div>
 
+  <SceneStyle scene={s} projectStyle={style} disabled={sceneDirty} onchanged={onReferencesChanged}/>
   <SceneReferences sceneId={s.id} {characters} onchanged={onReferencesChanged} onstate={value=>referenceInfo=value}/>
 
   <div class="mt-5 space-y-3">
@@ -325,15 +327,7 @@
         <Button variant="outline" size="sm" disabled={opBusy[`assets-${s.id}`]} onclick={() => onGenerateAssets(s)}>
           <ImagePlus class="size-3 mr-1" />{opBusy[`assets-${s.id}`] ? 'Generating…' : 'Generate assets'}
         </Button>
-        {#if style?.style_prompt}
-          <Badge variant="secondary" class="text-muted-foreground max-w-[260px]" title={style.style_prompt}>
-            <span class="truncate">
-              styled: {style.style_prompt.length > 30
-                ? `${style.style_prompt.slice(0, 30)}…`
-                : style.style_prompt}
-            </span>
-          </Badge>
-        {/if}
+
       </div>
       {#if assetPlans[s.id]?.assets?.length}
         {@const plan = assetPlans[s.id]!}

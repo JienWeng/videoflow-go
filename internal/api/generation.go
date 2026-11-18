@@ -100,10 +100,10 @@ func (s *Server) imageURL(asset *models.Asset) (string, error) {
 func (s *Server) stylePrompt(projectID *string) string {
 	if projectID != nil {
 		if style, err := s.database.GetStyleGuide(*projectID); err == nil {
-			return style.StylePrompt + ". Palette: " + style.Palette + ". Lighting: " + style.Lighting
+			return styleDirection(style)
 		}
 	}
-	return "Consistent cinematic illustration"
+	return defaultStyleGuide("").StylePrompt
 }
 
 func (s *Server) generateAssets(ctx context.Context, projectID *string, characterID *string, sceneID, name, kind, prompt, aspect string, references []string) ([]models.Asset, error) {
@@ -138,7 +138,13 @@ func (s *Server) generateAssets(ctx context.Context, projectID *string, characte
 		modelKind = "reference"
 	}
 	if !strings.Contains(prompt, "Visual style:") {
-		prompt += "\nVisual style: " + s.stylePrompt(projectID)
+		direction := s.stylePrompt(projectID)
+		if sceneID != "" {
+			if scene, e := s.database.GetScene(sceneID); e == nil {
+				direction = s.sceneVisualStyle(scene)
+			}
+		}
+		prompt += "\nVisual style: " + direction
 	}
 	var images []providers.GeneratedImage
 	provider, model := "codex", "native-image-generation"

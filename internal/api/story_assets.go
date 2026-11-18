@@ -88,7 +88,7 @@ func (s *Server) materializeStoryAssets(ctx context.Context, scene *models.Scene
 			}
 		}
 		if asset == nil {
-			generated, err := s.generateAssets(guidedStoryContext(ctx, *scene.ProjectID, nil), scene.ProjectID, nil, "", item.Name, item.Type, productionAssetPrompt(item.Type, item.Description), "1:1", nil)
+			generated, err := s.generateAssets(guidedStoryContext(ctx, *scene.ProjectID, nil), scene.ProjectID, nil, "", item.Name, item.Type, productionAssetPrompt(item.Type, item.Description)+"\nVisual style: "+s.sceneVisualStyle(scene), "1:1", nil)
 			if err != nil {
 				return result, err
 			}

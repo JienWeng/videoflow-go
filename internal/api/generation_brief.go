@@ -38,12 +38,12 @@ type generationBrief struct {
 
 func (s *Server) effectiveStyle(projectID, choice string) (string, bool) {
 	if style, err := s.database.GetStyleGuide(projectID); err == nil && strings.TrimSpace(style.StylePrompt) != "" {
-		return style.StylePrompt + ". Palette: " + style.Palette + ". Lighting: " + style.Lighting, true
+		return styleDirection(style), true
 	}
 	if choice == "cinematic" {
 		return "cinematic composition and lighting", false
 	}
-	return "warm 2D children's picture-book illustration, clean shapes, expressive faces", false
+	return defaultStyleGuide(projectID).StylePrompt, false
 }
 func (s *Server) prepareBrief(project string, b *generationBrief) error {
 	if _, err := presets.StorytellingDirection(b.StorytellingID); err != nil {

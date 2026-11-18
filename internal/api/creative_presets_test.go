@@ -31,7 +31,7 @@ func TestCreativePresetPackLifecycle(t *testing.T) {
 	r := call(t, s, "GET", "/style-presets", "")
 	var catalog struct{ Presets []presets.Preset }
 	json.Unmarshal(r.Body.Bytes(), &catalog)
-	if len(catalog.Presets) != 12 {
+	if len(catalog.Presets) != 2*len(pack.Presets) {
 		t.Fatal(r.Body.String())
 	}
 	project, _ := s.database.GetActiveProjectID()

@@ -96,11 +96,11 @@
     <form onsubmit={(event) => { event.preventDefault(); void save(); }} class="space-y-4">
       <fieldset disabled={disabled || saving} class="min-w-0 space-y-4">
         <p class="text-sm"><span class="text-muted-foreground">Current look:</span> {form.name||'Custom project style'}{dirty?' · Unsaved changes':''}</p>
-        <StyleCards {presets} {selected} disabled={disabled||saving} onselect={preset=>{selected=preset.id;form={...form,name:preset.name,style_prompt:preset.style_prompt??''};message=''}}/>
+        <StyleCards {presets} {selected} disabled={disabled||saving} onselect={preset=>{selected=preset.id;form={...form,name:preset.name,style_prompt:preset.style_prompt??'',palette:'',lighting:''};message=''}}/>
         {#if preview}
           <div class="space-y-2 text-sm">
             <p class="max-w-prose text-muted-foreground">{preview.description}</p>
-            <p class="text-xs text-muted-foreground">Preset selection changes the name and visual prompt in this draft. Palette, lighting, audience and tone remain yours to edit.</p>
+            <p class="text-xs text-muted-foreground">Applying a preset starts a fresh palette and lighting. Add your own under Customize this look.</p>
             <details><summary class="cursor-pointer py-1 font-medium">Preview preset guidance</summary>
               <dl class="mt-2 grid gap-3 sm:grid-cols-2">{#each Object.entries(preview.guidance ?? {}) as [stage, guidance]}<div><dt class="font-medium capitalize">{stage}</dt><dd class="max-w-prose whitespace-pre-wrap break-words text-muted-foreground">{guidance}</dd></div>{/each}</dl>
               <p class="mt-3 text-xs text-muted-foreground">Stage guidance applies when choosing this preset in Create story. Project style saves the visual prompt and fields below.</p>

@@ -163,11 +163,7 @@ func (s *Server) generateStoryboards(ctx context.Context, scenes []models.Scene)
 		if err != nil {
 			return err
 		}
-		if profile, e := s.database.GetStyleGuide(*scene.ProjectID); e == nil && profile.StylePrompt != "" {
-			if brief.CreativePreset == nil {
-				brief.Style = s.stylePrompt(scene.ProjectID)
-			}
-		}
+		brief.Style = s.sceneVisualStyle(scene)
 		var snapshot map[string]any
 		if err = json.Unmarshal(scene.SceneJSON, &snapshot); err != nil {
 			return err

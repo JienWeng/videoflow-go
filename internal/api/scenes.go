@@ -233,7 +233,9 @@ func (s *Server) handleGenerateShots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.operation(w, r, &models.Op{Kind: "shots", SceneID: &sceneID, ProjectID: scene.ProjectID}, func(ctx context.Context) (any, error) {
-		drafts, err := s.agents.GenerateShots(sceneBrief(scene).context(ctx), scene.Title, scene.Summary+"\n"+sceneBrief(scene).prompt()+notes, scene.Duration)
+		brief := sceneBrief(scene)
+		brief.Style = s.sceneVisualStyle(scene)
+		drafts, err := s.agents.GenerateShots(brief.context(ctx), scene.Title, scene.Summary+"\n"+brief.prompt()+notes, scene.Duration)
 		if err != nil {
 			return nil, err
 		}

@@ -188,6 +188,7 @@ func (s *Server) setupRoutes() {
 	s.router.Post("/scenes", s.handleCreateScene)
 	s.router.Get("/scenes/{id}", s.handleGetScene)
 	s.router.Patch("/scenes/{id}", s.handleUpdateScene)
+	s.router.Put("/scenes/{id}/style", s.handleSceneStyle)
 	s.router.Delete("/scenes/{id}", s.handleDeleteScene)
 	s.router.Post("/scenes/{id}/generate", s.handleExpandScene)
 	s.router.Post("/scenes/{id}/refine", s.handleRefineScene)

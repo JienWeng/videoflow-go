@@ -89,8 +89,10 @@ func Builtins() Pack {
 		{"layered-paper-cut", "Layered paper-cut", "Cut-paper silhouettes, layered depth and a restrained palette.", "layered cut-paper illustration, crisp paper edges, visible paper fibers, shallow dimensional shadows, cohesive limited palette"},
 		{"graphic-novel", "Graphic novel", "Bold ink, deliberate color blocks and dramatic staging.", "graphic novel illustration, confident ink contours, controlled halftone, bold color blocks, dramatic readable silhouettes"},
 		{"soft-3d-animation", "Soft 3D animation", "Rounded forms, expressive acting and soft cinematic light.", "stylized soft 3D animation, appealing rounded forms, expressive faces, matte materials, soft cinematic lighting"},
+		{"live-action-documentary", "Live-action documentary", "Realistic subjects, natural light and observed detail.", "photorealistic live-action documentary photography, natural subject proportions, believable skin and fabric texture, practical light sources, restrained color grading, physically accurate architecture and materials"},
+		{"live-action-drama", "Live-action drama", "Photorealistic performances with expressive lighting and grounded production design.", "photorealistic live-action dramatic film, natural anatomy and restrained expressions, practical locations and wardrobe, motivated directional lighting, deliberate contrast and realistic shadow detail"},
 	}
-	motions := []string{"Gentle illustrated movement; preserve drawn contours and facial proportions.", "Motivated camera moves, believable physical motion and consistent screen direction.", "Measured pose-to-pose stop-motion movement; preserve clay textures and miniature scale; avoid liquid morphing.", "Restrained layered parallax and hinged paper movement; keep edges rigid and silhouettes readable.", "Strong held poses, restrained graphic motion and deliberate camera framing; avoid flickering ink or text overlays.", "Clear anticipation and follow-through, expressive restrained acting; preserve volume and character proportions."}
+	motions := []string{"Gentle illustrated movement; preserve drawn contours and facial proportions.", "Motivated camera moves, believable physical motion and consistent screen direction.", "Measured pose-to-pose stop-motion movement; preserve clay textures and miniature scale; avoid liquid morphing.", "Restrained layered parallax and hinged paper movement; keep edges rigid and silhouettes readable.", "Strong held poses, restrained graphic motion and deliberate camera framing; avoid flickering ink or text overlays.", "Clear anticipation and follow-through, expressive restrained acting; preserve volume and character proportions.", "Use observational camera movement, natural exposure and physically believable motion.", "Motivate movement and contrast through the action; preserve realistic performance, materials and shadows."}
 	for i, r := range rows {
 		p.Presets = append(p.Presets, Preset{ID: r[0], Name: r[1], Description: r[2], Style: r[3], Guidance: Guidance{
 			Story: "Keep the requested premise, cast and language. Use clear emotional beats and concise dialogue. Plan only the requested scene count; do not add unrelated characters or events.",
@@ -106,6 +108,10 @@ func Builtins() Pack {
 		{"Use concise dramatic beats and dialogue that does not require text baked into images.", "Stage a single decisive panel-like moment per shot with strong visual hierarchy."},
 		{"Favor expressive character acting with clear anticipation and emotional changes.", "Use readable poses, appealing three-quarter views and uncluttered compositions."},
 	}
+	tips = append(tips,
+		[2]string{"Keep explanations grounded in observable details.", "Favor establishing views, practical details and readable cutaways."},
+		[2]string{"Express tension through behavior and meaningful reactions.", "Use motivated framing and natural eyelines; let decisive performance beats breathe."},
+	)
 	for i := range p.Presets {
 		p.Presets[i].Guidance.Story += " " + tips[i][0]
 		p.Presets[i].Guidance.Shots += " " + tips[i][1]
