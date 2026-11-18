@@ -214,6 +214,17 @@ func TestNativeImageVirtualPathResolvesOnlyFreshContainedRaster(t *testing.T) {
 
 func TestConfiguredOpenAIImageFallbackRoutes(t *testing.T) {
 	s := routerServer(t, nil)
+	s.cfg.UseLocalText = true
+	project, err := s.database.GetActiveProjectID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.database.CreateDirectorSession(project, "claude", "Claude image routing"); err != nil {
+		t.Fatal(err)
+	}
+	if _, fallback, _, err := s.codexImage(context.Background(), "character portrait", "1:1", nil); err != nil || !fallback {
+		t.Fatalf("Claude session should use the configured image API: fallback=%v err=%v", fallback, err)
+	}
 	video, videoModel := s.routes().MediaSelection("video")
 	response := call(t, s, "PUT", "/settings/providers/openai", `{"api_key":"fixture-openai"}`)
 	if response.Code != 200 {

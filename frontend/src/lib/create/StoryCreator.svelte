@@ -70,6 +70,9 @@
     renderPoller = null;
   }
 
+  let readingJobs = false;
+  let readingOperation = false;
+
   async function checkRenderJobs() {
     if(['awaiting_reference_review','awaiting_character_review','ready_to_render'].includes(lastResult?.status)){busy=false;opStatus=lastResult.status;stopRenderPolling();await refreshReviewAssets();return}
     const ids: string[] = lastResult?.render_job_ids ?? [];
@@ -79,6 +82,8 @@
       stopRenderPolling();
       return;
     }
+    if (readingJobs) return;
+    readingJobs = true;
     try {
       const jobs = await Promise.all(ids.map((id) => get(`/render-jobs/${id}`)));
       opError = '';
@@ -96,12 +101,15 @@
         opStatus = 'rendering';
       }
     } catch (e: any) {
-      opError = `Connection interrupted. Checking render status again… (${e.message})`;
+      opError = 'Reconnecting to check render status…';
+    } finally {
+      readingJobs = false;
     }
   }
 
   async function checkOperation() {
-    if (!opId) return;
+    if (!opId || readingOperation) return;
+    readingOperation = true;
     try {
       const op = await get(`/ops/${opId}`);
       opError = '';
@@ -124,7 +132,9 @@
       }
     } catch (e: any) {
       // Keep the last known state while the interval retries after reconnect.
-      opError = `Connection interrupted. The operation is still running; reconnecting… (${e.message})`;
+      opError = 'Reconnecting to check story progress…';
+    } finally {
+      readingOperation = false;
     }
   }
 
@@ -294,14 +304,14 @@
 
       <div class="rounded-lg border border-border bg-card p-4 text-sm">
         <h2 class="font-medium">Generation setup</h2>
-        <p class="mt-2 text-muted-foreground">Uses the confirmed creative brief above. Existing cast: {selectedCharacters.length}. {createCharacters?'Missing story characters can be created automatically.':'Use the selected existing cast.'}</p>
+
         {#if preflightError}
           <p class="mt-2 text-destructive">Could not check provider setup: {preflightError}</p>
+          <button type="button" class="underline" onclick={() => loadPreflight(aspectRatio, style)}>Check again</button>
         {:else if !preflight}
           <p class="mt-2 text-muted-foreground">Checking configured models and supported video settings…</p>
         {:else}
-          <p class="mt-2 text-muted-foreground">{#if preflight?.character_references===false}This request creates a story, shots and storyboard images. Images are prepared automatically; render each scene when ready.{:else}This request creates a story, shots and any missing character, prop and location reference images. Reference and storyboard images are prepared automatically. Render each clip when ready.{/if}</p>
-          {#if preflight.native_images}<p class="mt-2 text-muted-foreground">Images use Codex first. The configured image API is used only when native generation is unavailable or the request is unsupported. Native errors pause for review.</p>{/if}
+          <p class="mt-2 text-muted-foreground">{#if preflight.native_images}Codex creates the images, with {preflight.effective_routes.image_provider} selected for fallback.{:else}Your writing session plans the story. {preflight.effective_routes.image_provider} handles image generation.{/if} Render each scene when ready.</p>
           <details class="mt-3">
             <summary class="cursor-pointer font-medium">Models &amp; clip limits</summary>
             <p class="mt-2 break-words text-muted-foreground">Images: {#if preflight.native_images}Codex built-in · API fallback: {/if}{preflight.effective_routes.image_provider} / {preflight.effective_routes.image_model}. Video: {preflight.effective_routes.video_provider} / {preflight.effective_routes.video_model}.</p>
@@ -317,7 +327,7 @@
               {/each}
             </ul>
           {:else}
-            <p class="mt-2 text-emerald-700 dark:text-emerald-300">Configured routes and selected format are ready. This check does not contact providers.</p>
+            <p class="mt-2 text-emerald-700 dark:text-emerald-300">Configuration checked. Provider sign-in and quota are checked during generation.</p>
           {/if}
         {/if}
       </div>
