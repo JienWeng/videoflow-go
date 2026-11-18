@@ -98,7 +98,7 @@ func TestCompositionPublicSourceRenderIntegration(t *testing.T) {
 	if e = s.database.SaveLocalOutput(job, out); e != nil {
 		t.Fatal(e)
 	}
-	body := fmt.Sprintf(`{"version":1,"width":640,"height":360,"fps":24,"duration":2,"clips":[{"id":"source","asset_id":%q,"start":0,"trim":0,"duration":2,"speed":1}],"audio":[],"captions":[{"id":"cue-1","utterance_id":"line-1","start":0.2,"end":1.5,"text":"Approved script"}]}`, "output-"+out.ID)
+	body := fmt.Sprintf(`{"version":1,"width":640,"height":360,"fps":24,"duration":2,"clips":[{"id":"source","asset_id":%q,"start":0,"trim":0,"duration":2,"speed":1}],"audio":[],"captions":[{"id":"cue-1","utterance_id":"line-1","start":0.2,"end":1.5,"text":"Approved script"}],"texts":[{"id":"title-card","text":"Pawprints to Mama","start":0,"end":2,"size":48,"color":"#FFFFFF","background":"#112233","font":"serif","position":"center"}]}`, "output-"+out.ID)
 	saved := call(t, s, "POST", "/compositions", body)
 	if saved.Code != 201 {
 		t.Fatal(saved.Code, saved.Body.String())

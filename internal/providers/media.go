@@ -112,6 +112,7 @@ func mediaCatalog(provider, modality string) []Model {
 		add(FalImageModel+"/edit", "image", false)
 		add(FalVideoModel, "video", true)
 		add("bytedance/seedance-2.0/fast/text-to-video", "video", false)
+		add(FalNativeVoiceModel, "video", false)
 	case "byteplus":
 		add(BytePlusVideoModel, "video", true)
 	}
@@ -181,6 +182,9 @@ func validateMediaVideo(provider string, ctx context.Context, p map[string]any) 
 		return err
 	}
 	for key := range p {
+		if provider == "fal" && id == FalNativeVoiceModel && (key == "image_urls" || key == "video_urls" || key == "audio_urls") {
+			continue
+		}
 		switch key {
 		case "model", "prompt", "duration", "aspect_ratio", "resolution", "generate_audio", "seed", "frame_images":
 		default:
@@ -190,6 +194,39 @@ func validateMediaVideo(provider string, ctx context.Context, p map[string]any) 
 	frames, err := videoFrames(p)
 	if err != nil {
 		return err
+	}
+	if provider == "fal" && id == FalNativeVoiceModel {
+		count := func(key string) (int, error) {
+			if p[key] == nil {
+				return 0, nil
+			}
+			data, _ := json.Marshal(p[key])
+			var urls []string
+			if json.Unmarshal(data, &urls) != nil {
+				return 0, fmt.Errorf("invalid %s", key)
+			}
+			for _, u := range urls {
+				if strings.TrimSpace(u) == "" {
+					return 0, fmt.Errorf("empty reference")
+				}
+			}
+			return len(urls), nil
+		}
+		i, e := count("image_urls")
+		if e != nil {
+			return e
+		}
+		v, e := count("video_urls")
+		if e != nil {
+			return e
+		}
+		a, e := count("audio_urls")
+		if e != nil {
+			return e
+		}
+		if len(frames) > 0 || i+v < 1 || i > 9 || v > 3 || a > 3 || i+v+a > 12 {
+			return fmt.Errorf("reference mode needs an image/video, at most 9 images, 3 videos, 3 audio files and 12 total; strict frames are separate")
+		}
 	}
 	first := false
 	for _, f := range frames {

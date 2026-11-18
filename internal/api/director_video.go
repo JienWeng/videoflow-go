@@ -10,6 +10,7 @@ import (
 	"strings"
 	"videoflow-go/internal/db"
 	"videoflow-go/internal/models"
+	"videoflow-go/internal/providers"
 )
 
 func (s *Server) directorGenerationContext(ctx context.Context, project *string, sceneID string, character *string) (context.Context, *directorContext, error) {
@@ -102,6 +103,15 @@ func (s *Server) freezeDirectorVideo(ctx context.Context, job *models.RenderJob)
 		}
 	}
 	var keyframe *models.Asset
+	if job.Provider == "fal" && job.Model == providers.FalNativeVoiceModel {
+		if payload["frame_images"] != nil {
+			return fmt.Errorf("strict frames cannot be combined with reference mode")
+		}
+		payload["director_context"] = snapshot
+		payload["prompt"] = stringPrompt(payload["prompt"]) + "\nPreserve captured identities: " + string(voiceJSON(snapshot))
+		job.RequestJSON = voiceJSON(payload)
+		return s.applyDirectorVoicePolicy(bound, job)
+	}
 	unreviewed := false
 	hasSceneBoards := false
 	sceneRevision := ""

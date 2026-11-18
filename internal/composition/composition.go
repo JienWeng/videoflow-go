@@ -20,6 +20,8 @@ const SourceCommit = "e596be16c901639ce6c18032e56924a9d8e1967d"
 var safeID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 
 type Manifest struct {
+	CaptionVariants []CaptionVariant `json:"caption_variants,omitempty"`
+	Texts           []TextLayer      `json:"texts,omitempty"`
 	CaptionBindings []CaptionBinding `json:"caption_bindings,omitempty"`
 	CaptionStyle    string           `json:"caption_style"`
 	Renderer        string           `json:"renderer"`
@@ -33,6 +35,39 @@ type Manifest struct {
 	Captions        []Cue            `json:"captions"`
 	Revision        string           `json:"revision,omitempty"`
 }
+type CaptionVariant struct {
+	Language string           `json:"language"`
+	Captions []Cue            `json:"captions"`
+	Bindings []CaptionBinding `json:"bindings,omitempty"`
+}
+type TextLayer struct {
+	ID         string  `json:"id"`
+	Text       string  `json:"text"`
+	Start      float64 `json:"start"`
+	End        float64 `json:"end"`
+	Size       int     `json:"size"`
+	Color      string  `json:"color"`
+	Background string  `json:"background"`
+	Font       string  `json:"font"`
+	Position   string  `json:"position"`
+}
+
+var HexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+func (t TextLayer) Valid(duration float64) bool {
+	return ValidID(t.ID) && strings.TrimSpace(t.Text) != "" && len(t.Text) <= 2000 && t.Start >= 0 && t.End > t.Start && t.End <= duration && t.Size >= 12 && t.Size <= 160 && HexColor.MatchString(t.Color) && (t.Background == "transparent" || HexColor.MatchString(t.Background)) && (t.Font == "sans-serif" || t.Font == "serif" || t.Font == "monospace") && (t.Position == "top" || t.Position == "center" || t.Position == "bottom")
+}
+func (t TextLayer) CSS() string {
+	top := "50%"
+	if t.Position == "top" {
+		top = "15%"
+	}
+	if t.Position == "bottom" {
+		top = "80%"
+	}
+	return fmt.Sprintf("position:absolute;left:5%%;width:90%%;top:%s;transform:translateY(-50%%);text-align:center;white-space:pre-wrap;color:%s;background:%s;font:%dpx %s", top, t.Color, t.Background, t.Size, t.Font)
+}
+
 type Adjustments struct {
 	Fit        string  `json:"fit"`
 	Scale      float64 `json:"scale"`
@@ -52,6 +87,7 @@ func (a Adjustments) CSS() string {
 }
 
 type Clip struct {
+	Overlay          *OverlayBox  `json:"overlay,omitempty"`
 	Volume           *float64     `json:"volume,omitempty"`
 	FadeIn           float64      `json:"fade_in,omitempty"`
 	FadeOut          float64      `json:"fade_out,omitempty"`
@@ -70,6 +106,20 @@ type Clip struct {
 	Width            int          `json:"width"`
 	Height           int          `json:"height"`
 }
+type OverlayBox struct {
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
+}
+
+func (b OverlayBox) Valid() bool {
+	return b.X >= 0 && b.Y >= 0 && b.Width > 0 && b.Height > 0 && b.X+b.Width <= 100 && b.Y+b.Height <= 100
+}
+func (b OverlayBox) CSS() string {
+	return fmt.Sprintf("left:%g%%;top:%g%%;right:auto;bottom:auto;width:%g%%;height:%g%%", b.X, b.Y, b.Width, b.Height)
+}
+
 type CaptionBinding struct {
 	ClipID         string          `json:"clip_id"`
 	OutputID       string          `json:"output_id"`
@@ -131,6 +181,9 @@ func Save(root, project string, m Manifest, sources map[string]string) (string, 
 			if c.Adjustments != nil && !c.Adjustments.Valid() {
 				return fmt.Errorf("invalid framing or color adjustment")
 			}
+			if c.Overlay != nil && !c.Overlay.Valid() {
+				return fmt.Errorf("invalid overlay placement")
+			}
 			seen[c.ID] = true
 			if c.OriginalDuration == 0 {
 				c.OriginalDuration = c.Duration
@@ -178,6 +231,27 @@ func Save(root, project string, m Manifest, sources map[string]string) (string, 
 			return "", fmt.Errorf("captions require unique IDs and explicit valid timings")
 		}
 		seen[c.ID] = true
+	}
+	for _, t := range m.Texts {
+		if !t.Valid(m.Duration) || seen[t.ID] {
+			return "", fmt.Errorf("invalid text layer")
+		}
+		seen[t.ID] = true
+	}
+	if len(m.CaptionVariants) > 30 {
+		return "", fmt.Errorf("too many caption variants")
+	}
+	for _, variant := range m.CaptionVariants {
+		if strings.TrimSpace(variant.Language) == "" || len(variant.Language) > 80 || len(variant.Captions) > 500 {
+			return "", fmt.Errorf("invalid caption variant")
+		}
+		ids := map[string]bool{}
+		for _, cue := range variant.Captions {
+			if !ValidID(cue.ID) || ids[cue.ID] || !(cue.Start >= 0 && cue.End > cue.Start && cue.End <= m.Duration) || strings.TrimSpace(cue.Text) == "" {
+				return "", fmt.Errorf("invalid translated caption timings")
+			}
+			ids[cue.ID] = true
+		}
 	}
 	m.Renderer = "videoflow-hyperframes-v1:" + SourceCommit
 	m.Revision = ""
@@ -238,11 +312,19 @@ func Document(m Manifest) string {
 			if c.Adjustments != nil && c.Adjustments.Valid() {
 				style = ` style="` + c.Adjustments.CSS() + `"`
 			}
+			if c.Overlay != nil && c.Overlay.Valid() {
+				style = ` style="` + c.Overlay.CSS() + `;` + strings.TrimSuffix(strings.TrimPrefix(style, ` style="`), `"`) + `"`
+			}
 			fmt.Fprintf(&b, `<%s id="%s" class="clip"%s src="%s" data-start="%g" data-duration="%g" data-media-start="%g" %s></%s>`, tag, c.ID, style, c.Path, c.Start, c.Duration, c.Trim, audioAttribute, tag)
 		}
 	}
 	for _, c := range m.Captions {
 		fmt.Fprintf(&b, `<div id="%s" class="clip caption" data-start="%g" data-duration="%g">%s</div>`, c.ID, c.Start, c.End-c.Start, html.EscapeString(c.Text))
+	}
+	for _, t := range m.Texts {
+		if t.Valid(m.Duration) {
+			fmt.Fprintf(&b, `<div id="%s" style="%s" data-start="%g" data-duration="%g">%s</div>`, t.ID, t.CSS(), t.Start, t.End-t.Start, html.EscapeString(t.Text))
+		}
 	}
 	b.WriteString("</div></body></html>")
 	return b.String()
