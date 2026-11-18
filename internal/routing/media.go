@@ -13,6 +13,8 @@ func ValidProviderURL(provider, raw string) bool {
 	switch provider {
 	case "openrouter":
 		return ValidBaseURL(raw)
+	case "openai":
+		return strings.TrimRight(raw, "/") == providers.OpenAIURL
 	case "elevenlabs":
 		return strings.TrimRight(raw, "/") == providers.ElevenURL
 	case "fish":
@@ -26,6 +28,17 @@ func ValidProviderURL(provider, raw string) bool {
 }
 func (r Resolver) mediaCredentials(name string) (key, endpoint string, fromDB bool, err error) {
 	switch name {
+	case "openai":
+		key = r.Config.OpenAIAPIKey
+		endpoint = strings.TrimRight(r.Config.OpenAIBaseURL, "/")
+		if endpoint == "" {
+			endpoint = providers.OpenAIURL
+		}
+		u, e := url.Parse(endpoint)
+		if e != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+			return "", "", false, fmt.Errorf("OPENAI_BASE_URL must be an HTTPS API base URL")
+		}
+
 	case "elevenlabs":
 		key = r.Config.ElevenAPIKey
 		endpoint = r.Config.ElevenBaseURL
@@ -61,7 +74,9 @@ func (r Resolver) mediaCredentials(name string) (key, endpoint string, fromDB bo
 		if !ValidProviderURL(name, *base) {
 			return "", "", false, fmt.Errorf("invalid %s API endpoint", name)
 		}
-		endpoint = *base
+		if name != "openai" || r.Config.OpenAIBaseURL == "" {
+			endpoint = *base
+		}
 	}
 	if found && stored != "" {
 		key = stored
@@ -91,6 +106,11 @@ func (r Resolver) MediaSelections() (map[string]MediaChoice, error) {
 		return fallback
 	}
 	selections := map[string]MediaChoice{}
+	storedOpenAI, _, _, err := r.DB.GetProviderSecret("openai")
+	if err != nil {
+		return nil, err
+	}
+	openAIConfigured := r.Config.OpenAIAPIKey != "" || storedOpenAI != ""
 	for _, kind := range []string{"image", "reference", "video"} {
 		providerKey := "default_image_provider"
 		modelKey := "image_model"
@@ -99,6 +119,10 @@ func (r Resolver) MediaSelections() (map[string]MediaChoice, error) {
 			modelKey = "video_model"
 		} else if kind == "reference" {
 			modelKey = "ref_image_model"
+		}
+		if kind != "video" && openAIConfigured {
+			selections[kind] = MediaChoice{"openai", r.DefaultMediaModel("openai", kind)}
+			continue
 		}
 		provider := setting(providerKey, "fal")
 		selections[kind] = MediaChoice{provider, setting(modelKey, r.DefaultMediaModel(provider, kind))}
@@ -115,6 +139,11 @@ func (r Resolver) MediaSelection(kind string) (provider, model string) {
 }
 func (r Resolver) DefaultMediaModel(provider, kind string) string {
 	switch provider {
+	case "openai":
+		if r.Config.OpenAIImageModel != "" {
+			return r.Config.OpenAIImageModel
+		}
+		return providers.OpenAIImageModel
 	case "fal":
 		if kind == "video" {
 			return providers.FalVideoModel
@@ -150,6 +179,8 @@ func (r Resolver) Media(provider, model, endpoint string) (providers.MediaClient
 		return nil, "", fmt.Errorf("invalid provider endpoint")
 	}
 	switch provider {
+	case "openai":
+		return providers.NewOpenAIImages(key, endpoint, model), endpoint, nil
 	case "fal":
 		return providers.NewFalClientAt(key, endpoint, model), endpoint, nil
 	case "byteplus":

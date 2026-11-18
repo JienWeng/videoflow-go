@@ -9,6 +9,8 @@ import (
 
 func (s *Server) mediaCatalogClient(provider, model string) (providers.MediaClient, error) {
 	switch provider {
+	case "openai":
+		return providers.NewOpenAIImages("", providers.OpenAIURL, s.routes().DefaultMediaModel("openai", "image")), nil
 	case "fal":
 		return providers.NewFalClientAt("", providers.FalURL, model), nil
 	case "byteplus":

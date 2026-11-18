@@ -4,6 +4,10 @@ services:
       context: .
       dockerfile: deploy/Dockerfile.backend
     environment:
+      VIDEOFLOW_DISABLE_CODEX_IMAGES: ${VIDEOFLOW_DISABLE_CODEX_IMAGES:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_IMAGE_MODEL: ${OPENAI_IMAGE_MODEL:-}
       FISH_API_KEY: ${FISH_API_KEY:-}
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
     volumes:

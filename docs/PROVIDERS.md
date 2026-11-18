@@ -62,3 +62,23 @@ Known advanced-API limitation: omit `seed` for the current BytePlus Seedance 2.0
 ## Current connected video/audio flow
 
 See [Connected video workflow](CONNECTED-VIDEO-WORKFLOW.md). On supported models, scene render plans default to native audio, with optional music direction; saved-voice and silent modes remain explicit. Saved voices are only prerequisites for saved-voice mode. The worker preserves the selected mode and the local unit/plan metadata, and strips local metadata before contacting providers. Automatic grouping minimizes calls and generated seconds, and matching planned clips are reused. The composition editor preserves clip audio and applies uploaded/library music gain/fades to both preview and local export. Existing silent videos do not acquire native sound by changing a setting.
+
+### Direct OpenAI image fallback
+
+Save a key under **Settings → AI connections → OpenAI Images**, or provide
+`OPENAI_API_KEY` to the backend. The configured OpenAI route takes precedence
+over the regular image provider when native Codex images are unavailable or the
+inputs are known to be incompatible. It handles both prompt-only generations
+and reference-conditioned edits, including character sheets and storyboards.
+
+The backend uses `https://api.openai.com/v1` and `gpt-image-2` by default.
+An operator can set `OPENAI_BASE_URL` to a trusted HTTPS base URL including its
+API version path, and `OPENAI_IMAGE_MODEL` to a GPT Image model supporting the
+requested dimensions. Configure these values in the Compose environment and
+recreate the backend. Set `VIDEOFLOW_DISABLE_CODEX_IMAGES=1` if the selected
+Codex installation cannot run its native image tool. Text planning still uses
+the selected local session.
+
+An uncertain or failed native generation stops for review to avoid a second
+image call. OpenAI API usage can incur charges. Settings checks configuration
+without generating an image.

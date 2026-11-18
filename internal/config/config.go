@@ -6,6 +6,10 @@ import (
 )
 
 type Config struct {
+	DisableCodexImages    bool
+	OpenAIAPIKey          string
+	OpenAIBaseURL         string
+	OpenAIImageModel      string
 	UseLocalText          bool
 	CodexExecutable       string
 	ClaudeExecutable      string
@@ -33,6 +37,8 @@ type Config struct {
 
 func Load() *Config {
 	cfg := &Config{
+		DisableCodexImages: os.Getenv("VIDEOFLOW_DISABLE_CODEX_IMAGES") == "1",
+		OpenAIAPIKey:       os.Getenv("OPENAI_API_KEY"), OpenAIBaseURL: os.Getenv("OPENAI_BASE_URL"), OpenAIImageModel: os.Getenv("OPENAI_IMAGE_MODEL"),
 		UseLocalText: true, CodexExecutable: os.Getenv("VIDEOFLOW_CODEX_BIN"), ClaudeExecutable: os.Getenv("VIDEOFLOW_CLAUDE_BIN"),
 		ElevenAPIKey: os.Getenv("ELEVENLABS_API_KEY"), ElevenBaseURL: "https://api.elevenlabs.io",
 		FishAPIKey: os.Getenv("FISH_API_KEY"), FishBaseURL: "https://api.fish.audio",

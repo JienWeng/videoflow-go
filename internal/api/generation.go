@@ -173,16 +173,18 @@ func (s *Server) generateAssets(ctx context.Context, projectID *string, characte
 		if err = client.ValidateImage(ctx, payload); err != nil {
 			return nil, err
 		}
-		var prepared struct {
-			Prompt string `json:"prompt"`
+		if provider != "openai" {
+			var prepared struct {
+				Prompt string `json:"prompt"`
+			}
+			if err = s.agentJSON(ctx, "prompt_agent", "Write a precise image-generation prompt from the brief. Preserve the characters, reference consistency, composition and visual style. Return prompt only as JSON.", prompt, nil, &prepared); err != nil {
+				return nil, err
+			}
+			if strings.TrimSpace(prepared.Prompt) == "" {
+				return nil, fmt.Errorf("Text provider returned no image prompt")
+			}
+			payload["prompt"] = prepared.Prompt + identityNotes
 		}
-		if err = s.agentJSON(ctx, "prompt_agent", "Write a precise image-generation prompt from the brief. Preserve the characters, reference consistency, composition and visual style. Return prompt only as JSON.", prompt, nil, &prepared); err != nil {
-			return nil, err
-		}
-		if strings.TrimSpace(prepared.Prompt) == "" {
-			return nil, fmt.Errorf("Text provider returned no image prompt")
-		}
-		payload["prompt"] = prepared.Prompt + identityNotes
 		images, err = client.GenerateImages(ctx, payload)
 		if err != nil {
 			return nil, err

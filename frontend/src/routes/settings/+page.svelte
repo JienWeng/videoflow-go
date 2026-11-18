@@ -164,7 +164,7 @@ media_model_preferences:Record<string,Record<string,string>>;
   function chooseSection(value:string){tab=value;replaceState('#'+value,page.state);}
 
   // ------------------------------------------------------------- labels
-  const providerLabels: Record<string, string> = { elevenlabs:'ElevenLabs',fish:'Fish Audio',fal:'fal.ai',byteplus:'BytePlus ModelArk',openrouter:'OpenRouter' };
+  const providerLabels: Record<string, string> = { openai:'OpenAI Images',elevenlabs:'ElevenLabs',fish:'Fish Audio',fal:'fal.ai',byteplus:'BytePlus ModelArk',openrouter:'OpenRouter' };
   const FALLBACK_PRESETS: Record<string, ProviderPreset> = {
     openrouter: { label: 'OpenRouter', protocol: 'chat', url: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini', preset: 'openrouter', mode: 'auto', vision: true }
   };
@@ -430,7 +430,7 @@ media_model_preferences:Record<string,Record<string,string>>;
       // stored key untouched (so saving a base_url alone keeps the key).
       const k = provKeyInput[name] ?? '';
       if (k.trim()) body.api_key = k.trim();
-      body.base_url = (provUrlInput[name] ?? '').trim();
+      if (name !== 'openai') body.base_url = (provUrlInput[name] ?? '').trim();
       const updated: ProviderConfig = await put(providerEndpoint(name), body);
       provCfg[name] = updated;
       provKeyInput[name] = '';
@@ -440,6 +440,7 @@ media_model_preferences:Record<string,Record<string,string>>;
         p.name === name ? { ...p, configured: updated.configured, from_db: updated.from_db } : p
       );
       provTest[name] = undefined;
+      if (name === 'openai') await refresh();
       toast.success(`${providerLabels[name] ?? name} saved`);
     } catch (e: any) {
       toast.error(e.message);
@@ -459,6 +460,7 @@ media_model_preferences:Record<string,Record<string,string>>;
       );
       provTest[name] = undefined;
       confirmClear = '';
+      if (name === 'openai') await refresh();
       toast.success(`${providerLabels[name] ?? name} key cleared`);
     } catch (e: any) {
       toast.error(e.message);
@@ -727,7 +729,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
 
                 <p class="settings-help mt-2" role="status">{providerDirty(p.name) ? 'Unsaved credential changes' : 'No unsaved credential changes'}</p>
                 <div class="mt-2 flex flex-wrap items-center gap-2">
-                  {#if p.protocol === 'speech'}<p class="settings-help">Choose a saved voice and a current speech model in <a class="underline" href="/voices">Voice & dialogue</a>. Configuration checks do not generate speech.</p>{:else}
+                  {#if p.name === 'openai'}<p class="settings-help">Used for images when native Codex image generation is unavailable.</p>{:else if p.protocol === 'speech'}<p class="settings-help">Choose a saved voice and a current speech model in <a class="underline" href="/voices">Voice & dialogue</a>. Configuration checks do not generate speech.</p>{:else}
                   {#if providerModelInput[p.name]}
                     <Input
                       class="max-w-64"
@@ -891,7 +893,9 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                     <div class="settings-help">{eng.hint}</div>
                   </div>
                   <div class="flex items-center gap-2">
-                    {#if engineCustomOpen[eng.key]}
+                    {#if app.default_image_provider === 'openai' && (eng.key === 'image_model' || eng.key === 'ref_image_model')}
+                      <span class="text-sm">{cur}</span>
+                    {:else if engineCustomOpen[eng.key]}
                       <Input
                         class="h-8 w-64 text-sm"
                         placeholder="Custom model id"
@@ -947,8 +951,11 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
               <div class="flex flex-wrap items-center gap-3">
                 <div class="min-w-[180px] flex-1">
                   <div class="settings-label">Image provider</div>
-                  <div class="settings-help">Used for storyboard keyframes.</div>
+                  <div class="settings-help">Used when native Codex image generation is unavailable.</div>
                 </div>
+                {#if app.default_image_provider === 'openai'}
+                  <span class="text-sm">OpenAI Images</span>
+                {:else}
                 <select
                   aria-label="Image provider"
                   class="w-64 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
@@ -959,6 +966,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
 
                   <option value="fal">fal.ai</option><option value="openrouter">OpenRouter</option>
                 </select>
+                {/if}
               </div>
 
               <Separator />

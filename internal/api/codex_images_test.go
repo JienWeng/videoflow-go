@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"videoflow-go/internal/providers"
 )
 
 func TestNativeCodexImageSavesAssetWithoutImageAPI(t *testing.T) {
@@ -208,5 +209,23 @@ func TestNativeImageVirtualPathResolvesOnlyFreshContainedRaster(t *testing.T) {
 	}
 	if _, err := readNativeImage(root, "/generated_images/turn/link.png", map[string]bool{}); err == nil {
 		t.Fatal("symlink accepted")
+	}
+}
+
+func TestConfiguredOpenAIImageFallbackRoutes(t *testing.T) {
+	s := routerServer(t, nil)
+	video, videoModel := s.routes().MediaSelection("video")
+	response := call(t, s, "PUT", "/settings/providers/openai", `{"api_key":"fixture-openai"}`)
+	if response.Code != 200 {
+		t.Fatalf("saving OpenAI key: %d %s", response.Code, response.Body.String())
+	}
+	for _, kind := range []string{"image", "reference"} {
+		_, provider, model, err := s.selectedMedia(context.Background(), kind)
+		if err != nil || provider != "openai" || model != providers.OpenAIImageModel {
+			t.Fatalf("%s route: %s %s %v", kind, provider, model, err)
+		}
+	}
+	if p, m := s.routes().MediaSelection("video"); p != video || m != videoModel {
+		t.Fatal("image credentials changed video route")
 	}
 }

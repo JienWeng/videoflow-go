@@ -22,7 +22,7 @@ import (
 )
 
 func (s *Server) preferCodexImages(ctx context.Context) bool {
-	if !s.cfg.UseLocalText {
+	if !s.cfg.UseLocalText || s.cfg.DisableCodexImages {
 		return false
 	}
 	session, err := s.directorSession(ctx)

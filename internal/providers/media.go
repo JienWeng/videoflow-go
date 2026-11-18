@@ -49,12 +49,16 @@ func (c *mediaHTTP) request(ctx context.Context, method, path string, payload an
 		}
 		body = bytes.NewReader(data)
 	}
+	return c.requestBody(ctx, method, path, "application/json", body)
+}
+
+func (c *mediaHTTP) requestBody(ctx context.Context, method, path, contentType string, body io.Reader) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.base+path, body)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Authorization", c.auth+c.key)
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", contentType)
 	res, err := c.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("%s request failed: %w", c.provider, err)
