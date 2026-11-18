@@ -186,7 +186,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		case "character":
 			intent["character_id"] = body.Selected.ID
 		case "scene":
-			if action == "refine_scene" || action == "render_scene" || action == "storyboard" || action == "generate_shots" || action == "delete_scene" {
+			if action == "refine_scene" || action == "render_scene" || action == "audit_storyboard" || action == "storyboard" || action == "generate_shots" || action == "delete_scene" {
 				intent["scene_id"] = body.Selected.ID
 			}
 		case "shot":
@@ -251,7 +251,7 @@ func canonicalChatAction(action string) string {
 	switch action {
 	case "create_script", "add_scene":
 		return "generate_script"
-	case "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "storyboard", "render_scene", "render_shot", "caption", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
+	case "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "caption", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
 		return action
 	default:
 		return "unknown"

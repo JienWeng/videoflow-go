@@ -460,6 +460,12 @@
   async function attachOpResults(m: Msg | undefined, ctx: RunContext, result: any) {
     if (!m) return;
     const rj = result?.result_json ?? {};
+    if(ctx.action==='audit_storyboard'){
+      const labels:Record<string,string>={matched:'Storyboard matches the scene.',needs_repair:'Storyboard needs repair.',repaired:'Replacement checked and linked to the scene.',needs_attention:'Replacement still needs work. The previous scene link was kept.'};
+      m.text=[labels[rj.status],rj.evidence].filter(Boolean).join(' ');
+      if(rj.asset_id){m.thumbs=await assetThumbs([rj.asset_id]);m.chips=[{label:'View image',href:'/library?tab=media&asset_id='+encodeURIComponent(rj.asset_id)}]}
+      return;
+    }
     if(ctx.action==='generate_script'){
       m.storyOperationId=result.id??m.storyOperationId;
       m.storyStage=rj.status;m.castIds=rj.cast_character_ids??[];m.referenceIds=rj.story_asset_ids??[];
@@ -839,7 +845,7 @@
           <h3 class="text-lg font-semibold">{editing?'Shape your edit':selected?`Let’s work on ${selected.label}`:'Start with an idea'}</h3>
           <p class="text-sm leading-relaxed text-muted-foreground">{editing?'Select a clip, describe a change, then apply the proposal.':selected?'Describe a change. You’ll review it before it runs.':'What story would you like to tell?'}</p>
           <div class="flex flex-wrap gap-2" aria-label="Conversation starters">
-            {#each (editing?[{title:'Tighten the opening',prompt:'Shorten the opening while keeping the story clear.'},{title:'Balance the music',prompt:'Set the background music to a quiet level below dialogue.'}]:selected?[{title:'Suggest improvements',prompt:`Review ${selected.label} and suggest improvements. Do not run changes yet.`}]:[{title:'Build a story',prompt:'Help me plan a story about '},{title:'Plan the storyboard',prompt:'Help me plan storyboard shots for '},{title:'Develop a character',prompt:'Help me develop a character who '}]) as starter}
+            {#each (editing?[{title:'Tighten the opening',prompt:'Shorten the opening while keeping the story clear.'},{title:'Balance the music',prompt:'Set the background music to a quiet level below dialogue.'}]:selected?[...(selected.kind==='scene'?[{title:'Check storyboard',prompt:'Audit this scene’s storyboard against its visual style and references.'}]:[]),{title:'Suggest improvements',prompt:`Review ${selected.label} and suggest improvements. Do not run changes yet.`}]:[{title:'Build a story',prompt:'Help me plan a story about '},{title:'Plan the storyboard',prompt:'Help me plan storyboard shots for '},{title:'Develop a character',prompt:'Help me develop a character who '}]) as starter}
               <button type="button" class="min-h-10 rounded-lg border border-border px-3 py-2 text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" onclick={()=>reusePrompt(starter.prompt)}>{starter.title}</button>
             {/each}
           </div>

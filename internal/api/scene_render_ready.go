@@ -45,6 +45,14 @@ func (s *Server) prepareAndRenderScene(ctx context.Context, project, id string, 
 }
 
 func (s *Server) generateMatchingStoryboard(ctx context.Context, scene *models.Scene) (any, error) {
+	assets, err := s.storyboardCandidates(ctx, scene, "")
+	if err != nil {
+		return nil, err
+	}
+	return s.attachStoryboard(scene, assets)
+}
+
+func (s *Server) storyboardCandidates(ctx context.Context, scene *models.Scene, correction string) ([]models.Asset, error) {
 	ctx, err := s.bindSceneInputs(ctx, scene)
 	if err != nil {
 		return nil, err
@@ -59,18 +67,25 @@ func (s *Server) generateMatchingStoryboard(ctx context.Context, scene *models.S
 	if err != nil {
 		return nil, err
 	}
-	ctx = context.WithValue(ctx, storyboardShotsKey{}, shotNotes)
+	ctx = context.WithValue(ctx, storyboardShotsKey{}, shotNotes+correction)
 	assets, err := s.generateAssets(brief.context(ctx), scene.ProjectID, nil, scene.ID, scene.Title+" storyboard", "storyboard", "Storyboard keyframe of "+scene.Title+". "+scene.Summary+"\n"+brief.prompt(), scene.AspectRatio, refs)
 	if err != nil {
 		return nil, err
 	}
+	if len(assets) == 0 {
+		return nil, fmt.Errorf("no storyboard image returned")
+	}
+	return assets, nil
+}
+
+func (s *Server) attachStoryboard(scene *models.Scene, assets []models.Asset) (any, error) {
 	ids := []string{}
 	_ = json.Unmarshal(scene.AssetIDsJSON, &ids)
 	for _, asset := range assets {
 		ids = append(ids, asset.ID)
 	}
 	scene.AssetIDsJSON, _ = json.Marshal(ids)
-	if err = s.database.UpdateScene(scene); err != nil {
+	if err := s.database.UpdateScene(scene); err != nil {
 		return nil, err
 	}
 	return map[string]any{"scene_id": scene.ID, "asset_id": assets[0].ID, "storyboard_url": "/" + assets[0].FilePath}, nil

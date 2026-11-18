@@ -75,7 +75,7 @@ func selectedChatActionAllowed(kind, action string) bool {
 	}
 	switch kind {
 	case "scene":
-		return action == "refine_scene" || action == "render_scene" || action == "storyboard" || action == "generate_shots" || action == "delete_scene"
+		return action == "refine_scene" || action == "render_scene" || action == "audit_storyboard" || action == "storyboard" || action == "generate_shots" || action == "delete_scene"
 	case "shot":
 		return action == "refine_shot" || action == "render_shot"
 	case "output":

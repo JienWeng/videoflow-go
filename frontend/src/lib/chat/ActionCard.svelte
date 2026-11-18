@@ -157,6 +157,7 @@
   let selectedIdea = $state(0);
   let developing = $state(false);
 
+  let repairStoryboard = $state(false);
   const labels: Record<string, string> = {
     generate_script: 'Create story & references',
     generate_image:'Generate image',
@@ -164,6 +165,7 @@
     generate_scenes: 'Expand scene',
     generate_shots: 'Generate shots',
     storyboard: 'Generate storyboard',
+    audit_storyboard: 'Run visual audit',
     render_scene: 'Update storyboard & render',
     render_shot: 'Render shot',
     caption: 'Burn saved captions',
@@ -219,6 +221,7 @@
         return creationBrief.idea.trim().length>0&&missingBriefFields(creationBrief).length===0&&briefConfirmed;
       case 'generate_scenes':
       case 'generate_shots':
+      case 'audit_storyboard':
       case 'storyboard':
       case 'render_scene':
       case 'generate_assets':
@@ -315,6 +318,8 @@
       case 'generate_image':return runInBackground('/assets/generate',{prompt:idea.trim(),aspect_ratio:storyFormat,type:imageType},'Image generation',op=>op.result_json?.asset_ids?.[0],ctx);
       case 'generate_character_reference':
         return runInBackground(`/characters/${characterId}/reference-sheets`,{},'Character reference',()=>characterId,ctx);
+      case 'audit_storyboard':
+        return runInBackground(`/scenes/${sceneId}/storyboard/audit`, {repair:repairStoryboard}, 'Storyboard visual audit', op=>op.result_json?.asset_id??sceneId, ctx);
       case 'storyboard':
         return runInBackground(
           `/scenes/${sceneId}/storyboard`,
@@ -496,7 +501,7 @@
       {#if intent.action === 'generate_script' && options.characters.length}
       <fieldset class="space-y-1"><legend class="text-xs">Cast</legend>{#each options.characters as character(character.id)}<label class="flex items-center gap-2 text-xs"><input type="checkbox" bind:group={castIds} value={character.id} onchange={()=>briefConfirmed=false}/>{character.name}</label>{/each}</fieldset>
       {/if}
-      {#if ['generate_scenes', 'generate_shots', 'storyboard', 'render_scene', 'render_shot', 'generate_assets', 'refine_scene', 'refine_shot', 'delete_scene', 'plan_assets'].includes(intent.action)}
+      {#if ['generate_scenes', 'generate_shots', 'audit_storyboard', 'storyboard', 'render_scene', 'render_shot', 'generate_assets', 'refine_scene', 'refine_shot', 'delete_scene', 'plan_assets'].includes(intent.action)}
         <div>
           <label class={labelClass} for="scene-{intent.action}">Scene</label>
           <select
@@ -523,6 +528,10 @@
         </div>
       {/if}
 
+      {#if intent.action==='audit_storyboard'}
+        <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={repairStoryboard} disabled={busy}/>Repair if needed</label>
+        <p class="text-xs text-muted-foreground">Checks the image against the scene and its references. Repair can generate one replacement and check it. Provider charges may apply.</p>
+      {/if}
       {#if intent.action==='render_scene'}<p class="text-xs text-muted-foreground">Uses the saved clip and sound plan below. Automatic mode groups consecutive shots to reduce paid calls. Matching clips are reused. Image and video generation may use account quota or provider credits.</p>{#if sceneId}<ProductionControls scene={sceneId} bind:newVersion={newRenderVersion} onplan={(id,cost)=>{renderPlanId=id;renderQuote=cost}} disabled={busy} onstate={s=>sceneSetupBlocking=s.blocking||s.loading} oncontinue={run} onask={text=>onsuggest?.(text)}/>{/if}{/if}
       {#if intent.action === 'generate_shots'}
         <label class="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
