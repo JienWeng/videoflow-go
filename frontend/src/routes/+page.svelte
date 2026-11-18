@@ -150,17 +150,20 @@
 <svelte:head><title>{workspace==='overview'?'Project overview · VideoFlow':'VideoFlow Studio'}</title></svelte:head>
 <div class="flex h-full min-h-0 flex-col">
   <h1 class="sr-only">VideoFlow Studio</h1>
-  <header class="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2 sm:px-6">
-    <DropdownMenu.Root><DropdownMenu.Trigger class="inline-flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm font-semibold hover:bg-accent" aria-label="Project menu">Studio <MoreHorizontal class="size-4" /></DropdownMenu.Trigger><DropdownMenu.Content align="start">
+  <header class="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-4 py-2 sm:px-6">
+    <nav aria-label="Workspace view" class="flex w-full rounded-lg bg-muted/50 p-1 sm:w-auto">
+      <button class="min-h-10 flex-1 justify-center rounded-md px-3 text-sm inline-flex items-center sm:flex-none {workspace==='studio'?'bg-background font-semibold shadow-sm':'text-muted-foreground hover:text-foreground'}" aria-current={workspace==='studio'?'page':undefined} onclick={()=>setWorkspace('studio')}>Canvas</button>
+      <button class="min-h-10 flex-1 justify-center rounded-md px-3 text-sm inline-flex items-center sm:flex-none {workspace==='story'?'bg-background font-semibold shadow-sm':'text-muted-foreground hover:text-foreground'}" aria-current={workspace==='story'?'page':undefined} onclick={()=>setWorkspace('story')}>Story</button>
+      <a class="min-h-10 flex-1 justify-center rounded-md px-3 text-sm inline-flex items-center sm:flex-none {workspace==='edit'?'bg-background font-semibold shadow-sm':'text-muted-foreground hover:text-foreground'}" href="/?view=edit" aria-current={workspace==='edit'?'page':undefined}>Edit video</a>
+    </nav>
+    <div class="ml-auto flex items-center gap-1">
+      {#if workspace!=='studio'||!assistantOpen}<Button variant="ghost" onclick={()=>{setWorkspace('studio');tab='chat';openAssistant()}}>Assistant</Button>{/if}
+      <Button onclick={startStory}>Create story</Button>
+      <DropdownMenu.Root><DropdownMenu.Trigger class="inline-flex size-10 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Project menu"><MoreHorizontal class="size-4" /></DropdownMenu.Trigger><DropdownMenu.Content align="end">
       <DropdownMenu.Item onclick={()=>setWorkspace('overview')}>Project summary</DropdownMenu.Item>
       <DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/projects">Switch project</a>{/snippet}</DropdownMenu.Item>
     </DropdownMenu.Content></DropdownMenu.Root>
-    <a class="min-h-10 rounded-md px-3 py-2 text-sm" href="/?view=edit" aria-current={workspace==='edit'?'page':undefined}>Edit video</a>
-    <div role="group" aria-label="Workspace view" class="flex rounded-lg bg-muted/40 p-1">
-      <button class="min-h-10 rounded-md px-3 text-sm {workspace==='studio'?'bg-accent font-semibold':'text-muted-foreground hover:text-foreground'}" aria-pressed={workspace==='studio'} onclick={()=>setWorkspace('studio')}>Canvas</button>
-      <button class="min-h-10 rounded-md px-3 text-sm {workspace==='story'?'bg-accent font-semibold':'text-muted-foreground hover:text-foreground'}" aria-pressed={workspace==='story'} onclick={()=>setWorkspace('story')}>Story</button>
     </div>
-    <div class="flex gap-1">{#if workspace==='story'}<Button variant="ghost" onclick={()=>{setWorkspace('studio');tab='chat';openAssistant()}}>Assistant</Button>{/if}<Button onclick={startStory}>Create story</Button></div>
   </header>
   {#if workspace==='studio'&&canvasRefreshPaused}<div role="status" class="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2 text-xs text-muted-foreground"><p>Your editing draft is kept. Save or discard it before refreshing the canvas.</p><Button variant="ghost" size="sm" disabled={details?.hasUnsavedChanges()} onclick={refreshStudio}>Refresh canvas</Button></div>{/if}
   {#if workspace==='edit'}<section class="min-h-0 flex-1 overflow-auto" aria-label="Video editing workspace"><EditingWorkspace/></section>{/if}
