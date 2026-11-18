@@ -240,6 +240,7 @@
   let graphData = $state<any>(null);
   let styleData = $state<any>(null);
   let progressData = $state<any>(null);
+  const KIND_NAMES: Record<string, string> = { asset: 'Image', scene: 'Scene', shot: 'Shot', character: 'Character', output: 'Video', render_job: 'Render' };
 
   /**
    * One pass over /graph (scenes, shots, storyboards and render jobs are all
@@ -307,11 +308,24 @@
       sceneNextChip
     } = analyzeGraph(graph);
 
-    // Selection-aware chips replace the globals while a node is selected.
+    // One chip per progress entry, worded like Studio's next-step button.
+    const progressChip = (p: any): Chip | null => {
+      if (!p?.next) return null;
+      const step = p.next;
+      if (step.action === 'open_videos') return { label: `${step.label} · ${p.title}`, href: '/render' };
+      if (step.action === 'open_editor') return { label: `${step.label} · ${p.title}`, href: `/compositions?scene_id=${encodeURIComponent(p.scene_id)}` };
+      if (step.action === 'ask_assistant') return { label: `Why is “${p.title}” stuck?`, send: `Why is “${p.title}” stuck, and what should I do next?` };
+      return { label: `${step.label} · ${p.title}`, focusId: p.scene_id, send: `${step.label} for “${p.title}”` };
+    };
+    const projectNext = progressChip(progressData?.next ? progressData.next : null);
+    const sceneProgress = (id: string) => progressData?.scenes?.find((p: any) => p.scene_id === id);
+
+    // Selection-aware chips replace the globals while a node is selected; the project's next step stays available.
     if (sel) {
       const out: Chip[] = [];
+      const withNext = (chips: Chip[]) => projectNext && !chips.some(c => c.label === projectNext.label) ? [...chips, projectNext].slice(0, 3) : chips.slice(0, 3);
       if (sel.kind === 'scene') {
-        const next = sceneNextChip(sel.id, sel.label);
+        const next = progressChip(sceneProgress(sel.id)) ?? sceneNextChip(sel.id, sel.label);
         if (next) out.push(next);
         out.push({ label: `Refine this scene…`, fill: `Refine this scene: ` });
       } else if (sel.kind === 'shot') {
@@ -319,7 +333,7 @@
         const sceneId = byId.get(sel.id)?.data?.scene_id;
         const scene = sceneId ? byId.get(sceneId) : null;
         if (scene) {
-          const next = sceneNextChip(scene.id, scene.label);
+          const next = progressChip(sceneProgress(scene.id)) ?? sceneNextChip(scene.id, scene.label);
           if (next) out.push(next);
         }
       } else if (sel.kind === 'output') {
@@ -333,9 +347,9 @@
           send: `Write a story featuring ${sel.label}`
         });
       }
-      if (sel.kind === 'asset') return [{label:'Edit asset details',href:`/library?tab=media&asset_id=${encodeURIComponent(sel.id)}`}];
-      if (sel.kind === 'render_job') return [{label:'View render progress',href:'/render'}];
-      if (out.length) return out.slice(0, 3);
+      if (sel.kind === 'asset') return withNext([{label:'Open in Library',href:`/library?tab=media&asset_id=${encodeURIComponent(sel.id)}`}]);
+      if (sel.kind === 'render_job') return withNext([{label:'View render progress',href:'/render'}]);
+      if (out.length) return withNext(out);
       // Unhandled kinds (asset, render_job) fall through to global chips.
     }
 
@@ -349,13 +363,7 @@
       }
       // The shared progress check decides the next step so chips match Studio and the assistant.
       const next = progressData?.next;
-      if (next) {
-        const step = next.next;
-        if (step.action === 'open_videos') out.push({ label: `${step.label} · ${next.title}`, href: '/render' });
-        else if (step.action === 'open_editor') out.push({ label: `${step.label} · ${next.title}`, href: `/compositions?scene_id=${encodeURIComponent(next.scene_id)}` });
-        else if (step.action === 'ask_assistant') out.push({ label: `Why is “${next.title}” stuck?`, send: `Why is “${next.title}” stuck, and what should I do next?` });
-        else out.push({ label: `${step.label} · ${next.title}`, focusId: next.scene_id, send: `${step.label} for “${next.title}”` });
-      }
+      if (projectNext) out.push(projectNext);
       const noShots = next ? null : scenes.find((s) => !scenesWithShots.has(s.id));
       if (noShots) out.push({ label: `Plan shots for ${noShots.label}`, send: `Plan shots for ${noShots.label}` });
       const noStoryboard = next ? null : scenes.find(
@@ -949,7 +957,7 @@
 
   <div class="p-3 pt-2" bind:this={inputWrapper}>
     {#if selected||!isEmpty}<div class="mb-2 flex min-w-0 items-center justify-between gap-2">
-      {#if selected}<Attachment.Root size="sm" class="min-w-0 max-w-full"><Attachment.Content class="min-w-0"><Attachment.Title class="truncate" title={selected.label}>{selected.kind.replace('_',' ')}: {selected.label}</Attachment.Title></Attachment.Content>{#if onclear}<Attachment.Actions><Attachment.Action aria-label="Clear selection" class="size-9 shrink-0" onclick={onclear}><X class="size-3.5" /></Attachment.Action></Attachment.Actions>{/if}</Attachment.Root>{:else}<span></span>{/if}
+      {#if selected}<Attachment.Root size="sm" class="min-w-0 max-w-full"><Attachment.Content class="min-w-0"><Attachment.Title class="truncate" title={`The assistant will focus on this ${KIND_NAMES[selected.kind]?.toLowerCase() ?? 'item'}. Clear it to talk about the whole project.`}><span class="font-normal text-muted-foreground">Focused on {KIND_NAMES[selected.kind]?.toLowerCase() ?? 'item'}:</span> {selected.label}</Attachment.Title></Attachment.Content>{#if onclear}<Attachment.Actions><Attachment.Action aria-label="Clear selection" class="size-9 shrink-0" onclick={onclear}><X class="size-3.5" /></Attachment.Action></Attachment.Actions>{/if}</Attachment.Root>{:else}<span></span>{/if}
       {#if embedded&&!isEmpty}<Button variant="ghost" size="icon" class="size-9 shrink-0 text-muted-foreground" aria-label="Clear chat" title="Clear visible chat; saved session history is kept" disabled={busy||historyLoading||isEmpty} onclick={clearChat}><Eraser class="size-4" /></Button>{/if}
     </div>{/if}
     {#if !editing&&!guidedSteps.length&&chips.length&&(!isEmpty||selected)}<div aria-label="Suggested prompts" class="mb-2 flex flex-wrap items-center gap-2">{@render chipRow(chips)}</div>{/if}
@@ -961,8 +969,8 @@
           <DropdownMenu.Root><DropdownMenu.Trigger>{#snippet child({props})}<InputGroup.Button {...props} type="button" size="sm" aria-label="Assistant mode" disabled={busy}>{reviewMode?'Review':'Chat'}<ChevronDown class="size-3.5" /></InputGroup.Button>{/snippet}</DropdownMenu.Trigger>
             <DropdownMenu.Content align="start" side="top" class="w-64 max-w-[calc(100vw-2rem)]">
               <DropdownMenu.RadioGroup value={reviewMode?'specialists':'assistant'} onValueChange={value=>reviewMode=value==='specialists'}>
-                <DropdownMenu.RadioItem value="assistant">Chat</DropdownMenu.RadioItem>
-                <DropdownMenu.RadioItem value="specialists" disabled={!specialistSupported}>Specialist review{#if !specialistSupported}<span class="ml-auto text-xs text-muted-foreground">Unavailable</span>{/if}</DropdownMenu.RadioItem>
+                <DropdownMenu.RadioItem value="assistant"><span class="grid"><span>Chat</span><span class="text-xs text-muted-foreground">Plan, change and fix your story</span></span></DropdownMenu.RadioItem>
+                <DropdownMenu.RadioItem value="specialists" disabled={!specialistSupported}><span class="grid"><span>Specialist review</span><span class="text-xs text-muted-foreground">Get story and continuity feedback; changes nothing</span></span>{#if !specialistSupported}<span class="ml-auto text-xs text-muted-foreground">Unavailable</span>{/if}</DropdownMenu.RadioItem>
               </DropdownMenu.RadioGroup>
               <DropdownMenu.Separator />
               <DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/director">AI session settings</a>{/snippet}</DropdownMenu.Item>

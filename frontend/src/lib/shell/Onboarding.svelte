@@ -10,6 +10,7 @@
    * opens the command palette so the user lands somewhere actionable.
    */
   import { Button } from '$lib/components/ui/button';
+  import { guide } from './guide.svelte';
   import * as Dialog from '$lib/components/ui/dialog';
   import {
     LayoutGrid,
@@ -44,7 +45,7 @@
 
   function showAround() {
     dismiss();
-    onpalette?.();
+    guide.startTour();
   }
 
   function onKeydown(e: KeyboardEvent) {

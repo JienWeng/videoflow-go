@@ -7,7 +7,10 @@
   import { Button } from '$lib/components/ui/button';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
   import * as Dialog from '$lib/components/ui/dialog';
-  import { Menu, Search, PanelLeftClose, PanelLeftOpen, Ellipsis } from '@lucide/svelte';
+  import { Menu, Search, PanelLeftClose, PanelLeftOpen, Ellipsis, Compass } from '@lucide/svelte';
+  import GuidePanel from '$lib/shell/GuidePanel.svelte';
+  import Tour from '$lib/shell/Tour.svelte';
+  import { guide } from '$lib/shell/guide.svelte';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
   import {
@@ -86,7 +89,7 @@
       {#each navGroups as group}
         <div><p class={compact?'sr-only':'mb-2 px-3 text-xs font-medium text-muted-foreground'}>{group.label}</p>
           {#each group.items as item}
-            <a href={item.href} aria-label={item.label} title={compact?item.label:undefined} aria-current={isActive(item.href,page.url.pathname)?'page':undefined} class="flex min-h-11 items-center gap-3 rounded-lg text-sm {compact?'justify-center px-0':'px-3'} {isActive(item.href,page.url.pathname)?'bg-accent font-semibold':'text-muted-foreground hover:bg-accent hover:text-foreground'}"><item.icon class="size-4 shrink-0" /><span class={compact?'sr-only':''}>{item.label}</span></a>
+            <a href={item.href} data-tour={item.href==='/render'?'nav-videos':undefined} aria-label={item.label} title={compact?item.label:undefined} aria-current={isActive(item.href,page.url.pathname)?'page':undefined} class="flex min-h-11 items-center gap-3 rounded-lg text-sm {compact?'justify-center px-0':'px-3'} {isActive(item.href,page.url.pathname)?'bg-accent font-semibold':'text-muted-foreground hover:bg-accent hover:text-foreground'}"><item.icon class="size-4 shrink-0" /><span class={compact?'sr-only':''}>{item.label}</span></a>
           {/each}
         </div>
       {/each}
@@ -100,7 +103,7 @@
       <Dialog.Content class="max-h-[90dvh] overflow-y-auto"><Dialog.Header><Dialog.Title>Navigation</Dialog.Title><Dialog.Description>Switch workspace or open your project tools.</Dialog.Description></Dialog.Header>{@render navigation()}</Dialog.Content>
     </Dialog.Root>
     <div class="flex items-center gap-1">
-      <Button variant="ghost" size="icon" aria-label="Search" onclick={() => palette.toggle()}><Search class="size-4" /></Button>
+      <Button variant="ghost" size="icon" aria-label="Guide" onclick={() => guide.openPanel()}><Compass class="size-4" /></Button><Button variant="ghost" size="icon" aria-label="Search" onclick={() => palette.toggle()}><Search class="size-4" /></Button>
       <ActivityTray />
     </div>
   </header>
@@ -110,7 +113,7 @@
       <Button variant="ghost" size="icon" class="size-11 shrink-0" aria-label={sidebarCollapsed?'Expand sidebar':'Collapse sidebar'} title={sidebarCollapsed?'Expand sidebar':'Collapse sidebar'} aria-expanded={!sidebarCollapsed} aria-controls="desktop-sidebar-navigation" onclick={toggleSidebar}>{#if sidebarCollapsed}<PanelLeftOpen class="size-4" />{:else}<PanelLeftClose class="size-4" />{/if}</Button>
     </div>
     <div id="desktop-sidebar-navigation" class="min-h-0 flex-1 overflow-y-auto">{@render navigation(sidebarCollapsed)}</div>
-    <div class="mt-3 border-t border-border pt-3"><Button variant="ghost" aria-label="Search" title={sidebarCollapsed?'Search (Ctrl/⌘ K)':undefined} class="mb-2 min-h-11 w-full text-muted-foreground {sidebarCollapsed?'justify-center px-0':'justify-start'}" onclick={()=>palette.toggle()}><Search class="size-4 shrink-0" /><span class={sidebarCollapsed?'sr-only':''}>Search</span>{#if !sidebarCollapsed}<kbd class="ml-auto text-xs">⌘ K</kbd>{/if}</Button><ActivityTray compact={sidebarCollapsed} /></div>
+    <div class="mt-3 border-t border-border pt-3"><Button variant="ghost" data-tour="guide" aria-label="Guide" title={sidebarCollapsed?'Guide: checklist, tour and tips':undefined} class="mb-1 min-h-11 w-full text-muted-foreground {sidebarCollapsed?'justify-center px-0':'justify-start'}" onclick={()=>guide.openPanel()}><Compass class="size-4 shrink-0" /><span class={sidebarCollapsed?'sr-only':''}>Guide</span></Button><Button variant="ghost" aria-label="Search" title={sidebarCollapsed?'Search (Ctrl/⌘ K)':undefined} class="mb-2 min-h-11 w-full text-muted-foreground {sidebarCollapsed?'justify-center px-0':'justify-start'}" onclick={()=>palette.toggle()}><Search class="size-4 shrink-0" /><span class={sidebarCollapsed?'sr-only':''}>Search</span>{#if !sidebarCollapsed}<kbd class="ml-auto text-xs">⌘ K</kbd>{/if}</Button><div data-tour="nav-activity"><ActivityTray compact={sidebarCollapsed} /></div></div>
   </aside>
   <main class="min-h-0 min-w-0 flex-1 overflow-auto">
     {@render children?.()}
@@ -119,6 +122,8 @@
 
 <svelte:window onkeydown={onKeydown} />
 
+<GuidePanel />
+<Tour />
 <!-- Single app-wide palette instance. Studio-only callbacks are read from the
   store (set by the Studio page on mount); off Studio they are undefined and
   the palette falls back to navigation. -->

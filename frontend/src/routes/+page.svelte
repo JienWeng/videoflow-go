@@ -151,14 +151,14 @@
 <div class="flex h-full min-h-0 flex-col">
   <h1 class="sr-only">VideoFlow Studio</h1>
   <header class="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border px-4 py-2 sm:px-6">
-    <nav aria-label="Workspace view" class="flex w-full rounded-lg bg-muted/50 p-1 sm:w-auto">
+    <nav data-tour="views" aria-label="Workspace view" class="flex w-full rounded-lg bg-muted/50 p-1 sm:w-auto">
       <button class="min-h-10 flex-1 justify-center rounded-md px-3 text-sm inline-flex items-center sm:flex-none {workspace==='studio'?'bg-background font-semibold shadow-sm':'text-muted-foreground hover:text-foreground'}" aria-current={workspace==='studio'?'page':undefined} onclick={()=>setWorkspace('studio')}>Canvas</button>
       <button class="min-h-10 flex-1 justify-center rounded-md px-3 text-sm inline-flex items-center sm:flex-none {workspace==='story'?'bg-background font-semibold shadow-sm':'text-muted-foreground hover:text-foreground'}" aria-current={workspace==='story'?'page':undefined} onclick={()=>setWorkspace('story')}>Story</button>
       <a class="min-h-10 flex-1 justify-center rounded-md px-3 text-sm inline-flex items-center sm:flex-none {workspace==='edit'?'bg-background font-semibold shadow-sm':'text-muted-foreground hover:text-foreground'}" href="/?view=edit" aria-current={workspace==='edit'?'page':undefined}>Edit video</a>
     </nav>
     <div class="ml-auto flex items-center gap-1">
       {#if workspace!=='studio'||!assistantOpen}<Button variant="ghost" onclick={()=>{setWorkspace('studio');tab='chat';openAssistant()}}>Assistant</Button>{/if}
-      <Button onclick={startStory}>Create story</Button>
+      <Button data-tour="create-story" onclick={startStory}>Create story</Button>
       <DropdownMenu.Root><DropdownMenu.Trigger class="inline-flex size-10 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Project menu"><MoreHorizontal class="size-4" /></DropdownMenu.Trigger><DropdownMenu.Content align="end">
       <DropdownMenu.Item onclick={()=>setWorkspace('overview')}>Project summary</DropdownMenu.Item>
       <DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/projects">Switch project</a>{/snippet}</DropdownMenu.Item>
@@ -183,7 +183,7 @@
     <!-- A focusable WAI-ARIA window splitter is an interactive separator. -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
     <div role="separator" tabindex="0" aria-label="Resize assistant panel" aria-orientation="vertical" aria-controls="assistant-workbench" aria-valuemin={minPanelWidth} aria-valuemax={maxPanelWidth} aria-valuenow={panelWidth} class="assistant-resizer hidden w-2 cursor-col-resize touch-none items-center justify-center rounded-lg hover:bg-accent focus-visible:bg-accent focus-visible:outline-2 focus-visible:outline-ring {assistantOpen?'md:flex':''}" onpointerdown={dragPanel} onkeydown={e=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();resizePanel(e.key==='Home'?minPanelWidth:e.key==='End'?maxPanelWidth:panelWidth+(e.key==='ArrowLeft'?32:-32));}}}><span class="h-8 w-0.5 rounded-full bg-muted-foreground/50"></span></div>
-    <aside id="assistant-workbench" aria-label="Contextual workbench" style:--panel-width={panelWidth+'px'} class="assistant-panel min-h-0 w-full shrink-0 flex-col overflow-hidden bg-card {assistantOpen?(mobileView==='workbench'?'flex':'hidden md:flex'):'hidden'}">
+    <aside id="assistant-workbench" data-tour="assistant" aria-label="Contextual workbench" style:--panel-width={panelWidth+'px'} class="assistant-panel min-h-0 w-full shrink-0 flex-col overflow-hidden bg-card {assistantOpen?(mobileView==='workbench'?'flex':'hidden md:flex'):'hidden'}">
       <div use:draggableTitlebar data-assistant-titlebar class="window-titlebar flex shrink-0 items-start gap-1 px-3 pt-3 pb-2">
         <h2 class="sr-only">Story assistant</h2>
         <Button bind:ref={moveHandle} type="button" variant="ghost" size="icon" class="hidden size-9 shrink-0 cursor-grab touch-none active:cursor-grabbing md:inline-flex" aria-label="Move assistant window" aria-describedby="assistant-move-help" title="Drag to float and move; arrow keys also move the window" onpointerdown={dragWindow} onkeydown={moveWindowWithKeys}><GripHorizontal class="size-4" /></Button><span id="assistant-move-help" class="sr-only">Drag to float and move, or use arrow keys. Hold Shift for larger moves. Home and End move to workspace corners.</span>

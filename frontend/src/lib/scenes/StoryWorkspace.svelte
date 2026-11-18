@@ -762,7 +762,7 @@
   <div class="px-6 pt-6 pb-3 shrink-0">
     {#if !embedded}<h1 class="text-lg font-semibold">Scene studios</h1>{/if}
     {#if progress?.total}
-      <div class="flex flex-wrap items-center gap-x-4 gap-y-2" role="status" aria-label="Project progress">
+      <div data-tour="progress" class="flex flex-wrap items-center gap-x-4 gap-y-2" role="status" aria-label="Project progress">
         <div class="flex min-w-0 items-center gap-3">
           <div class="h-1.5 w-28 shrink-0 overflow-hidden rounded-full bg-muted" aria-hidden="true"><div class="h-full rounded-full bg-emerald-500/80" style:width={`${Math.round(100 * progress.video_ready / progress.total)}%`}></div></div>
           <p class="text-sm">{progress.summary}</p>

@@ -131,7 +131,7 @@
       </div>
 
       {#if progress}
-        <div class="rounded-lg border px-3 py-2.5 {progress.stage==='needs_attention'?'border-amber-500/60 bg-amber-500/5':'border-border bg-muted/20'}" role="status" aria-label="Scene progress">
+        <div data-tour="scene-next" class="rounded-lg border px-3 py-2.5 {progress.stage==='needs_attention'?'border-amber-500/60 bg-amber-500/5':'border-border bg-muted/20'}" role="status" aria-label="Scene progress">
           <p class="text-sm font-medium">{progress.label}<span class="ml-2 text-xs font-normal text-muted-foreground">Step {Math.min(progress.step + 1, 4)} of 4</span></p>
           <p class="mt-1 max-w-prose text-xs text-muted-foreground">{progress.detail}</p>
           <div class="mt-2 flex flex-wrap gap-2">
