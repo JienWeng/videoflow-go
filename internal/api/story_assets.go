@@ -88,7 +88,7 @@ func (s *Server) materializeStoryAssets(ctx context.Context, scene *models.Scene
 			}
 		}
 		if asset == nil {
-			generated, err := s.generateAssets(guidedStoryContext(ctx, *scene.ProjectID, nil), scene.ProjectID, nil, "", item.Name, item.Type, item.Description, "1:1", nil)
+			generated, err := s.generateAssets(guidedStoryContext(ctx, *scene.ProjectID, nil), scene.ProjectID, nil, "", item.Name, item.Type, productionAssetPrompt(item.Type, item.Description), "1:1", nil)
 			if err != nil {
 				return result, err
 			}
@@ -96,6 +96,11 @@ func (s *Server) materializeStoryAssets(ctx context.Context, scene *models.Scene
 				return result, fmt.Errorf("no asset image returned")
 			}
 			asset = &generated[0]
+			// Prompt scaffolding must not change identity matching or library descriptions.
+			asset.Description = item.Description
+			if err := s.database.UpdateAsset(asset); err != nil {
+				return result, err
+			}
 		}
 		plan.Assets[index].AssetID = asset.ID
 		// Reload after each image call; preserve dialogue, generation brief and prior links.
@@ -138,4 +143,15 @@ func sceneStoryAssetIDs(scene *models.Scene) []string {
 	}
 	_ = json.Unmarshal(scene.SceneJSON, &metadata)
 	return metadata.IDs
+}
+
+// Keep reusable design assets free of scene-specific action and character contamination.
+func productionAssetPrompt(kind, description string) string {
+	switch kind {
+	case "location":
+		return description + "\nReusable location reference: show a single readable space with foreground, middle ground, background, entrances and pathways. Preserve stable architecture, lighting sources and spatial landmarks. Do not include characters, story action, captions or watermarks. Respect the selected visual medium."
+	case "prop":
+		return description + "\nReusable prop reference: clearly show the complete object, silhouette, material, colors and distinguishing structural details against a simple background. No hands, characters, story action, captions or watermarks. Respect the selected visual medium."
+	}
+	return description
 }

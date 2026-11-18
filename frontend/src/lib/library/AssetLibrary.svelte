@@ -6,9 +6,10 @@
   import AssetDescription from '$lib/assets/AssetDescription.svelte';
   import AssetDescriptionEditor from '$lib/assets/AssetDescriptionEditor.svelte';
   import {parseDescription} from '$lib/assets/description.mjs';
-  import {mediaKind,typeLabel} from './catalog.mjs';
+  import {mediaKind,typeLabel,assetReadiness,latestAssetVersions} from './catalog.mjs';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
   import {Ellipsis,LayoutGrid,List} from '@lucide/svelte';
+  let readinessFilter=$state(''),latestOnly=$state(false);
   let kindFilter=$state(''),view=$state<'grid'|'list'>('grid'),refreshing=$state(false);
   async function retryMedia(){refreshing=true;try{await refresh();error='';}catch(e){error=String(e)}finally{refreshing=false}}
  let identityTraits: {name:string;value:string}[] = $state([]);
@@ -226,7 +227,7 @@
       if (characterId) form.append('character_id', characterId);
       const r = await upload('/assets/upload', form);
       const n = Array.isArray(r) ? r.length : 1;
-      files = null;assetType='';characterId='';createOpen=false;search='';typeFilter='';kindFilter='';sortBy='newest';
+      files = null;assetType='';characterId='';createOpen=false;search='';typeFilter='';kindFilter='';readinessFilter='';latestOnly=false;sortBy='newest';
       toast.success(`Uploaded ${n} file${n === 1 ? '' : 's'}.`);
       await refresh();
     } catch (e: any) {
@@ -252,6 +253,8 @@
     const scene=libraryScenes.find(s=>s.id===reviewScene);
     const associated=new Set<string>([...(scene?.asset_ids_json??[]),...(scene?.scene_json?.story_asset_ids??[]),...(scene?.character_ids_json??[]).flatMap((id:string)=>characters.find(c=>c.id===id)?.reference_asset_ids_json??[])]);
     let out = reviewScene?assets.filter((a:any)=>associated.has(a.id)||a.metadata_json?.scene_id===reviewScene):assets;
+    if(latestOnly) out=latestAssetVersions(out);
+    if(readinessFilter) out=out.filter(a=>assetReadiness(a)===readinessFilter);
     if (kindFilter) out=out.filter(a=>mediaKind(a)===kindFilter);
     if (search.trim()) {
       const q = search.trim().toLowerCase();
@@ -334,11 +337,12 @@
     <select aria-label="Sort media" bind:value={sortBy} class="min-h-11 rounded-lg border border-input bg-background px-3 text-sm"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="name">Name A–Z</option><option value="type">Asset type</option></select>
     <div role="group" aria-label="Media view" class="flex rounded-lg border border-border p-1"><Button variant={view==='grid'?'secondary':'ghost'} size="icon" class="size-9" aria-label="Grid view" aria-pressed={view==='grid'} onclick={()=>view='grid'}><LayoutGrid class="size-4"/></Button><Button variant={view==='list'?'secondary':'ghost'} size="icon" class="size-9" aria-label="List view" aria-pressed={view==='list'} onclick={()=>view='list'}><List class="size-4"/></Button></div>
   </div>
+  <details class="mb-4 rounded-lg border border-border px-3 py-2"><summary class="cursor-pointer py-1 text-sm">Production filters{readinessFilter||latestOnly?' · Active':''}</summary><div class="flex flex-wrap items-center gap-3 pt-3 pb-1"><select aria-label="Asset readiness" bind:value={readinessFilter} class="min-h-11 rounded-lg border border-input bg-background px-3 text-sm"><option value="">Any readiness</option><option value="has-file">Has file</option><option value="missing">Missing media</option><option value="excluded">Excluded from generation</option></select><label class="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" bind:checked={latestOnly}/>Latest version per asset</label><p class="text-xs text-muted-foreground">Version filtering only changes this view. Scenes keep their selected references.</p></div></details>
   {#if error}<div role="alert" class="mb-4 space-y-2 rounded-lg border border-destructive p-4 text-sm"><p>Could not load media: {error}</p>{#if assets.length}<p>Showing the last loaded files.</p>{/if}<Button variant="outline" disabled={refreshing} onclick={retryMedia}>{refreshing?'Loading…':'Try again'}</Button></div>{/if}
   {#if reviewScene}<p class="mb-4 text-sm">Media for {libraryScenes.find(s=>s.id===reviewScene)?.title??'this scene'}. <a class="inline-flex min-h-11 items-center underline underline-offset-4" href={`/scenes?scene_id=${encodeURIComponent(reviewScene)}`}>Open scene studio</a> <button class="min-h-11 underline" onclick={clearSceneFilter}>Show all media</button></p>{/if}
   {#if !loaded}<div class="grid grid-cols-1 gap-5 min-[480px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{#each Array(4) as _}<Skeleton class="aspect-[4/3] w-full rounded-xl"/>{/each}</div>
   {:else if !assets.length&&!error}<div class="py-16 text-center"><Upload class="mx-auto size-9 text-muted-foreground"/><h3 class="mt-4 font-semibold">Build your media library</h3><p class="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">Upload reference images, video, audio or documents. Generated media will appear here too.</p></div>
-  {:else if assets.length&&!filtered.length}<div role="status" class="py-16 text-center"><h3 class="font-semibold">No matching media</h3><p class="mt-2 text-sm text-muted-foreground">Try another search or clear the filters.</p><Button variant="outline" class="mt-4" onclick={()=>{search='';typeFilter='';kindFilter='';}}>Clear filters</Button></div>
+  {:else if assets.length&&!filtered.length}<div role="status" class="py-16 text-center"><h3 class="font-semibold">No matching media</h3><p class="mt-2 text-sm text-muted-foreground">Try another search or clear the filters.</p><Button variant="outline" class="mt-4" onclick={()=>{search='';typeFilter='';kindFilter='';readinessFilter='';latestOnly=false;}}>Clear filters</Button></div>
   {:else if loaded&&assets.length}<p role="status" class="mb-4 text-xs text-muted-foreground">Showing {filtered.length} of {assets.length} files</p>{/if}
   <div role="region" aria-label="Media collection" class={view==='grid'?'grid grid-cols-1 gap-5 min-[480px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4':'flex flex-col gap-3'}>
     {#each filtered as asset (asset.id)}
@@ -352,6 +356,8 @@
           </DropdownMenu.Content></DropdownMenu.Root>
         </div>
         {#if asset.description&&view==='grid'}<p class="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{parseDescription(asset.description).summary}</p>{/if}
+        {#if assetReadiness(asset)==='missing'}<p class="mt-2 text-xs text-muted-foreground">Missing media</p>{/if}
+        {#if asset.metadata_json?.variant_group_id}<p class="mt-2 text-xs text-muted-foreground">{assets.filter(a=>versionGroup(a)===versionGroup(asset)).length} versions · Open detail to compare</p>{/if}
         {#if asset.metadata_json?.consistency_review||asset.tags_json?.length}<div class="mt-3 flex flex-wrap gap-1">{#if asset.metadata_json?.consistency_review}<Badge variant="outline">{asset.metadata_json.consistency_review==='rejected'?'Excluded':'Ready to use'}</Badge>{/if}{#each (asset.tags_json??[]).slice(0,3) as tag}<Badge variant="secondary">{tag}</Badge>{/each}{#if asset.tags_json?.length>3}<span class="px-1 text-xs text-muted-foreground">+{asset.tags_json.length-3}</span>{/if}</div>{/if}
         </div>
       </CardContent></Card>

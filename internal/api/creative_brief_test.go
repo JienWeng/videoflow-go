@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"videoflow-go/internal/agents"
+	"videoflow-go/internal/models"
+	"videoflow-go/internal/presets"
 )
 
 func TestChatBriefKeepsIdeaAcrossAnswersAndAsksMissingChoices(t *testing.T) {
@@ -153,5 +155,56 @@ func TestConfirmedBriefResolutionAndDirectionReachRender(t *testing.T) {
 	json.Unmarshal(jobs[0].RequestJSON, &payload)
 	if payload["resolution"] != "480p" || !strings.Contains(stringPrompt(payload["prompt"]), "Hopeful") || !strings.Contains(stringPrompt(payload["prompt"]), "YouTube Shorts") {
 		t.Fatal(payload)
+	}
+}
+
+func TestStorytellingSurvivesBriefMergeAndSceneSnapshot(t *testing.T) {
+	previous := &agents.CreativeBrief{Idea: "Pip finds Mama", StorytellingID: "drama", Tone: "Hopeful"}
+	merged := mergeCreativeBrief(previous, &agents.CreativeBrief{Language: "English"}, "English")
+	if merged.StorytellingID != "drama" {
+		t.Fatal("follow-up lost storytelling")
+	}
+	updated := mergeCreativeBrief(&merged, &agents.CreativeBrief{StorytellingID: "adventure"}, "Adventure")
+	if updated.StorytellingID != "adventure" {
+		t.Fatal("could not change method")
+	}
+	b := generationBrief{StorytellingID: "drama", Idea: "Pip finds Mama", Style: "paper-cut"}
+	raw, _ := json.Marshal(map[string]any{"generation_brief": b})
+	saved := sceneBrief(&models.Scene{SceneJSON: raw})
+	if saved.StorytellingID != "drama" || !strings.Contains(saved.prompt(), "Character drama") || !strings.Contains(saved.prompt(), "paper-cut") {
+		t.Fatal("saved brief lost independent directions")
+	}
+	if _, err := presets.StorytellingDirection("not-a-method"); err == nil {
+		t.Fatal("invalid method accepted")
+	}
+	if !strings.Contains(productionAssetPrompt("location", "Bridge"), "Do not include characters") || !strings.Contains(productionAssetPrompt("prop", "Lantern"), "No hands") {
+		t.Fatal("missing asset-specific guidance")
+	}
+}
+
+func TestStorytellingCatalogAndPreflight(t *testing.T) {
+	s := routerServer(t, nil)
+	project, _ := s.database.GetActiveProjectID()
+	b := generationBrief{Idea: "Pip finds Mama", StorytellingID: "invented"}
+	if err := s.prepareBrief(project, &b); err == nil {
+		t.Fatal("preflight accepted an unknown method")
+	}
+	b.StorytellingID = "drama"
+	if err := s.prepareBrief(project, &b); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.creativeDirection(), "Character drama") {
+		t.Fatal("direction lost")
+	}
+	b.StorytellingID = "custom"
+	if err := s.prepareBrief(project, &b); err != nil || b.creativeDirection() != "" {
+		t.Fatal("custom method must clear narrative guidance")
+	}
+	response := call(t, s, "GET", "/style-presets", "")
+	var catalog struct {
+		Methods []presets.Storytelling `json:"storytelling_presets"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &catalog); err != nil || len(catalog.Methods) != 4 {
+		t.Fatal("missing independent storytelling catalog", response.Body.String())
 	}
 }

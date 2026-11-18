@@ -4,6 +4,7 @@ import "context"
 
 // CreativeBrief is a proposal, not authorization to start media generation.
 type CreativeBrief struct {
+	StorytellingID   string `json:"storytelling_id,omitempty"`
 	Instruction      string `json:"instruction,omitempty"`
 	StyleFingerprint string `json:"style_fingerprint,omitempty"`
 	Idea             string `json:"idea"`

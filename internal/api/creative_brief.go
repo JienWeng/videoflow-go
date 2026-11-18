@@ -30,7 +30,7 @@ func mergeCreativeBrief(previous, next *agents.CreativeBrief, message string) ag
 	for _, pair := range []struct {
 		dst *string
 		src string
-	}{{&result.Instruction, next.Instruction}, {&result.Tone, next.Tone}, {&result.Audience, next.Audience}, {&result.Platform, next.Platform}, {&result.AspectRatio, next.AspectRatio}, {&result.Resolution, next.Resolution}, {&result.Language, next.Language}, {&result.ConversationMode, next.ConversationMode}} {
+	}{{&result.StorytellingID, next.StorytellingID}, {&result.Instruction, next.Instruction}, {&result.Tone, next.Tone}, {&result.Audience, next.Audience}, {&result.Platform, next.Platform}, {&result.AspectRatio, next.AspectRatio}, {&result.Resolution, next.Resolution}, {&result.Language, next.Language}, {&result.ConversationMode, next.ConversationMode}} {
 		if strings.TrimSpace(pair.src) != "" {
 			*pair.dst = strings.TrimSpace(pair.src)
 		}

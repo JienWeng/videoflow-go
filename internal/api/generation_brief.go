@@ -11,6 +11,7 @@ import (
 )
 
 type generationBrief struct {
+	StorytellingID     string          `json:"storytelling_id,omitempty"`
 	BriefVersion       int             `json:"brief_version,omitempty"`
 	BriefConfirmed     bool            `json:"brief_confirmed,omitempty"`
 	StyleFingerprint   string          `json:"style_fingerprint,omitempty"`
@@ -45,6 +46,9 @@ func (s *Server) effectiveStyle(projectID, choice string) (string, bool) {
 	return "warm 2D children's picture-book illustration, clean shapes, expressive faces", false
 }
 func (s *Server) prepareBrief(project string, b *generationBrief) error {
+	if _, err := presets.StorytellingDirection(b.StorytellingID); err != nil {
+		return err
+	}
 	if err := s.confirmedCreativeBrief(project, b); err != nil {
 		return err
 	}
@@ -147,10 +151,11 @@ func (b generationBrief) prompt() string {
 }
 
 func (b generationBrief) creativeDirection() string {
+	storytelling, _ := presets.StorytellingDirection(b.StorytellingID)
 	if b.BriefVersion != 1 {
-		return ""
+		return storytelling
 	}
-	return fmt.Sprintf("Confirmed story-specific creative direction: visual style=%s; tone=%s; audience=%s; destination platform=%s; format=%s; resolution=%s; total duration=%ds; scenes=%d. Preserve these choices over project defaults while keeping locked character/object identities. Platform is a delivery target, not authorization to publish.", b.Style, b.Tone, b.Audience, b.Platform, b.AspectRatio, b.Resolution, b.TargetDuration, b.SceneCount)
+	return storytelling + "\n" + fmt.Sprintf("Confirmed story-specific creative direction: visual style=%s; tone=%s; audience=%s; destination platform=%s; format=%s; resolution=%s; total duration=%ds; scenes=%d. Preserve these choices over project defaults while keeping locked character/object identities. Platform is a delivery target, not authorization to publish.", b.Style, b.Tone, b.Audience, b.Platform, b.AspectRatio, b.Resolution, b.TargetDuration, b.SceneCount)
 }
 func (b generationBrief) context(ctx context.Context) context.Context {
 	ctx = agents.WithCreativeDirection(ctx, b.creativeDirection())

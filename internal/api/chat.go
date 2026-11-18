@@ -93,7 +93,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	contextJSON, _ := json.Marshal(map[string]any{"available_visual_styles": availableStyles, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "missing_voices_setup": "inline_render_card", "render_audio_modes": []string{"native", "saved", "silent"}, "native_audio_requires_saved_voices": false, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false, "exact_dialogue_requires_speech_and_lipsync": true}})
+	contextJSON, _ := json.Marshal(map[string]any{"available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "missing_voices_setup": "inline_render_card", "render_audio_modes": []string{"native", "saved", "silent"}, "native_audio_requires_saved_voices": false, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false, "exact_dialogue_requires_speech_and_lipsync": true}})
 	ctx := r.Context()
 	var plannedSnapshot *directorContext
 	if s.cfg.UseLocalText {
