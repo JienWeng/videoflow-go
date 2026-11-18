@@ -318,7 +318,13 @@ func (d *DB) GetActiveProject() (*models.Project, error) {
 }
 
 func (d *DB) ListProjects() ([]models.Project, error) {
-	rows, err := d.conn.Query("SELECT id, name, description, is_active, created_at, updated_at FROM projects ORDER BY created_at DESC")
+	rows, err := d.conn.Query(`
+ SELECT p.id, p.name, p.description, p.is_active, p.created_at, p.updated_at,
+ (SELECT COUNT(*) FROM scenes WHERE project_id = p.id),
+ (SELECT COUNT(*) FROM characters WHERE project_id = p.id),
+ (SELECT COUNT(*) FROM assets WHERE project_id = p.id)
+ FROM projects p ORDER BY p.created_at DESC
+ `)
 	if err != nil {
 		return nil, err
 	}
@@ -328,13 +334,15 @@ func (d *DB) ListProjects() ([]models.Project, error) {
 	for rows.Next() {
 		var p models.Project
 		var isAct int
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &isAct, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		var counts models.ProjectCounts
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &isAct, &p.CreatedAt, &p.UpdatedAt, &counts.Scenes, &counts.Characters, &counts.Assets); err != nil {
 			return nil, err
 		}
+		p.Counts = &counts
 		p.IsActive = isAct == 1
 		projects = append(projects, p)
 	}
-	return projects, nil
+	return projects, rows.Err()
 }
 
 func (d *DB) GetProject(id string) (*models.Project, error) {
