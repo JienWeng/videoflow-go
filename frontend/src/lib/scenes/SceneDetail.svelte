@@ -61,6 +61,8 @@
 
   // Stage disclosure follows saved work; generation controls live inside each stage.
   let referenceInfo:any=$state(null);
+  let references: SceneReferences | undefined;
+  let storyboardSection = $state<HTMLDetailsElement>();
   const currentStoryboard=$derived(referenceInfo?.storyboards?.find((a:any)=>a.id===referenceInfo.active_storyboard_id)??storyboard);
   let showAll=$state(false);
   let opened=$state<Record<string,boolean>>({});
@@ -69,6 +71,17 @@
   const isOpen=(key:string)=>opened[key]??section(key).open;
   let focusedShot='';
   $effect(()=>{const id=page.url.searchParams.get('shot_id');if(id&&shots.some((shot:any)=>shot.id===id)&&focusedShot!==id){focusedShot=id;opened={...opened,shots:true};void tick().then(()=>{const row=document.getElementById('scene-shot-'+id);row?.scrollIntoView({block:'center'});row?.focus()})}});
+  async function openStoryboard() {
+    showAll = true;
+    opened = {...opened, storyboard:true};
+    await tick();
+    storyboardSection?.scrollIntoView({block:'start'});
+    storyboardSection?.querySelector('summary')?.focus({preventScroll:true});
+  }
+  async function refreshSceneLook() {
+    await onReferencesChanged();
+    await references?.reload();
+  }
   const remember=(key:string,event:Event)=>opened[key]=(event.currentTarget as HTMLDetailsElement).open;
 
   const firstNotDone = $derived(steps.findIndex((st: any) => !st.done));
@@ -118,8 +131,10 @@
     </div>
   </div>
 
-  <SceneStyle scene={s} projectStyle={style} disabled={sceneDirty} onchanged={onReferencesChanged}/>
-  <SceneReferences sceneId={s.id} {characters} onchanged={onReferencesChanged} onstate={value=>referenceInfo=value}/>
+  <SceneStyle scene={s} projectStyle={style} disabled={sceneDirty}
+    cast={characters.filter((character: {id: string}) => (s.character_ids_json ?? []).includes(character.id))}
+    onchanged={refreshSceneLook} onstoryboard={openStoryboard}/>
+  <SceneReferences bind:this={references} sceneId={s.id} {characters} onchanged={onReferencesChanged} onstate={value=>referenceInfo=value}/>
 
   <div class="mt-5 space-y-3">
     <div class="flex flex-wrap items-center justify-between gap-2"><p class="text-xs text-muted-foreground">Open an earlier stage to review or edit it.</p><Button variant="ghost" size="sm" aria-expanded={showAll} onclick={()=>showAll=!showAll}>{showAll?'Hide future stages':'Show all stages'}</Button></div>
@@ -388,7 +403,7 @@
     </div></details>{/if}
 
     <!-- Storyboard -->
-    {#if section('storyboard').visible}<details class="border-t border-border pt-2" open={isOpen('storyboard')} ontoggle={event=>remember('storyboard',event)} data-stage="storyboard">
+    {#if section('storyboard').visible}<details class="border-t border-border pt-2" open={isOpen('storyboard')} ontoggle={event=>remember('storyboard',event)} bind:this={storyboardSection} data-stage="storyboard">
       <summary class="min-h-11 cursor-pointer py-3 text-sm font-semibold">{section('storyboard').label}</summary><div class="pb-4">
       <div class="flex flex-wrap items-center gap-2 mb-2">
         <Button variant="outline" size="sm"

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { page } from '$app/state';
+  const returnScene = $derived(page.url.searchParams.get('scene_id'));
   import {onMount} from 'svelte';
   import {get,patch,post,upload} from '$lib/api';
   import {protectDraft} from '$lib/protect-draft';
@@ -26,7 +28,7 @@
 
 <svelte:head><title>{character?.name??'Character'} · VideoFlow</title></svelte:head>
 <main class="mx-auto w-full max-w-7xl px-4 py-6 sm:px-8 sm:py-8">
-  <a href="/library?tab=characters" class="mb-6 inline-flex min-h-11 items-center gap-2 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"><ArrowLeft class="size-4"/>Characters</a>
+  <a href={returnScene ? `/scenes?scene_id=${encodeURIComponent(returnScene)}&focus=look` : "/library?tab=characters"} class="mb-6 inline-flex min-h-11 items-center gap-2 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"><ArrowLeft class="size-4"/>{returnScene ? 'Back to scene look' : 'Characters'}</a>
   {#if loading}<p role="status" class="py-16 text-muted-foreground">Loading character…</p>
   {:else if !character}<div role="alert" class="space-y-4 py-12"><h1 class="text-2xl font-semibold">Could not load character</h1><p class="text-sm text-destructive">{error}</p><Button variant="outline" onclick={load}>Try again</Button></div>
   {:else}

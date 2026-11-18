@@ -1,11 +1,14 @@
 <script lang="ts">
+  import { page } from '$app/state';
   import { get, put } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
   import { protectDraft } from '$lib/protect-draft';
 
-  let { scene, projectStyle, disabled = false, onchanged }: {
+  let { scene, projectStyle, cast, disabled = false, onchanged, onstoryboard }: {
     scene: { id: string; updated_at: string; scene_json?: { generation_brief?: { style?: string } } };
     projectStyle?: { name?: string; style_prompt?: string };
+    cast: { id: string; name: string }[];
+    onstoryboard: () => void;
     disabled?: boolean;
     onchanged: () => Promise<void>;
   } = $props();
@@ -46,7 +49,7 @@
         expected_updated_at: scene.updated_at,
       });
       preset = '';
-      status = 'Scene look saved. Refresh any references that still show the previous look before generating a new storyboard.';
+      status = 'Scene look saved.';
       await onchanged();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -56,7 +59,7 @@
   }
 </script>
 
-<details class="my-3 rounded-lg border border-border p-3" ontoggle={(event) => { if (event.currentTarget.open) void load(); }}>
+<details open={page.url.searchParams.get('focus') === 'look'} class="my-3 rounded-lg border border-border p-3" ontoggle={(event) => { if (event.currentTarget.open) void load(); }}>
   <summary class="cursor-pointer py-1 text-sm font-medium">Scene look</summary>
   <div class="mt-3 space-y-3">
     {#if current}<p class="whitespace-pre-line break-words text-sm text-muted-foreground">{current}</p>{/if}
@@ -86,5 +89,16 @@
     </form>
     {#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}
     {#if status}<p role="status" class="text-sm">{status}</p>{/if}
+    <div class="space-y-2 border-t border-border pt-3">
+      {#if cast.length}
+        <p class="text-sm text-muted-foreground">If a character still has the old look, update their appearance and reference first.</p>
+        <div class="flex flex-wrap gap-2">
+          {#each cast as character (character.id)}
+            <Button size="sm" variant="outline" href={`/characters/${encodeURIComponent(character.id)}?scene_id=${encodeURIComponent(scene.id)}`}>Edit {character.name}</Button>
+          {/each}
+        </div>
+      {/if}
+      <Button size="sm" variant="outline" onclick={onstoryboard}>Review storyboard</Button>
+    </div>
   </div>
 </details>

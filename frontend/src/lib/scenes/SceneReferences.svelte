@@ -9,6 +9,7 @@
  let alive=true,sequence=0;
  onDestroy(()=>{alive=false;sequence++});
  async function load(){const request=++sequence;try{const [next,assets]=await Promise.all([get(`/scenes/${sceneId}/references`),get('/assets')]);if(!alive||request!==sequence)return;referenceState=next;onstate?.(next);library=assets;error=''}catch(e){if(alive&&request===sequence)error=String(e)}finally{if(alive&&request===sequence)loading=false}}
+ export async function reload(){await load()}
  onMount(()=>{void load();const focus=()=>{if(!busy)void load()};window.addEventListener('focus',focus);const unsubscribe=subscribeJobs(e=>{if(!busy&&(!e.scene_id||e.scene_id===sceneId))void load()});return()=>{window.removeEventListener('focus',focus);unsubscribe()}});
  const selected=$derived(new Set<string>(referenceState?.asset_ids??[]));
  const candidates=$derived(library.filter(a=>['prop','location'].includes(a.type)&&!selected.has(a.id)&&a.metadata_json?.consistency_review!=='rejected'&&[a.name,a.description].join(' ').toLowerCase().includes(query.trim().toLowerCase())));
