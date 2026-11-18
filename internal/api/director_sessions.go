@@ -219,6 +219,49 @@ func (s *Server) registerDirectorRoutes() {
 		raw, _ := s.database.GetDirectorSelection(id)
 		writeJSON(w, 200, raw)
 	})
+	s.router.Get("/director/auth/{engine}", func(w http.ResponseWriter, r *http.Request) {
+		engine, ok := authEngine(w, r)
+		if ok {
+			writeJSON(w, 200, s.authManager().Status(r.Context(), engine))
+		}
+	})
+	s.router.Post("/director/auth/{engine}/start", func(w http.ResponseWriter, r *http.Request) {
+		engine, ok := authEngine(w, r)
+		if !ok {
+			return
+		}
+		login, err := s.authManager().Start(engine)
+		if err != nil {
+			http.Error(w, err.Error(), 409)
+			return
+		}
+		writeJSON(w, 200, login)
+	})
+	s.router.Post("/director/auth/{engine}/code", func(w http.ResponseWriter, r *http.Request) {
+		engine, ok := authEngine(w, r)
+		if !ok {
+			return
+		}
+		var body struct {
+			Code string `json:"code"`
+		}
+		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body) != nil {
+			http.Error(w, "paste the code from the sign-in page", 400)
+			return
+		}
+		if err := s.authManager().SubmitCode(engine, body.Code); err != nil {
+			http.Error(w, err.Error(), 409)
+			return
+		}
+		writeJSON(w, 200, s.authManager().Status(r.Context(), engine))
+	})
+	s.router.Post("/director/auth/{engine}/cancel", func(w http.ResponseWriter, r *http.Request) {
+		engine, ok := authEngine(w, r)
+		if ok {
+			s.authManager().Cancel(engine)
+			writeJSON(w, 200, s.authManager().Status(r.Context(), engine))
+		}
+	})
 	s.router.Get("/director/status", func(w http.ResponseWriter, r *http.Request) {
 		engines := []map[string]any{}
 		for _, name := range []string{"codex", "claude"} {
@@ -227,7 +270,8 @@ func (s *Server) registerDirectorRoutes() {
 			if err != nil {
 				reason = err.Error()
 			}
-			engines = append(engines, map[string]any{"engine": name, "installed": err == nil, "reason": reason})
+			auth := s.authManager().Status(r.Context(), name)
+			engines = append(engines, map[string]any{"engine": name, "installed": err == nil, "signed_in": auth.SignedIn, "method": auth.Method, "reason": reason})
 		}
 		writeJSON(w, 200, map[string]any{"all_text_local": s.cfg.UseLocalText, "engines": engines, "voice_default": "saved_character_voice", "host_requirement": "Sign in under the backend's OS account. Docker builds use their bundled CLIs and private agent-auth volume; native backends use locally installed CLIs."})
 	})
@@ -304,4 +348,18 @@ func (s *Server) activeProjectID(ctx context.Context) (string, error) {
 		return binding.ProjectID, nil
 	}
 	return s.database.GetActiveProjectID()
+}
+
+func authEngine(w http.ResponseWriter, r *http.Request) (string, bool) {
+	engine := chi.URLParam(r, "engine")
+	if engine != "codex" && engine != "claude" {
+		http.Error(w, "choose codex or claude", 400)
+		return "", false
+	}
+	return engine, true
+}
+
+func (s *Server) authManager() *director.AuthManager {
+	s.agentAuthOnce.Do(func() { s.agentAuth = director.NewAuthManager(s.directorRunner) })
+	return s.agentAuth
 }

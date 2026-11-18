@@ -24,6 +24,8 @@ import (
 
 type Server struct {
 	directorRunner  *director.Runner
+	agentAuth       *director.AuthManager
+	agentAuthOnce   sync.Once
 	directorCancels sync.Map
 	cfg             *config.Config
 	database        *db.DB

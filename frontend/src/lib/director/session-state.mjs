@@ -8,6 +8,11 @@ export function sessionState(session, health) {
   if (!health.engines?.some(item => item.engine === session.engine && item.installed === true)) {
     return state('AI setup required', 'Your session is saved. Set up the selected AI to start planning.', false, true);
   }
+  if (health.engines?.some(item => item.engine === session.engine && item.signed_in === false)) {
+    const name = session.engine === 'claude' ? 'Claude Code' : 'Codex';
+    return state('Sign-in needed', `Connect ${name} to start planning. It takes about a minute.`, false, true);
+  }
   if (session.status !== 'ready') return state('Session unavailable', 'Refresh to check this session’s latest status.');
-  return state(session.native_id ? 'Session selected' : 'Session saved', 'AI sign-in and account access are checked when you send your first prompt.', true);
+  const connected = health.engines?.some(item => item.engine === session.engine && item.signed_in === true);
+  return state(session.native_id ? 'Session selected' : 'Session saved', connected ? 'Your AI is connected. Continue in Studio to start planning.' : 'AI sign-in and account access are checked when you send your first prompt.', true);
 }

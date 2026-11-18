@@ -35,3 +35,14 @@ test('disabled local routing cannot be presented as usable', () => {
   assert.equal(state.canContinue, false);
   assert.equal(state.needsSetup, true);
 });
+
+test('confirmed sign-in state gates and reassures', () => {
+  const session = { engine: 'claude', status: 'ready' };
+  const out = sessionState(session, { engines: [{ engine: 'claude', installed: true, signed_in: false }] });
+  assert.equal(out.needsSetup, true);
+  assert.equal(out.canContinue, false);
+  assert.match(out.help, /Connect Claude Code/);
+  const ready = sessionState(session, { engines: [{ engine: 'claude', installed: true, signed_in: true }] });
+  assert.equal(ready.canContinue, true);
+  assert.match(ready.help, /connected/);
+});

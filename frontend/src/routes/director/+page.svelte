@@ -5,6 +5,7 @@
   import { Button } from '$lib/components/ui/button';
   import { ArrowRight, Check, ChevronDown, Plus, RefreshCw } from '@lucide/svelte';
   import { sessionState } from '$lib/director/session-state.mjs';
+  import AgentConnect from '$lib/director/AgentConnect.svelte';
 
   type Session = { id: string; engine: string; native_id?: string; title: string; status: string; selected: boolean };
   type Turn = { id: string; kind: string; status: string; request_json: unknown; result_json: unknown; error?: string; created_at: string };
@@ -42,7 +43,7 @@
   async function refresh() {
     const [health, list, cast, media] = await Promise.all([get('/director/status'), get('/director/sessions'), get('/characters'), get('/assets')]);
     status = health; sessions = list ?? []; characters = cast ?? []; assets = media ?? [];
-    if (!loaded) engine = health.engines?.find((item: any) => item.installed)?.engine ?? 'codex';
+    if (!loaded) engine = (health.engines?.find((item: any) => item.signed_in) ?? health.engines?.find((item: any) => item.installed))?.engine ?? 'codex';
     const current = sessions.find(s => s.selected);
     if (current) await detail(current.id);
     else { turns = []; characterIDs = []; assetIDs = []; savedCharacters = []; savedAssets = []; detailReady = false; }
@@ -52,7 +53,8 @@
     busy = true; error = ''; notice = '';
     try { await fn(); } catch (e: any) { error = e.message ?? String(e); } finally { busy = false; }
   }
-  onMount(() => { void run(refresh).finally(() => { loaded = true; showCreate = sessions.length === 0; }); });
+  const anyConnected = $derived(!!status?.engines?.some((item: any) => item.signed_in));
+  onMount(() => { void run(refresh).finally(() => { loaded = true; showCreate = sessions.length === 0; if (!anyConnected || selectedState.needsSetup) setupOpen = true; }); });
   beforeNavigate(nav => {
     if (dirty && !window.confirm('Leave without saving your reference changes?')) nav.cancel();
   });
@@ -123,10 +125,10 @@
         <form id="new-session-form" class="mt-5 space-y-4 rounded-lg bg-muted/30 p-4 sm:p-5" onsubmit={create}>
           <div><h2 class="font-medium">{sessions.length ? 'New session' : 'Start your first session'}</h2>{#if !sessions.length}<p class="mt-1 text-sm text-muted-foreground">Keep each story’s planning and references together.</p>{/if}</div>
           <div class="grid gap-4 sm:grid-cols-[minmax(140px,1fr)_minmax(0,2fr)]">
-            <label class="grid gap-2 text-sm" for="session-engine">AI assistant<select id="session-engine" class="min-h-11 w-full rounded-lg border border-input bg-background px-3" bind:value={engine} disabled={busy}><option value="codex">Codex</option><option value="claude">Claude Code</option></select></label>
+            <label class="grid gap-2 text-sm" for="session-engine">AI assistant<select id="session-engine" class="min-h-11 w-full rounded-lg border border-input bg-background px-3" bind:value={engine} disabled={busy}>{#each ['codex', 'claude'] as name}<option value={name}>{engineName(name)}{status?.engines?.find((item: any) => item.engine === name)?.signed_in ? ' · connected' : ''}</option>{/each}</select></label>
             <label class="grid gap-2 text-sm" for="session-title">Session name <span class="sr-only">(optional)</span><input id="session-title" bind:this={titleInput} class="min-h-11 w-full min-w-0 rounded-lg border border-input bg-background px-3" bind:value={title} placeholder="Story planning" maxlength="120" disabled={busy} /></label>
           </div>
-          {#if !status?.engines?.some((item: any) => item.engine === engine && item.installed)}<p class="text-sm text-muted-foreground">{engineName(engine)} needs setup. You can save a session now and set it up next.</p>{/if}
+          {#if !status?.engines?.some((item: any) => item.engine === engine && item.signed_in)}<p class="text-sm text-muted-foreground">{engineName(engine)} isn't connected yet. Save the session, then connect it under <span class="font-medium text-foreground">Connect your AI</span>.</p>{/if}
           <div class="flex flex-wrap gap-2"><Button type="submit" class="min-h-11" disabled={busy || dirty}>{busy ? 'Saving…' : 'Create session'}</Button>{#if sessions.length}<Button variant="ghost" class="min-h-11" disabled={busy} onclick={() => showCreate = false}>Cancel</Button>{/if}</div>
         </form>
       {/if}
@@ -142,7 +144,7 @@
         {#if !showCreate}
           {#if selected.status === 'running'}<Button variant="outline" class="min-h-11" disabled={busy} onclick={cancel}>Stop request</Button>
           {:else if selected.status === 'review_required'}<Button class="min-h-11" onclick={showHistory}>Review history<ArrowRight class="size-4" /></Button>
-          {:else if selectedState.needsSetup}<Button class="min-h-11" onclick={showSetup}>Set up AI<ArrowRight class="size-4" /></Button>
+          {:else if selectedState.needsSetup}<Button class="min-h-11" onclick={showSetup}>Connect {engineName(selected.engine)}<ArrowRight class="size-4" /></Button>
           {:else if selectedState.canContinue}<Button href="/?view=studio" class="min-h-11" disabled={busy || dirty || !detailReady || !!error}>Continue in Studio<ArrowRight class="size-4" /></Button>{/if}
         {/if}
       </section>
@@ -151,19 +153,21 @@
 
     <div class="divide-y divide-border border-y border-border">
       <details id="ai-setup" bind:open={setupOpen} class="group">
-        <summary bind:this={setupSummary} class="flex min-h-16 cursor-pointer list-none items-center justify-between gap-3 py-4 text-sm font-medium">AI setup<ChevronDown class="size-4 shrink-0 transition-transform group-open:rotate-180" /></summary>
+        <summary bind:this={setupSummary} class="flex min-h-16 cursor-pointer list-none items-center justify-between gap-3 py-4">
+          <span class="min-w-0"><span class="block text-sm font-medium">Connect your AI</span><span class="mt-1 block text-xs text-muted-foreground">{(status?.engines ?? []).map((item: any) => `${engineName(item.engine)}: ${item.signed_in ? 'connected' : item.installed ? 'not connected' : 'unavailable'}`).join(' · ')}</span></span>
+          <ChevronDown class="size-4 shrink-0 transition-transform group-open:rotate-180" />
+        </summary>
         <div class="space-y-4 pb-6 text-sm">
-          <ul class="divide-y divide-border">{#each status?.engines ?? [] as item (item.engine)}<li class="flex items-center justify-between gap-4 py-3"><span>{engineName(item.engine)}</span><span class="text-muted-foreground">{item.installed ? 'Detected' : 'Not installed'}</span></li>{/each}</ul>
-          <p class="max-w-prose text-muted-foreground">Docker builds include Codex and Claude Code. For a native backend, install either CLI under the same account running VideoFlow. Sign in to the engine you want to use.</p>
+          <p class="max-w-prose text-muted-foreground">Your story assistant runs on Codex or Claude Code with your own account. Connect at least one; you only need to do this once.</p>
+          {#if status?.all_text_local === false}<p role="alert" class="text-destructive">Local planning is disabled in the backend configuration.</p>{/if}
+          <AgentConnect engines={status?.engines ?? []} highlight={selected?.engine ?? engine} onchange={() => run(refresh)} />
           <details>
-            <summary class="cursor-pointer py-2 font-medium">Sign in inside Docker</summary>
-            <p class="mt-2 max-w-prose text-muted-foreground">On the computer hosting VideoFlow, run one of these commands from the project folder and follow the official sign-in flow:</p>
+            <summary class="cursor-pointer py-2 text-muted-foreground">Prefer the terminal?</summary>
+            <p class="mt-2 max-w-prose text-muted-foreground">On the computer hosting VideoFlow, run one of these from the project folder:</p>
             <pre class="mt-3 overflow-x-auto rounded-md border border-border bg-muted/30 p-3 text-xs leading-relaxed"><code>docker compose exec backend codex login --device-auth
 docker compose exec backend claude auth login</code></pre>
-            <p class="mt-3 max-w-prose text-muted-foreground">The private agent-auth volume keeps sign-in data across container restarts. A login on your own computer does not sign in the backend container.</p>
+            <p class="mt-3 max-w-prose text-muted-foreground">Sign-in is stored in the backend, not your browser, so a login on your own computer doesn't count.</p>
           </details>
-          <p class="max-w-prose text-muted-foreground">Detection only checks installation. Sign-in and account access are checked on your first prompt.</p>
-          {#if status?.all_text_local === false}<p role="alert" class="text-destructive">Local planning is disabled in the backend configuration.</p>{/if}
         </div>
       </details>
       {#if selected && detailReady}

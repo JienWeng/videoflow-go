@@ -178,17 +178,17 @@
   }
 
   let conversationGeneration=0;
-  let historyLoading=$state(true), historyError=$state(''), sessionRequired=$state(false);
+  let historyLoading=$state(true), historyError=$state(''), sessionRequired=$state(false), signInNeeded=$state('');
   async function initPersistence() {
     const generation=++conversationGeneration;
-    historyLoading=true;historyError='';sessionRequired=false;busy=false;storageKey=null;activeSessionId='';checkpointPrompts=[];cancelling=false;cancelError='';void refreshCapabilities();
+    historyLoading=true;historyError='';sessionRequired=false;signInNeeded='';busy=false;storageKey=null;activeSessionId='';checkpointPrompts=[];cancelling=false;cancelError='';void refreshCapabilities();
     try {
       const status=await get('/director/status');if(generation!==conversationGeneration)return;
       if(status.all_text_local){
         const sessions=await get('/director/sessions');if(generation!==conversationGeneration)return;
         const session=sessions.find((item:any)=>item.selected);
         if(!session){sessionRequired=true;messages=[greeting()];return;}
-        activeSessionId=session.id;loadCheckpoints('videoflow.chat.'+session.id);localSessionLabel=`${session.engine} · ${session.title}`;
+        signInNeeded=status.engines?.find((item:any)=>item.engine===session.engine)?.signed_in===false?(session.engine==='claude'?'Claude Code':'Codex'):'';activeSessionId=session.id;loadCheckpoints('videoflow.chat.'+session.id);localSessionLabel=`${session.engine} · ${session.title}`;
         const turns=await get(`/director/sessions/${session.id}/turns`);if(generation!==conversationGeneration)return;
         const restored:Msg[]=[];
         for(const turn of conversationTurns(turns)){
@@ -784,6 +784,7 @@
       <div class="truncate text-[11px] leading-tight text-muted-foreground">
         <a href="/director" class="underline" title="Choose native engine, saved session and reference context">{localSessionLabel}</a>
       </div>
+      {#if signInNeeded}<a href="/director" class="mt-1 inline-flex items-center rounded-md bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:text-amber-300">{signInNeeded} isn't connected · Connect</a>{/if}
     </div>
     {/if}
     <div class="ml-auto flex items-center gap-1">
