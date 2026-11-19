@@ -150,7 +150,30 @@ func (s *Server) handleCompositionVoiceover(w http.ResponseWriter, r *http.Reque
 		}
 		items = append(items, item)
 	}
-	writeJSON(w, 200, map[string]any{"items": items, "skipped": skipped, "generated": generated, "reused": reused})
+	shifted, overrun := spaceVoiceover(items, body.Clips)
+	writeJSON(w, 200, map[string]any{"items": items, "skipped": skipped, "generated": generated, "reused": reused, "shifted": shifted, "overrun": overrun})
+}
+
+// spaceVoiceover moves lines later so one voice never talks over the previous line
+// (a slow voice can outlast the caption slot), and reports how far the voice now
+// runs past the end of the video clips.
+func spaceVoiceover(items []voiceoverItem, clips []composition.Clip) (shifted int, overrun float64) {
+	const gap = 0.15
+	sort.SliceStable(items, func(i, j int) bool { return items[i].Start < items[j].Start })
+	for i := 1; i < len(items); i++ {
+		if end := items[i-1].Start + items[i-1].Duration + gap; items[i].Start < end {
+			items[i].Start = round3(end)
+			shifted++
+		}
+	}
+	videoEnd := 0.0
+	for _, c := range clips {
+		videoEnd = max(videoEnd, c.Start+c.Duration)
+	}
+	if n := len(items); n > 0 && videoEnd > 0 {
+		overrun = max(0, round3(items[n-1].Start+items[n-1].Duration-videoEnd))
+	}
+	return shifted, overrun
 }
 
 func (s *Server) voiceoverLine(ctx context.Context, project string, voice voiceChoice, cue composition.Cue, speaker string) (voiceoverItem, bool, error) {

@@ -20,7 +20,7 @@
   try{const r=await post('/compositions/voiceover',{clips,narrator:voice?{provider,voice_id:voice}:{}});const items=(r.items??[]) as Item[];const skipped=(r.skipped??[]) as {reason:string}[];
    if(!items.length){note=skipped[0]?.reason??'No script lines found. Add rendered scene videos from Media first.';return}
    await onvoices(items,lower,true);
-   note=`Added ${items.length} voice line${items.length===1?'':'s'}`+(r.generated?` (${r.generated} new`+(r.reused?`, ${r.reused} reused)`:')'):' (all reused, no charge)')+'. Drag them on the Audio track to fine-tune.'+(skipped.length?` Skipped ${skipped.length}: ${skipped[0].reason}`:'');
+   note=`Added ${items.length} voice line${items.length===1?'':'s'}`+(r.generated?` (${r.generated} new`+(r.reused?`, ${r.reused} reused)`:')'):' (all reused, no charge)')+'.'+(r.shifted?` Moved ${r.shifted} later so lines don't overlap.`:'')+(r.overrun>0.5?` The voice runs ${r.overrun.toFixed(1)}s past the video: shorten the script, pick a faster voice, or add a closing shot.`:' Drag them on the Audio track to fine-tune.')+(skipped.length?` Skipped ${skipped.length}: ${skipped[0].reason}`:'');
   }catch(e){error=String(e)}finally{working=false;onbusy(false)}}
  // A line that is not in the script: spoken by the narrator voice at the playhead.
  async function speakTyped(){const text=typed.trim();if(!text||working||disabled||!voice)return;working=true;onbusy(true);error='';note='';remember();

@@ -116,10 +116,9 @@ func (s *Server) outputScriptLines(project, outputID string) ([]timedLine, error
 		Lines []SpokenLine `json:"spoken_lines"`
 	}
 	_ = json.Unmarshal(scene.SceneJSON, &script)
+	// A silent render still has its script: silent footage plus a separate narrator
+	// voice-over (and captions for it) is a normal way to make narrated videos.
 	settings := sceneProduction(scene)
-	if settings.AudioMode == "silent" {
-		return nil, fmt.Errorf("“%s” was made as a silent video", scene.Title)
-	}
 	shots, err := s.database.ListShots(scene.ID)
 	if err != nil {
 		return nil, err

@@ -35,6 +35,8 @@ func mergeCreativeBrief(previous, next *agents.CreativeBrief, message string) ag
 			*pair.dst = strings.TrimSpace(pair.src)
 		}
 	}
+	// The brief form's language menu uses names, so a code such as "en" would leave it blank.
+	result.Language = languageLabel(result.Language)
 	if next.SceneCount > 0 {
 		result.SceneCount = next.SceneCount
 	}
@@ -44,7 +46,7 @@ func mergeCreativeBrief(previous, next *agents.CreativeBrief, message string) ag
 	return result
 }
 
-var languageLabels = map[string]string{"en": "English", "es": "Spanish", "zh": "Chinese", "ja": "Japanese", "ko": "Korean", "fr": "French", "de": "German", "pt": "Portuguese", "it": "Italian", "ru": "Russian", "ar": "Arabic", "hi": "Hindi", "id": "Indonesian", "ms": "Malay", "th": "Thai", "vi": "Vietnamese", "tr": "Turkish", "nl": "Dutch"}
+var languageLabels = map[string]string{"en": "English", "es": "Spanish", "zh": "Mandarin", "ta": "Tamil", "ja": "Japanese", "ko": "Korean", "fr": "French", "de": "German", "pt": "Portuguese", "it": "Italian", "ru": "Russian", "ar": "Arabic", "hi": "Hindi", "id": "Indonesian", "ms": "Malay", "th": "Thai", "vi": "Vietnamese", "tr": "Turkish", "nl": "Dutch"}
 
 // languageLabel shows a language code such as "en" or "zh-CN" as a name; other text is kept.
 func languageLabel(v string) string {

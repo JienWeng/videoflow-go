@@ -39,7 +39,7 @@ func TestVoiceoverSpeaksScriptLinesAtCaptionTimingAndCaches(t *testing.T) {
 	sceneJSON, _ := json.Marshal(map[string]any{"spoken_lines": []map[string]any{
 		{"id": "l1", "text": "Where did the towers come from?", "language": "English"},
 		{"id": "l2", "text": "Let's go back in time!", "language": "English"},
-	}, "production": map[string]any{"dialogue_shots": map[string]string{"l1": "shot-1", "l2": "shot-2"}}})
+	}, "production": map[string]any{"audio_mode": "silent", "dialogue_shots": map[string]string{"l1": "shot-1", "l2": "shot-2"}}}) // silent footage + voice-over
 	scene := &models.Scene{ProjectID: &project, Title: "Towers", Duration: 6, AspectRatio: "9:16", SceneJSON: sceneJSON}
 	if e := s.database.CreateScene(scene); e != nil {
 		t.Fatal(e)
@@ -104,5 +104,16 @@ func TestVoiceoverSpeaksScriptLinesAtCaptionTimingAndCaches(t *testing.T) {
 	}
 	if w = call(t, s, "POST", "/compositions/voiceover", `{"clips":[],"narrator":{"provider":"fish","voice_id":"narrator1"},"lines":[{"text":"  ","start":0}]}`); w.Code != 400 {
 		t.Fatal("blank typed line accepted", w.Code)
+	}
+}
+
+func TestSpaceVoiceoverKeepsOneVoiceAtATime(t *testing.T) {
+	items := []voiceoverItem{{Start: 0, Duration: 5}, {Start: 4.5, Duration: 3}, {Start: 9, Duration: 2}}
+	shifted, overrun := spaceVoiceover(items, []composition.Clip{{Start: 0, Duration: 10}})
+	if shifted != 1 || items[1].Start != 5.15 || items[2].Start != 9 {
+		t.Fatalf("lines should not overlap: shifted=%d %+v", shifted, items)
+	}
+	if overrun != 1 {
+		t.Fatalf("overrun = %v, want 1 (voice ends at 11s, video at 10s)", overrun)
 	}
 }
