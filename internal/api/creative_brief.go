@@ -113,7 +113,7 @@ func creativeBriefQuestion(b agents.CreativeBrief) string {
 	if b.SceneCount > 0 {
 		got = append(got, plural(b.SceneCount, "scene"))
 	}
-	if len(got) == 0 || strings.HasPrefix(question, "Please confirm") {
+	if len(got) == 0 || strings.HasPrefix(question, "Here's the plan") {
 		return question
 	}
 	return "Got it: " + strings.Join(got, ", ") + ". " + question
@@ -151,7 +151,11 @@ func creativeBriefNextQuestion(b agents.CreativeBrief) string {
 	if b.TargetDuration <= 0 {
 		return fmt.Sprintf("How long should the whole video be across %s?", plural(b.SceneCount, "scene"))
 	}
-	return fmt.Sprintf("Please confirm the brief below: %s tone, %s audience, %s, %s at %s, %s %s, %d seconds across %s. Check the visual style too. Nothing generates until you confirm and choose Create.", b.Tone, b.Audience, b.Platform, b.AspectRatio, b.Resolution, b.Language, b.ConversationMode, b.TargetDuration, plural(b.SceneCount, "scene"))
+	audience := strings.TrimSpace(b.Audience)
+	if !strings.Contains(strings.ToLower(audience), "audience") {
+		audience = "for " + audience
+	}
+	return fmt.Sprintf("Here's the plan I picked for you: %s tone, %s, %s, %s at %s, %s %s, %d seconds across %s. Change anything below, or confirm and choose Create. Nothing is made or charged until then.", b.Tone, audience, b.Platform, b.AspectRatio, b.Resolution, b.Language, b.ConversationMode, b.TargetDuration, plural(b.SceneCount, "scene"))
 }
 func (s *Server) confirmedCreativeBrief(project string, b *generationBrief) error {
 	if b.BriefVersion == 0 {
