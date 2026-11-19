@@ -1,4 +1,1 @@
-<script lang="ts">
-  import AssetLibrary from '$lib/library/AssetLibrary.svelte';
-</script>
-<AssetLibrary />
+<p class="p-6 text-sm text-muted-foreground">Opening…</p>

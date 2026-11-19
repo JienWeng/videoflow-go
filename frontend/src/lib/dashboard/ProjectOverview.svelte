@@ -11,9 +11,9 @@
   let busy = $state(false), error = $state('');
   const secondaryAttention = $derived(model?.attention.filter(item => item.id !== model?.primary.id) ?? []);
   const metrics = $derived(model ? [
-    { label: 'Scenes', value: model.metrics.scenes, href: '/scenes' },
+    { label: 'Scenes', value: model.metrics.scenes, href: '/?view=story' },
     { label: 'Characters', value: model.metrics.characters, href: '/characters' },
-    { label: 'Assets', value: model.metrics.assets, href: '/assets' },
+    { label: 'Assets', value: model.metrics.assets, href: '/library?tab=media' },
     { label: 'Finished videos', value: model.metrics.videos, href: '/render' }
   ] : []);
   const formatTime = (date: string) => new Date(date).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });

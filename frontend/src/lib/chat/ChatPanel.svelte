@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { editOutputHref, editSceneHref } from '$lib/editor/links';
  import {editChanges,applyEditProposal} from "$lib/composition/proposals.mjs";
  import StyleReference from '$lib/brief/StyleReference.svelte';
  import * as Dialog from '$lib/components/ui/dialog';
@@ -313,7 +314,7 @@
       if (!p?.next) return null;
       const step = p.next;
       if (step.action === 'open_videos') return { label: `${step.label} · ${p.title}`, href: '/render' };
-      if (step.action === 'open_editor') return { label: `${step.label} · ${p.title}`, href: `/compositions?scene_id=${encodeURIComponent(p.scene_id)}` };
+      if (step.action === 'open_editor') return { label: `${step.label} · ${p.title}`, href: editSceneHref(p.scene_id) };
       if (step.action === 'ask_assistant') return { label: `Why is “${p.title}” stuck?`, send: `Why is “${p.title}” stuck, and what should I do next?` };
       return { label: `${step.label} · ${p.title}`, focusId: p.scene_id, send: `${step.label} for “${p.title}”` };
     };
@@ -495,12 +496,12 @@
     if (ctx.action === 'caption') {
       const outputId = rj.output_id ?? result?.output_id ?? ctx.outputId;
       if (outputId)
-        m.chips = [{ label: 'Open in editor', href: `/editor/${outputId}` }];
+        m.chips = [{ label: 'Edit video', href: editOutputHref(outputId) }];
     } else if (ctx.action === 'storyboard' || ctx.action === 'generate_assets' || ctx.action==='generate_image') {
       const ids: string[] = rj.asset_ids ?? (rj.asset_id ? [rj.asset_id] : []);
       const thumbs = await assetThumbs(ids);
       if (thumbs.length) m.thumbs = thumbs;
-      m.chips = [{ label: 'View in Assets', href: '/assets' }];
+      m.chips = [{ label: 'View in Assets', href: '/library?tab=media' }];
     }
   }
 

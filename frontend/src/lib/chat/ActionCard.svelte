@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { editOutputHref } from '$lib/editor/links';
  import CreativeBriefEditor from '$lib/brief/CreativeBriefEditor.svelte';
  import {normalizeBrief,missingBriefFields,confirmedBriefRequest} from '$lib/brief/brief.mjs';
  let newRenderVersion = $state(false);
@@ -609,7 +610,7 @@
 
       {#if intent.action === 'caption'}
         <p class="text-xs text-muted-foreground">Transcribe or write captions in the editor first. This action burns saved captions into a new video file.</p>
-        {#if outputId}<a class="text-xs underline" href={`/editor/${outputId}`}>Open caption editor</a>{/if}
+        {#if outputId}<a class="text-xs underline" href={editOutputHref(outputId)}>Open in video editor</a>{/if}
         <div>
           <div>
             <label class={labelClass} for="style-{intent.action}">Style</label>

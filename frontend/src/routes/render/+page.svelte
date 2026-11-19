@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { editOutputHref } from '$lib/editor/links';
  const operationScope=new AbortController();
  onDestroy(()=>operationScope.abort());
   import { onMount,onDestroy } from 'svelte';
@@ -33,7 +34,7 @@
   async function assemble(){
    if(assemblyIDs.length<2||assembling)return;assembling=true;
    try{await runBackgroundOp('/outputs/assemble',{output_ids:assemblyIDs,aspect_ratio:assemblyAspect,captioned:assemblyCaptioned},{signal:operationScope.signal,
-          label:'Assembling selected clips',onDone:async(op)=>{assembling=false;assemblyIDs=[];await refresh();if(op.result_json?.output_id)await goto(`/editor/${op.result_json.output_id}`)},onFail:()=>assembling=false})}catch(e:any){assembling=false;toast.error(e.message)}
+          label:'Assembling selected clips',onDone:async(op)=>{assembling=false;assemblyIDs=[];await refresh();if(op.result_json?.output_id)await goto(editOutputHref(op.result_json.output_id))},onFail:()=>assembling=false})}catch(e:any){assembling=false;toast.error(e.message)}
   }
   let jobs: any[] = $state([]);
   let scenes: any[] = $state([]);
@@ -550,7 +551,7 @@
                         <VideoPreview
                           path={out.captioned_path || out.video_path}
                           poster={out.thumbnail_path}
-                          href={`/editor/${out.id}`}
+                          href={editOutputHref(out.id)}
                         />
                         {#if out.selected}
                           <Badge class="absolute left-2 top-2 gap-1">
@@ -562,10 +563,10 @@
                         {/if}
                       </div>
 
-                      <!-- Primary: open in editor (the only place to finish a video) -->
+                      <!-- Primary: open in the video editor (trim, captions, music, export) -->
                       <div class="mt-2">
-                        <Button size="sm" class="w-full" href={`/editor/${out.id}`} title="Edit captions, voices and details for this video">
-                          <Clapperboard class="size-3.5 mr-1.5" />Captions & details
+                        <Button size="sm" class="w-full" href={editOutputHref(out.id)} title="Trim, add captions and music, then export">
+                          <Clapperboard class="size-3.5 mr-1.5" />Edit video
                         </Button>
                       </div>
 

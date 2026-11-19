@@ -264,7 +264,7 @@
     {#if scene}
       <div class="grid gap-1.5">
         <Label>Scene</Label>
-        <a href="/scenes" class="text-sm text-primary hover:underline">{scene.title}</a>
+        <a href={`/?view=story&scene_id=${encodeURIComponent(scene.id)}`} class="text-sm text-primary hover:underline">{scene.title}</a>
       </div>
     {/if}
     <p class="text-xs text-muted-foreground">

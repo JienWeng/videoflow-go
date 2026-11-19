@@ -205,14 +205,17 @@
     );
     // Pull in the scene plus its direct neighbours so the cluster reads as a unit.
     const around = new Set<string>([newest.id]);
+    const isCharacter = (id: string) => String(nodes.find((n) => n.id === id)?.data?.kind ?? '') === 'character';
     for (const e of edges) {
-      if (e.source === newest.id) around.add(e.target);
-      if (e.target === newest.id) around.add(e.source);
+      // Cast live in their own band below the scene; leaving them out keeps the first view readable.
+      if (e.source === newest.id && !isCharacter(e.target)) around.add(e.target);
+      if (e.target === newest.id && !isCharacter(e.source)) around.add(e.source);
     }
     flow?.fitView({
       nodes: [...around].map((id) => ({ id })),
       duration: reducedMotion ? 0 : 250,
       padding: fitPadding,
+      minZoom: 0.55,
       maxZoom: 1.1
     });
   }

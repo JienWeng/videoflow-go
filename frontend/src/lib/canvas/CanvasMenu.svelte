@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { editOutputHref } from '$lib/editor/links';
   /** Right-click context menu for canvas nodes: open / link / delink / delete.
    * Submenus stay simple — clicking a parent item swaps the menu content to a
    * choice list with a back row (no nested popovers). */
@@ -175,8 +176,8 @@
       <PanelRight class="size-3.5" />Open details
     </button>
     {#if kind === 'output'}
-      <a class={itemCls} role="menuitem" href={`/editor/${node.id}`}>
-        <Clapperboard class="size-3.5" />Open in editor
+      <a class={itemCls} role="menuitem" href={editOutputHref(node.id)}>
+        <Clapperboard class="size-3.5" />Edit video
       </a>
     {/if}
 

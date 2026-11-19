@@ -1367,6 +1367,10 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 	assets, err := d.ListAssets(projectID)
 	if err == nil {
 		for _, a := range assets {
+			// Finished edited exports are deliverables (Videos → Edited videos), not story building blocks.
+			if a.Type == "output_video" {
+				continue
+			}
 			var review struct {
 				Status string `json:"consistency_review"`
 			}

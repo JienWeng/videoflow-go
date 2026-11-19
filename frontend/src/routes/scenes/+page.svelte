@@ -1,4 +1,1 @@
-<script lang="ts">
-  import StoryWorkspace from '$lib/scenes/StoryWorkspace.svelte';
-</script>
-<StoryWorkspace />
+<p class="p-6 text-sm text-muted-foreground">Opening…</p>

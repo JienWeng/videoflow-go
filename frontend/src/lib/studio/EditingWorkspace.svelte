@@ -18,8 +18,8 @@
  let assets:any[]=[];let sourcesLoaded=false;let runtime:any=null;let error='';let log='';let busy=false;let revision='';let rendered='';let snapshots:string[]=[];
  $: visualSources=assets.filter(a=>a.media_kind==='image'||a.media_kind==='video');
  $: audioSources=assets.filter(a=>a.media_kind==='audio'||a.media_kind==='video');
- let mobilePanel="editor";let draftKey="";let draftReady=false;let dirty=false;
- protectDraft(()=>dirty||advancedDirty,'You have unsaved composition changes. Discard them and leave?');
+ let mobilePanel="editor";let draftKey="";let draftReady=false;let baseline='';let dirty=false;
+ protectDraft(()=>(dirty&&JSON.stringify(draft)!==baseline)||advancedDirty,'You have unsaved composition changes. Discard them and leave?');
  let savedEdits:any[]=[];let indexError='';
  async function refreshIndex(){try{savedEdits=await get('/compositions');indexError='';}catch(e){indexError='Could not load saved edits. '+String(e)}}
  let opening=true;let noticeTimer:any;$: if(notice&&!exportOpen){clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>notice='',8000)}
@@ -42,7 +42,7 @@
  // start from the story's finished scene videos so there is something to work with.
  if(!saved&&!seed&&!scene&&!story&&!draft.clips.length&&!draft.audio.length){await refreshIndex();try{if(savedEdits.length){const latest=[...savedEdits].sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)))[0];draft=await get('/compositions/'+encodeURIComponent(latest.revision));revision=draft.revision;dirty=false;notice='Your latest saved edit is open.';resetHistory();const url=new URL(window.location.href);url.searchParams.set('revision',revision);window.history.replaceState({},'',url)}else{const scripts=await get('/scripts');if(scripts?.length){draft=await get('/scripts/'+encodeURIComponent(scripts[0].id)+'/composition-draft');resetHistory();dirty=false;autoStarted=true;notice='Your finished scene videos are on the timeline in story order. Add music or captions, then Export.'}}}catch{/* nothing finished yet: start empty */}}
  if(!saved&&!draft.clips.length&&!draft.audio.length&&draft.width===640&&draft.height===360){try{const app=await get('/settings/app');const size=({'9:16':[1080,1920],'16:9':[1920,1080],'1:1':[1080,1080]} as Record<string,number[]>)[app?.default_aspect_ratio];if(size){draft={...draft,width:size[0],height:size[1]};resetHistory()}}catch{/* keep the built-in format */}}
- if(!activeClip)activeClip=draft.clips[0]?.id??'';draftReady=true;
+ if(!activeClip)activeClip=draft.clips[0]?.id??'';draftReady=true;baseline=JSON.stringify(draft);
  }catch(e){error=String(e)}finally{opening=false}});
  async function add(track:'clips'|'audio',id:string,at?:number){if(!id||busy)return;busy=true;error='';try{const info=await sourceInfo(id);const start=at!==undefined?Math.max(0,at):track==='clips'?Math.max(0,...draft.clips.map(c=>c.start+c.duration)):0;const duration=info.duration>0?info.duration:3;if(start+duration>600)throw Error('This source would exceed the 600-second composition limit. Trim it in a separate edit first.');draft.duration=!draft.clips.length&&!draft.audio.length?duration:Math.max(draft.duration,start+duration);const clip={id:uid(track==='audio'?'audio':'clip'),asset_id:id,start,trim:0,duration,speed:1,has_audio:info.has_audio,...(track==='audio'?{volume:0.15,fade_in:Math.min(0.4,duration/4),fade_out:Math.min(1,duration/4)}:{})};draft[track]=[...draft[track],clip];activeClip=clip.id;invalidate()}catch(e){error=String(e)}finally{busy=false}}
 
@@ -66,7 +66,8 @@
  type Track='clips'|'audio'|'captions';
  $: selTrack=(draft.clips.some(c=>c.id===activeClip)?'clips':draft.audio.some(c=>c.id===activeClip)?'audio':draft.captions.some(c=>c.id===activeClip)?'captions':'') as Track|'';
  $: selIndex=selTrack?draft[selTrack].findIndex((c:any)=>c.id===activeClip):-1;
- $: editTitle=revision?'Saved edit · '+(savedEdits.find(e=>e.revision===revision)?.created_at?new Date(savedEdits.find(e=>e.revision===revision).created_at).toLocaleDateString([], {month:'short',day:'numeric'}):revision.slice(0,8)):'New edit';
+ $: firstClipName=(assets.find(a=>a.id===draft.clips[0]?.asset_id)?.name??'').replace(/\.[a-z0-9]{2,4}$/i,'').trim();
+ $: editTitle=revision?(firstClipName||'Saved edit')+' · '+(savedEdits.find(e=>e.revision===revision)?.created_at?new Date(savedEdits.find(e=>e.revision===revision).created_at).toLocaleDateString([], {month:'short',day:'numeric'}):revision.slice(0,8)):(firstClipName?'Edit · '+firstClipName:'New edit');
  const fmt=(t:number)=>`${Math.floor(t/60)}:${(t%60).toFixed(2).padStart(5,'0')}`;
  function fitLength(){draft.duration=Math.round(contentEnd(draft)*1000)/1000}
  function select(id:string,track:Track){activeClip=id;rightTab='inspect';mobileTab='inspect'}

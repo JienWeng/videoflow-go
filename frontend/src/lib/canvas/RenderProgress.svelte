@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { editOutputHref, editSceneHref } from '$lib/editor/links';
  import {untrack} from 'svelte';
  import {get,mediaUrl} from '$lib/api';import {subscribeJobs} from '$lib/sse';
  import {Film,Check,TriangleAlert} from '@lucide/svelte';import {Button} from '$lib/components/ui/button';
@@ -36,7 +37,7 @@
  {#if active}<div aria-hidden="true" class="space-y-2"><div class="h-2 w-3/4 rounded bg-muted"></div><div class="h-2 w-1/2 rounded bg-muted"></div></div><p class="text-xs text-muted-foreground">Updates automatically · Timing depends on the video provider</p>{/if}
  {#if error}<Button variant="outline" size="sm" onclick={()=>retry++}>Reload render details</Button>{/if}
  {#if detail?.job.request_json?.audio_mode}<p class="text-xs text-muted-foreground">Audio: {detail.job.request_json.audio_mode==='native'?'native dialogue, ambience and effects':detail.job.request_json.audio_mode==='saved'?'silent visuals for saved-voice speech':'silent'}</p>{/if}
- {#if output}<Button variant="outline" size="sm" href={`/editor/${output.id}`}>Open video editor</Button>{#if detail?.job.scene_id}<Button variant="outline" size="sm" href={`/compositions?scene_id=${encodeURIComponent(detail.job.scene_id)}`}>Assemble clips & add music</Button>{/if}{/if}
+ {#if output}<Button variant="outline" size="sm" href={editOutputHref(output.id)}>Edit this video</Button>{#if detail?.job.scene_id}<Button variant="outline" size="sm" href={editSceneHref(detail.job.scene_id)}>Trim clips & add music</Button>{/if}{/if}
 </section>
 <style>
  .preview-light{animation:render-breathe 2.8s ease-in-out infinite;pointer-events:none}

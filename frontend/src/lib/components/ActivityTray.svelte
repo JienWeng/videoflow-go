@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { editOutputHref } from '$lib/editor/links';
   import { fade } from 'svelte/transition';
   import {
     Loader2,
@@ -47,7 +48,7 @@
 
   /** Where a "retry" CTA should take the user for a failed item. */
   function retryHref(item: ActivityItem): string {
-    if (item.output_id) return `/editor/${item.output_id}`;
+    if (item.output_id) return editOutputHref(item.output_id);
     return '/render';
   }
   function retryLabel(item: ActivityItem): string {

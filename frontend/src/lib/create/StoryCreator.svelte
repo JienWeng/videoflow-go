@@ -265,7 +265,7 @@
           <p class="mt-1 text-muted-foreground">Open existing scenes to inspect completed work. Creating again starts a new pipeline and may repeat paid stages.</p>
           {/if}
           {#if !['awaiting_reference_review','awaiting_character_review','ready_to_render'].includes(lastResult.status)}<div class="mt-3 flex flex-wrap gap-2">
-            <Button type="button" variant="secondary" onclick={() => goto('/scenes')}>Open existing scenes</Button>
+            <Button type="button" variant="secondary" onclick={() => goto('/?view=story')}>Open existing scenes</Button>
             {#if lastResult.render_job_ids?.length}<Button type="button" variant="outline" onclick={() => goto('/render')}>Open render jobs</Button>{/if}
 
           </div>{/if}

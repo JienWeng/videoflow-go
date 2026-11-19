@@ -1,4 +1,1 @@
-<script lang="ts">
-  import CharacterLibrary from '$lib/library/CharacterLibrary.svelte';
-</script>
-<CharacterLibrary />
+<p class="p-6 text-sm text-muted-foreground">Opening…</p>

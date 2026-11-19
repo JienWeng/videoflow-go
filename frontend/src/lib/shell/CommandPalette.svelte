@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { editOutputHref } from '$lib/editor/links';
   /**
    * Cmd/Ctrl+K command palette — the keyboard-first way around the Studio.
    *
@@ -188,10 +189,10 @@
         out.push({
           id: `out-${n.id}`,
           label: lastPath(n.data?.video_path) || n.label || 'Render',
-          hint: 'render output',
+          hint: 'render output · edit video',
           group: 'Renders',
           icon: Film,
-          href: `/editor/${n.id}`
+          href: editOutputHref(n.id)
         });
       }
     }
