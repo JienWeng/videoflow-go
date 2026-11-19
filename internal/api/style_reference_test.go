@@ -100,3 +100,14 @@ func TestReferenceVideoSampling(t *testing.T) {
 		t.Fatal("invalid input accepted")
 	}
 }
+
+func TestStyleAnalysisAcceptsListsAndIgnoresExtraFields(t *testing.T) {
+	var a styleAnalysis
+	raw := `{"name":"Neon night","style_prompt":"wet streets, neon glow","palette":["navy","magenta",""],"lighting":"low-key","audience":7,"tone":null,"created_at":""}`
+	if err := json.Unmarshal([]byte(raw), &a); err != nil {
+		t.Fatal(err)
+	}
+	if a.Palette != "navy, magenta" || a.Audience != "7" || a.Tone != "" || a.StylePrompt != "wet streets, neon glow" {
+		t.Fatalf("%+v", a)
+	}
+}

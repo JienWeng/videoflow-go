@@ -215,6 +215,7 @@ func (c *OpenRouterClient) StructuredJSON(ctx context.Context, model, system, us
 func (c *OpenRouterClient) StructuredVision(ctx context.Context, model, system, user string, images []string, target any) error {
 	template, _ := json.Marshal(exampleShape(reflect.TypeOf(target)))
 	system += "\nReturn only a JSON object matching this shape (replace zero values with the requested content): " + string(template) + ". Do not use markdown."
+	var last error
 	for attempt := 0; attempt < 2; attempt++ {
 		var content any = user
 		if len(images) > 0 {
@@ -232,12 +233,17 @@ func (c *OpenRouterClient) StructuredVision(ctx context.Context, model, system, 
 		result = strings.TrimPrefix(result, "```json")
 		result = strings.TrimPrefix(result, "```")
 		result = strings.TrimSuffix(result, "```")
-		if err = json.Unmarshal([]byte(strings.TrimSpace(result)), target); err == nil {
+		result = strings.TrimSpace(result)
+		if i, j := strings.Index(result, "{"), strings.LastIndex(result, "}"); i > 0 && j > i {
+			result = result[i : j+1] // Models sometimes wrap the object in a sentence.
+		}
+		if err = json.Unmarshal([]byte(result), target); err == nil {
 			return nil
 		}
+		last = err
 		user += "\nYour last response was not valid JSON. Return the requested JSON object only."
 	}
-	return fmt.Errorf("OpenRouter model %s returned invalid JSON after two attempts", model)
+	return fmt.Errorf("OpenRouter model %s returned invalid JSON after two attempts: %v", model, last)
 }
 
 type GeneratedImage struct {
