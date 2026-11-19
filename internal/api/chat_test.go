@@ -198,3 +198,36 @@ func TestChatMakeClipUsesAttachedPhotoAndRefusesWithoutOne(t *testing.T) {
 		t.Fatal(result.Code, result.Body.String())
 	}
 }
+
+func TestTryAgainWithNoFinishedVideoBecomesMakingTheSceneVideo(t *testing.T) {
+	answer := `{"reply":"I can redo it.","action":"retry_render","scene_id":"Not to Mourn"}`
+	s := routerServer(t, fakeChatModel(answer))
+	project, _ := s.database.GetActiveProjectID()
+	for i, title := range []string{"The Quiet End", "Not to Mourn"} {
+		if e := s.database.CreateScene(&models.Scene{ProjectID: &project, SceneOrder: i + 1, Title: title, Duration: 10, AspectRatio: "9:16", CharacterIDsJSON: []byte("[]"), SceneJSON: []byte("{}")}); e != nil {
+			t.Fatal(e)
+		}
+	}
+	w := call(t, s, "POST", "/chat", `{"message":"try again"}`)
+	var body struct {
+		Intent struct {
+			Action  string
+			SceneID string `json:"scene_id"`
+		}
+	}
+	if e := json.Unmarshal(w.Body.Bytes(), &body); e != nil || w.Code != 200 {
+		t.Fatalf("chat: %d %s", w.Code, w.Body.String())
+	}
+	scenes, _ := s.database.ListScenes(project)
+	want := ""
+	for _, scene := range scenes {
+		if scene.Title == "Not to Mourn" {
+			want = scene.ID
+		}
+	}
+	// With no finished video there is nothing to pick in an "Output" list, so the card
+	// must be the one that makes the named scene's video.
+	if body.Intent.Action != "render_scene" || body.Intent.SceneID != want {
+		t.Fatalf("action = %q scene = %q, want render_scene on %q", body.Intent.Action, body.Intent.SceneID, want)
+	}
+}

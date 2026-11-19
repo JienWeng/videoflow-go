@@ -650,7 +650,9 @@
         </div>
       {/if}
 
-      {#if ['caption', 'retry_render'].includes(intent.action)}
+      {#if ['caption', 'retry_render'].includes(intent.action) && !options.outputs.length}
+        <p role="status" class="text-sm text-muted-foreground">There is no finished video yet, so there is nothing to pick here. Make the scene's video first: ask "make the video for" and the scene name.</p>
+      {:else if ['caption', 'retry_render'].includes(intent.action)}
         <div>
           <label class={labelClass} for="output-{intent.action}">Output</label>
           <select id="output-{intent.action}" bind:value={outputId} class={selectClass}>

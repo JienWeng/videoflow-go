@@ -145,6 +145,17 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	action := canonicalChatAction(res.Action)
+	// retry_render redoes a finished video. When there is no finished video to redo (the
+	// scene's video failed or was never made), "try again" means making the scene video.
+	if action == "retry_render" && !(body.Selected != nil && body.Selected.Kind == "output") {
+		finished := res.OutputID == "" && len(outputsList) == 1
+		for _, output := range outputsList {
+			finished = finished || output["id"] == res.OutputID
+		}
+		if !finished {
+			action = "render_scene"
+		}
+	}
 	// A selection is the default target, not a cage: when the user clearly asks for
 	// something else (another scene, or a project-level step), follow the request.
 	selectionApplies := body.Selected != nil && selectedChatActionAllowed(body.Selected.Kind, action)
