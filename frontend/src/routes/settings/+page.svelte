@@ -685,7 +685,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
               <Plug class="size-4" />AI connections
             </CardTitle>
             <CardDescription>
-              Configure Fish Audio or ElevenLabs for character speech, fal.ai for images/video, OpenRouter for vision/transcription, and optional direct BytePlus Seedance video. Planning and writing use local AI sessions. Keys stay on the backend and are never shown again after saving.
+              Add a key for each service you have an account with: fal.ai, OpenAI or OpenRouter for pictures and video, any of the video services (ArgoLink, Loopling, Replicate, Kie.ai, WaveSpeed, Runway, BytePlus) to compare prices, and Fish Audio or ElevenLabs for voices. Planning and writing use your Claude or Codex session. Keys stay on the backend and are never shown again after saving.
             </CardDescription>
           </CardHeader>
           <CardContent class="space-y-5">

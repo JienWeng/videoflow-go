@@ -35,9 +35,25 @@ var presetCatalog = map[string]ProviderPresetInfo{
 }
 
 func init() {
+	added := 0
 	for _, host := range costs.Hosts {
 		if providers.VideoHost(host.Name) {
-			presetCatalog[host.Name] = ProviderPresetInfo{Label: host.Label, Protocol: "video", URL: host.URL, DefaultModel: host.Models[costs.Families[0].ID], EnvKey: host.EnvKey}
+			models := []string{}
+			for _, family := range costs.Families {
+				if id := host.Models[family.ID]; id != "" {
+					models = append(models, id)
+				}
+			}
+			presetCatalog[host.Name] = ProviderPresetInfo{Label: host.Label, Protocol: "video", URL: host.URL, DefaultModel: host.Models[costs.Families[0].ID], SuggestedModels: models, EnvKey: host.EnvKey}
+			// Video services sit together, right after BytePlus.
+			for i, name := range presetOrder {
+				if name == "byteplus" {
+					at := i + 1 + added
+					presetOrder = append(presetOrder[:at], append([]string{host.Name}, presetOrder[at:]...)...)
+					added++
+					break
+				}
+			}
 		}
 	}
 }
