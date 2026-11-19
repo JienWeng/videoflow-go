@@ -245,6 +245,15 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			intent["job_id"], intent["scene_id"], intent["scene_title"], intent["service"], intent["waiting_reason"] = waiting.Video.JobID, waiting.SceneID, waiting.Title, waiting.Video.Service, waiting.Video.Reason
 		}
 	}
+	if action == "switch_video_service" {
+		if choice, why := s.chatVideoSwitch(res.SwitchTo); choice == nil {
+			action = "unknown"
+			intent["action"] = action
+			intent["reply"] = why
+		} else {
+			intent["video_switch"] = choice
+		}
+	}
 	if action == "make_clip" {
 		clip := s.chatClip(projectID, res, attachments)
 		if clip == nil {
@@ -397,7 +406,7 @@ func canonicalChatAction(action string) string {
 	switch action {
 	case "create_script", "add_scene":
 		return "generate_script"
-	case "open_editor", "make_clip", "finish_video", "render_scenes", "check_video", "stop_waiting", "update_character", "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "caption", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
+	case "open_editor", "make_clip", "finish_video", "render_scenes", "check_video", "stop_waiting", "switch_video_service", "update_character", "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "caption", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
 		return action
 	default:
 		return "unknown"

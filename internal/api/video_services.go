@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"videoflow-go/internal/costs"
 	"videoflow-go/internal/providers"
@@ -33,23 +34,33 @@ type videoService struct {
 }
 
 func (s *Server) videoServices(r *http.Request, family, resolution string, seconds float64) map[string]any {
-	routes := s.routes()
 	s.refreshVideoPrices(r.Context(), r.URL.Query().Get("refresh") == "1")
 	s.refreshKeyChecks()
 	settings, _ := s.database.AppSettingsSnapshot()
-	text := func(key, fallback string) string {
-		var value string
-		if json.Unmarshal([]byte(settings[key]), &value) == nil && value != "" {
-			return value
-		}
-		return fallback
-	}
+	text := func(key, fallback string) string { return settingText(settings, key, fallback) }
 	if family == "" {
 		family = text("video_family", costs.Families[0].ID)
 	}
 	if resolution == "" {
 		resolution = text("default_resolution", "720p")
 	}
+	provider, model := s.routes().MediaSelection("video")
+	current := map[string]any{"provider": provider, "model": model, "label": videoServiceLabel(provider), "family": costs.FamilyOf(provider, model)}
+	return map[string]any{"families": costs.Families, "model": family, "resolution": resolution, "seconds": seconds, "routing": text("video_routing", "manual"), "current": current, "services": s.videoOffers(family, resolution, seconds, settings)}
+}
+
+func settingText(settings map[string]string, key, fallback string) string {
+	var value string
+	if json.Unmarshal([]byte(settings[key]), &value) == nil && value != "" {
+		return value
+	}
+	return fallback
+}
+
+// videoOffers lists every service that sells the family at the resolution, cheapest
+// first, and whether each can make scene videos now. It reads saved state only.
+func (s *Server) videoOffers(family, resolution string, seconds float64, settings map[string]string) []videoService {
+	routes := s.routes()
 	provider, model := routes.MediaSelection("video")
 	list, picked := []videoService{}, false
 	for _, offer := range costs.Offers(family, resolution, "16:9", costs.LiveFromSettings(settings)) {
@@ -70,20 +81,23 @@ func (s *Server) videoServices(r *http.Request, family, resolution string, secon
 		}
 		list = append(list, v)
 	}
-	current := map[string]any{"provider": provider, "model": model, "label": serviceLabel(provider), "family": costs.FamilyOf(provider, model)}
-	if host := costs.HostByName(provider); host != nil {
-		current["label"] = host.Label
-	}
-	return map[string]any{"families": costs.Families, "model": family, "resolution": resolution, "seconds": seconds, "routing": text("video_routing", "manual"), "current": current, "services": list}
+	return list
 }
 
-// chatVideoService tells the assistant which service makes the videos and what it charges.
+// chatVideoFamily is the video model the assistant prices and switches: the one in use,
+// or the saved choice when the service in use is not a known host.
+func (s *Server) chatVideoFamily(settings map[string]string) string {
+	if family := costs.FamilyOf(s.routes().MediaSelection("video")); family != "" {
+		return family
+	}
+	return settingText(settings, "video_family", costs.Families[0].ID)
+}
+
+// chatVideoService tells the assistant which service makes the videos, what it charges,
+// and which other services could make them now (cheapest first).
 func (s *Server) chatVideoService() map[string]any {
 	provider, model := s.routes().MediaSelection("video")
-	out := map[string]any{"service": serviceLabel(provider), "picked": "by the user"}
-	if host := costs.HostByName(provider); host != nil {
-		out["service"] = host.Label
-	}
+	out := map[string]any{"service": videoServiceLabel(provider), "picked": "by the user"}
 	if s.routes().Setting("video_routing", "manual") == "cheapest" {
 		out["picked"] = "automatically, the cheapest connected service"
 	}
@@ -95,7 +109,47 @@ func (s *Server) chatVideoService() map[string]any {
 	if price, ok := costs.HostPrice(provider, family, "720p", "16:9", costs.LiveFromSettings(settings)); ok {
 		out["dollars_per_second_720p"] = money(price)
 	}
+	others := []map[string]any{}
+	for _, v := range s.videoOffers(s.chatVideoFamily(settings), "720p", 1, settings) {
+		if v.Usable && !v.InUse && len(others) < 3 {
+			others = append(others, map[string]any{"id": v.Provider, "service": v.Label, "dollars_per_second_720p": v.PerSecond})
+		}
+	}
+	if len(others) > 0 {
+		out["can_switch_to"] = others
+	}
 	return out
+}
+
+// chatVideoSwitch checks the service the planner offers to switch to (a service id or
+// label, or "cheapest"). It returns the button's routing request, or the plain reason
+// no switch can be offered.
+func (s *Server) chatVideoSwitch(want string) (map[string]any, string) {
+	settings, _ := s.database.AppSettingsSnapshot()
+	family := s.chatVideoFamily(settings)
+	want = strings.TrimSpace(want)
+	cheapest := strings.EqualFold(want, "cheapest")
+	for _, v := range s.videoOffers(family, "720p", 1, settings) {
+		if cheapest && !v.Usable || !cheapest && !strings.EqualFold(want, v.Provider) && !strings.EqualFold(want, v.Label) {
+			continue
+		}
+		if !v.Usable {
+			return nil, v.Label + " can't make your videos right now. " + v.Note
+		}
+		if v.InUse && !cheapest {
+			return nil, v.Label + " already makes your videos, so there is nothing to switch."
+		}
+		mode := "manual"
+		if cheapest {
+			mode = "cheapest"
+		}
+		return map[string]any{"mode": mode, "model": family, "provider": v.Provider, "label": v.Label, "per_second": v.PerSecond}, ""
+	}
+	fix := "No other connected video service can make these videos yet."
+	if provider, _ := s.routes().MediaSelection("video"); s.serviceProblem(provider) != "" {
+		fix = s.serviceProblem(provider) + " " + fix
+	}
+	return nil, fix + " Add a working key for a video service, then ask me again."
 }
 
 func (s *Server) handleVideoServices(w http.ResponseWriter, r *http.Request) {
@@ -133,6 +187,17 @@ func (s *Server) handleVideoRouting(w http.ResponseWriter, r *http.Request) {
 	if body.Mode == "manual" && body.Provider == "" {
 		// No service named: keep the one in use, moved to the chosen model.
 		body.Provider, _ = s.routes().MediaSelection("video")
+	}
+	if body.Mode == "cheapest" {
+		settings, _ := s.database.AppSettingsSnapshot()
+		usable := false
+		for _, v := range s.videoOffers(body.Model, settingText(settings, "default_resolution", "720p"), 1, settings) {
+			usable = usable || v.Usable
+		}
+		if !usable {
+			http.Error(w, "none of your connected video services can make videos from your pictures; add a working key for one first", 400)
+			return
+		}
 	}
 	if body.Mode == "manual" {
 		host := costs.HostByName(body.Provider)

@@ -71,7 +71,7 @@ func (s *Server) chatSelectionContext(project string, selected *chatSelection) (
 
 func selectedChatActionAllowed(kind, action string) bool {
 	switch action {
-	case "unknown", "open_editor", "make_clip", "finish_video", "render_scenes", "check_video", "stop_waiting":
+	case "unknown", "open_editor", "make_clip", "finish_video", "render_scenes", "check_video", "stop_waiting", "switch_video_service":
 		return true
 	}
 	switch kind {

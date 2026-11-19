@@ -6,6 +6,7 @@
  import Paperclip from '@lucide/svelte/icons/paperclip';
  import FinishCost from '$lib/costs/FinishCost.svelte';
  import ScenesCard from './ScenesCard.svelte';
+ import VideoSwitchCard from './VideoSwitchCard.svelte';
  import StuckVideo from '$lib/production/StuckVideo.svelte';
   import ClipCard from './ClipCard.svelte';
  import {upload as apiUpload} from '$lib/api';
@@ -1040,6 +1041,8 @@
               <ScenesCard scenes={m.intent.scenes ?? []} onstart={()=>{m.dismissed=true;void startScenes(m.intent.scene_ids)}} />
             {:else if !editing && (m.intent?.action === 'check_video' || m.intent?.action === 'stop_waiting') && m.intent.job_id && !m.dismissed}
               <StuckVideo jobId={m.intent.job_id} service={m.intent.service} reason={m.intent.waiting_reason} autoCheck={m.intent.action==='check_video'&&!!m.autoRun&&autoMode} askStop={m.intent.action==='stop_waiting'} onsettled={check=>{m.autoRun=false;void onmutate?.();void refreshChips();offerMakeAgain(check,m.intent.scene_title)}} />
+            {:else if !editing && m.intent?.action === 'switch_video_service' && m.intent.video_switch && !m.dismissed}
+              <VideoSwitchCard choice={m.intent.video_switch} onswitched={text=>{m.dismissed=true;messages.push({role:'assistant',text});void onmutate?.();void refreshChips()}} />
             {:else if !editing && m.intent?.action === 'make_clip' && m.intent.clip && !m.dismissed}
               <ClipCard clip={m.intent.clip} onjob={id=>m.intent={...m.intent,clip:{...m.intent.clip,job_id:id}}} ondismiss={()=>m.dismissed=true} />
             {:else if !editing && m.intent && m.intent.action !== 'unknown' && !m.dismissed}
