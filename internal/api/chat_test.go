@@ -103,3 +103,9 @@ func TestScopedChatRefusesWrongKindAction(t *testing.T) {
 		t.Fatalf("wrong-scope runnable action: %s", result.Body.String())
 	}
 }
+
+func TestOpenEditorActionIsFreeNavigationWithKnownPanel(t *testing.T) {
+	if canonicalChatAction("open_editor") != "open_editor" || !selectedChatActionAllowed("output", "open_editor") || !selectedChatActionAllowed("scene", "open_editor") {
+		t.Fatal("open_editor must be a supported action for any selection")
+	}
+}

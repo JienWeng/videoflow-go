@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { editOutputHref } from '$lib/editor/links';
+  import { editHref, editOutputHref } from '$lib/editor/links';
  import CreativeBriefEditor from '$lib/brief/CreativeBriefEditor.svelte';
  import {normalizeBrief,missingBriefFields,confirmedBriefRequest} from '$lib/brief/brief.mjs';
  let newRenderVersion = $state(false);
@@ -30,6 +30,7 @@
   }
 
   interface Intent {
+ editor_panel?:string;
  creation_brief?:any;
     action: string;
     asset_type?:string;
@@ -159,6 +160,14 @@
   let developing = $state(false);
 
   let repairStoryboard = $state(false);
+  const editorPanels: Record<string,{label:string;help:string;panel:string}> = {
+    voice:{label:'Open Voice from script',help:'In Edit video → Audio, Voice from script speaks your scene lines with saved character voices or a narrator voice. Only new lines use speech credits.',panel:'audio'},
+    music:{label:'Open Audio in the editor',help:'Add music from your Library or upload a track in Edit video → Audio, then set its volume and fades.',panel:'audio'},
+    captions:{label:'Open Captions in the editor',help:'Edit video → Text makes captions from the script or the actual audio, and can translate them.',panel:'text'},
+    export:{label:'Open Export',help:'Export renders your edit to an MP4 you can download.',panel:'export'},
+    edit:{label:'Open Edit video',help:'Trim, reorder and combine scene videos on the timeline. Nothing is generated.',panel:''}
+  };
+  const editorTarget = $derived(editorPanels[intent.editor_panel as string] ?? editorPanels.edit);
   const labels: Record<string, string> = {
     generate_script: 'Create story & references',
     generate_image:'Generate image',
@@ -421,9 +430,12 @@
 </script>
 
 <Item.Root variant="outline" class="mt-2 w-full items-start"><Item.Content class="min-w-0">
-  <Item.Title>Creation options</Item.Title><Item.Description>Adjust the options, then choose an action to start. Editing fields does not run generation.</Item.Description>
+  {#if intent.action==='open_editor'}<Item.Title>Edit video</Item.Title>{:else}<Item.Title>Creation options</Item.Title><Item.Description>Adjust the options, then choose an action to start. Editing fields does not run generation.</Item.Description>{/if}
   <div class="mt-3 space-y-3">
-    {#if intent.action === 'unknown'}
+    {#if intent.action === 'open_editor'}
+      <p class="text-xs text-muted-foreground">{editorTarget.help}</p>
+      <div class="pt-1"><Button size="sm" class="rounded-full px-4" href={editorTarget.panel?`${editHref}&panel=${editorTarget.panel}`:editHref}>{editorTarget.label}</Button></div>
+    {:else if intent.action === 'unknown'}
       {#if projectState?.next_steps?.length}
         <div class="text-sm space-y-1">
           <p class="font-medium">Next steps:</p>
@@ -436,20 +448,15 @@
       {/if}
       <details class="text-sm text-muted-foreground">
         <summary class="cursor-pointer text-xs hover:text-foreground select-none">
-          What can you do? / 你能做什么？
+          What can I ask?
         </summary>
         <ul class="list-disc pl-4 mt-1 space-y-0.5">
-          <li>generate a script from an idea — 从想法生成剧本</li>
-          <li>expand a scene / generate shots — 展开场景／生成镜头</li>
-          <li>create a storyboard — 生成分镜图</li>
-          <li>render a scene or a single shot — 渲染场景或单个镜头</li>
-          <li>add captions to a rendered video — 为视频添加字幕</li>
-          <li>fix &amp; re-render using QA feedback — 根据审核反馈修复并重渲染</li>
-          <li>generate props/assets for a scene — 生成场景道具</li>
-          <li>refine a scene or shot with AI — AI 优化场景或镜头</li>
-          <li>delete a scene — 删除场景</li>
-          <li>derive the project style from the story — 从故事中提取项目风格</li>
-          <li>suggest assets without generating — 建议道具但不生成</li>
+          <li>start a new story from an idea</li>
+          <li>plan shots, make a storyboard, or render a scene</li>
+          <li>make a character picture, prop or background</li>
+          <li>change a scene or shot in your own words</li>
+          <li>add voices, music or captions, and export (opens the editor)</li>
+          <li>ask why something failed and how to fix it</li>
         </ul>
       </details>
       <div class="flex flex-wrap gap-2">

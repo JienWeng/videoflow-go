@@ -58,8 +58,8 @@ func MixAudio(ctx context.Context, m Manifest, sources map[string]string, destin
 	if len(labels) == 0 {
 		return fmt.Errorf("the current edit has no audible source; add dialogue or narration before transcription")
 	}
-	filters = append(filters, fmt.Sprintf("%samix=inputs=%d:normalize=0,apad,atrim=duration=%g[out]", strings.Join(labels, ""), len(labels), m.Duration))
-	args = append(args, "-filter_complex", strings.Join(filters, ";"), "-map", "[out]", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", destination)
+	filters = append(filters, fmt.Sprintf("%samix=inputs=%d:normalize=0,apad=whole_dur=%g[out]", strings.Join(labels, ""), len(labels), m.Duration))
+	args = append(args, "-filter_complex", strings.Join(filters, ";"), "-map", "[out]", "-t", fmt.Sprintf("%g", m.Duration), "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", destination)
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	if e := exec.CommandContext(ctx, "ffmpeg", args...).Run(); e != nil {

@@ -159,6 +159,14 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		intent["scene_count"] = brief.SceneCount
 		intent["reply"] = creativeBriefQuestion(brief)
 	}
+	if action == "open_editor" {
+		switch res.EditorPanel {
+		case "voice", "music", "captions", "export":
+			intent["editor_panel"] = res.EditorPanel
+		default:
+			intent["editor_panel"] = "edit"
+		}
+	}
 	switch res.AssetType {
 	case "prop", "location", "background", "other":
 		intent["asset_type"] = res.AssetType
@@ -264,7 +272,7 @@ func canonicalChatAction(action string) string {
 	switch action {
 	case "create_script", "add_scene":
 		return "generate_script"
-	case "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "caption", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
+	case "open_editor", "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "caption", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
 		return action
 	default:
 		return "unknown"

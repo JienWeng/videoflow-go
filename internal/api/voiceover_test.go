@@ -97,4 +97,12 @@ func TestVoiceoverSpeaksScriptLinesAtCaptionTimingAndCaches(t *testing.T) {
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &result) != nil || result.Reused != 2 || result.Generated != 0 || calls != 2 {
 		t.Fatal(w.Code, w.Body.String(), calls)
 	}
+	// A typed line is spoken by the narrator where the user put it.
+	w = call(t, s, "POST", "/compositions/voiceover", `{"clips":[],"narrator":{"provider":"fish","voice_id":"narrator1","model":"s1"},"lines":[{"text":"Hello!","start":1.5}]}`)
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &result) != nil || len(result.Items) != 1 || result.Items[0].Start != 1.5 || result.Items[0].Text != "Hello!" || calls != 3 {
+		t.Fatal(w.Code, w.Body.String(), calls)
+	}
+	if w = call(t, s, "POST", "/compositions/voiceover", `{"clips":[],"narrator":{"provider":"fish","voice_id":"narrator1"},"lines":[{"text":"  ","start":0}]}`); w.Code != 400 {
+		t.Fatal("blank typed line accepted", w.Code)
+	}
 }

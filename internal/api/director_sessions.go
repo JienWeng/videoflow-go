@@ -20,7 +20,7 @@ import (
 	"videoflow-go/internal/director"
 )
 
-var errDirectorContextChanged = errors.New("selected identity changed while planning; review the native session and prepare a new proposal")
+var errDirectorContextChanged = errors.New("a character or reference changed while the AI was planning, so its plan may be out of date. Nothing was lost: send your request again")
 
 type directorSnapshotKey struct{}
 type directorBindingKey struct{}
@@ -186,6 +186,7 @@ type directorUserMessageKey struct{}
 
 func (s *Server) registerDirectorRoutes() {
 	s.registerChatReviewRoutes()
+	s.registerDirectorEnsureRoute()
 	s.router.Post("/director/sessions/{id}/repair-context", s.handleRepairChatContext)
 	s.router.Post("/director/composition-plan", s.handleDirectorCompositionPlan)
 	s.router.Put("/assets/{id}/identity", s.handleAssetIdentity)

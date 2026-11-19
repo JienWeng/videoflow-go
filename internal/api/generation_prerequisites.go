@@ -20,6 +20,12 @@ func (s *Server) generationPrerequisites(ctx context.Context, brief generationBr
 			add("local_text", err.Error())
 		} else if _, err = s.directorRunner.Available(session.Engine); err != nil {
 			add("local_text", err.Error())
+		} else if s.authManager().Status(ctx, session.Engine).SignedOut {
+			name := "Codex"
+			if session.Engine == "claude" {
+				name = "Claude Code"
+			}
+			add("local_text", name+" is signed out, so it can't plan this story. Switch to a connected AI, or sign in again.")
 		} else if session.Status != "ready" {
 			add("local_text", "Local session is busy or requires review in Local sessions")
 		}

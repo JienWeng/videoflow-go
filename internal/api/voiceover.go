@@ -60,6 +60,11 @@ func (s *Server) handleCompositionVoiceover(w http.ResponseWriter, r *http.Reque
 	var body struct {
 		Clips    []composition.Clip `json:"clips"`
 		Narrator voiceChoice        `json:"narrator"`
+		// Lines are typed by the user in the editor: spoken by the narrator at Start.
+		Lines []struct {
+			Text  string  `json:"text"`
+			Start float64 `json:"start"`
+		} `json:"lines"`
 	}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body) != nil {
 		http.Error(w, "invalid voice-over request", 400)
@@ -77,6 +82,18 @@ func (s *Server) handleCompositionVoiceover(w http.ResponseWriter, r *http.Reque
 			continue
 		}
 		cues = append(cues, c...)
+	}
+	if len(body.Lines) > 10 {
+		http.Error(w, "type at most 10 lines at a time", 400)
+		return
+	}
+	for i, line := range body.Lines {
+		text := strings.TrimSpace(line.Text)
+		if text == "" || utf8.RuneCountInString(text) > 500 || !(line.Start >= 0 && line.Start <= 600) {
+			http.Error(w, "each typed line needs 1-500 characters and a start time within the edit", 400)
+			return
+		}
+		cues = append(cues, composition.Cue{ID: fmt.Sprintf("typed-%d", i), Start: line.Start, Text: text})
 	}
 	sort.SliceStable(cues, func(i, j int) bool { return cues[i].Start < cues[j].Start })
 	if len(cues) > voiceoverMaxLines {

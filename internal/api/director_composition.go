@@ -40,7 +40,7 @@ func (s *Server) handleDirectorCompositionPlan(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if planned.Version != 1 || planned.Width < 16 || planned.Height < 16 || planned.Width > 3840 || planned.Height > 3840 || planned.FPS < 1 || planned.FPS > 60 || !(planned.Duration > 0 && planned.Duration <= 600) {
-		http.Error(w, "local planner returned invalid composition settings; review the native session", 422)
+		http.Error(w, "the AI suggested an edit the editor can't apply. Try asking again in different words", 422)
 		return
 	}
 	allowed := map[string]bool{}

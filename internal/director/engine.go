@@ -155,12 +155,12 @@ func (r *Runner) Run(ctx context.Context, request Request, saveNative func(strin
 		case "turn.failed", "error":
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
-			return nil, fmt.Errorf("%s turn failed; check the native account/session before retrying", request.Engine)
+			return nil, fmt.Errorf("%s couldn't answer. It may be signed out or out of usage: check it in Settings → AI connections, or switch the conversation to another AI, then try again", engineLabel(request.Engine))
 		case "result":
 			if event.IsError || event.Subtype != "success" {
 				_ = cmd.Process.Kill()
 				_ = cmd.Wait()
-				return nil, fmt.Errorf("Claude turn did not succeed")
+				return nil, fmt.Errorf("Claude Code couldn't answer. It may be signed out or out of usage: check it in Settings → AI connections, or switch the conversation to another AI, then try again")
 			}
 			result = event.Result
 			completed = true
@@ -228,4 +228,11 @@ func Shape(t reflect.Type) any {
 	default:
 		return 0
 	}
+}
+
+func engineLabel(engine string) string {
+	if engine == "claude" {
+		return "Claude Code"
+	}
+	return "Codex"
 }

@@ -144,10 +144,8 @@
   async function startSession(){
     startingSession=true;sessionError='';
     try{
-      const status=await get('/director/status');
-      const engine=(status.engines??[]).find((e:any)=>e.installed&&e.signed_in)?.engine;
-      if(!engine){sessionError='Connect Codex or Claude Code first (Settings → AI connections).';return}
-      await post('/director/sessions',{engine,title:'Story planning'});
+      const ensured=await post('/director/sessions/ensure',{});
+      if(!ensured?.session){sessionError='Connect Claude Code or Codex first (Settings → AI connections).';return}
       await loadPreflight(aspectRatio,style);
     }catch(e:any){sessionError=e.message??String(e)}finally{startingSession=false}
   }
@@ -169,8 +167,11 @@
     }
   }
 
-  async function restoreOperation() {
-    const requested = new URL(window.location.href).searchParams.get('op_id');
+  // An old failed attempt is a footnote, not the whole dialog: people opening Create story
+  // usually want a new story. They can still open the failed attempt from the note.
+  let earlierFailure=$state<{id:string;error:string}|null>(null);
+  async function restoreOperation(explicit='') {
+    const requested = explicit || new URL(window.location.href).searchParams.get('op_id');
     try {
       activeProject = await get('/projects/active');
       const op = requested
@@ -178,6 +179,8 @@
         : (await get(`/ops?project_id=${encodeURIComponent(activeProject.id)}&kind=video_generation&limit=1`))?.[0];
       if (!op) return;
       if (op.kind !== 'video_generation' || (op.project_id && op.project_id !== activeProject.id)) throw new Error('That generation does not belong to this project.');
+      if (!requested && (op.status === 'failed' || op.status === 'reconciliation_required')) { earlierFailure = { id: op.id, error: op.error || '' }; return; }
+      earlierFailure = null;
       opId = op.id;
       opStatus = op.status;
       stages = op.result_json?.stages ?? [];
@@ -290,6 +293,7 @@
       </p>
     </div>
 
+    {#if earlierFailure}<div role="note" class="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 p-3 text-sm"><span>Your last story attempt didn't finish. Anything it made is kept.</span><span class="flex gap-2"><Button type="button" size="sm" variant="outline" onclick={()=>{const id=earlierFailure!.id;void restoreOperation(id)}}>See what happened</Button><Button type="button" size="sm" variant="ghost" onclick={()=>earlierFailure=null}>Dismiss</Button></span></div>{/if}
     <form class="space-y-5" onsubmit={createVideo}>
       <div class="rounded-xl border border-border bg-card p-5 shadow-sm">
         <label class="mb-2 block text-sm font-medium" for="idea">What video do you want to make?</label>

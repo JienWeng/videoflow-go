@@ -7,7 +7,7 @@
   import { Button } from '$lib/components/ui/button';
   let {compact=false,minimal=false}:{compact?:boolean;minimal?:boolean}=$props();
   let sessions:any[]=$state([]), engines:any[]=$state([]), selected=$state(''), engine=$state('codex'), busy=$state(false), error=$state(''), loaded=$state(false);
-  async function refresh(){const [list,status]=await Promise.all([get('/director/sessions'),get('/director/status')]);sessions=list;engines=status.engines??[];selected=list.find((s:any)=>s.selected)?.id??'';}
+  async function refresh(){const [list,status]=await Promise.all([get('/director/sessions'),get('/director/status')]);sessions=list;engines=status.engines??[];if(!engines.some(e=>e.engine===engine&&e.signed_in))engine=engines.find(e=>e.signed_in)?.engine??engine;selected=list.find((s:any)=>s.selected)?.id??'';}
   async function run(fn:()=>Promise<void>){busy=true;error='';try{await fn();window.dispatchEvent(new Event('videoflow-session-changed'));}catch(e){error=String(e);}finally{busy=false;}}
   onMount(()=>{refresh().catch(e=>error=String(e)).finally(()=>loaded=true)});
   const available=$derived(engines.some(e=>e.engine===engine&&e.installed));

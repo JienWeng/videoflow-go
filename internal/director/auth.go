@@ -18,6 +18,8 @@ type AuthState struct {
 	Engine    string `json:"engine"`
 	Installed bool   `json:"installed"`
 	SignedIn  bool   `json:"signed_in"`
+	// SignedOut is true only when the CLI clearly answered "not signed in".
+	SignedOut bool   `json:"signed_out,omitempty"`
 	Method    string `json:"method,omitempty"`
 	Login     *Login `json:"login,omitempty"`
 }
@@ -73,9 +75,10 @@ type AuthManager struct {
 }
 
 type cachedAuth struct {
-	signedIn bool
-	method   string
-	at       time.Time
+	signedIn  bool
+	signedOut bool
+	method    string
+	at        time.Time
 }
 
 const authCacheTTL = 30 * time.Second
@@ -96,18 +99,18 @@ func (m *AuthManager) Status(ctx context.Context, engine string) AuthState {
 	cached, ok := m.cache[engine]
 	m.mu.Unlock()
 	if ok && time.Since(cached.at) < authCacheTTL {
-		state.SignedIn, state.Method = cached.signedIn, cached.method
+		state.SignedIn, state.SignedOut, state.Method = cached.signedIn, cached.signedOut, cached.method
 	} else {
 		var definitive bool
-		state.SignedIn, state.Method, definitive = m.check(ctx, engine, path)
+		state.SignedIn, state.SignedOut, state.Method, definitive = m.check(ctx, engine, path)
 		// Only remember answers the CLI actually gave. A check cut short (the browser
 		// navigated away, or the CLI was slow) must not read as "signed out" for 30s.
 		if definitive {
 			m.mu.Lock()
-			m.cache[engine] = cachedAuth{state.SignedIn, state.Method, time.Now()}
+			m.cache[engine] = cachedAuth{state.SignedIn, state.SignedOut, state.Method, time.Now()}
 			m.mu.Unlock()
 		} else if ok {
-			state.SignedIn, state.Method = cached.signedIn, cached.method
+			state.SignedIn, state.SignedOut, state.Method = cached.signedIn, cached.signedOut, cached.method
 		}
 	}
 	m.mu.Lock()
@@ -119,7 +122,7 @@ func (m *AuthManager) Status(ctx context.Context, engine string) AuthState {
 	return state
 }
 
-func (m *AuthManager) check(ctx context.Context, engine, path string) (signedIn bool, method string, definitive bool) {
+func (m *AuthManager) check(ctx context.Context, engine, path string) (signedIn, signedOut bool, method string, definitive bool) {
 	// Detached from the HTTP request so a page change can't kill the check midway.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
@@ -130,20 +133,24 @@ func (m *AuthManager) check(ctx context.Context, engine, path string) (signedIn 
 			LoggedIn   bool   `json:"loggedIn"`
 			AuthMethod string `json:"authMethod"`
 		}
-		if json.Unmarshal(out, &s) == nil && s.LoggedIn {
-			signedIn, method = true, friendlyMethod(s.AuthMethod)
+		if json.Unmarshal(out, &s) == nil {
+			signedIn, signedOut = s.LoggedIn, !s.LoggedIn
+			if s.LoggedIn {
+				method = friendlyMethod(s.AuthMethod)
+			}
 		}
 	} else {
 		out, err := exec.CommandContext(ctx, path, "login", "status").CombinedOutput()
 		text := strings.TrimSpace(ansiPattern.ReplaceAllString(string(out), ""))
-		if err == nil && strings.Contains(strings.ToLower(text), "logged in") && !strings.Contains(strings.ToLower(text), "not logged in") {
+		signedOut = strings.Contains(strings.ToLower(text), "not logged in")
+		if err == nil && strings.Contains(strings.ToLower(text), "logged in") && !signedOut {
 			signedIn = true
 			if i := strings.Index(text, "using "); i >= 0 {
 				method = strings.TrimSpace(text[i+len("using "):])
 			}
 		}
 	}
-	return signedIn, method, true
+	return signedIn, signedOut, method, true
 }
 
 func friendlyMethod(method string) string {

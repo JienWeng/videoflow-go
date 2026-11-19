@@ -43,7 +43,29 @@ func mergeCreativeBrief(previous, next *agents.CreativeBrief, message string) ag
 	}
 	return result
 }
+// creativeBriefQuestion asks for what is still missing, after echoing what was understood,
+// so a follow-up like "English, 15 seconds" visibly lands instead of the same question repeating.
 func creativeBriefQuestion(b agents.CreativeBrief) string {
+	question := creativeBriefNextQuestion(b)
+	got := []string{}
+	for _, v := range []string{b.Tone, b.Audience, b.Platform, b.AspectRatio, b.Language} {
+		if strings.TrimSpace(v) != "" {
+			got = append(got, v)
+		}
+	}
+	if b.TargetDuration > 0 {
+		got = append(got, fmt.Sprintf("%d seconds", b.TargetDuration))
+	}
+	if b.SceneCount > 0 {
+		got = append(got, fmt.Sprintf("%d scene(s)", b.SceneCount))
+	}
+	if len(got) == 0 || strings.HasPrefix(question, "Please confirm") {
+		return question
+	}
+	return "Got it: " + strings.Join(got, ", ") + ". " + question
+}
+
+func creativeBriefNextQuestion(b agents.CreativeBrief) string {
 	look := []string{}
 	if b.PresetID == "" {
 		look = append(look, "visual style")

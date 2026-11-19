@@ -180,13 +180,16 @@
   }
 
   let conversationGeneration=0;
-  let historyLoading=$state(true), historyError=$state(''), sessionRequired=$state(false), signInNeeded=$state('');
+  let historyLoading=$state(true), historyError=$state(''), sessionRequired=$state(false), signInNeeded=$state(''); let switchedNote=$state('');
   async function initPersistence() {
     const generation=++conversationGeneration;
     historyLoading=true;historyError='';sessionRequired=false;signInNeeded='';busy=false;storageKey=null;activeSessionId='';checkpointPrompts=[];cancelling=false;cancelError='';void refreshCapabilities();
     try {
       const status=await get('/director/status');if(generation!==conversationGeneration)return;
       if(status.all_text_local){
+        // A conversation on a signed-out AI fails every message; move to a connected one first.
+        const ensured=await post('/director/sessions/ensure',{}).catch(()=>null);if(generation!==conversationGeneration)return;
+        switchedNote=ensured?.switched_from?`${ensured.switched_from==='claude'?'Claude Code':'Codex'} is signed out, so this chat now uses ${ensured.session?.engine==='claude'?'Claude Code':'Codex'}.`:'';
         const sessions=await get('/director/sessions');if(generation!==conversationGeneration)return;
         const session=sessions.find((item:any)=>item.selected);
         if(!session){sessionRequired=true;messages=[greeting()];return;}
@@ -798,7 +801,7 @@
       <div class="truncate text-[11px] leading-tight text-muted-foreground">
         <a href="/director" class="underline" title="Choose native engine, saved session and reference context">{localSessionLabel}</a>
       </div>
-      {#if signInNeeded}<a href="/director" class="mt-1 inline-flex items-center rounded-md bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:text-amber-300">{signInNeeded} isn't connected · Connect</a>{/if}
+      {#if switchedNote}<p class="mt-1 text-[11px] text-muted-foreground">{switchedNote}</p>{/if}{#if signInNeeded}<a href="/director" class="mt-1 inline-flex items-center rounded-md bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:text-amber-300">{signInNeeded} isn't connected · Connect</a>{/if}
     </div>
     {/if}
     <div class="ml-auto flex items-center gap-1">
