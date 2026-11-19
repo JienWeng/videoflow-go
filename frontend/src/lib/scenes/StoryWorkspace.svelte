@@ -159,9 +159,19 @@
     return 'new';
   }
 
+  // Each story with scenes is one episode of the project's series, oldest first.
+  const episodes = $derived(scripts.slice().sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? '')).filter((script) => scenes.some((scene) => scene.script_id === script.id)).map((script, i) => ({ id: script.id as string, number: i + 1, title: (script.title || 'Untitled') as string })));
+  const episodeOf = (scene: any) => episodes.find((e) => e.id === scene.script_id);
+  let episodeFilter = $state('');
+  let episodeSortSet = false;
+  $effect(() => { if (episodes.length > 1 && !episodeSortSet) { episodeSortSet = true; sceneSort = 'story'; } });
+  $effect(() => { if (episodeFilter && !episodes.some((e) => e.id === episodeFilter)) episodeFilter = ''; });
+  const nextEpisode = () => window.dispatchEvent(new CustomEvent('videoflow-ask-assistant', { detail: { text: 'Make the next episode of this series. ' } }));
+
   const visibleScenes = $derived(
     orderedScenes.filter((s) => {
       if (stageFilter && stageOf(s) !== stageFilter) return false;
+      if (episodeFilter && s.script_id !== episodeFilter) return false;
       const q = search.trim().toLowerCase();
       if (!q) return true;
       return (
@@ -814,6 +824,17 @@
             {/if}
           </div>
 
+          {#if episodes.length}
+            <div class="flex items-center gap-2">
+              {#if episodes.length > 1}
+                <select bind:value={episodeFilter} aria-label="Episode" class="min-h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm">
+                  <option value="">All {episodes.length} episodes</option>
+                  {#each episodes as e (e.id)}<option value={e.id}>Episode {e.number} · {e.title}</option>{/each}
+                </select>
+              {:else}<span class="min-w-0 flex-1 truncate text-xs text-muted-foreground">Episode 1 · {episodes[0].title}</span>{/if}
+              <Button size="sm" variant="secondary" class="shrink-0" title="Ask the assistant to write the next episode with the same characters and format" onclick={nextEpisode}><Plus class="size-4 mr-1" />Next episode</Button>
+            </div>
+          {/if}
           <details class="rounded-md border border-border px-2.5">
             <summary class="cursor-pointer py-2 text-xs font-medium">Filter & sort{stageFilter ? ' · Filtered' : ''}</summary>
             <div class="space-y-2 pb-2">
@@ -879,7 +900,8 @@
                 onclick={() => { search = ''; stageFilter = ''; }}>Clear filters</Button>
             </div>
           {:else}
-            {#each visibleScenes as s (s.id)}
+            {#each visibleScenes as s, i (s.id)}
+              {#if episodes.length > 1 && sceneSort === 'story' && !episodeFilter && (i === 0 || visibleScenes[i - 1].script_id !== s.script_id)}{@const e = episodeOf(s)}{#if e}<p class="px-1 pt-2 text-xs font-medium text-muted-foreground">Episode {e.number} · {e.title}</p>{/if}{/if}
               <SceneListItem
                 scene={s}
                 selected={s.id === selectedId}

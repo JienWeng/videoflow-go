@@ -150,7 +150,7 @@
   let storyFormat=$state(untrack(()=>intent.action==='generate_image'?'1:1':'9:16'));
   let imageType=$state(untrack(()=>intent.asset_type??'other'));
   // svelte-ignore state_referenced_locally
-  let castIds:string[]=$state(intent.character_id?[intent.character_id]:[]);
+  let castIds:string[]=$state(Array.isArray((intent as any).cast_ids)&&(intent as any).cast_ids.length?[...(intent as any).cast_ids]:intent.character_id?[intent.character_id]:[]);
   // svelte-ignore state_referenced_locally
   let sceneId = $state(intent.scene_id ?? '');
   // svelte-ignore state_referenced_locally

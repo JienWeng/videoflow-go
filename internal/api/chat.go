@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -102,7 +103,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	progress, _ := s.projectProgress(r.Context(), projectID)
-	contextJSON, _ := json.Marshal(map[string]any{"production_progress": progress, "recent_activity": s.chatActivity(projectID, jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "assistant_mode": chatMode(body.Auto), "attached_media": attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "missing_voices_setup": "inline_render_card", "render_audio_modes": []string{"native", "saved", "silent"}, "native_audio_requires_saved_voices": false, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false, "exact_dialogue_requires_speech_and_lipsync": true}})
+	contextJSON, _ := json.Marshal(map[string]any{"production_progress": progress, "recent_activity": s.chatActivity(projectID, jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "assistant_mode": chatMode(body.Auto), "attached_media": attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "missing_voices_setup": "inline_render_card", "render_audio_modes": []string{"native", "saved", "silent"}, "native_audio_requires_saved_voices": false, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false, "exact_dialogue_requires_speech_and_lipsync": true}})
 	ctx := r.Context()
 	var plannedSnapshot *directorContext
 	if s.cfg.UseLocalText {
@@ -156,6 +157,12 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	if action == "generate_script" {
 		brief := mergeCreativeBrief(body.CreationBrief, res.CreationBrief, body.Message)
+		if res.NextEpisode || (body.CreationBrief != nil && strings.Contains(body.CreationBrief.Instruction, "of a series. Story so far")) {
+			if cast, number := s.continueSeries(projectID, &brief, body.CreationBrief != nil); number > 0 {
+				intent["cast_ids"] = cast
+				intent["episode_number"] = number
+			}
+		}
 		fillCreativeBriefDefaults(&brief, style != nil && strings.TrimSpace(style.StylePrompt) != "")
 		if brief.PresetID == "project-style" {
 			if style != nil {
@@ -174,6 +181,8 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		// planner's own question, which it writes in the user's language.
 		if lang := strings.ToLower(strings.TrimSpace(res.UserLanguage)); lang != "" && !strings.HasPrefix(lang, "en") && strings.TrimSpace(res.Reply) != "" {
 			intent["reply"] = res.Reply
+		} else if number, ok := intent["episode_number"].(int); ok {
+			intent["reply"] = fmt.Sprintf("Episode %d: %s\n\n%s", number, brief.Idea, intent["reply"])
 		}
 	}
 	if v := strings.TrimSpace(res.Instruction); v != "" && len(v) <= 4000 && action != "generate_script" && action != "unknown" {

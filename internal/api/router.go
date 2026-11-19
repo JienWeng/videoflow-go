@@ -225,6 +225,7 @@ func (s *Server) setupRoutes() {
 	s.router.Post("/ideas/develop", s.handleDevelopIdea)
 	s.router.Post("/scripts/generate", s.handleGenerateScript)
 	s.router.Get("/scripts", s.handleListScripts)
+	s.router.Get("/series", s.handleSeries)
 
 	// Assets
 	s.router.Post("/assets/generate", s.handleGenerateImage)
