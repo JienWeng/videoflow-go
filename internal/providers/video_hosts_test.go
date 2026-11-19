@@ -57,13 +57,6 @@ func TestVideoHostsFollowEachServicesDocumentedAPI(t *testing.T) {
 					t.Fatalf("wavespeed body = %v", c.Body)
 				}
 			}, wantURL: "https://cdn.example.com/w.mp4"},
-		{host: "higgsfield", createPath: "/bytedance/seedance-2.0/image-to-video", createAnswer: `{"status":"queued","request_id":"job1"}`, pollPath: "/requests/job1/status", pollAnswer: `{"status":"completed","video":{"url":"https://cdn.example.com/h.mp4"}}`,
-			uploads: map[string]string{"/files/generate-upload-url": `{"upload_url":"{self}/put","public_url":"https://files.example.com/h.png"}`},
-			check: func(t *testing.T, c call) {
-				if c.Body["image_url"] != "https://files.example.com/h.png" || c.Body["aspect_ratio"] != nil || !strings.HasPrefix(c.Auth, "Key ") {
-					t.Fatalf("higgsfield body = %v auth = %q", c.Body, c.Auth)
-				}
-			}, wantURL: "https://cdn.example.com/h.mp4"},
 		{host: "runway", createPath: "/image_to_video", createAnswer: `{"id":"job1"}`, pollPath: "/tasks/job1", pollAnswer: `{"status":"SUCCEEDED","output":["https://cdn.example.com/rw.mp4"]}`,
 			check: func(t *testing.T, c call) {
 				image := c.Body["promptImage"].([]any)[0].(map[string]any)

@@ -4,8 +4,8 @@ import "testing"
 
 func TestOffersAreCheapestFirstAndMatchPublishedPrices(t *testing.T) {
 	offers := Offers("seedance-2.0", "720p", "16:9", nil)
-	if len(offers) != 10 || offers[3].Provider != "openrouter" {
-		t.Fatalf("want all ten services at 720p, got %d: %v", len(offers), offers)
+	if len(offers) != 9 || offers[3].Provider != "openrouter" {
+		t.Fatalf("want all nine services at 720p, got %d: %v", len(offers), offers)
 	}
 	for i := 1; i < len(offers); i++ {
 		if offers[i].PerSecond < offers[i-1].PerSecond {

@@ -28,7 +28,7 @@ type HostClient struct {
 // VideoHost reports whether a provider name is one of the Seedance resellers handled here.
 func VideoHost(name string) bool {
 	switch name {
-	case "argolink", "loopling", "replicate", "kie", "wavespeed", "runway", "higgsfield":
+	case "argolink", "loopling", "replicate", "kie", "wavespeed", "runway":
 		return true
 	}
 	return false
@@ -36,11 +36,7 @@ func VideoHost(name string) bool {
 
 func NewHostClient(name, key, base string) *HostClient {
 	host := costs.HostByName(name)
-	auth := "Bearer "
-	if name == "higgsfield" {
-		auth = "Key " // the key is entered as KEY_ID:KEY_SECRET
-	}
-	c := &HostClient{newMediaHTTP(key, base, host.Label, auth), host}
+	c := &HostClient{newMediaHTTP(key, base, host.Label, "Bearer "), host}
 	if name == "runway" {
 		c.headers = map[string]string{"X-Runway-Version": "2024-11-06"}
 	}
@@ -206,15 +202,6 @@ func (c *HostClient) CreateVideo(ctx context.Context, p map[string]any) (string,
 			mode = "/image-to-video"
 		}
 		body, path, idField = set(common(), "image", first, "last_image", last), "/"+model+mode, "data.id"
-	case "higgsfield":
-		mode := "/text-to-video"
-		if first != "" {
-			mode = "/image-to-video"
-		}
-		body, path, idField = set(map[string]any{"prompt": prompt, "duration": hostSeconds(p), "resolution": resolution}, "image_url", first, "end_image_url", last, "generate_audio", p["generate_audio"]), "/"+model+mode, "request_id"
-		if first == "" {
-			set(body, "aspect_ratio", aspect)
-		}
 	case "runway":
 		if aspect == "" {
 			aspect = "16:9"
@@ -282,8 +269,6 @@ func (c *HostClient) GetVideo(ctx context.Context, id string) (string, []string,
 		path, statusField, errorField = "/v1/jobs/recordInfo?taskId="+url.QueryEscape(id), "data.state", "data.failMsg"
 	case "wavespeed":
 		path, statusField, urlField, errorField = "/predictions/"+safe+"/result", "data.status", "data.outputs", "data.error"
-	case "higgsfield":
-		path, urlField = "/requests/"+safe+"/status", "video.url"
 	case "runway":
 		path, urlField, errorField = "/tasks/"+safe, "output", "failure"
 	}
@@ -409,20 +394,6 @@ func (c *HostClient) publicImage(ctx context.Context, image, model string) (stri
 			return "", fmt.Errorf("%s picture upload failed: %w", c.host.Label, err)
 		}
 		return needLink(c, jsonText(raw, "media_url"))
-	case "higgsfield":
-		ticket := *c
-		ticket.base = "https://platform.higgsfield.ai"
-		if !strings.HasPrefix(c.base, "https://api.higgsfield.ai") {
-			ticket.base = c.base // tests
-		}
-		raw, err := ticket.request(ctx, "POST", "/files/generate-upload-url", map[string]any{"content_type": kind})
-		if err != nil {
-			return "", err
-		}
-		if err = putBytes(ctx, jsonText(raw, "upload_url"), kind, data); err != nil {
-			return "", fmt.Errorf("%s picture upload failed: %w", c.host.Label, err)
-		}
-		return needLink(c, jsonText(raw, "public_url"))
 	}
 	return "", fmt.Errorf("%s cannot start a clip from a picture yet", c.host.Label)
 }

@@ -21,7 +21,7 @@
 
   const kinds: Record<string, string> = { video: 'Video clips', image: 'Pictures', voice: 'Voice', text: 'Text analysis' };
   const kindOne: Record<string, string> = { video: 'Video', image: 'Picture', voice: 'Voice', text: 'Text' };
-  const services: Record<string, string> = { fal: 'fal.ai', openai: 'OpenAI', fish: 'Fish Audio', elevenlabs: 'ElevenLabs', openrouter: 'OpenRouter', codex: 'Codex', claude: 'Claude Code', byteplus: 'BytePlus', argolink: 'ArgoLink', loopling: 'Loopling', replicate: 'Replicate', kie: 'Kie.ai', wavespeed: 'WaveSpeed', runway: 'Runway', higgsfield: 'Higgsfield' };
+  const services: Record<string, string> = { fal: 'fal.ai', openai: 'OpenAI', fish: 'Fish Audio', elevenlabs: 'ElevenLabs', openrouter: 'OpenRouter', codex: 'Codex', claude: 'Claude Code', byteplus: 'BytePlus', argolink: 'ArgoLink', loopling: 'Loopling', replicate: 'Replicate', kie: 'Kie.ai', wavespeed: 'WaveSpeed', runway: 'Runway' };
   const how: Record<string, string> = { metered: 'Billed amount', rate: 'List price', estimate: 'Estimate', included: 'In your plan', unpriced: 'Price unknown', unconfirmed: 'Not confirmed' };
   const priced = (e: Entry) => e.basis === 'metered' || e.basis === 'rate' || e.basis === 'estimate';
   const usd = (v: number) => (v > 0 && v < 0.01 ? 'under $0.01' : '$' + v.toFixed(2));

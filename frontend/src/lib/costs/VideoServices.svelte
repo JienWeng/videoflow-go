@@ -16,7 +16,6 @@
   let model = $state(''), resolution = $state('720p');
   let adding = $state(''), key = $state('');
   const usd = (v: number, digits = 2) => '$' + v.toFixed(digits);
-  const keyHint: Record<string, string> = { higgsfield: 'KEY_ID:KEY_SECRET' };
 
   let refreshing = $state(false);
   function ago(v?: string) {
@@ -102,7 +101,7 @@
             <Table.Cell class="whitespace-normal">
               <span class="font-medium">{s.label}</span>
               {#if s.note && !s.usable && !s.frames}<span class="block text-xs text-muted-foreground">{s.note}</span>{/if}
-              <span class="block text-xs text-muted-foreground">{#if s.problem}{s.problem}{:else if s.checked_at}Price read from {s.label} {ago(s.checked_at)}{:else}Fixed price, entered by hand: {s.label} publishes none{/if}</span>
+              <span class="block text-xs text-muted-foreground">{#if s.problem}{s.problem}{:else if s.checked_at}Price read from {s.label} {ago(s.checked_at)}{:else}Price not read yet{/if}</span>
             </Table.Cell>
             <Table.Cell class="text-right tabular-nums">{usd(s.per_second, 3)}</Table.Cell>
             <Table.Cell class="text-right tabular-nums">{usd(s.total)}</Table.Cell>
@@ -120,7 +119,7 @@
               </div>
               {#if adding === s.provider}
                 <form class="mt-2 flex flex-wrap items-center gap-2" onsubmit={(e) => { e.preventDefault(); void saveKey(s.provider); }}>
-                  <Input type="password" class="h-9 w-56" bind:value={key} placeholder={keyHint[s.provider] ?? 'API key'} aria-label={`API key for ${s.label}`} autocomplete="off" />
+                  <Input type="password" class="h-9 w-56" bind:value={key} placeholder="API key" aria-label={`API key for ${s.label}`} autocomplete="off" />
                   <Button size="sm" type="submit" disabled={busy === s.provider || !key.trim()}>Save</Button>
                   <Button size="sm" variant="ghost" type="button" onclick={() => (adding = '')}>Cancel</Button>
                 </form>

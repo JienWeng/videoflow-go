@@ -30,7 +30,7 @@ func TestCheapestRoutingPicksLowestPricedConnectedService(t *testing.T) {
 		return out.Services, out.Current.Provider + " " + out.Current.Model, out.Routing
 	}
 	rows, _, mode := read(call(t, s, "GET", "/video-services?model=seedance-2.0&resolution=720p", "").Body.Bytes())
-	if len(rows) != 10 || rows[0].Provider != "argolink" || mode != "manual" {
+	if len(rows) != 9 || rows[0].Provider != "argolink" || mode != "manual" {
 		t.Fatalf("list = %v mode = %s", rows, mode)
 	}
 	for _, r := range rows {

@@ -947,7 +947,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                 >
 
                   <option value="fal">fal.ai</option><option value="openrouter">OpenRouter</option><option value="byteplus">BytePlus ModelArk (Seedance)</option>
-                  <option value="argolink">ArgoLink</option><option value="replicate">Replicate</option><option value="kie">Kie.ai</option><option value="wavespeed">WaveSpeed</option><option value="runway">Runway API</option><option value="higgsfield">Higgsfield API</option>
+                  <option value="argolink">ArgoLink</option><option value="replicate">Replicate</option><option value="kie">Kie.ai</option><option value="wavespeed">WaveSpeed</option><option value="runway">Runway API</option>
                 </select>
               </div>
 
