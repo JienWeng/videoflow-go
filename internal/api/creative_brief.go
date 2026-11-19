@@ -58,7 +58,7 @@ func creativeBriefQuestion(b agents.CreativeBrief) string {
 		got = append(got, fmt.Sprintf("%d seconds", b.TargetDuration))
 	}
 	if b.SceneCount > 0 {
-		got = append(got, fmt.Sprintf("%d scene(s)", b.SceneCount))
+		got = append(got, plural(b.SceneCount, "scene"))
 	}
 	if len(got) == 0 || strings.HasPrefix(question, "Please confirm") {
 		return question
@@ -78,16 +78,16 @@ func creativeBriefNextQuestion(b agents.CreativeBrief) string {
 		look = append(look, "intended audience")
 	}
 	if len(look) > 0 {
-		return "Before I create the story, please choose the " + strings.Join(look, ", ") + ". You can answer here or use the choices below."
+		return "Before I create the story, please choose the " + joinAnd(look) + ". You can answer here or use the choices below."
 	}
 	delivery := []string{}
-	for _, field := range []struct{ value, label string }{{b.Platform, "destination platform"}, {b.AspectRatio, "format"}, {b.Resolution, "video size"}, {b.Language, "spoken language"}, {b.ConversationMode, "dialogue, narration or no speech"}} {
+	for _, field := range []struct{ value, label string }{{b.Platform, "destination platform"}, {b.AspectRatio, "format"}, {b.Resolution, "video size"}, {b.Language, "spoken language"}, {b.ConversationMode, "speech (dialogue, narration or none)"}} {
 		if field.value == "" {
 			delivery = append(delivery, field.label)
 		}
 	}
 	if len(delivery) > 0 {
-		return "What would you like for the " + strings.Join(delivery, ", ") + "?"
+		return "What would you like for the " + joinAnd(delivery) + "?"
 	}
 	if b.TargetDuration <= 0 && b.SceneCount <= 0 {
 		return "How long should the complete video be, and how many scenes would you like? A scene can contain several shots."
@@ -96,9 +96,9 @@ func creativeBriefNextQuestion(b agents.CreativeBrief) string {
 		return fmt.Sprintf("How many scenes would you like within the %d-second video? Scenes are story units, not automatically separate paid video calls.", b.TargetDuration)
 	}
 	if b.TargetDuration <= 0 {
-		return fmt.Sprintf("What should the total video duration be across the %d scenes?", b.SceneCount)
+		return fmt.Sprintf("How long should the whole video be across %s?", plural(b.SceneCount, "scene"))
 	}
-	return fmt.Sprintf("Please confirm the brief below: %s tone, %s audience, %s, %s at %s, %s %s, %d seconds across %d scene(s). Check the visual style too. Nothing generates until you confirm and choose Create.", b.Tone, b.Audience, b.Platform, b.AspectRatio, b.Resolution, b.Language, b.ConversationMode, b.TargetDuration, b.SceneCount)
+	return fmt.Sprintf("Please confirm the brief below: %s tone, %s audience, %s, %s at %s, %s %s, %d seconds across %s. Check the visual style too. Nothing generates until you confirm and choose Create.", b.Tone, b.Audience, b.Platform, b.AspectRatio, b.Resolution, b.Language, b.ConversationMode, b.TargetDuration, plural(b.SceneCount, "scene"))
 }
 func (s *Server) confirmedCreativeBrief(project string, b *generationBrief) error {
 	if b.BriefVersion == 0 {
@@ -202,4 +202,18 @@ func applyConfirmedDraft(b generationBrief, draft *agents.ScriptDraft) error {
 		used++
 	}
 	return nil
+}
+
+func joinAnd(items []string) string {
+	if len(items) < 2 {
+		return strings.Join(items, "")
+	}
+	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
+}
+
+func plural(n int, word string) string {
+	if n == 1 {
+		return "1 " + word
+	}
+	return fmt.Sprintf("%d %ss", n, word)
 }

@@ -336,6 +336,16 @@ type ChatIntentResponse struct {
 	CharacterID   string         `json:"character_id,omitempty"`
 	OutputID      string         `json:"output_id,omitempty"`
 	EditorPanel   string         `json:"editor_panel,omitempty"`
+	// UserLanguage is the ISO 639-1 code of the language the user writes in.
+	UserLanguage     string            `json:"user_language,omitempty"`
+	CharacterChanges *CharacterChanges `json:"character_changes,omitempty"`
+}
+
+// CharacterChanges is the full rewritten text of each saved character field the user wants changed.
+type CharacterChanges struct {
+	Appearance  string `json:"appearance,omitempty"`
+	Description string `json:"description,omitempty"`
+	Personality string `json:"personality,omitempty"`
 }
 
 func (a *AgentEngine) Chat(ctx context.Context, message string, history []map[string]string, projectContext ...string) (*ChatIntentResponse, error) {
@@ -351,7 +361,22 @@ Use audit_storyboard when asked to inspect the actual scene image for style, com
 Other supported actions: generate_image, generate_character_reference, generate_scenes (expand an existing scene), generate_shots, storyboard,
 render_scene, render_shot, caption, retry_render, generate_assets, refine_scene, refine_shot,
 delete_scene, style_ingest, plan_assets, open_editor. Use none for conversation or requests that cannot be performed.
-Use open_editor (free, nothing is generated) for work done in Edit video, with editor_panel: "voice" to add spoken voices/narration/voice-over to finished videos (Audio → Voice from script speaks the script lines with saved character voices or a narrator voice, and can also speak any line the user types at the playhead), "music" to add or change music or sound, "captions" for subtitles/captions/translating captions, "export" to export, download or share the final MP4, or "edit" for trimming, reordering, combining scenes or making the final video longer/shorter. Prefer open_editor over render_scene when a scene already has a finished video and the user wants voice, music, captions or export; re-rendering is paid and is only for changing the picture. Users cannot undo from chat: for undo, explain that the editor has Undo and that generated items can be deleted or replaced, and never claim to undo anything.
+Use open_editor (free, nothing is generated) for work done in Edit video, with editor_panel: "voice" to add spoken voices/narration/voice-over to finished videos (Audio → Voice from script speaks the script lines with saved character voices or a narrator voice, and can also speak any line the user types at the playhead), "music" to add or change music or sound, "captions" for subtitles/captions/translating captions, "export" to export, download or share the final MP4, or "edit" for trimming, reordering, combining scenes or making the final video longer/shorter. Prefer open_editor over render_scene when a scene already has a finished video and the user wants voice, music, captions or export; re-rendering is paid and is only for changing the picture. Use update_character when the user wants to change an existing character's look, clothes, colors, age or personality. Set character_id and character_changes with the COMPLETE rewritten text of each changed field (appearance, description or personality), keeping every unchanged detail of the saved text. The button saves the profile and can then make a new reference picture. Never answer a look change with generate_character_reference alone: its picture is drawn from the saved profile. Use generate_character_reference only to redo a picture without changing the profile.
+Write the reply in the language the user writes in, and set user_language to its ISO 639-1 code (en, es, zh, ms…).
+Reply style: warm, plain words, no jargon (no "proposal", "native session", "pipeline", "card", "intent"). Keep it short: two to four sentences, or at most three short bullets. Say what the button below does and whether it costs credits; put details on the button, not in the reply. Ask at most one question.
+Routing examples (project with one finished scene "Tokyo's Biggest Good Kitty", characters Giant Orange Cat and Treat-Bag Resident):
+- "add voice to my video" / "the cat should say hello" → open_editor, editor_panel "voice"
+- "add music" → open_editor "music"; "add subtitles" → caption; "translate the subtitles to spanish" → open_editor "captions"
+- "export" / "download the mp4" / "share it" → open_editor "export"
+- "make the cat black" → update_character for Giant Orange Cat with appearance rewritten to black fur, everything else kept
+- "redo the cat's picture" → generate_character_reference
+- "make the cat bigger in the first scene" → refine_scene; "make it longer" → generate_scenes
+- "render it" → render_scene, and mention that exporting the finished video is free in the editor
+- "check the storyboard style" → audit_storyboard; "a picture of a Tokyo street at night" → generate_image
+- "hazme un video de un gato que baila" → generate_script, reply in Spanish, user_language "es"
+- "delete everything" → none; list what exists and ask what exactly to delete
+- "how much will this cost?" / "undo that" / "asdfgh" / "hi" → none, answer briefly and suggest one or two next steps
+Users cannot undo from chat: for undo, explain that the editor has Undo and that generated items can be deleted or replaced, and never claim to undo anything.
 Canvas context includes nodes and directed edges: casts means scene cast, uses means a selected asset, reference means a character reference, shot means scene membership, and render/output are generated provenance. Treat those saved links as authoritative; an asset generated for a scene is not necessarily currently selected for it. For connection changes, guide the user to select the node and open Connections; do not claim a connection was changed. For assets, renders, or unsupported field edits, explain the available Library, Details, Scene Studio or video-editor destination instead of claiming to perform an unsupported action. Respect excluded references, failed jobs, missing images, and stale storyboards; suggest the relevant recovery without claiming success. Never invent action names or IDs. Set scene_count only when the user specifies a scene count; otherwise use 1. Select scene_id, character_id or output_id only from the supplied project context when the request identifies that item. The user reviews and runs the action button shown under your reply; do not claim it has already executed. In replies, call it by its button label (for example **Make storyboard**), never a "card".`
 
 	system += "\n\n" + StudioRecovery

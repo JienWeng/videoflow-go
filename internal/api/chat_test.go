@@ -109,3 +109,49 @@ func TestOpenEditorActionIsFreeNavigationWithKnownPanel(t *testing.T) {
 		t.Fatal("open_editor must be a supported action for any selection")
 	}
 }
+
+func fakeChatModel(content string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/models" {
+			w.Write([]byte(`{"data":[{"id":"openai/gpt-4o-mini","architecture":{"output_modalities":["text"]}}]}`))
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": content}}}})
+	}
+}
+
+func TestChatUpdateCharacterKeepsOnlyRealFieldsForTheResolvedCharacter(t *testing.T) {
+	s := routerServer(t, fakeChatModel(`{"reply":"Here is the new look.","action":"update_character","character_changes":{"appearance":"  Enormous fluffy all-black cat, green eyes  ","personality":"   "}}`))
+	call(t, s, "POST", "/characters", `{"name":"Giant Cat","appearance":"Orange tabby"}`)
+	result := call(t, s, "POST", "/chat", `{"message":"make the cat black"}`)
+	var body struct {
+		Intent struct {
+			Action           string            `json:"action"`
+			CharacterID      string            `json:"character_id"`
+			CharacterChanges map[string]string `json:"character_changes"`
+		}
+	}
+	if result.Code != 200 || json.Unmarshal(result.Body.Bytes(), &body) != nil {
+		t.Fatal(result.Code, result.Body.String())
+	}
+	if body.Intent.Action != "update_character" || body.Intent.CharacterID == "" || body.Intent.CharacterChanges["appearance"] != "Enormous fluffy all-black cat, green eyes" || len(body.Intent.CharacterChanges) != 1 {
+		t.Fatalf("%+v", body.Intent)
+	}
+}
+
+func TestChatStoryQuestionFollowsTheUsersLanguage(t *testing.T) {
+	for _, tc := range []struct{ lang, reply, want string }{
+		{"es", "¿Qué estilo visual prefieres?", "¿Qué estilo visual prefieres?"},
+		{"en", "Which style?", "Before I create the story"},
+		{"", "Which style?", "Before I create the story"},
+	} {
+		content, _ := json.Marshal(map[string]any{"reply": tc.reply, "action": "generate_script", "user_language": tc.lang, "creation_brief": map[string]any{"idea": "Un gato que baila"}})
+		s := routerServer(t, fakeChatModel(string(content)))
+		result := call(t, s, "POST", "/chat", `{"message":"hazme un video de un gato que baila"}`)
+		var body struct{ Intent struct{ Reply string } }
+		json.Unmarshal(result.Body.Bytes(), &body)
+		if !strings.HasPrefix(body.Intent.Reply, tc.want) {
+			t.Fatalf("lang %q: reply %q", tc.lang, body.Intent.Reply)
+		}
+	}
+}

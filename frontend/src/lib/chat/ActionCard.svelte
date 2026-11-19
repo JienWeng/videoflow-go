@@ -8,7 +8,7 @@
  import ProductionControls from '$lib/production/ProductionControls.svelte';
  let renderPlanId=$state(''),renderQuote=$state({calls:0,seconds:0,storyboards:0});
  import {onDestroy,untrack} from 'svelte';
-  import { del as apiDel, get, post as apiPost } from '$lib/api';
+  import { del as apiDel, get, patch as apiPatch, post as apiPost } from '$lib/api';
   import { normalizeChatIntent } from './intent.mjs';
   import { runBackgroundOp, type Op } from '$lib/ops';
 
@@ -31,6 +31,7 @@
 
   interface Intent {
  editor_panel?:string;
+ character_changes?:Record<string,string>;
  creation_brief?:any;
     action: string;
     asset_type?:string;
@@ -124,6 +125,7 @@
   function proposalPath(path: string): string { return intent.director_proposal ? `${path}${path.includes('?') ? '&' : '?'}director_proposal=${encodeURIComponent(intent.director_proposal)}` : path; }
   const post = (path: string, body?: unknown) => apiPost(proposalPath(path), body);
   const del = (path: string) => apiDel(proposalPath(path));
+  const patch = (path: string, body: unknown) => apiPatch(proposalPath(path), body);
 
   // Each card gets one fixed intent, so plain init from props is fine.
   let busy = $state(false);
@@ -135,6 +137,11 @@
  function editBrief(brief:ReturnType<typeof normalizeBrief>){creationBrief=brief;briefConfirmed=false;onbriefchange?.(JSON.parse(JSON.stringify(brief)))}
   // svelte-ignore state_referenced_locally
   let characterId=$state(intent.character_id??'');
+  // update_character: the assistant's rewritten fields, editable before saving.
+  const changeFields=[{key:'appearance',label:'Appearance'},{key:'description',label:'Description'},{key:'personality',label:'Personality'}] as const;
+  let characterDraft=$state<Record<string,string>>(untrack(()=>({...(intent.character_changes??{})})));
+  let remakeReference=$state(true);
+  const changedCharacter=$derived(options.characters.find((c:any)=>c.id===characterId) as any);
   let storyFormat=$state(untrack(()=>intent.action==='generate_image'?'1:1':'9:16'));
   let imageType=$state(untrack(()=>intent.asset_type??'other'));
   // svelte-ignore state_referenced_locally
@@ -169,6 +176,7 @@
   };
   const editorTarget = $derived(editorPanels[intent.editor_panel as string] ?? editorPanels.edit);
   const labels: Record<string, string> = {
+    update_character:'Save changes',
     generate_script: 'Create story & references',
     generate_image:'Generate image',
     generate_character_reference:'Generate character reference',
@@ -227,6 +235,7 @@
     switch (intent.action) {
       case 'generate_image':return !!idea.trim();
       case 'generate_character_reference':return !!characterId;
+      case 'update_character':return !!characterId&&Object.values(characterDraft).some(v=>v?.trim());
       case 'generate_script':
         return creationBrief.idea.trim().length>0&&missingBriefFields(creationBrief).length===0&&briefConfirmed;
       case 'generate_scenes':
@@ -326,6 +335,14 @@
       case 'generate_script':
         {if(!ready){toast.error('Complete and confirm the creative brief first');return;}const brief=confirmedBriefRequest(creationBrief,briefConfirmed);briefConfirmed=false;return runInBackground('/videos/generate?background=true',{...brief,character_ids:castIds,create_characters:true,review_before_render:true},'Story & reference images',op=>op.result_json?.scene_ids?.[0],ctx);}
       case 'generate_image':return runInBackground('/assets/generate',{prompt:idea.trim(),aspect_ratio:storyFormat,type:imageType},'Image generation',op=>op.result_json?.asset_ids?.[0],ctx);
+      case 'update_character':{
+        const changes=Object.fromEntries(Object.entries(characterDraft).map(([k,v])=>[k,v.trim()]).filter(([,v])=>v));
+        busy=true;
+        try{await patch(`/characters/${encodeURIComponent(characterId)}`,changes);toast.success(`${changedCharacter?.name??'Character'} updated`);}
+        catch(e){busy=false;toast.error((e as Error).message);return;}
+        busy=false;
+        if(remakeReference)return runInBackground(`/characters/${characterId}/reference-sheets`,{},'Character reference',()=>characterId,ctx);
+        await onran?.({character_id:characterId},ctx);onfocus?.(characterId);return;}
       case 'generate_character_reference':
         return runInBackground(`/characters/${characterId}/reference-sheets`,{},'Character reference',()=>characterId,ctx);
       case 'audit_storyboard':
@@ -430,9 +447,22 @@
 </script>
 
 <Item.Root variant="outline" class="mt-2 w-full items-start"><Item.Content class="min-w-0">
-  {#if intent.action==='open_editor'}<Item.Title>Edit video</Item.Title>{:else}<Item.Title>Creation options</Item.Title><Item.Description>Adjust the options, then choose an action to start. Editing fields does not run generation.</Item.Description>{/if}
+  {#if intent.action==='open_editor'}<Item.Title>Edit video</Item.Title>{:else if intent.action==='update_character'}<Item.Title>Update character</Item.Title><Item.Description>Check the new wording, then save. Nothing changes until you do.</Item.Description>{:else}<Item.Title>Creation options</Item.Title><Item.Description>Adjust the options, then choose an action to start. Editing fields does not run generation.</Item.Description>{/if}
   <div class="mt-3 space-y-3">
-    {#if intent.action === 'open_editor'}
+    {#if intent.action === 'update_character'}
+      {#if changedCharacter}
+        <p class="text-sm font-medium">{changedCharacter.name}</p>
+        {#each changeFields as field (field.key)}{#if characterDraft[field.key]!==undefined}
+          <label class="grid gap-1 text-xs">New {field.label.toLowerCase()}<Textarea bind:value={characterDraft[field.key]} rows={3}/></label>
+          {#if changedCharacter[field.key]}<p class="text-xs text-muted-foreground">Was: {changedCharacter[field.key]}</p>{/if}
+        {/if}{/each}
+        {#if !Object.keys(characterDraft).length}<label class="grid gap-1 text-xs">New appearance<Textarea bind:value={characterDraft.appearance} rows={3} placeholder={changedCharacter.appearance}/></label>{/if}
+        <label class="flex items-start gap-2 text-xs"><input type="checkbox" class="mt-0.5" bind:checked={remakeReference} disabled={busy}/>Then make a new reference picture so scenes use the new look (uses image credits)</label>
+        <p class="text-xs text-muted-foreground">Scenes already rendered keep the old look until you render them again.</p>
+        <div class="pt-1"><Button size="sm" class="rounded-full px-4" disabled={busy||!ready} onclick={run}>{#if busy}<LoaderCircle class="size-4 mr-1 animate-spin"/>{/if}{busy?'Saving…':remakeReference?'Save & make new picture':'Save changes'}</Button></div>
+      {:else}<p class="text-xs text-muted-foreground">Choose the character to change.</p>
+        <select class={selectClass} bind:value={characterId}><option value="">Choose a character…</option>{#each options.characters as c(c.id)}<option value={c.id}>{c.name}</option>{/each}</select>{/if}
+    {:else if intent.action === 'open_editor'}
       <p class="text-xs text-muted-foreground">{editorTarget.help}</p>
       <div class="pt-1"><Button size="sm" class="rounded-full px-4" href={editorTarget.panel?`${editHref}&panel=${editorTarget.panel}`:editHref}>{editorTarget.label}</Button></div>
     {:else if intent.action === 'unknown'}

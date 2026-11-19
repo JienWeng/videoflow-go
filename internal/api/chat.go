@@ -158,6 +158,22 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		intent["idea"] = brief.Idea
 		intent["scene_count"] = brief.SceneCount
 		intent["reply"] = creativeBriefQuestion(brief)
+		// The fixed question is English. When the user writes another language, keep the
+		// planner's own question, which it writes in the user's language.
+		if lang := strings.ToLower(strings.TrimSpace(res.UserLanguage)); lang != "" && !strings.HasPrefix(lang, "en") && strings.TrimSpace(res.Reply) != "" {
+			intent["reply"] = res.Reply
+		}
+	}
+	if action == "update_character" {
+		changes := map[string]string{}
+		if c := res.CharacterChanges; c != nil {
+			for key, value := range map[string]string{"appearance": c.Appearance, "description": c.Description, "personality": c.Personality} {
+				if v := strings.TrimSpace(value); v != "" && len(v) <= 4000 {
+					changes[key] = v
+				}
+			}
+		}
+		intent["character_changes"] = changes
 	}
 	if action == "open_editor" {
 		switch res.EditorPanel {
@@ -272,7 +288,7 @@ func canonicalChatAction(action string) string {
 	switch action {
 	case "create_script", "add_scene":
 		return "generate_script"
-	case "open_editor", "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "caption", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
+	case "open_editor", "update_character", "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "caption", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
 		return action
 	default:
 		return "unknown"
