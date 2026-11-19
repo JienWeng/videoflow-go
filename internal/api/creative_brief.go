@@ -43,6 +43,7 @@ func mergeCreativeBrief(previous, next *agents.CreativeBrief, message string) ag
 	}
 	return result
 }
+
 // creativeBriefQuestion asks for what is still missing, after echoing what was understood,
 // so a follow-up like "English, 15 seconds" visibly lands instead of the same question repeating.
 func creativeBriefQuestion(b agents.CreativeBrief) string {
