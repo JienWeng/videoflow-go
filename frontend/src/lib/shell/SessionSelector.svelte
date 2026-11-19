@@ -24,7 +24,7 @@
       <DropdownMenu.Trigger class="flex min-h-10 min-w-0 flex-1 items-center justify-between gap-2 rounded-lg {minimal?'border border-transparent bg-transparent px-2 font-semibold':'border border-input bg-background px-3'} text-left text-sm focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50" aria-label="AI session" title="Switch conversation" disabled={busy||!loaded}>
         <span class="truncate">{!loaded?'Loading sessions…':sessions.find(s=>s.id===selected)?minimal?(sessions.find(s=>s.id===selected).title||'Untitled'):`${sessions.find(s=>s.id===selected).title||'Untitled'} · ${sessions.find(s=>s.id===selected).engine}`:'Choose conversation'}</span><ChevronDown class="size-4 shrink-0" />
       </DropdownMenu.Trigger>
-      <DropdownMenu.Content align="start" class="max-w-[min(420px,90vw)]">
+      <DropdownMenu.Content align="start" class="w-80 max-w-[min(420px,90vw)]">
         <DropdownMenu.RadioGroup value={selected} onValueChange={id=>{if(id!==selected)void run(async()=>{await post(`/director/sessions/${id}/select`,{});await refresh();});}}>
           {#each sessions as session}<DropdownMenu.RadioItem value={session.id} closeOnSelect><span class="min-w-0"><span class="block truncate">{session.title||'Untitled'}</span><span class="block text-xs text-muted-foreground">{session.engine==='claude'?'Claude Code':'Codex'} · {({ready:'Ready',running:'Working…',review_required:'Needs review'} as Record<string,string>)[session.status]??session.status}</span></span></DropdownMenu.RadioItem>{/each}
         </DropdownMenu.RadioGroup>
