@@ -197,7 +197,8 @@ func Save(root, project string, m Manifest, sources map[string]string) (string, 
 				// A still can be held for any length; its "original" length is whatever the edit asks.
 				c.Trim, c.OriginalDuration = 0, c.Duration
 			}
-			if c.Trim+c.Duration > c.OriginalDuration {
+			// Allow rounding: clip lengths are kept to milliseconds, probes are finer.
+			if c.Trim+c.Duration > c.OriginalDuration+0.02 {
 				return fmt.Errorf("trim exceeds original duration")
 			}
 			switch ext {
