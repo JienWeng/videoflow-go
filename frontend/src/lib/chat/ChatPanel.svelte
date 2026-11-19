@@ -7,9 +7,34 @@
  import ClipCard from './ClipCard.svelte';
  import {upload as apiUpload} from '$lib/api';
  // Auto: the assistant carries out free planning steps itself. Manual: every step waits for a click.
- let autoMode=$state(false);
- try{autoMode=localStorage.getItem('videoflow.chat.auto')==='1'}catch{}
- function setAuto(on:boolean){autoMode=on;try{localStorage.setItem('videoflow.chat.auto',on?'1':'0')}catch{}}
+ // Full auto: after one confirmation the app also renders, edits and exports the video.
+ type Mode='manual'|'auto'|'full';
+ let mode=$state<Mode>('manual');
+ try{const saved=localStorage.getItem('videoflow.chat.mode');mode=saved==='auto'||saved==='full'?saved:localStorage.getItem('videoflow.chat.auto')==='1'?'auto':'manual'}catch{}
+ const autoMode=$derived(mode!=='manual');
+ const MODE_LABEL:Record<Mode,string>={manual:'Manual',auto:'Auto',full:'Full auto'};
+ const MODE_HELP:Record<Mode,string>={manual:'Manual: every step waits for your click, and you review before any video is made.',auto:'Auto: the assistant does free steps itself (rewriting scenes, planning shots). Anything that uses credits waits for you.',full:'Full auto: confirm the plan once, then the assistant makes the pictures, renders every scene, edits them together with captions and exports the final video. Uses image and video credits without asking again.'};
+ function nextMode(){mode=mode==='manual'?'auto':mode==='auto'?'full':'manual';try{localStorage.setItem('videoflow.chat.mode',mode)}catch{}}
+ // Finish a story hands-free: render all scenes, assemble, caption and export.
+ async function watchAutopilot(m:Msg){
+  const id=m.autopilotOp;if(!id)return;
+  for(let i=0;i<900;i++){
+   let op:any;try{op=await get('/ops/'+encodeURIComponent(id))}catch{await new Promise(r=>setTimeout(r,5000));continue}
+   const rj=op.result_json??{};
+   if(op.status==='succeeded'){if(m.op)m.op.status='done';m.video=rj.video_url;m.text='Your video is ready. Watch it here, download it, or open it in the editor to change anything.';m.chips=[{label:'Edit this video',href:`/?view=edit&script_id=${encodeURIComponent(rj.script_id??'')}`},{label:'All videos',href:'/render'}];await onmutate?.();void refreshChips();return}
+   if(op.status!=='running'){if(m.op){m.op.status='failed';m.op.detail=op.error??'stopped'}m.text=(op.error??'The video could not be finished.')+' Everything made so far is kept.';return}
+   if(rj.stage)m.text=rj.stage+'…';
+   await new Promise(r=>setTimeout(r,5000));
+  }
+  m.text='Still working. Check Videos for the result.';
+ }
+ async function startAutopilot(scriptId:string){
+  if(!scriptId||messages.some(m=>m.autopilotScript===scriptId&&m.op?.status==='running'))return;
+  const m:Msg={role:'assistant',text:'Starting: making the video for every scene…',op:{id:crypto.randomUUID(),label:'Finishing your video',status:'running'},autopilotScript:scriptId};
+  messages.push(m);const live=messages[messages.length-1];
+  try{const started=await post('/autopilot/finish?background=true',{script_id:scriptId});live.autopilotOp=started.op_id;void watchAutopilot(live)}
+  catch(e){if(live.op){live.op.status='failed';live.op.detail=(e as Error).message}live.text='Could not start finishing the video. '+(e as Error).message}
+ }
  let referenceOpen=$state(false);
  let referenceURL=$state('');
  // Media pasted, dropped, picked or linked into the next message.
@@ -114,6 +139,7 @@
  editProposal?:{base:string;manifest:any;changes:string[];applied?:boolean;error?:string};
     role: 'user' | 'assistant';
     autoRun?: boolean;
+    autopilotOp?: string; autopilotScript?: string; video?: string;
     attachments?: {id:string;name:string;kind:string;file_path:string}[];
     retry?: string;
     setupSceneId?:string;
@@ -464,7 +490,7 @@
 
   onMount(() => {
     refreshChips();
-    void initPersistence().then(restoreGuidedOperation);
+    void initPersistence().then(restoreGuidedOperation).then(()=>{for(const m of messages)if(m.autopilotOp&&!m.video&&m.op?.status==='running')void watchAutopilot(m)});
     const update=()=>{void initPersistence().then(restoreGuidedOperation)};
     const stop=subscribeJobs(()=>{void refreshChips()},()=>{void refreshChips()});
     const ask=(event:Event)=>{const text=(event as CustomEvent<{text?:string}>).detail?.text;if(text)reusePrompt(text);};
@@ -533,7 +559,12 @@
       m.text=rj.status==='awaiting_character_review'?'Your saved story can continue to storyboarding. Images do not need approval.':['awaiting_reference_review','ready_to_render'].includes(rj.status)?'Your story and images are ready. You can adjust them or render a scene.':'Story planning completed. Review the saved work before continuing.';
       m.chips=[{label:'Open story progress',href:`/create?op_id=${encodeURIComponent(m.storyOperationId??'')}`}];
       const scene=rj.scene_ids?.[0];if(scene)m.chips.push({label:'Show story on canvas',focusId:scene,fill:'What is the next step for this story?'});
-      await refreshStoryApprovals();return;
+      await refreshStoryApprovals();
+      if(mode==='full'){
+        if(rj.status==='awaiting_character_review'&&m.storyReady){m.text='Characters are ready. Continuing to the scene pictures…';void continueStory(m)}
+        else if(['awaiting_reference_review','ready_to_render'].includes(rj.status)&&rj.script_id){m.text='Your story and pictures are ready. Full auto is now making the video.';void startAutopilot(rj.script_id)}
+      }
+      return;
     }
     if(ctx.action==='generate_character_reference'){
       m.text='Character reference generated and ready to use.';m.chips=[{label:'View character image',href:`/characters/${encodeURIComponent(ctx.characterId??'')}#np-character-references`,focusId:ctx.characterId}];return;
@@ -760,11 +791,12 @@
     if(useSpecialists)messages.push({role:'assistant',text:'Specialist review requested. No story changes will run.',activity:normalizeActivity((capabilities.subagents.roles??[]).map((role:any)=>({kind:'subagent',title:role.name,status:'pending'})))});
     try {
       if(editing){const base=JSON.stringify(editing.draft);const result=await post('/director/composition-plan',{instruction:message,manifest:JSON.parse(base),selected_clip_id:editing.selected});if(generation!==conversationGeneration)return;messages.push({role:'assistant',text:'I prepared an edit proposal. Apply it to the current edit, then save or undo as needed.',editProposal:{base,manifest:result.manifest,changes:editChanges(JSON.parse(base),result.manifest)}});return;}
-      const r = await post(useSpecialists?'/chat/review':'/chat', { message, ...(useSpecialists?{}:{history,creation_brief:activeCreativeBrief()}), selected: selected ? {id:selected.id,kind:selected.kind} : null, ...(autoMode&&!useSpecialists?{auto:true}:{}), ...(sent.length?{attachments:sent.map(a=>a.id)}:{}) });
+      const r = await post(useSpecialists?'/chat/review':'/chat', { message, ...(useSpecialists?{}:{history,creation_brief:activeCreativeBrief()}), selected: selected ? {id:selected.id,kind:selected.kind} : null, ...(autoMode&&!useSpecialists?{auto:true,...(mode==='full'?{full:true}:{})}:{}), ...(sent.length?{attachments:sent.map(a=>a.id)}:{}) });
       if(generation!==conversationGeneration)return;
       if(useSpecialists){messages[reviewIndex]={role:'assistant',text:r.reply,activity:subagentEvents(r.subagents??[])};void refreshCapabilities();return;}
       const intent = { ...r.intent };
       if(intent.action==='generate_script'){for(const m of messages)if(m.intent?.action==='generate_script'&&!m.dismissed){m.dismissed=true;m.briefSuperseded=true;}}
+      if(intent.action==='finish_video'&&intent.script_id&&mode==='full'){messages.push({role:'assistant',text:intent.reply,dismissed:true,intent});void startAutopilot(intent.script_id);return}
       messages.push({
         role: 'assistant',
         text: intent.reply,
@@ -966,7 +998,14 @@
             {#if m.editProposal}<section class="mt-3 space-y-3 rounded-md border border-border p-3" aria-label="Proposed edit changes"><h3 class="text-sm font-medium">Proposed changes</h3><ul class="list-inside list-disc text-xs">{#each m.editProposal.changes as change}<li>{change}</li>{/each}</ul>{#if !m.editProposal.changes.length}<p class="text-xs text-muted-foreground">No changes proposed.</p>{/if}
  {#if editing}<Button size="sm" disabled={!!m.editProposal.applied||!m.editProposal.changes.length} onclick={()=>{try{editing?.apply(applyEditProposal(editing.draft,m.editProposal));m.editProposal!.applied=true;}catch(e){m.editProposal!.error=String(e)}}}>{m.editProposal.applied?'Applied · Undo in editor':'Apply edit changes'}</Button>{:else}<a class="text-xs underline" href="/?view=edit">Open editing workspace</a>{/if}
  {#if m.editProposal.error}<p role="alert" class="text-xs text-destructive">{m.editProposal.error}</p>{/if}</section>{/if}
-            {#if !editing && m.intent?.action === 'make_clip' && m.intent.clip && !m.dismissed}
+            {#if m.video}
+              <!-- svelte-ignore a11y_media_has_caption -->
+              <video class="mt-2 max-h-96 w-full rounded-md bg-black" src={mediaUrl(m.video)??''} controls playsinline></video>
+              <Button size="sm" variant="outline" class="self-start rounded-full px-4" href={mediaUrl(m.video)??''} download>Download video</Button>
+            {/if}
+            {#if !editing && m.intent?.action === 'finish_video' && m.intent.script_id && !m.dismissed}
+              <div class="mt-2 flex flex-wrap items-center gap-2"><Button size="sm" class="rounded-full px-4" onclick={()=>{m.dismissed=true;void startAutopilot(m.intent.script_id)}}>Finish the video for me</Button><span class="text-xs text-muted-foreground">Makes every missing scene video, joins them with captions and exports. Uses video credits.</span></div>
+            {:else if !editing && m.intent?.action === 'make_clip' && m.intent.clip && !m.dismissed}
               <ClipCard clip={m.intent.clip} onjob={id=>m.intent={...m.intent,clip:{...m.intent.clip,job_id:id}}} ondismiss={()=>m.dismissed=true} />
             {:else if !editing && m.intent && m.intent.action !== 'unknown' && !m.dismissed}
               <ActionCard
@@ -1019,7 +1058,7 @@
               <DropdownMenu.Item onclick={()=>{referenceURL='';referenceOpen=true}}><span class="grid"><span>Match a look</span><span class="text-xs text-muted-foreground">Copy the art style of an image, video or link</span></span></DropdownMenu.Item>
             </DropdownMenu.Content>
           </DropdownMenu.Root>
-          {#if !editing}<InputGroup.Button type="button" size="sm" aria-pressed={autoMode} aria-label={autoMode?'Auto mode is on. Switch to manual.':'Manual mode is on. Switch to auto.'} title={autoMode?'Auto: the assistant does free steps itself (rewriting scenes, planning shots). Anything that uses credits still waits for you. Click for Manual.':'Manual: every step waits for your click. Click for Auto.'} class={autoMode?'bg-primary text-primary-foreground hover:bg-primary/90':''} onclick={()=>setAuto(!autoMode)}>{autoMode?'Auto':'Manual'}</InputGroup.Button>{/if}
+          {#if !editing}<InputGroup.Button type="button" size="sm" aria-label={`Mode: ${MODE_LABEL[mode]}. ${MODE_HELP[mode]} Click to change.`} title={MODE_HELP[mode]+' Click to change.'} class={mode==='full'?'bg-primary text-primary-foreground hover:bg-primary/90':mode==='auto'?'bg-secondary':''} onclick={nextMode}>{MODE_LABEL[mode]}</InputGroup.Button>{/if}
           <DropdownMenu.Root><DropdownMenu.Trigger>{#snippet child({props})}<InputGroup.Button {...props} type="button" size="sm" aria-label="Assistant mode" disabled={busy}>{reviewMode?'Review':'Chat'}<ChevronDown class="size-3.5" /></InputGroup.Button>{/snippet}</DropdownMenu.Trigger>
             <DropdownMenu.Content align="start" side="top" class="w-64 max-w-[calc(100vw-2rem)]">
               <DropdownMenu.RadioGroup value={reviewMode?'specialists':'assistant'} onValueChange={value=>reviewMode=value==='specialists'}>

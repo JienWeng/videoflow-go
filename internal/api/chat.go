@@ -22,6 +22,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		Selected      *chatSelection        `json:"selected"`
 		Attachments   []string              `json:"attachments"`
 		Auto          bool                  `json:"auto"`
+		Full          bool                  `json:"full"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Message == "" {
 		http.Error(w, "message is required", http.StatusBadRequest)
@@ -103,7 +104,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	progress, _ := s.projectProgress(r.Context(), projectID)
-	contextJSON, _ := json.Marshal(map[string]any{"production_progress": progress, "recent_activity": s.chatActivity(projectID, jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "assistant_mode": chatMode(body.Auto), "attached_media": attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "missing_voices_setup": "inline_render_card", "render_audio_modes": []string{"native", "saved", "silent"}, "native_audio_requires_saved_voices": false, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false, "exact_dialogue_requires_speech_and_lipsync": true}})
+	contextJSON, _ := json.Marshal(map[string]any{"production_progress": progress, "recent_activity": s.chatActivity(projectID, jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "assistant_mode": chatMode(body.Auto, body.Full), "attached_media": attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "missing_voices_setup": "inline_render_card", "render_audio_modes": []string{"native", "saved", "silent"}, "native_audio_requires_saved_voices": false, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false, "exact_dialogue_requires_speech_and_lipsync": true}})
 	ctx := r.Context()
 	var plannedSnapshot *directorContext
 	if s.cfg.UseLocalText {
@@ -199,6 +200,29 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		intent["character_changes"] = changes
+	}
+	if action == "finish_video" {
+		// Finish the episode the named scene belongs to, or the newest one.
+		episodes := s.seriesEpisodes(projectID)
+		script := ""
+		for _, scene := range scenes {
+			if scene.ScriptID != nil && res.SceneID != "" && (scene.ID == res.SceneID || strings.EqualFold(strings.TrimSpace(res.SceneID), strings.TrimSpace(scene.Title))) {
+				script = *scene.ScriptID
+			}
+		}
+		if res.EpisodeNumber >= 1 && res.EpisodeNumber <= len(episodes) {
+			script = episodes[res.EpisodeNumber-1].ScriptID
+		}
+		if script == "" && len(episodes) > 0 {
+			script = episodes[len(episodes)-1].ScriptID
+		}
+		if script == "" {
+			action = "unknown"
+			intent["action"] = action
+			intent["reply"] = "There is no story to finish yet. Tell me your idea and I'll plan one."
+		} else {
+			intent["script_id"] = script
+		}
 	}
 	if action == "make_clip" {
 		clip := s.chatClip(projectID, res, attachments)
@@ -352,7 +376,7 @@ func canonicalChatAction(action string) string {
 	switch action {
 	case "create_script", "add_scene":
 		return "generate_script"
-	case "open_editor", "make_clip", "update_character", "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "caption", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
+	case "open_editor", "make_clip", "finish_video", "update_character", "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "caption", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
 		return action
 	default:
 		return "unknown"
@@ -408,7 +432,10 @@ func (s *Server) chatClip(project string, res *agents.ChatIntentResponse, attach
 	return map[string]any{"prompt": prompt, "duration": duration, "aspect_ratio": aspect, "generate_audio": res.ClipAudio, "references": references}
 }
 
-func chatMode(auto bool) string {
+func chatMode(auto, full bool) string {
+	if full {
+		return "full auto: the user wants the finished video with as few clicks as possible. For a new story they confirm the plan once; the app then makes the pictures, renders every scene, joins them with captions and exports the final video by itself, using image and video credits. Say that confirming is the only click. Free planning steps start by themselves, and finish_video starts immediately. Decide every detail yourself and never ask the user to press per-scene buttons."
+	}
 	if auto {
 		return "auto: free planning steps (refine_scene, refine_shot, generate_shots, plan_assets) start by themselves right after your reply, so write a complete instruction and say what you are doing now (\"I'm rewriting the scene so that…\"), not \"press the button\". Steps that use credits or delete things still wait for the user's click; say so. Decide details yourself and do not ask for confirmation of free steps."
 	}

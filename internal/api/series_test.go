@@ -62,3 +62,36 @@ func TestNextEpisodeKeepsFormatCastAndStorySoFar(t *testing.T) {
 		t.Fatal(w.Body.String())
 	}
 }
+
+func TestFinishVideoTargetsNewestEpisodeAndAutopilotChecksTheStory(t *testing.T) {
+	s := routerServer(t, fakeChatModel(`{"reply":"On it.","action":"finish_video"}`))
+	project, _ := s.database.GetActiveProjectID()
+
+	// No story yet: nothing to finish.
+	w := call(t, s, "POST", "/chat", `{"message":"just make the whole video"}`)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"action":"unknown"`) {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	var last string
+	for _, title := range []string{"One", "Two"} {
+		script := &models.Script{ProjectID: &project, Idea: title, Title: title, Summary: title, DraftJSON: []byte("{}")}
+		if e := s.database.CreateScript(script); e != nil {
+			t.Fatal(e)
+		}
+		if e := s.database.CreateScene(&models.Scene{ProjectID: &project, ScriptID: &script.ID, SceneOrder: 1, Title: title + " scene", Duration: 5, AspectRatio: "9:16", CharacterIDsJSON: []byte("[]"), SceneJSON: []byte("{}")}); e != nil {
+			t.Fatal(e)
+		}
+		last = script.ID
+	}
+	w = call(t, s, "POST", "/chat", `{"message":"just make the whole video","full":true,"auto":true}`)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"action":"finish_video"`) || !strings.Contains(w.Body.String(), `"script_id":"`+last+`"`) {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if w = call(t, s, "POST", "/autopilot/finish", `{"script_id":"script_missing"}`); w.Code != 404 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	// A scene with no shots cannot be rendered: autopilot stops with a plain reason and spends nothing.
+	if w = call(t, s, "POST", "/autopilot/finish", `{"script_id":"`+last+`"}`); w.Code != 502 || !strings.Contains(w.Body.String(), "isn't ready for video") {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}
