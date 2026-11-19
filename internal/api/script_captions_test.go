@@ -76,6 +76,20 @@ func TestScriptCaptionsFollowClipOnTimeline(t *testing.T) {
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "Let's go back in time!") {
 		t.Fatal(w.Code, w.Body.String())
 	}
+	// A narrator line moved later by Voice from script takes its caption with it.
+	meta, _ := json.Marshal(map[string]any{"voiceover": true, "text": "Let's go back in time!"})
+	if e := s.database.CreateAsset(&models.Asset{ID: "voiceover_abc", ProjectID: &project, Type: "voiceover", Name: "v", FilePath: "storage/assets/voiceover_abc.mp3", TagsJSON: []byte("[]"), MetadataJSON: meta}); e != nil {
+		t.Fatal(e)
+	}
+	body, _ = json.Marshal(map[string]any{"clips": []any{clip}, "audio": []any{composition.Clip{ID: "a1", AssetID: "voiceover_abc", Start: 13.2, Duration: 1.5, Speed: 1}}})
+	var timed struct {
+		Captions   []composition.Cue `json:"captions"`
+		VoiceTimed int               `json:"voice_timed"`
+	}
+	w = call(t, s, "POST", "/compositions/captions/from-script", string(body))
+	if json.Unmarshal(w.Body.Bytes(), &timed) != nil || timed.VoiceTimed != 1 || timed.Captions[1].Start != 13.2 || timed.Captions[1].End != 14.7 || timed.Captions[0].Start != 10 {
+		t.Fatal(w.Code, w.Body.String())
+	}
 	w = call(t, s, "GET", "/outputs/"+out.ID+"/captions/from-script", "")
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"segments":[{`) {
 		t.Fatal(w.Code, w.Body.String())

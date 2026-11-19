@@ -30,6 +30,15 @@ func TestRevisionAndTimeline(t *testing.T) {
 		t.Fatal("accepted trim beyond original duration")
 	}
 }
+func TestStillImageCanBeHeldLongerThanWhenAdded(t *testing.T) {
+	root := t.TempDir()
+	still := filepath.Join(root, "still.png")
+	os.WriteFile(still, []byte("png"), 0600)
+	m := Manifest{Version: 1, Width: 640, Height: 360, FPS: 24, Duration: 5, Clips: []Clip{{ID: "still", AssetID: "asset-1", Duration: 4.5, OriginalDuration: 3, Speed: 1}}}
+	if _, err := Save(root, "project", m, map[string]string{"asset-1": still}); err != nil {
+		t.Fatal("a still added at 3s should stretch to 4.5s:", err)
+	}
+}
 func TestRejectsTraversalAndUnsupportedSpeed(t *testing.T) {
 	m := Manifest{Version: 1, Width: 640, Height: 360, FPS: 24, Duration: 2, Clips: []Clip{{ID: "x", AssetID: "a", Duration: 2, Speed: 2}}}
 	if _, err := Save(t.TempDir(), "../escape", m, nil); err == nil {

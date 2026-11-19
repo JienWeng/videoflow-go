@@ -206,6 +206,8 @@ func (s *Server) handleCompositionScriptCaptions(w http.ResponseWriter, r *http.
 	}
 	var body struct {
 		Clips []composition.Clip `json:"clips"`
+		// Audio lets captions follow narrator voice lines placed by Voice from script.
+		Audio []composition.Clip `json:"audio"`
 	}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body) != nil {
 		http.Error(w, "invalid clips", 400)
@@ -224,8 +226,41 @@ func (s *Server) handleCompositionScriptCaptions(w http.ResponseWriter, r *http.
 		}
 		captions = append(captions, cues...)
 	}
+	followed := s.alignCaptionsToVoice(project, captions, body.Audio)
 	sort.SliceStable(captions, func(i, j int) bool { return captions[i].Start < captions[j].Start })
-	writeJSON(w, 200, map[string]any{"captions": captions, "skipped": skipped})
+	writeJSON(w, 200, map[string]any{"captions": captions, "skipped": skipped, "voice_timed": followed})
+}
+
+// alignCaptionsToVoice times each caption to the voice-over clip that speaks the same
+// line, so captions stay with the narrator even after lines were spaced apart.
+func (s *Server) alignCaptionsToVoice(project string, captions []composition.Cue, audio []composition.Clip) int {
+	spoken := map[string][]composition.Clip{}
+	for _, clip := range audio {
+		if !strings.HasPrefix(clip.AssetID, "voiceover_") {
+			continue
+		}
+		a, err := s.database.GetAsset(clip.AssetID)
+		if err != nil || a.ProjectID == nil || *a.ProjectID != project {
+			continue
+		}
+		var meta struct {
+			Text string `json:"text"`
+		}
+		if json.Unmarshal(a.MetadataJSON, &meta) == nil && strings.TrimSpace(meta.Text) != "" {
+			key := strings.TrimSpace(meta.Text)
+			spoken[key] = append(spoken[key], clip)
+		}
+	}
+	followed := 0
+	for i := range captions {
+		key := strings.TrimSpace(captions[i].Text)
+		if clips := spoken[key]; len(clips) > 0 {
+			captions[i].Start, captions[i].End = round3(clips[0].Start), round3(clips[0].Start+clips[0].Duration)
+			spoken[key] = clips[1:]
+			followed++
+		}
+	}
+	return followed
 }
 
 func (s *Server) handleOutputScriptCaptions(w http.ResponseWriter, r *http.Request) {

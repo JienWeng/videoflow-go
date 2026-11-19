@@ -188,14 +188,18 @@ func Save(root, project string, m Manifest, sources map[string]string) (string, 
 			if c.OriginalDuration == 0 {
 				c.OriginalDuration = c.Duration
 			}
-			if c.Trim+c.Duration > c.OriginalDuration {
-				return fmt.Errorf("trim exceeds original duration")
-			}
 			p, ok := sources[c.AssetID]
 			if !ok {
 				return fmt.Errorf("asset %s unavailable in project", c.AssetID)
 			}
 			ext := strings.ToLower(filepath.Ext(p))
+			if isStillImage(ext) {
+				// A still can be held for any length; its "original" length is whatever the edit asks.
+				c.Trim, c.OriginalDuration = 0, c.Duration
+			}
+			if c.Trim+c.Duration > c.OriginalDuration {
+				return fmt.Errorf("trim exceeds original duration")
+			}
 			switch ext {
 			case ".mp4", ".webm", ".mov", ".png", ".jpg", ".jpeg", ".webp", ".wav", ".mp3", ".m4a", ".ogg", ".aac", ".flac", ".opus":
 			default:
@@ -377,4 +381,12 @@ func Verify(dir string, m Manifest) error {
 		}
 	}
 	return nil
+}
+
+func isStillImage(ext string) bool {
+	switch ext {
+	case ".png", ".jpg", ".jpeg", ".webp":
+		return true
+	}
+	return false
 }
