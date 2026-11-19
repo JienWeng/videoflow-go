@@ -339,7 +339,7 @@ func (s *Server) readVideoPrices(ctx context.Context) {
 		}
 	}
 	// fal.ai publishes its rate through an API that needs the saved key.
-	if fal := costs.HostByName("fal"); fal != nil && s.routes().VideoConnected("fal") {
+	if fal := costs.HostByName("fal"); fal != nil && s.routes().Connected("fal") {
 		var list struct {
 			Prices []struct {
 				Endpoint  string  `json:"endpoint_id"`

@@ -12,10 +12,13 @@ import (
 	"time"
 
 	"videoflow-go/internal/config"
+	"videoflow-go/internal/costs"
 	"videoflow-go/internal/db"
 	"videoflow-go/internal/events"
 	"videoflow-go/internal/media"
 	"videoflow-go/internal/models"
+	"videoflow-go/internal/providers"
+	"videoflow-go/internal/routing"
 )
 
 func workerFixture(t *testing.T, h http.HandlerFunc) (*WorkerPool, *models.RenderJob) {
@@ -363,5 +366,40 @@ func TestWorkerPreservesNativeAudioAndLocalRenderUnits(t *testing.T) {
 	json.Unmarshal(saved.RequestJSON, &p)
 	if p["request_fingerprint"] != "frozen" || p["render_plan_id"] != "plan" || p["render_unit"].(map[string]any)["key"] != "plan:0" {
 		t.Fatal("assembly/reuse metadata lost", p)
+	}
+}
+
+func TestRenderRefusedForItsKeyMarksTheKeyRejected(t *testing.T) {
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(401)
+		w.Write([]byte(`{"code":"INVALID_API_KEY","message":"Invalid API key"}`))
+	}))
+	defer remote.Close()
+	host := costs.HostByName("argolink")
+	official := host.URL
+	host.URL = remote.URL
+	defer func() { host.URL = official }()
+	cfg := config.Load()
+	cfg.StorageRoot = t.TempDir()
+	d, err := db.Open(filepath.Join(t.TempDir(), "db.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	if err = d.SetProviderSecret("argolink", "stale-key", nil); err != nil {
+		t.Fatal(err)
+	}
+	job := &models.RenderJob{Provider: "argolink", Model: "seedance-2.0", Status: "pending", RequestJSON: json.RawMessage(`{"prompt":"Cat","duration":5,"aspect_ratio":"16:9","resolution":"720p"}`)}
+	if err = d.CreateRenderJob(job); err != nil {
+		t.Fatal(err)
+	}
+	pool := NewWorkerPool(cfg, d, events.NewBroker(), media.NewMediaEngine())
+	defer pool.Stop()
+	if err = pool.processJob(job.ID); err == nil {
+		t.Fatal("refused render reported success")
+	}
+	routes := routing.Resolver{Config: cfg, DB: d}
+	if check, _ := routes.KeyCheck("argolink"); check.State != providers.KeyRejected || routes.Connected("argolink") {
+		t.Fatalf("after a 401 render the key check is %+v", check)
 	}
 }

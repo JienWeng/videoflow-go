@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -256,6 +257,67 @@ func (c *HostClient) rejected(raw []byte) error {
 		return &HTTPError{Provider: c.host.Label, Status: envelope.Code, Message: envelope.Msg}
 	}
 	return nil
+}
+
+// KeyState is what a video service last said about a saved key.
+type KeyState string
+
+const (
+	KeyAccepted  KeyState = "accepted"
+	KeyRejected  KeyState = "rejected"
+	KeyUnchecked KeyState = "unchecked" // the service could not be asked
+)
+
+type KeyCheck struct {
+	State     KeyState  `json:"state"`
+	Message   string    `json:"message,omitempty"`
+	CheckedAt time.Time `json:"checked_at"`
+}
+
+// keyCheckPaths are free, read-only requests that need a valid key. None of them makes
+// or bills anything. Each is taken from the service's own API reference:
+var keyCheckPaths = map[string]string{
+	"argolink":  "/account/balance", // argolink.io/docs: GET /v1/account/balance; bad key is 401 INVALID_API_KEY
+	"loopling":  "/me",              // loopling.ai/seedance/docs/get-account and /errors: bad key is 401 invalid_api_key
+	"replicate": "/account",         // replicate.com/docs/reference/http#account.get
+	"kie":       "/v1/chat/credit",  // docs.kie.ai/common-api/get-account-credits: bad key is HTTP 200 with code 401
+	"wavespeed": "/balance",         // wavespeed.ai/docs/docs-common-api/balance; bad key is 401 (docs/api-authentication)
+	"runway":    "/organization",    // Runway API reference, Organization: GET /v1/organization
+}
+
+// RejectedKey is the answer recorded when a service refuses its key.
+func RejectedKey(label string) KeyCheck {
+	return KeyCheck{KeyRejected, label + " did not accept this key. Copy the API key from your " + label + " dashboard and paste it again.", time.Now().UTC()}
+}
+
+// InvalidKey reports whether a service refused a request because of its key: HTTP 401,
+// or 403 with a message about the key (a bare 403 can mean the account needs a top-up).
+func InvalidKey(err error) bool {
+	var e *HTTPError
+	if !errors.As(err, &e) {
+		return false
+	}
+	message := strings.ToLower(e.Message)
+	return e.Status == 401 || e.Status == 403 && (strings.Contains(message, "api key") || strings.Contains(message, "api_key") || strings.Contains(message, "invalid key") || strings.Contains(message, "unauthori") || strings.Contains(message, "authenticat"))
+}
+
+// CheckKey asks the service whether it accepts the key, without making anything.
+func (c *HostClient) CheckKey(ctx context.Context) KeyCheck {
+	label := c.host.Label
+	if strings.HasPrefix(c.key, "whsec_") {
+		return KeyCheck{KeyRejected, "This is a webhook signing secret, not an API key. Copy the API key from your " + label + " dashboard and paste it again.", time.Now().UTC()}
+	}
+	raw, err := c.request(ctx, "GET", keyCheckPaths[c.host.Name], nil)
+	if err == nil {
+		err = c.rejected(raw)
+	}
+	switch {
+	case err == nil:
+		return KeyCheck{KeyAccepted, "", time.Now().UTC()}
+	case InvalidKey(err):
+		return RejectedKey(label)
+	}
+	return KeyCheck{KeyUnchecked, "This key could not be checked with " + label + " right now. It is saved, and the app will check it again later.", time.Now().UTC()}
 }
 
 func (c *HostClient) GetVideo(ctx context.Context, id string) (string, []string, error) {

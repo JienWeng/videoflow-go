@@ -48,7 +48,7 @@ func (s *Server) chatSelectionContext(project string, selected *chatSelection) (
 		if e == nil {
 			for _, j := range jobs {
 				if selected.Kind == "render_job" && j.ID == selected.ID {
-					record = j
+					record = renderJobView(j)
 					owned = true
 				}
 				if selected.Kind == "output" {

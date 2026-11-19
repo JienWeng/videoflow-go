@@ -11,7 +11,7 @@
   type Setup = {
     assistant: { ready: boolean; engines: Record<string, boolean>; session_id?: string; engine?: string; title?: string; model?: string; effort?: string };
     pictures: Choice; vision: Choice; listening: Choice;
-    video: { service: string; provider: string; model: string; ready: boolean; routing: string; family: string; family_label?: string; per_second?: number };
+    video: { service: string; provider: string; model: string; ready: boolean; routing: string; family: string; family_label?: string; per_second?: number; key_rejected?: boolean; note?: string };
     voice: { provider: string; service: string; ready: boolean; options: { id: string; label: string; ready: boolean }[] };
   };
   type Service = { provider: string; label: string; per_second: number; usable: boolean; in_use: boolean; cheapest: boolean };
@@ -101,8 +101,9 @@
       </li>
 
       <li class="grid gap-3 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] lg:items-center">
-        {@render row(Clapperboard, 'Video', 'Turns each scene into a moving clip. This is where most of the money goes.', setup.video.ready, 'Needs a key')}
+        {@render row(Clapperboard, 'Video', 'Turns each scene into a moving clip. This is where most of the money goes.', setup.video.ready, setup.video.key_rejected ? 'Key rejected' : 'Needs a key')}
         <div class="grid gap-2">
+          {#if setup.video.key_rejected && setup.video.note}<p class="text-xs text-destructive" role="status">{setup.video.note} <button type="button" class="underline" onclick={() => onopen?.('connections')}>Open AI connections</button></p>{/if}
           <p class="text-sm"><span class="font-medium">{setup.video.service}</span> <span class="text-muted-foreground">· {setup.video.family_label ?? setup.video.model}{setup.video.per_second ? ` · $${setup.video.per_second.toFixed(3)} per second at 720p` : ''}</span></p>
           {#if services}
             <div class="flex flex-wrap items-end gap-2">

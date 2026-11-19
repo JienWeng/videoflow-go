@@ -150,6 +150,10 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 		return nil
 	}
 	defer func() {
+		if resultErr != nil {
+			// A service that refuses its key stops counting as connected right away.
+			routing.Resolver{Config: w.cfg, DB: w.database}.NoteRejectedKey(job.Provider, resultErr)
+		}
 		if resultErr != nil && !errors.Is(resultErr, context.Canceled) && w.ctx.Err() == nil && job.Status != "reconciliation_required" {
 			message := resultErr.Error()
 			job.Error = &message

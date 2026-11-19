@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"videoflow-go/internal/costs"
+	"videoflow-go/internal/providers"
 )
 
 // Video services: the same video model is sold by many services at different prices.
@@ -27,11 +28,14 @@ type videoService struct {
 	// CheckedAt is when the price was last read from the service itself; empty means never.
 	CheckedAt string `json:"checked_at,omitempty"`
 	Problem   string `json:"problem,omitempty"`
+	// KeyCheck is what the service last said about the saved key.
+	KeyCheck *providers.KeyCheck `json:"key_check,omitempty"`
 }
 
 func (s *Server) videoServices(r *http.Request, family, resolution string, seconds float64) map[string]any {
 	routes := s.routes()
 	s.refreshVideoPrices(r.Context(), r.URL.Query().Get("refresh") == "1")
+	s.refreshKeyChecks()
 	settings, _ := s.database.AppSettingsSnapshot()
 	text := func(key, fallback string) string {
 		var value string
@@ -49,11 +53,13 @@ func (s *Server) videoServices(r *http.Request, family, resolution string, secon
 	provider, model := routes.MediaSelection("video")
 	list, picked := []videoService{}, false
 	for _, offer := range costs.Offers(family, resolution, "16:9", costs.LiveFromSettings(settings)) {
-		v := videoService{Offer: offer, Total: money(offer.PerSecond * seconds), Connected: routes.VideoConnected(offer.Provider), InUse: offer.Provider == provider && offer.Model == model}
+		v := videoService{Offer: offer, Total: money(offer.PerSecond * seconds), Connected: routes.Connected(offer.Provider), KeyCheck: s.keyCheckView(offer.Provider), InUse: offer.Provider == provider && offer.Model == model}
 		v.CheckedAt, v.Problem = settings["video_checked_"+offer.Provider], settings["video_problem_"+offer.Provider]
 		switch {
 		case !offer.Frames:
 			v.Note = "Text prompts only. It cannot start a clip from your storyboard picture, so scenes cannot use it."
+		case v.KeyCheck != nil && v.KeyCheck.State == providers.KeyRejected:
+			v.Note = v.KeyCheck.Message
 		case !v.Connected:
 			v.Note = "Add its API key to use it."
 		default:
@@ -131,7 +137,7 @@ func (s *Server) handleVideoRouting(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "the current video service does not offer this model; pick a service that does, or use the cheapest connected one", 400)
 			return
 		}
-		if !s.routes().VideoConnected(body.Provider) {
+		if !s.routes().Connected(body.Provider) {
 			http.Error(w, "add an API key for "+host.Label+" first", 400)
 			return
 		}

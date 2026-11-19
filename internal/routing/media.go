@@ -145,17 +145,11 @@ func (r Resolver) MediaSelections() (map[string]MediaChoice, error) {
 	return selections, nil
 }
 
-// VideoConnected reports whether a key is saved for a video service.
-func (r Resolver) VideoConnected(provider string) bool {
-	_, _, _, err := r.Credentials(provider)
-	return err == nil
-}
-
 // cheapestVideo picks the lowest-priced connected service that sells the family and can
 // start a clip from a storyboard picture.
 func (r Resolver) cheapestVideo(family, resolution string, settings map[string]string) (costs.Offer, bool) {
 	for _, offer := range costs.Offers(family, resolution, "16:9", costs.LiveFromSettings(settings)) {
-		if offer.Frames && r.VideoConnected(offer.Provider) {
+		if offer.Frames && r.Connected(offer.Provider) {
 			return offer, true
 		}
 	}

@@ -214,10 +214,11 @@ func (s *Server) handleListRenderJobs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if jobs == nil {
-		jobs = []models.RenderJob{}
+	views := make([]models.RenderJob, len(jobs))
+	for i, job := range jobs {
+		views[i] = renderJobView(job)
 	}
-	writeJSON(w, http.StatusOK, jobs)
+	writeJSON(w, http.StatusOK, views)
 }
 
 func (s *Server) handleGetRenderJob(w http.ResponseWriter, r *http.Request) {
@@ -232,7 +233,7 @@ func (s *Server) handleGetRenderJob(w http.ResponseWriter, r *http.Request) {
 		outputs = []models.RenderOutput{}
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"job":     job,
+		"job":     renderJobView(*job),
 		"outputs": outputs,
 	})
 }
@@ -551,7 +552,7 @@ func (s *Server) handleRunQA(w http.ResponseWriter, r *http.Request) {
 		}
 		prompt := "Evaluate these sampled video frames for visual consistency, artifacts, composition and adherence to the requested scene. Score from 0 to 10; do not claim to assess audio or motion from still frames."
 		if job, err := s.database.GetRenderJob(output.RenderJobID); err == nil {
-			prompt += "\nRender request: " + string(job.RequestJSON)
+			prompt += "\nRender request: " + string(withoutInlineMedia(job.RequestJSON))
 		}
 		if err = s.agentJSON(ctx, "qa_agent", "You are a film quality reviewer. Return score, qa_issues, recommendation.", prompt, frames, &result); err != nil {
 			return nil, err

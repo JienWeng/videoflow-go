@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"videoflow-go/internal/costs"
+	"videoflow-go/internal/providers"
 )
 
 // AI setup: one answer to "which AI does each job right now, and is it ready?".
@@ -21,11 +22,9 @@ func (s *Server) registerAISetupRoute() {
 }
 
 func (s *Server) handleAISetup(w http.ResponseWriter, r *http.Request) {
+	s.refreshKeyChecks()
 	ctx, routes := r.Context(), s.routes()
-	connected := func(provider string) bool {
-		_, _, _, err := routes.Credentials(provider)
-		return err == nil
-	}
+	connected := routes.Connected
 	label := func(provider string) string {
 		if host := costs.HostByName(provider); host != nil {
 			return host.Label
@@ -63,6 +62,9 @@ func (s *Server) handleAISetup(w http.ResponseWriter, r *http.Request) {
 	// Video: one service, picked by hand or by price.
 	provider, model = routes.MediaSelection("video")
 	video := map[string]any{"service": label(provider), "provider": provider, "model": model, "ready": connected(provider), "routing": routes.Setting("video_routing", "manual"), "family": costs.FamilyOf(provider, model)}
+	if check := s.keyCheckView(provider); check != nil && check.State == providers.KeyRejected {
+		video["key_rejected"], video["note"] = true, check.Message
+	}
 	settings, _ := s.database.AppSettingsSnapshot()
 	if price, ok := costs.HostPrice(provider, costs.FamilyOf(provider, model), "720p", "16:9", costs.LiveFromSettings(settings)); ok {
 		video["per_second"] = price

@@ -319,6 +319,7 @@ func (s *Server) handlePutAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
+	s.refreshKeyChecks()
 	conns, _ := s.database.ListConnections()
 	providers := []map[string]interface{}{}
 
@@ -346,6 +347,7 @@ func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 			"default_model":    preset.DefaultModel,
 			"allow_custom":     true,
 			"from_db":          fromDB,
+			"key_check":        s.keyCheckView(name),
 		})
 	}
 
@@ -393,6 +395,7 @@ func (s *Server) handleGetProviderConfig(w http.ResponseWriter, r *http.Request)
 		"masked_key": maskKey(key),
 		"base_url":   baseURL,
 		"from_db":    fromDB,
+		"key_check":  s.keyCheckView(name),
 	})
 }
 
@@ -437,9 +440,23 @@ func (s *Server) handlePutProviderConfig(w http.ResponseWriter, r *http.Request)
 	if body.APIKey != nil {
 		keyStr = strings.TrimSpace(*body.APIKey)
 	}
+	// A new video service key is asked about before it is kept. If the service cannot be
+	// reached the key is still saved, and the screen says it could not be checked.
+	var check *providers.KeyCheck
+	if body.APIKey != nil && keyStr != "" && providers.VideoHost(name) {
+		result := checkVideoKey(r.Context(), name, keyStr, costs.HostByName(name).URL)
+		if result.State == providers.KeyRejected {
+			http.Error(w, result.Message, 400)
+			return
+		}
+		check = &result
+	}
 	if err = s.database.SetProviderSecret(name, keyStr, body.BaseURL); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
+	}
+	if check != nil {
+		_ = s.routes().SaveKeyCheck(name, keyStr, *check)
 	}
 
 	s.handleGetProviderConfig(w, r)
@@ -447,7 +464,28 @@ func (s *Server) handlePutProviderConfig(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleTestProvider(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
-	if name == "openai" || name == "fal" || name == "byteplus" || name == "fish" || name == "elevenlabs" || providers.VideoHost(name) {
+	if providers.VideoHost(name) {
+		key, endpoint, _, err := s.routes().Credentials(name)
+		if err != nil {
+			writeJSON(w, 200, map[string]any{"ok": false, "error": err.Error(), "latency_ms": 0, "checked": "key", "credentials_verified": false, "generation_tested": false})
+			return
+		}
+		start := time.Now()
+		check := checkVideoKey(r.Context(), name, key, endpoint)
+		_ = s.routes().SaveKeyCheck(name, key, check)
+		label := costs.HostByName(name).Label
+		var problem any
+		message := label + " accepted this key. Nothing was made or charged."
+		if check.State != providers.KeyAccepted {
+			message = check.Message
+		}
+		if check.State == providers.KeyRejected {
+			problem = check.Message
+		}
+		writeJSON(w, 200, map[string]any{"ok": check.State != providers.KeyRejected, "error": problem, "latency_ms": time.Since(start).Milliseconds(), "checked": "key", "credentials_verified": check.State == providers.KeyAccepted, "generation_tested": false, "message": message})
+		return
+	}
+	if name == "openai" || name == "fal" || name == "byteplus" || name == "fish" || name == "elevenlabs" {
 		_, _, _, err := s.routes().Credentials(name)
 		var message any
 		if err != nil {

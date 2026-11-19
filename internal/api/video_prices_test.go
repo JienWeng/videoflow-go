@@ -9,7 +9,10 @@ import (
 )
 
 // Tests never read real price pages.
-func init() { videoPriceSources, falPlatformURL = nil, "http://127.0.0.1:1" }
+func init() {
+	videoPriceSources, falPlatformURL = nil, "http://127.0.0.1:1"
+	keyCheckBase = func(string, string) string { return "http://127.0.0.1:1" }
+}
 
 // The saved pages are real copies of each service's price source (19 Nov 2026), so a
 // parser that stops matching the real layout fails here.

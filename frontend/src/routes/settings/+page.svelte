@@ -50,12 +50,15 @@
     allow_custom: boolean;
     from_db: boolean;
   };
+  type KeyCheck = { state: 'accepted' | 'rejected' | 'unchecked'; message?: string; checked_at: string };
   type ProviderConfig = {
     name: string;
     configured: boolean;
     masked_key: string;
     base_url: string | null;
     from_db: boolean;
+    /** What a video service last said about the saved key. */
+    key_check?: KeyCheck | null;
   };
   type AppSettings = {
  all_text_local?: boolean;
@@ -75,7 +78,7 @@
 media_model_preferences:Record<string,Record<string,string>>;
     render_negatives: string[];
   };
-  type TestResult = { checked?:string;message?:string;ok: boolean; latency_ms: number | null; error: string | null };
+  type TestResult = { checked?:string;message?:string;credentials_verified?:boolean;ok: boolean; latency_ms: number | null; error: string | null };
   type ProviderPreset = {
     label: string;
     protocol: 'chat' | 'responses' | 'anthropic' | 'codex' | 'media' | 'video' | 'speech';
@@ -444,7 +447,8 @@ media_model_preferences:Record<string,Record<string,string>>;
       );
       provTest[name] = undefined;
       if (name === 'openai') await refresh();
-      toast.success(`${providerLabels[name] ?? name} saved`);
+      if (updated.key_check?.state === 'unchecked') toast(updated.key_check.message ?? `${providerLabels[name] ?? name} saved`);
+      else toast.success(`${providerLabels[name] ?? name} saved`);
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -478,7 +482,8 @@ media_model_preferences:Record<string,Record<string,string>>;
     try {
       const res: TestResult = await post(providerEndpoint(name, 'test'));
       provTest[name] = res;
-      if (res.ok) toast.success(res.checked==='configuration'?res.message!:`${providerLabels[name] ?? name}: connected (${res.latency_ms}ms)`);
+      if (res.checked === 'key') provCfg[name] = await get(providerEndpoint(name));
+      if (res.ok) toast.success(res.checked==='configuration'||res.checked==='key'?res.message!:`${providerLabels[name] ?? name}: connected (${res.latency_ms}ms)`);
       else toast.error(`${providerLabels[name] ?? name}: ${res.error ?? 'failed'}`);
     } catch (e: any) {
       provTest[name] = { ok: false, latency_ms: null, error: e.message };
@@ -698,11 +703,14 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                 <summary class="cursor-pointer rounded-md py-2 text-sm font-medium">
                   {providerLabels[p.name] ?? p.name}
                   {#if p.name===voicePrimary}<Badge variant="secondary">Primary voice provider</Badge>{/if}
-                  <span class="ml-2 text-xs font-normal text-muted-foreground">{cfg?.configured ? 'Configured' : 'Not configured'}</span>
+                  {#if cfg?.key_check?.state === 'rejected'}<span class="ml-2 text-xs font-normal text-destructive">Key rejected</span>{:else}<span class="ml-2 text-xs font-normal text-muted-foreground">{cfg?.configured ? 'Configured' : 'Not configured'}</span>{/if}
                 </summary>
               <div data-provider={p.name}>
                 {#if cfg?.configured}
                   <p class="settings-help mb-2">{cfg.from_db ? cfg.masked_key : 'Provided by the server environment'}</p>
+                {/if}
+                {#if cfg?.key_check?.message}
+                  <p class="mb-2 text-xs {cfg.key_check.state === 'rejected' ? 'text-destructive' : 'text-muted-foreground'}" role="status">{cfg.key_check.message}</p>
                 {/if}
 
                 <div class="grid gap-2 sm:grid-cols-2">
@@ -796,7 +804,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                     {#if busy === `test-${p.name}`}
                       <LoaderCircle class="size-3.5 mr-1 animate-spin" />Testing…
                     {:else}
-                      <Wifi class="size-3.5 mr-1" />{p.protocol === 'chat' ? 'Test connection' : 'Check configuration'}
+                      <Wifi class="size-3.5 mr-1" />{p.protocol === 'chat' ? 'Test connection' : p.protocol === 'video' && p.name !== 'byteplus' ? 'Check key' : 'Check configuration'}
                     {/if}
                   </Button>
                   {#if ['fal','fish','elevenlabs'].includes(p.name)&&voicePrimary!==p.name}<Button variant="outline" size="sm" disabled={!cfg?.configured} onclick={()=>primaryVoice(p.name)}>Make primary voice provider</Button>{/if}
@@ -822,8 +830,8 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                   {#if test}
                     {#if test.ok}
                       <span class="flex items-center gap-1 text-xs text-emerald-500">
-                        <CircleCheck class="size-3.5" />{test.checked === 'configuration' ? 'Configuration checked' : 'Connected'}
-                        {#if test.checked !== 'configuration' && test.latency_ms != null}({test.latency_ms}ms){/if}
+                        <CircleCheck class="size-3.5" />{test.checked === 'configuration' ? 'Configuration checked' : test.checked === 'key' ? (test.credentials_verified ? 'Key accepted' : 'Key could not be checked') : 'Connected'}
+                        {#if test.checked !== 'configuration' && test.checked !== 'key' && test.latency_ms != null}({test.latency_ms}ms){/if}
                       </span>
                     {:else}
                       <span class="text-xs text-destructive">{test.error ?? 'Connection failed'}</span>
