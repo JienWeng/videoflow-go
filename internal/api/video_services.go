@@ -121,10 +121,14 @@ func (s *Server) handleVideoRouting(w http.ResponseWriter, r *http.Request) {
 		raw, _ := json.Marshal(value)
 		return s.database.SetAppSetting(key, string(raw))
 	}
-	if body.Mode == "manual" && body.Provider != "" {
+	if body.Mode == "manual" && body.Provider == "" {
+		// No service named: keep the one in use, moved to the chosen model.
+		body.Provider, _ = s.routes().MediaSelection("video")
+	}
+	if body.Mode == "manual" {
 		host := costs.HostByName(body.Provider)
 		if host == nil || host.Models[body.Model] == "" || !host.Frames {
-			http.Error(w, "that service does not offer this model for storyboard scenes", 400)
+			http.Error(w, "the current video service does not offer this model; pick a service that does, or use the cheapest connected one", 400)
 			return
 		}
 		if !s.routes().VideoConnected(body.Provider) {

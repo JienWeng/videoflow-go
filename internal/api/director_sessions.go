@@ -192,6 +192,7 @@ func (s *Server) registerDirectorRoutes() {
 	s.registerAutopilotRoute()
 	s.registerCostRoutes()
 	s.registerVideoServiceRoutes()
+	s.registerAISetupRoute()
 	s.router.Post("/director/sessions/{id}/repair-context", s.handleRepairChatContext)
 	s.router.Post("/director/composition-plan", s.handleDirectorCompositionPlan)
 	s.router.Put("/assets/{id}/identity", s.handleAssetIdentity)
