@@ -51,30 +51,55 @@ func (r Resolver) KeyCheck(provider string) (providers.KeyCheck, bool) {
 }
 
 // KeyCheckDue says whether the saved key should be asked about again: never checked,
-// checked over a day ago, or the service could not be reached over an hour ago.
+// checked over a day ago, or the service could not be reached over an hour ago. An
+// account with no balance is asked again only when the owner presses Check again.
 func (r Resolver) KeyCheckDue(provider string, now time.Time) bool {
 	check, ok := r.KeyCheck(provider)
 	age := now.Sub(check.CheckedAt)
-	return !ok || age > 24*time.Hour || check.State == providers.KeyUnchecked && age > time.Hour
+	return !ok || check.State != providers.KeyNoCredit && (age > 24*time.Hour || check.State == providers.KeyUnchecked && age > time.Hour)
 }
 
-// Connected reports whether a service has a saved key that it has not refused.
+// Connected reports whether a service has a saved key that it has not refused, on an
+// account that has not said it is out of credit.
 func (r Resolver) Connected(provider string) bool {
 	key, _, _, err := r.Credentials(provider)
 	if err != nil {
 		return false
 	}
 	check, _ := r.keyCheckFor(provider, key)
-	return check.State != providers.KeyRejected
+	return check.State != providers.KeyRejected && check.State != providers.KeyNoCredit
 }
 
-// NoteRejectedKey records at once that a video service refused its key during real work.
-func (r Resolver) NoteRejectedKey(provider string, err error) {
+// ForgetNoCredit drops a recorded "no balance left" answer, so the next real request
+// decides. Used when the owner presses Check again on a service with no free check.
+func (r Resolver) ForgetNoCredit(provider string) {
+	if check, ok := r.KeyCheck(provider); ok && check.State == providers.KeyNoCredit {
+		_ = r.DB.SetAppSetting(keyCheckSetting(provider), "null")
+	}
+}
+
+// NoteServiceAnswer records at once what a video service said during real work: a
+// refused key, or an account with no balance left. A normal answer (nil) clears an
+// earlier "no balance left".
+func (r Resolver) NoteServiceAnswer(provider string, err error) {
 	host := costs.HostByName(provider)
-	if host == nil || !providers.VideoHost(provider) || !providers.InvalidKey(err) {
+	if host == nil {
+		return
+	}
+	if err == nil {
+		r.ForgetNoCredit(provider)
+		return
+	}
+	var check providers.KeyCheck
+	switch {
+	case providers.NoCredit(err):
+		check = providers.OutOfCredit(host.Label)
+	case providers.InvalidKey(err):
+		check = providers.RejectedKey(host.Label)
+	default:
 		return
 	}
 	if key, _, _, e := r.Credentials(provider); e == nil {
-		_ = r.SaveKeyCheck(provider, key, providers.RejectedKey(host.Label))
+		_ = r.SaveKeyCheck(provider, key, check)
 	}
 }

@@ -212,27 +212,37 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 		intent["character_changes"] = changes
 	}
+	episodes := s.seriesEpisodes(projectID)
 	if action == "finish_video" {
-		// Finish the episode the named scene belongs to, or the newest one.
-		episodes := s.seriesEpisodes(projectID)
-		script := ""
-		for _, scene := range scenes {
-			if scene.ScriptID != nil && res.SceneID != "" && (scene.ID == res.SceneID || strings.EqualFold(strings.TrimSpace(res.SceneID), strings.TrimSpace(scene.Title))) {
-				script = *scene.ScriptID
-			}
-		}
-		if res.EpisodeNumber >= 1 && res.EpisodeNumber <= len(episodes) {
-			script = episodes[res.EpisodeNumber-1].ScriptID
-		}
-		if script == "" && len(episodes) > 0 {
-			script = episodes[len(episodes)-1].ScriptID
-		}
-		if script == "" {
+		if script := chatEpisodeScript(scenes, episodes, res); script == "" {
 			action = "unknown"
 			intent["action"] = action
 			intent["reply"] = "There is no story to finish yet. Tell me your idea and I'll plan one."
 		} else {
 			intent["script_id"] = script
+		}
+	}
+	if action == "render_scenes" {
+		batch := chatSceneBatch(scenes, episodes, progress, res)
+		ids := []string{}
+		for _, scene := range batch {
+			ids = append(ids, scene["id"].(string))
+		}
+		if len(batch) == 0 {
+			action = "unknown"
+			intent["action"] = action
+			intent["reply"] = "Every scene there already has a video or is being made. Say “finish the video” and I'll join them and export it."
+		} else {
+			intent["scene_ids"], intent["scenes"] = ids, batch
+		}
+	}
+	if action == "check_video" || action == "stop_waiting" {
+		if waiting := chatWaitingScene(progress, scenes, res, body.Selected); waiting == nil {
+			action = "unknown"
+			intent["action"] = action
+			intent["reply"] = "No scene is waiting on an answer from the video service right now, so there is nothing to check."
+		} else {
+			intent["job_id"], intent["scene_id"], intent["scene_title"], intent["service"], intent["waiting_reason"] = waiting.Video.JobID, waiting.SceneID, waiting.Title, waiting.Video.Service, waiting.Video.Reason
 		}
 	}
 	if action == "make_clip" {
@@ -387,7 +397,7 @@ func canonicalChatAction(action string) string {
 	switch action {
 	case "create_script", "add_scene":
 		return "generate_script"
-	case "open_editor", "make_clip", "finish_video", "update_character", "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "caption", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
+	case "open_editor", "make_clip", "finish_video", "render_scenes", "check_video", "stop_waiting", "update_character", "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "caption", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
 		return action
 	default:
 		return "unknown"
@@ -445,10 +455,10 @@ func (s *Server) chatClip(project string, res *agents.ChatIntentResponse, attach
 
 func chatMode(auto, full bool) string {
 	if full {
-		return "full auto: the user wants the finished video with as few clicks as possible. For a new story they confirm the plan once; the app then makes the pictures, renders every scene, joins them with captions and exports the final video by itself, using image and video credits. Say that confirming is the only click. Free planning steps start by themselves, and finish_video starts immediately. Decide every detail yourself and never ask the user to press per-scene buttons."
+		return "full auto: the user wants the finished video with as few clicks as possible. For a new story they confirm the plan once; the app then makes the pictures, renders every scene, joins them with captions and exports the final video by itself, using image and video credits. Say that confirming is the only click. Free planning steps and check_video start by themselves, and finish_video and render_scenes start immediately. Decide every detail yourself and never ask the user to press per-scene buttons."
 	}
 	if auto {
-		return "auto: free planning steps (refine_scene, refine_shot, generate_shots, plan_assets) start by themselves right after your reply, so write a complete instruction and say what you are doing now (\"I'm rewriting the scene so that…\"), not \"press the button\". Steps that use credits or delete things still wait for the user's click; say so. Decide details yourself and do not ask for confirmation of free steps."
+		return "auto: free steps (refine_scene, refine_shot, generate_shots, plan_assets, check_video) start by themselves right after your reply, so write a complete instruction and say what you are doing now (\"I'm rewriting the scene so that…\"), not \"press the button\". Steps that use credits or delete things still wait for the user's click; say so. Decide details yourself and do not ask for confirmation of free steps."
 	}
 	return "manual: every step waits for the user to press its button."
 }

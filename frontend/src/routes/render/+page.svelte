@@ -8,6 +8,8 @@
   import { get, post, API_BASE, mediaUrl } from '$lib/api';
   import { subscribeJobs } from '$lib/sse';
   import VideoPreview from '$lib/components/VideoPreview.svelte';
+  import StuckVideo from '$lib/production/StuckVideo.svelte';
+  import { serviceName } from '$lib/costs/services.mjs';
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -159,13 +161,6 @@
     };
   });
 
-  async function reconcileRender(j:any){
-    const id=j.provider_job_id || prompt(`Existing ${j.provider} job ID (verify it belongs to this request in your provider account):`);
-    if(!id?.trim())return;
-    const reason=j.provider_job_id?'Resume the existing provider job recorded with this request':prompt('Record how you verified this provider job matches the original request (at least 10 characters):');
-    if(!reason || reason.trim().length<10){toast.error('Verification evidence is required.');return;}
-    try{await post(`/render-jobs/${j.id}/reconcile`,{provider_job_id:id.trim(),reason:reason.trim()});await refresh();toast.success('Existing provider job resumed; no new video submitted.');}catch(e:any){toast.error(e.message)}
-  }
   // Re-run a FAILED render. Uses the originating shot/scene endpoints (a failed
   // job produced no output, so there is nothing to /retry).
   async function reRenderJob(j: any) {
@@ -337,8 +332,7 @@
       <span class="text-muted-foreground" title={j.model}>{j.provider || 'Video'} render</span>
       <span class="text-muted-foreground">{relativeTime(j.created_at)}</span>
       {#if j.status === 'reconciliation_required'}
-      <p class="text-xs text-destructive">Submission outcome is unknown. Check your provider account before generating again.</p>
-      <Button size="sm" variant="outline" onclick={()=>reconcileRender(j)}>Resume existing provider job</Button>
+      <div class="basis-full"><StuckVideo jobId={j.id} service={serviceName(j.provider)} reason={`${serviceName(j.provider)} took this request but has not said whether it made the video.`} onsettled={() => refresh().catch(() => {})} /></div>
     {/if}
     {#if j.status === 'failed'}
         <Button

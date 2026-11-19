@@ -65,3 +65,32 @@ func TestOnlyKeyProblemsCountAsInvalidKey(t *testing.T) {
 		}
 	}
 }
+
+func TestAnEmptyAccountIsNotABadKey(t *testing.T) {
+	cases := map[*HTTPError]bool{
+		{Status: 403, Message: `{"detail":"User is locked. Reason: Exhausted balance. Top up your balance at fal.ai/dashboard/billing."}`}: true,
+		{Status: 402, Message: `{"code":"insufficient_ink"}`}:                                                                              true,
+		{Status: 400, Message: `{"error":"Insufficient balance"}`}:                                                                         true,
+		{Status: 401, Message: `{"code":"INVALID_API_KEY","message":"Invalid API key"}`}:                                                   false,
+		{Status: 403, Message: `{"type":"permission_error","code":"tier_gated"}`}:                                                          false,
+		{Status: 500, Message: "upstream timeout"}:                                                                                         false,
+	}
+	for err, want := range cases {
+		if got := NoCredit(err); got != want {
+			t.Errorf("NoCredit(%d %s) = %v", err.Status, err.Message, got)
+		}
+		if want && InvalidKey(err) {
+			t.Errorf("an empty account counted as a bad key: %d %s", err.Status, err.Message)
+		}
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(402)
+		w.Write([]byte(`{"error":"insufficient balance"}`))
+	}))
+	defer server.Close()
+	got := NewHostClient("argolink", "good-key", server.URL).CheckKey(context.Background())
+	if got.State != KeyNoCredit || got.Message != "ArgoLink says the account has no balance left. Top it up at ArgoLink, then press Check again." {
+		t.Fatalf("empty account check = %+v", got)
+	}
+}

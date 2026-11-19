@@ -51,7 +51,7 @@ func TestProjectProgressGuidesEachSceneToOneNextStep(t *testing.T) {
 	if stages[empty].Stage != "needs_shots" || stages[empty].Next.Action != "generate_shots" {
 		t.Fatalf("empty scene: %+v", stages[empty])
 	}
-	if p := stages[failed]; p.Stage != "needs_attention" || !strings.Contains(p.Detail, "credits") || p.Next.Action != "retry_render" {
+	if p := stages[failed]; p.Stage != "needs_attention" || !strings.Contains(p.Detail, "The video service says the account has no balance left") || p.Next.Action != "retry_render" {
 		t.Fatalf("failed scene: %+v", p)
 	}
 	if stages[done].Stage != "video_ready" {

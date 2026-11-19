@@ -1,7 +1,7 @@
 <script lang="ts">
   // One place to see which AI does each job, whether it is ready, and to change it.
   import { onMount } from 'svelte';
-  import { get, put } from '$lib/api';
+  import { get, post, put } from '$lib/api';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
   import { Skeleton } from '$lib/components/ui/skeleton';
@@ -11,7 +11,7 @@
   type Setup = {
     assistant: { ready: boolean; engines: Record<string, boolean>; session_id?: string; engine?: string; title?: string; model?: string; effort?: string };
     pictures: Choice; vision: Choice; listening: Choice;
-    video: { service: string; provider: string; model: string; ready: boolean; routing: string; family: string; family_label?: string; per_second?: number; key_rejected?: boolean; note?: string };
+    video: { service: string; provider: string; model: string; ready: boolean; routing: string; family: string; family_label?: string; per_second?: number; key_rejected?: boolean; no_credit?: boolean; note?: string };
     voice: { provider: string; service: string; ready: boolean; options: { id: string; label: string; ready: boolean }[] };
   };
   type Service = { provider: string; label: string; per_second: number; usable: boolean; in_use: boolean; cheapest: boolean };
@@ -38,6 +38,8 @@
   const assistant = (patch: { model?: string; effort?: string }) =>
     change('assistant', () => put(`/director/sessions/${setup!.assistant.session_id}/model`, { model: setup!.assistant.model ?? '', effort: setup!.assistant.effort ?? '', ...patch }));
   const video = (body: { mode: string; model: string; provider?: string }) => change('video', () => put('/video-services/routing', body));
+  // Check again on an empty account: the service is asked when it can be, otherwise the next video decides.
+  const checkVideoAgain = () => change('check', async () => { const r = await post(`/settings/providers/${setup!.video.provider}/test`); if (!r.ok && r.error) throw new Error(r.error); });
   const voice = (provider: string) => change('voice', () => put('/voice/preferences', { primary_provider: provider }));
   onMount(() => void load());
   const usable = $derived(services?.services.filter((s) => s.usable) ?? []);
@@ -101,9 +103,10 @@
       </li>
 
       <li class="grid gap-3 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] lg:items-center">
-        {@render row(Clapperboard, 'Video', 'Turns each scene into a moving clip. This is where most of the money goes.', setup.video.ready, setup.video.key_rejected ? 'Key rejected' : 'Needs a key')}
+        {@render row(Clapperboard, 'Video', 'Turns each scene into a moving clip. This is where most of the money goes.', setup.video.ready, setup.video.key_rejected ? 'Key rejected' : setup.video.no_credit ? 'No balance' : 'Needs a key')}
         <div class="grid gap-2">
           {#if setup.video.key_rejected && setup.video.note}<p class="text-xs text-destructive" role="status">{setup.video.note} <button type="button" class="underline" onclick={() => onopen?.('connections')}>Open AI connections</button></p>{/if}
+          {#if setup.video.no_credit && setup.video.note}<p class="text-xs text-destructive" role="status">{setup.video.note} <button type="button" class="underline" disabled={busy === 'check'} onclick={checkVideoAgain}>{busy === 'check' ? 'Checking…' : 'Check again'}</button></p>{/if}
           <p class="text-sm"><span class="font-medium">{setup.video.service}</span> <span class="text-muted-foreground">· {setup.video.family_label ?? setup.video.model}{setup.video.per_second ? ` · $${setup.video.per_second.toFixed(3)} per second at 720p` : ''}</span></p>
           {#if services}
             <div class="flex flex-wrap items-end gap-2">

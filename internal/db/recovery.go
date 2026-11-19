@@ -2,7 +2,6 @@ package db
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"videoflow-go/internal/models"
 )
@@ -20,17 +19,26 @@ func (d *DB) InterruptOperations() error {
 	_, err := d.conn.Exec(`UPDATE ops SET status='reconciliation_required',error='Server restarted during this operation. Review saved work before starting another request.',updated_at=CURRENT_TIMESTAMP WHERE status='running'`)
 	return err
 }
-func (d *DB) ResolveRenderSubmission(id, providerID, reason string) error {
-	evidence, _ := json.Marshal(map[string]string{"reconciliation_reason": reason, "adopted_provider_job_id": providerID})
-	result, err := d.conn.Exec(`UPDATE render_jobs SET response_json=?,provider_job_id=?,status='running',stage='polling',error=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='reconciliation_required'`, string(evidence), providerID, id)
+
+// ResumeUncertainRender goes back to waiting on the service's own job for a render
+// whose outcome was unknown, once the service has answered for it. Nothing is sent again.
+func (d *DB) ResumeUncertainRender(id string) (bool, error) {
+	result, err := d.conn.Exec(`UPDATE render_jobs SET status='running',stage='polling',error=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='reconciliation_required' AND coalesce(provider_job_id,'')<>''`, id)
 	if err != nil {
-		return err
+		return false, err
 	}
-	n, _ := result.RowsAffected()
-	if n != 1 {
-		return fmt.Errorf("job does not require reconciliation")
+	n, err := result.RowsAffected()
+	return n == 1, err
+}
+
+// FailUncertainRender closes a render whose outcome was unknown, so its scene can be made again.
+func (d *DB) FailUncertainRender(id, reason string) (bool, error) {
+	result, err := d.conn.Exec(`UPDATE render_jobs SET status='failed',stage='failed',progress=?,error=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='reconciliation_required'`, reason, reason, id)
+	if err != nil {
+		return false, err
 	}
-	return nil
+	n, err := result.RowsAffected()
+	return n == 1, err
 }
 
 // CreateRenderRetry serializes retries of the same original, including headerless clients.

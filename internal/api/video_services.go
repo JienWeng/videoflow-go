@@ -58,8 +58,8 @@ func (s *Server) videoServices(r *http.Request, family, resolution string, secon
 		switch {
 		case !offer.Frames:
 			v.Note = "Text prompts only. It cannot start a clip from your storyboard picture, so scenes cannot use it."
-		case v.KeyCheck != nil && v.KeyCheck.State == providers.KeyRejected:
-			v.Note = v.KeyCheck.Message
+		case s.serviceProblem(offer.Provider) != "":
+			v.Note = s.serviceProblem(offer.Provider)
 		case !v.Connected:
 			v.Note = "Add its API key to use it."
 		default:
@@ -86,6 +86,9 @@ func (s *Server) chatVideoService() map[string]any {
 	}
 	if s.routes().Setting("video_routing", "manual") == "cheapest" {
 		out["picked"] = "automatically, the cheapest connected service"
+	}
+	if problem := s.serviceProblem(provider); problem != "" {
+		out["problem"] = problem
 	}
 	settings, _ := s.database.AppSettingsSnapshot()
 	family := costs.FamilyOf(provider, model)
@@ -138,7 +141,11 @@ func (s *Server) handleVideoRouting(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !s.routes().Connected(body.Provider) {
-			http.Error(w, "add an API key for "+host.Label+" first", 400)
+			problem := s.serviceProblem(body.Provider)
+			if problem == "" {
+				problem = "add an API key for " + host.Label + " first"
+			}
+			http.Error(w, problem, 400)
 			return
 		}
 		if save("default_video_provider", body.Provider) != nil || save("video_model", host.Models[body.Model]) != nil {

@@ -3,8 +3,9 @@
  import {untrack} from 'svelte';
  import {get,mediaUrl} from '$lib/api';import {subscribeJobs} from '$lib/sse';
  import {Film,Check,TriangleAlert} from '@lucide/svelte';import {Button} from '$lib/components/ui/button';
+ import StuckVideo from '$lib/production/StuckVideo.svelte';import {serviceName} from '$lib/costs/services.mjs';
  let {id,initialStatus='pending'}:{id:string;initialStatus?:string}=$props();
- type Detail={job:{scene_id?:string;request_json?:{audio_mode?:string};status:string;stage?:string;progress?:string;error?:string};outputs:{id:string;video_path?:string;captioned_path?:string}[]};
+ type Detail={job:{scene_id?:string;provider?:string;request_json?:{audio_mode?:string};status:string;stage?:string;progress?:string;error?:string};outputs:{id:string;video_path?:string;captioned_path?:string}[]};
  let detail=$state<Detail|null>(null),error=$state(''),loading=$state(true);let retry=$state(0);
  const status=$derived(detail?.job.status??initialStatus);
  const active=$derived(!error&&['pending','running','queued','submitted','processing'].includes(status));
@@ -32,9 +33,10 @@
  {/if}
  <div role="status" aria-live="polite" aria-atomic="true" class="space-y-2">
   <div class="flex items-center gap-2"><span aria-hidden="true" class="size-2 shrink-0 rounded-full bg-muted-foreground" class:live-dot={active}></span><h3 class="font-semibold">{title}</h3></div>
-  <p class="text-sm leading-relaxed text-muted-foreground">{error?'The last known status is '+status+'. Loading details does not restart generation.':failed?(detail?.job.error??'Check the existing render before trying again.'):status==='reconciliation_required'?(detail?.job.error??'Check the existing provider request before submitting another render.'):done?(output?'Preview the clip, then continue editing or add speaker audio.':'The render completed. Open renders & outputs to inspect the result.'):active?(detail?.job.progress??(status==='pending'?'Your clip is in the queue. You can keep working while it starts.':'Your clip will appear here when it is ready. You can keep working.')):'Open renders & outputs to inspect this job.'}</p>
+  <p class="text-sm leading-relaxed text-muted-foreground">{error?'The last known status is '+status+'. Loading details does not restart generation.':failed?(detail?.job.error??'Check the existing render before trying again.'):status==='reconciliation_required'?`${serviceName(detail?.job.provider)} took this request but has not said whether it made the video.`:done?(output?'Preview the clip, then continue editing or add speaker audio.':'The render completed. Open renders & outputs to inspect the result.'):active?(detail?.job.progress??(status==='pending'?'Your clip is in the queue. You can keep working while it starts.':'Your clip will appear here when it is ready. You can keep working.')):'Open renders & outputs to inspect this job.'}</p>
  </div>
  {#if active}<div aria-hidden="true" class="space-y-2"><div class="h-2 w-3/4 rounded bg-muted"></div><div class="h-2 w-1/2 rounded bg-muted"></div></div><p class="text-xs text-muted-foreground">Updates automatically · Timing depends on the video provider</p>{/if}
+ {#if status==='reconciliation_required'&&!error}<StuckVideo jobId={id} service={serviceName(detail?.job.provider)} onsettled={()=>retry++} />{/if}
  {#if error}<Button variant="outline" size="sm" onclick={()=>retry++}>Reload render details</Button>{/if}
  {#if detail?.job.request_json?.audio_mode}<p class="text-xs text-muted-foreground">Audio: {detail.job.request_json.audio_mode==='native'?'native dialogue, ambience and effects':detail.job.request_json.audio_mode==='saved'?'silent visuals for saved-voice speech':'silent'}</p>{/if}
  {#if output}<Button variant="outline" size="sm" href={editOutputHref(output.id)}>Edit this video</Button>{#if detail?.job.scene_id}<Button variant="outline" size="sm" href={editSceneHref(detail.job.scene_id)}>Trim clips & add music</Button>{/if}{/if}

@@ -16,14 +16,28 @@ import (
 
 func productionFixture(t *testing.T, strategy string) (*Server, *models.Scene) {
 	t.Helper()
-	s := voiceFixture(t, func(w http.ResponseWriter, r *http.Request) {
+	s := videoFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("unexpected paid/provider request %s %s", r.Method, r.URL.Path)
 		w.WriteHeader(500)
 	})
+	return s, renderableScene(t, s, nil, "Home", 1, strategy)
+}
+
+// videoFixture is a server whose scene videos go to a fake fal.ai answering with fal.
+func videoFixture(t *testing.T, fal http.HandlerFunc) *Server {
+	t.Helper()
+	s := voiceFixture(t, fal)
 	s.database.SetAppSetting("default_video_provider", `"fal"`)
 	s.database.SetAppSetting("video_model", `"bytedance/seedance-2.0/fast/image-to-video"`)
+	return s
+}
+
+// renderableScene adds an 8-second scene with three timed shots and a current storyboard,
+// so it can be rendered without making any picture first.
+func renderableScene(t *testing.T, s *Server, scriptID *string, title string, order int, strategy string) *models.Scene {
+	t.Helper()
 	project, _ := s.database.GetActiveProjectID()
-	scene := &models.Scene{ProjectID: &project, Title: "Home", Summary: "Pip finds Mama", Duration: 8, AspectRatio: "9:16", CharacterIDsJSON: []byte(`[]`), SceneJSON: voiceJSON(map[string]any{"production": productionSettings{AudioMode: "native", Strategy: strategy}})}
+	scene := &models.Scene{ProjectID: &project, ScriptID: scriptID, SceneOrder: order, Title: title, Summary: "Pip finds Mama", Duration: 8, AspectRatio: "9:16", CharacterIDsJSON: []byte(`[]`), SceneJSON: voiceJSON(map[string]any{"production": productionSettings{AudioMode: "native", Strategy: strategy}})}
 	if e := s.database.CreateScene(scene); e != nil {
 		t.Fatal(e)
 	}
@@ -37,8 +51,8 @@ func productionFixture(t *testing.T, strategy string) (*Server, *models.Scene) {
 		t.Fatal(e)
 	}
 	bytes, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
-	os.WriteFile(filepath.Join(s.cfg.StorageRoot, "board.png"), bytes, 0600)
-	board := &models.Asset{ProjectID: &project, Name: "Board", Type: "storyboard", FilePath: "storage/board.png", MetadataJSON: voiceJSON(map[string]any{"scene_id": scene.ID, "scene_input_revision": revision, "consistency_review": "ready"})}
+	os.WriteFile(filepath.Join(s.cfg.StorageRoot, "board-"+scene.ID+".png"), bytes, 0600)
+	board := &models.Asset{ProjectID: &project, Name: "Board", Type: "storyboard", FilePath: "storage/board-" + scene.ID + ".png", MetadataJSON: voiceJSON(map[string]any{"scene_id": scene.ID, "scene_input_revision": revision, "consistency_review": "ready"})}
 	if e = s.database.CreateAsset(board); e != nil {
 		t.Fatal(e)
 	}
@@ -47,7 +61,7 @@ func productionFixture(t *testing.T, strategy string) (*Server, *models.Scene) {
 	if e = s.database.UpdateScene(scene); e != nil {
 		t.Fatal(e)
 	}
-	return s, scene
+	return scene
 }
 func TestProductionPlanBatchReuseAndChangedPlanFence(t *testing.T) {
 	s, scene := productionFixture(t, "shots")

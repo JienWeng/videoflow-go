@@ -5,6 +5,8 @@
  import * as Dialog from '$lib/components/ui/dialog';
  import Paperclip from '@lucide/svelte/icons/paperclip';
  import FinishCost from '$lib/costs/FinishCost.svelte';
+ import ScenesCard from './ScenesCard.svelte';
+ import StuckVideo from '$lib/production/StuckVideo.svelte';
   import ClipCard from './ClipCard.svelte';
  import {upload as apiUpload} from '$lib/api';
  // Auto: the assistant carries out free planning steps itself. Manual: every step waits for a click.
@@ -16,25 +18,45 @@
  const MODE_LABEL:Record<Mode,string>={manual:'Manual',auto:'Auto',full:'Full auto'};
  const MODE_HELP:Record<Mode,string>={manual:'Manual: every step waits for your click, and you review before any video is made.',auto:'Auto: the assistant does free steps itself (rewriting scenes, planning shots). Anything that uses credits waits for you.',full:'Full auto: confirm the plan once, then the assistant makes the pictures, renders every scene, edits them together with captions and exports the final video. Uses image and video credits without asking again.'};
  function nextMode(){mode=mode==='manual'?'auto':mode==='auto'?'full':'manual';try{localStorage.setItem('videoflow.chat.mode',mode)}catch{}}
- // Finish a story hands-free: render all scenes, assemble, caption and export.
+ // Make scene videos hands-free on the server: finish a story (render every scene, join,
+ // caption and export) or make the videos of chosen scenes side by side.
+ type VideoRun={script_id?:string;scene_ids?:string[];videos_only?:boolean};
  async function watchAutopilot(m:Msg){
   const id=m.autopilotOp;if(!id)return;
   for(let i=0;i<900;i++){
    let op:any;try{op=await get('/ops/'+encodeURIComponent(id))}catch{await new Promise(r=>setTimeout(r,5000));continue}
    const rj=op.result_json??{};
+   if(op.status==='succeeded'&&rj.videos_only){if(m.op)m.op.status='done';const titles=(rj.scene_titles??[]).map((t:string)=>`“${t}”`).join(', ');m.text=`The videos are ready for ${titles}. Say “finish the video” when you want them joined and exported.`;m.chips=[{label:'Edit video',href:'/?view=edit'},{label:'All videos',href:'/render'}];await onmutate?.();void refreshChips();return}
    if(op.status==='succeeded'){if(m.op)m.op.status='done';m.video=rj.video_url;m.text='Your video is ready. Watch it here, download it, or open it in the editor to change anything.';m.chips=[{label:'Edit this video',href:`/?view=edit&script_id=${encodeURIComponent(rj.script_id??'')}`},{label:'All videos',href:'/render'}];await onmutate?.();void refreshChips();return}
-   if(op.status!=='running'){if(m.op){m.op.status='failed';m.op.detail=op.error??'stopped'}m.text=(op.error??'The video could not be finished.')+' Everything made so far is kept.';return}
+   if(op.status!=='running'){if(m.op){m.op.status='failed';m.op.detail=op.error??'stopped'}m.text=(op.error??'The video could not be finished.')+' Everything made so far is kept.';if(rj.stuck?.job_id)m.stuck=rj.stuck;return}
    if(rj.stage)m.text=rj.stage+'…';
    await new Promise(r=>setTimeout(r,5000));
   }
-  m.text='Still working. Check Videos for the result.';
+  m.text='Still working. Ask me how the videos are doing in a few minutes.';
  }
- async function startAutopilot(scriptId:string){
-  if(!scriptId||messages.some(m=>m.autopilotScript===scriptId&&m.op?.status==='running'))return;
-  const m:Msg={role:'assistant',text:'Starting: making the video for every scene…',op:{id:crypto.randomUUID(),label:'Finishing your video',status:'running'},autopilotScript:scriptId};
+ async function startVideos(run:VideoRun){
+  const key=run.videos_only?'scenes:'+(run.scene_ids??[]).join(','):'story:'+run.script_id;
+  if(messages.some(m=>m.autopilotScript===key&&m.op?.status==='running'))return;
+  const m:Msg=run.videos_only
+   ?{role:'assistant',text:'Starting: making the scene videos side by side…',op:{id:crypto.randomUUID(),label:'Making scene videos',status:'running'},autopilotScript:key,run}
+   :{role:'assistant',text:'Starting: making the video for every scene…',op:{id:crypto.randomUUID(),label:'Finishing your video',status:'running'},autopilotScript:key,run};
   messages.push(m);const live=messages[messages.length-1];
-  try{const started=await post('/autopilot/finish?background=true',{script_id:scriptId});live.autopilotOp=started.op_id;void watchAutopilot(live)}
-  catch(e){if(live.op){live.op.status='failed';live.op.detail=(e as Error).message}live.text='Could not start finishing the video. '+(e as Error).message}
+  try{const started=await post('/autopilot/finish?background=true',run);live.autopilotOp=started.op_id;void watchAutopilot(live)}
+  catch(e){if(live.op){live.op.status='failed';live.op.detail=(e as Error).message}live.text='Could not start making the videos. '+(e as Error).message}
+ }
+ const startAutopilot=(scriptId:string)=>scriptId?startVideos({script_id:scriptId}):undefined;
+ const startScenes=(ids:string[])=>ids.length?startVideos({scene_ids:ids,videos_only:true}):undefined;
+ // Once the scene a run stopped on is settled, offer to carry on with the same run.
+ function offerResume(m:Msg,check:any){
+  const run=m.run;m.stuck=undefined;void onmutate?.();void refreshChips();
+  if(!run)return;
+  const text=check.outcome==='failed'?'That scene can be made again now. Carry on when you are ready.':'Nothing is lost: that video is being saved. Carry on when you are ready.';
+  messages.push({role:'assistant',text,intent:run.videos_only?{action:'render_scenes',scene_ids:run.scene_ids,scenes:(run.scene_ids??[]).map(id=>({id,title:''}))}:{action:'finish_video',script_id:run.script_id}});
+ }
+ // After a waiting video is settled as not made, offer to make that scene again (a priced card, not a planner turn).
+ function offerMakeAgain(check:any,title:string){
+  if(check.outcome!=='failed'||!check.scene_id)return;
+  messages.push({role:'assistant',text:`“${title||'This scene'}” can be made again now.`,intent:{action:'render_scenes',scene_ids:[check.scene_id],scenes:[{id:check.scene_id,title:title||'This scene'}]}});
  }
  let referenceOpen=$state(false);
  let referenceURL=$state('');
@@ -141,6 +163,9 @@
     role: 'user' | 'assistant';
     autoRun?: boolean;
     autopilotOp?: string; autopilotScript?: string; video?: string;
+    /** A video run stopped on a scene the video service never answered about. */
+    stuck?: {job_id:string;scene_id?:string;service:string;message:string};
+    run?: VideoRun;
     attachments?: {id:string;name:string;kind:string;file_path:string}[];
     retry?: string;
     setupSceneId?:string;
@@ -385,6 +410,7 @@
     const progressChip = (p: any): Chip | null => {
       if (!p?.next) return null;
       const step = p.next;
+      if (p.video?.state === 'waiting_on_service') return { label: `Check again · ${p.title}`, send: `Check again on “${p.title}”` };
       if (step.action === 'open_videos') return { label: `${step.label} · ${p.title}`, href: '/render' };
       if (step.action === 'open_editor') return { label: `${step.label} · ${p.title}`, href: editSceneHref(p.scene_id) };
       if (step.action === 'ask_assistant') return { label: `Why is “${p.title}” stuck?`, send: `Why is “${p.title}” stuck, and what should I do next?` };
@@ -798,6 +824,7 @@
       const intent = { ...r.intent };
       if(intent.action==='generate_script'){for(const m of messages)if(m.intent?.action==='generate_script'&&!m.dismissed){m.dismissed=true;m.briefSuperseded=true;}}
       if(intent.action==='finish_video'&&intent.script_id&&mode==='full'){messages.push({role:'assistant',text:intent.reply,dismissed:true,intent});void startAutopilot(intent.script_id);return}
+      if(intent.action==='render_scenes'&&intent.scene_ids?.length&&mode==='full'){messages.push({role:'assistant',text:intent.reply,dismissed:true,intent});void startScenes(intent.scene_ids);return}
       messages.push({
         role: 'assistant',
         text: intent.reply,
@@ -1004,8 +1031,15 @@
               <video class="mt-2 max-h-96 w-full rounded-md bg-black" src={mediaUrl(m.video)??''} controls playsinline></video>
               <Button size="sm" variant="outline" class="self-start rounded-full px-4" href={mediaUrl(m.video)??''} download>Download video</Button>
             {/if}
+            {#if m.stuck}
+              <StuckVideo jobId={m.stuck.job_id} service={m.stuck.service} onsettled={check=>offerResume(m,check)} />
+            {/if}
             {#if !editing && m.intent?.action === 'finish_video' && m.intent.script_id && !m.dismissed}
               <div class="mt-2 flex flex-wrap items-center gap-2"><Button size="sm" class="rounded-full px-4" onclick={()=>{m.dismissed=true;void startAutopilot(m.intent.script_id)}}>Finish the video for me</Button><FinishCost scriptId={m.intent.script_id} /><span class="text-xs text-muted-foreground">Makes every missing scene video, joins them with captions and exports. Uses video credits.</span></div>
+            {:else if !editing && m.intent?.action === 'render_scenes' && m.intent.scene_ids?.length && !m.dismissed}
+              <ScenesCard scenes={m.intent.scenes ?? []} onstart={()=>{m.dismissed=true;void startScenes(m.intent.scene_ids)}} />
+            {:else if !editing && (m.intent?.action === 'check_video' || m.intent?.action === 'stop_waiting') && m.intent.job_id && !m.dismissed}
+              <StuckVideo jobId={m.intent.job_id} service={m.intent.service} reason={m.intent.waiting_reason} autoCheck={m.intent.action==='check_video'&&!!m.autoRun&&autoMode} askStop={m.intent.action==='stop_waiting'} onsettled={check=>{m.autoRun=false;void onmutate?.();void refreshChips();offerMakeAgain(check,m.intent.scene_title)}} />
             {:else if !editing && m.intent?.action === 'make_clip' && m.intent.clip && !m.dismissed}
               <ClipCard clip={m.intent.clip} onjob={id=>m.intent={...m.intent,clip:{...m.intent.clip,job_id:id}}} ondismiss={()=>m.dismissed=true} />
             {:else if !editing && m.intent && m.intent.action !== 'unknown' && !m.dismissed}

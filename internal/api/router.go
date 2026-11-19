@@ -246,7 +246,7 @@ func (s *Server) setupRoutes() {
 	s.router.Get("/render-jobs", s.handleListRenderJobs)
 	s.router.Get("/render-jobs/{id}", s.handleGetRenderJob)
 	s.router.Post("/render-jobs/{id}/resubmit", s.handleResubmitJob)
-	s.router.Post("/render-jobs/{id}/reconcile", s.handleReconcileRender)
+	s.registerRenderRecoveryRoutes()
 
 	s.router.Post("/outputs/assemble", s.handleAssembleOutputs)
 	s.router.Get("/outputs/{id}/editor", s.handleGetEditorData)

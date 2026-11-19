@@ -9,13 +9,13 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	"videoflow-go/internal/costs"
 	"videoflow-go/internal/db"
-	"videoflow-go/internal/models"
 	"videoflow-go/internal/providers"
 )
 
@@ -315,19 +315,16 @@ func (s *Server) handleCostEstimate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no active project", 400)
 		return
 	}
-	scriptID := r.URL.Query().Get("script_id")
-	scenes := []models.Scene{}
-	all, _ := s.database.ListScenes(project)
-	for _, scene := range all {
-		if scene.ScriptID != nil && *scene.ScriptID == scriptID {
-			scenes = append(scenes, scene)
-		}
+	// The same scenes an autopilot run with these inputs would make.
+	query := autopilotRequest{ScriptID: r.URL.Query().Get("script_id"), VideosOnly: true}
+	if ids := strings.TrimSpace(r.URL.Query().Get("scene_ids")); ids != "" {
+		query.SceneIDs = strings.Split(ids, ",")
 	}
-	if len(scenes) == 0 {
-		http.Error(w, "that story has no scenes in this project", 404)
+	scenes, code, problem := s.autopilotScenes(project, query)
+	if code != 0 {
+		http.Error(w, problem, code)
 		return
 	}
-	sort.SliceStable(scenes, func(i, j int) bool { return scenes[i].SceneOrder < scenes[j].SceneOrder })
 	type line struct {
 		SceneID string  `json:"scene_id"`
 		Title   string  `json:"title"`

@@ -59,6 +59,9 @@ type productionPlan struct {
 	Blocked          string             `json:"blocked,omitempty"`
 }
 
+// uncertainRenderBlock is what a scene shows while an earlier request has no answer.
+const uncertainRenderBlock = "An earlier video request for this scene has no answer yet. Choose Check again to ask the video service, or Stop waiting to make the scene again."
+
 func sceneProduction(scene *models.Scene) productionSettings {
 	var d struct {
 		Production productionSettings `json:"production"`
@@ -270,7 +273,7 @@ func (s *Server) sceneProductionPlan(ctx context.Context, scene *models.Scene) (
 				p.Blocked = "Another or unresolved render is active for this scene. Check Videos before starting a different plan."
 			}
 			if active && job.Status == "reconciliation_required" {
-				p.Blocked = "A render has an uncertain provider outcome. Resolve it in Videos before spending again."
+				p.Blocked = uncertainRenderBlock
 			}
 		}
 		if u.JobID != "" {
@@ -278,6 +281,14 @@ func (s *Server) sceneProductionPlan(ctx context.Context, scene *models.Scene) (
 		} else {
 			p.Calls++
 			p.NewSeconds += u.Duration
+		}
+	}
+	// A service that refused the key, or said the account is empty, cannot make this video.
+	// Say so before anything is sent.
+	if check := s.keyCheckView(provider); p.Blocked == "" && check != nil && (check.State == providers.KeyNoCredit || check.State == providers.KeyRejected) {
+		p.Blocked = videoServiceLabel(provider) + " cannot make videos right now. " + check.Message
+		if check.State == providers.KeyNoCredit {
+			p.Blocked = check.Message
 		}
 	}
 	// A multi-clip native render needs explicit dialogue allocation, not repeated lines in every clip.

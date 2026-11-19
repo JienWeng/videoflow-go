@@ -479,10 +479,18 @@ func (s *Server) handleTestProvider(w http.ResponseWriter, r *http.Request) {
 		if check.State != providers.KeyAccepted {
 			message = check.Message
 		}
-		if check.State == providers.KeyRejected {
+		usable := check.State != providers.KeyRejected && check.State != providers.KeyNoCredit
+		if !usable {
 			problem = check.Message
 		}
-		writeJSON(w, 200, map[string]any{"ok": check.State != providers.KeyRejected, "error": problem, "latency_ms": time.Since(start).Milliseconds(), "checked": "key", "credentials_verified": check.State == providers.KeyAccepted, "generation_tested": false, "message": message})
+		writeJSON(w, 200, map[string]any{"ok": usable, "error": problem, "latency_ms": time.Since(start).Milliseconds(), "checked": "key", "credentials_verified": check.State == providers.KeyAccepted, "generation_tested": false, "message": message})
+		return
+	}
+	// fal.ai and BytePlus have no free way to ask about the balance: Check again forgets
+	// the "no balance left" answer and the next real video decides.
+	if check := s.keyCheckView(name); check != nil && check.State == providers.KeyNoCredit && name != "openrouter" {
+		s.routes().ForgetNoCredit(name)
+		writeJSON(w, 200, map[string]any{"ok": true, "error": nil, "latency_ms": 0, "checked": "key", "credentials_verified": false, "generation_tested": false, "message": costs.HostByName(name).Label + " has no free way to check the balance, so VideoFlow will use it again. The next video shows whether the top-up worked."})
 		return
 	}
 	if name == "openai" || name == "fal" || name == "byteplus" || name == "fish" || name == "elevenlabs" {
@@ -498,6 +506,7 @@ func (s *Server) handleTestProvider(w http.ResponseWriter, r *http.Request) {
 	client, err := s.routes().Client(chi.URLParam(r, "name"))
 	if err == nil {
 		err = client.CheckKey(r.Context())
+		s.routes().NoteServiceAnswer(name, err)
 	}
 	var message any
 	if err != nil {

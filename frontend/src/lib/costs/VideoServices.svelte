@@ -2,7 +2,7 @@
   // Compare what each service charges for the same video model, connect services,
   // and choose between "always the cheapest" and one fixed service.
   import { onMount } from 'svelte';
-  import { get, put } from '$lib/api';
+  import { get, post, put } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
   import { Input } from '$lib/components/ui/input';
@@ -48,6 +48,16 @@
     busy = provider; error = '';
     try { await put('/settings/providers/' + provider, { api_key: key.trim() }); adding = ''; key = ''; await load(); }
     catch (e) { error = (e as Error).message; }
+    busy = '';
+  }
+  // An account that said it has no balance: ask again once the owner has topped it up.
+  async function checkAgain(provider: string) {
+    busy = provider; error = '';
+    try {
+      const r = await post('/settings/providers/' + provider + '/test');
+      await load();
+      if (!r.ok && r.error) error = r.error;
+    } catch (e) { error = (e as Error).message; }
     busy = '';
   }
   // Changing the model while "cheapest" is on must move the automatic pick too.
@@ -102,7 +112,7 @@
             <Table.Cell class="whitespace-normal">
               <span class="font-medium">{s.label}</span>
               {#if s.note && !s.usable && !s.frames}<span class="block text-xs text-muted-foreground">{s.note}</span>{/if}
-              {#if s.key_check?.state === 'rejected'}<span class="block text-xs text-destructive">{s.key_check.message}</span>{/if}
+              {#if s.key_check?.state === 'rejected' || s.key_check?.state === 'no_credit'}<span class="block text-xs text-destructive">{s.key_check.message}</span>{/if}
               <span class="block text-xs text-muted-foreground">{#if s.problem}{s.problem}{:else if s.checked_at}Price read from {s.label} {ago(s.checked_at)}{:else}Price not read yet{/if}</span>
             </Table.Cell>
             <Table.Cell class="text-right tabular-nums">{usd(s.per_second, 3)}</Table.Cell>
@@ -111,6 +121,8 @@
               <div class="flex flex-wrap items-center gap-2">
                 {#if s.in_use}<Badge>In use</Badge>{/if}
                 {#if s.key_check?.state === 'rejected'}<Badge variant="destructive">Key rejected</Badge>{/if}
+                {#if s.key_check?.state === 'no_credit'}<Badge variant="destructive">No balance</Badge>
+                  <Button size="sm" variant="outline" disabled={!!busy} onclick={() => checkAgain(s.provider)}>{busy === s.provider ? 'Checking…' : 'Check again'}</Button>{/if}
                 {#if s.cheapest && !s.in_use}<Badge variant="outline">Cheapest connected</Badge>{/if}
                 {#if s.connected && !s.in_use && !s.cheapest}<Badge variant="outline">Connected</Badge>{/if}
                 {#if s.usable && !s.in_use && data.routing !== 'cheapest'}

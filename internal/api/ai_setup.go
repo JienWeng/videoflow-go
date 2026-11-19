@@ -54,7 +54,9 @@ func (s *Server) handleAISetup(w http.ResponseWriter, r *http.Request) {
 		if provider == "openai" {
 			pictures.Note = "Used whenever an OpenAI key is saved. About $0.15 per picture."
 		}
-		if !pictures.Ready {
+		if problem := s.serviceProblem(provider); problem != "" {
+			pictures.Note = problem
+		} else if !pictures.Ready {
 			pictures.Note = "Add a key for " + pictures.Service + " in AI connections."
 		}
 	}
@@ -64,6 +66,8 @@ func (s *Server) handleAISetup(w http.ResponseWriter, r *http.Request) {
 	video := map[string]any{"service": label(provider), "provider": provider, "model": model, "ready": connected(provider), "routing": routes.Setting("video_routing", "manual"), "family": costs.FamilyOf(provider, model)}
 	if check := s.keyCheckView(provider); check != nil && check.State == providers.KeyRejected {
 		video["key_rejected"], video["note"] = true, check.Message
+	} else if check != nil && check.State == providers.KeyNoCredit {
+		video["no_credit"], video["note"] = true, check.Message
 	}
 	settings, _ := s.database.AppSettingsSnapshot()
 	if price, ok := costs.HostPrice(provider, costs.FamilyOf(provider, model), "720p", "16:9", costs.LiveFromSettings(settings)); ok {

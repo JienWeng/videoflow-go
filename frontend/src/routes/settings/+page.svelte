@@ -50,7 +50,7 @@
     allow_custom: boolean;
     from_db: boolean;
   };
-  type KeyCheck = { state: 'accepted' | 'rejected' | 'unchecked'; message?: string; checked_at: string };
+  type KeyCheck = { state: 'accepted' | 'rejected' | 'unchecked' | 'no_credit'; message?: string; checked_at: string };
   type ProviderConfig = {
     name: string;
     configured: boolean;
@@ -703,14 +703,14 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                 <summary class="cursor-pointer rounded-md py-2 text-sm font-medium">
                   {providerLabels[p.name] ?? p.name}
                   {#if p.name===voicePrimary}<Badge variant="secondary">Primary voice provider</Badge>{/if}
-                  {#if cfg?.key_check?.state === 'rejected'}<span class="ml-2 text-xs font-normal text-destructive">Key rejected</span>{:else}<span class="ml-2 text-xs font-normal text-muted-foreground">{cfg?.configured ? 'Configured' : 'Not configured'}</span>{/if}
+                  {#if cfg?.key_check?.state === 'rejected'}<span class="ml-2 text-xs font-normal text-destructive">Key rejected</span>{:else if cfg?.key_check?.state === 'no_credit'}<span class="ml-2 text-xs font-normal text-destructive">No balance</span>{:else}<span class="ml-2 text-xs font-normal text-muted-foreground">{cfg?.configured ? 'Configured' : 'Not configured'}</span>{/if}
                 </summary>
               <div data-provider={p.name}>
                 {#if cfg?.configured}
                   <p class="settings-help mb-2">{cfg.from_db ? cfg.masked_key : 'Provided by the server environment'}</p>
                 {/if}
                 {#if cfg?.key_check?.message}
-                  <p class="mb-2 text-xs {cfg.key_check.state === 'rejected' ? 'text-destructive' : 'text-muted-foreground'}" role="status">{cfg.key_check.message}</p>
+                  <p class="mb-2 text-xs {cfg.key_check.state === 'rejected' || cfg.key_check.state === 'no_credit' ? 'text-destructive' : 'text-muted-foreground'}" role="status">{cfg.key_check.message}</p>
                 {/if}
 
                 <div class="grid gap-2 sm:grid-cols-2">
@@ -804,7 +804,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                     {#if busy === `test-${p.name}`}
                       <LoaderCircle class="size-3.5 mr-1 animate-spin" />Testing…
                     {:else}
-                      <Wifi class="size-3.5 mr-1" />{p.protocol === 'chat' ? 'Test connection' : p.protocol === 'video' && p.name !== 'byteplus' ? 'Check key' : 'Check configuration'}
+                      <Wifi class="size-3.5 mr-1" />{cfg?.key_check?.state === 'no_credit' ? 'Check again' : p.protocol === 'chat' ? 'Test connection' : p.protocol === 'video' && p.name !== 'byteplus' ? 'Check key' : 'Check configuration'}
                     {/if}
                   </Button>
                   {#if ['fal','fish','elevenlabs'].includes(p.name)&&voicePrimary!==p.name}<Button variant="outline" size="sm" disabled={!cfg?.configured} onclick={()=>primaryVoice(p.name)}>Make primary voice provider</Button>{/if}

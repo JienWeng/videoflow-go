@@ -27,6 +27,17 @@ type sceneProgress struct {
 	Step    int          `json:"step"` // 0..4 completed stages: shots, references, storyboard, video
 	Next    progressNext `json:"next"`
 	Blocked bool         `json:"blocked"`
+	Video   sceneVideo   `json:"video"`
+}
+
+// sceneVideo is where a scene's video stands, for the assistant to act on.
+type sceneVideo struct {
+	State string `json:"state"` // none, making, ready, failed, waiting_on_service
+	// Reason says in plain words why a video failed or what the service has not answered.
+	Reason string `json:"reason,omitempty"`
+	// JobID is the request the scene waits on: the one check_video or stop_waiting settles.
+	JobID   string `json:"job_id,omitempty"`
+	Service string `json:"service,omitempty"`
 }
 
 type projectProgress struct {
@@ -88,15 +99,19 @@ func completedSceneRenders(jobs []models.RenderJob) map[string]bool {
 
 // friendlyFailure turns a stored render error into plain language without exposing provider payloads.
 func friendlyFailure(job models.RenderJob) string {
+	service := "The video service"
+	if job.Provider != "" {
+		service = videoServiceLabel(job.Provider)
+	}
 	switch recoveryHint(job.Error) {
 	case "provider submission uncertain":
-		return "The video service may have received this request. Check it in Videos before trying again so you are not charged twice."
+		return "The video service may have received this request. Press Check again to ask it, so you are not charged twice."
 	case "check provider authentication":
-		return "The video service rejected the API key. Update it in Settings, then try again."
+		return service + " did not accept the saved key, so no video was made and nothing was charged. Paste the right key in Settings, or switch to another video service, then try again."
 	case "provider rate limit":
 		return "The video service is busy. Wait a minute, then try again."
 	case "check provider quota":
-		return "The video service account is out of credits or quota. Top it up, then try again."
+		return service + " says the account has no balance left, so no video was made. Top it up, or switch to another video service, then try again."
 	case "invalid timing":
 		return "A shot length is not supported by the video model. Adjust the shot timing, then try again."
 	}
@@ -121,21 +136,45 @@ func (s *Server) sceneProgressFor(ctx context.Context, scene *models.Scene, jobs
 			}
 		}
 	}
+	// Any request with no answer blocks the scene, even behind a newer attempt.
+	var uncertainJob *models.RenderJob
+	for i := range jobs {
+		if j := &jobs[i]; j.SceneID != nil && *j.SceneID == scene.ID && j.ShotID == nil && j.Status == "reconciliation_required" {
+			uncertainJob = j
+		}
+	}
 	active := latest != nil && (latest.Status == "pending" || latest.Status == "running")
-	uncertain := latest != nil && latest.Status == "reconciliation_required"
+	uncertain := uncertainJob != nil
 	failed := latest != nil && latest.Status == "failed"
+	switch {
+	case uncertain:
+		service := videoServiceLabel(uncertainJob.Provider)
+		reason := service + " has not said whether it made this video."
+		if problem := s.serviceProblem(uncertainJob.Provider); problem != "" {
+			reason += " " + problem
+		}
+		p.Video = sceneVideo{State: "waiting_on_service", Reason: reason, JobID: uncertainJob.ID, Service: service}
+	case active:
+		p.Video = sceneVideo{State: "making", Service: videoServiceLabel(latest.Provider)}
+	case complete[scene.ID] && !failed:
+		p.Video = sceneVideo{State: "ready"}
+	case failed:
+		p.Video = sceneVideo{State: "failed", Reason: friendlyFailure(*latest), JobID: latest.ID, Service: videoServiceLabel(latest.Provider)}
+	default:
+		p.Video = sceneVideo{State: "none"}
+	}
 
 	set := func(stage, label, detail, action, actionLabel string, step int) {
 		p.Stage, p.Label, p.Detail, p.Step = stage, label, detail, step
 		p.Next = progressNext{Action: action, Label: actionLabel}
 	}
 	switch {
+	case uncertain:
+		set("needs_attention", "Check video result", p.Video.Reason+" Press Check again to ask, or Stop waiting to make the scene again.", "open_videos", "Check in Videos", 3)
+		p.Blocked = true
+		return p
 	case active:
 		set("rendering", "Video in progress", "The video service is working on this scene. You can keep editing other scenes.", "open_videos", "Watch progress", 3)
-		return p
-	case uncertain:
-		set("needs_attention", "Check video result", friendlyFailure(models.RenderJob{Error: strPtr("may have been attempted")}), "open_videos", "Check in Videos", 3)
-		p.Blocked = true
 		return p
 	}
 	if complete[scene.ID] && !failed {

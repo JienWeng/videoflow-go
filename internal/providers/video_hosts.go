@@ -266,6 +266,7 @@ const (
 	KeyAccepted  KeyState = "accepted"
 	KeyRejected  KeyState = "rejected"
 	KeyUnchecked KeyState = "unchecked" // the service could not be asked
+	KeyNoCredit  KeyState = "no_credit" // the key works but the account has no balance left
 )
 
 type KeyCheck struct {
@@ -290,11 +291,43 @@ func RejectedKey(label string) KeyCheck {
 	return KeyCheck{KeyRejected, label + " did not accept this key. Copy the API key from your " + label + " dashboard and paste it again.", time.Now().UTC()}
 }
 
-// InvalidKey reports whether a service refused a request because of its key: HTTP 401,
-// or 403 with a message about the key (a bare 403 can mean the account needs a top-up).
-func InvalidKey(err error) bool {
+// OutOfCredit is the answer recorded when a service says the account has no balance left.
+func OutOfCredit(label string) KeyCheck {
+	return KeyCheck{KeyNoCredit, label + " says the account has no balance left. Top it up at " + label + ", then press Check again.", time.Now().UTC()}
+}
+
+// NoCredit reports whether a service refused a request because the account has no
+// balance: HTTP 402 (Kie.ai sends it as code 402 inside the answer), or a message such
+// as fal.ai's 403 "User is locked. Reason: Exhausted balance".
+func NoCredit(err error) bool {
 	var e *HTTPError
 	if !errors.As(err, &e) {
+		return false
+	}
+	if e.Status == 402 {
+		return true
+	}
+	message := strings.ToLower(e.Message)
+	for _, phrase := range []string{"exhausted balance", "insufficient balance", "insufficient credit", "insufficient funds", "not enough credit", "out of credit", "no credits", "balance is not enough", "user is locked"} {
+		if strings.Contains(message, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+// InvalidKey reports whether a service refused a request because of its key: HTTP 401,
+// or 403 with a message about the key (a bare 403 can mean the account needs a top-up).
+// NoSuchRequest reports that the service answered a status question with "not found":
+// it holds no job under that id.
+func NoSuchRequest(err error) bool {
+	var e *HTTPError
+	return errors.As(err, &e) && e.Status == 404
+}
+
+func InvalidKey(err error) bool {
+	var e *HTTPError
+	if !errors.As(err, &e) || NoCredit(err) {
 		return false
 	}
 	message := strings.ToLower(e.Message)
@@ -314,6 +347,8 @@ func (c *HostClient) CheckKey(ctx context.Context) KeyCheck {
 	switch {
 	case err == nil:
 		return KeyCheck{KeyAccepted, "", time.Now().UTC()}
+	case NoCredit(err):
+		return OutOfCredit(label)
 	case InvalidKey(err):
 		return RejectedKey(label)
 	}

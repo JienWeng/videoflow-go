@@ -130,7 +130,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 	}
 	if (job.ProviderJobID == nil || *job.ProviderJobID == "") && job.Stage != nil && *job.Stage == "submitting" {
 		job.Status = "reconciliation_required"
-		message := "Provider submission outcome is unknown. Reconcile the existing job before starting another paid generation."
+		message := "The video service may have received this request but never confirmed it. Press Check again, or Stop waiting to make the scene again."
 		job.Error = &message
 		return w.database.UpdateRenderJob(job)
 	}
@@ -150,9 +150,10 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 		return nil
 	}
 	defer func() {
-		if resultErr != nil {
-			// A service that refuses its key stops counting as connected right away.
-			routing.Resolver{Config: w.cfg, DB: w.database}.NoteRejectedKey(job.Provider, resultErr)
+		// A service that refuses its key or says the account is empty stops counting as
+		// connected right away; a finished video shows it works again.
+		if resultErr != nil || job.Status == "succeeded" {
+			routing.Resolver{Config: w.cfg, DB: w.database}.NoteServiceAnswer(job.Provider, resultErr)
 		}
 		if resultErr != nil && !errors.Is(resultErr, context.Canceled) && w.ctx.Err() == nil && job.Status != "reconciliation_required" {
 			message := resultErr.Error()
@@ -429,7 +430,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 				return e
 			}
 			job.Status = "reconciliation_required"
-			message := "Submission outcome needs review: " + e.Error()
+			message := "The video service may have received this request but never confirmed it. Press Check again, or Stop waiting to make the scene again. (" + e.Error() + ")"
 			job.Error = &message
 			if saveErr := w.database.UpdateRenderJob(job); saveErr != nil {
 				return saveErr

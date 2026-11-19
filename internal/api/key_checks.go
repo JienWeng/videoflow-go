@@ -56,13 +56,23 @@ func (s *Server) refreshKeyChecks() {
 	}
 }
 
-// keyCheckView is the last answer about a video service's key, for screens; nil when none.
+// keyCheckView is the last answer about a video service's key or balance, for screens;
+// nil when none.
 func (s *Server) keyCheckView(provider string) *providers.KeyCheck {
-	if !providers.VideoHost(provider) {
+	if costs.HostByName(provider) == nil {
 		return nil
 	}
 	if check, ok := s.routes().KeyCheck(provider); ok {
 		return &check
 	}
 	return nil
+}
+
+// serviceProblem is the plain reason a video service cannot be used right now (a refused
+// key or an empty account); empty when there is none.
+func (s *Server) serviceProblem(provider string) string {
+	if check := s.keyCheckView(provider); check != nil && (check.State == providers.KeyRejected || check.State == providers.KeyNoCredit) {
+		return check.Message
+	}
+	return ""
 }
