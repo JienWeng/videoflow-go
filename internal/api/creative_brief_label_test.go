@@ -21,3 +21,27 @@ func TestCreativeBriefQuestionNamesTheLanguage(t *testing.T) {
 		t.Fatalf("question should name the language: %q", q)
 	}
 }
+
+func TestBriefDefaultsFollowPlatformAndClipLength(t *testing.T) {
+	for _, tc := range []struct {
+		platform, wantAspect string
+	}{{"YouTube Shorts", "9:16"}, {"TikTok", "9:16"}, {"Instagram Reels", "9:16"}, {"YouTube", "16:9"}} {
+		b := agents.CreativeBrief{Platform: tc.platform}
+		fillCreativeBriefDefaults(&b, true)
+		if b.AspectRatio != tc.wantAspect || b.PresetID != "project-style" || b.Resolution != "720p" {
+			t.Fatalf("%s: %+v", tc.platform, b)
+		}
+	}
+	// 20 seconds in one scene is longer than a clip can be: plan two scenes.
+	b := agents.CreativeBrief{TargetDuration: 20, SceneCount: 1, AspectRatio: "9:16"}
+	fillCreativeBriefDefaults(&b, false)
+	if b.SceneCount != 2 || b.Platform != "TikTok" || b.PresetID != "" {
+		t.Fatalf("%+v", b)
+	}
+	// An explicit choice that already fits is kept.
+	b = agents.CreativeBrief{TargetDuration: 30, SceneCount: 5, Platform: "YouTube", AspectRatio: "1:1"}
+	fillCreativeBriefDefaults(&b, false)
+	if b.SceneCount != 5 || b.AspectRatio != "1:1" {
+		t.Fatalf("%+v", b)
+	}
+}

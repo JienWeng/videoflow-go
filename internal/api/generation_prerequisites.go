@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 )
 
 func (s *Server) generationPrerequisites(ctx context.Context, brief generationBrief) []map[string]string {
@@ -111,7 +112,8 @@ func (s *Server) generationPrerequisites(ctx context.Context, brief generationBr
 		}
 		target := (brief.TargetDuration + brief.SceneCount - 1) / brief.SceneCount
 		if target > max {
-			add("duration", "Planned average scene length exceeds this model's supported clip duration; shorten the target, add scenes, or select a suitable model")
+			need := (brief.TargetDuration + max - 1) / max
+			add("duration", fmt.Sprintf("A %d-second video needs at least %d scenes, because this video model makes clips of up to %d seconds. Set Scenes to %d or more (step 3, Length & scenes), or shorten the video.", brief.TargetDuration, need, max, need))
 		}
 	}
 	if len(brief.ReferenceAssetIDs) > 0 || needsSheets {

@@ -66,7 +66,7 @@ func (s *Server) chatSelectionContext(project string, selected *chatSelection) (
 	if !owned {
 		return nil, fmt.Errorf("selected item is unavailable in this project; refresh the canvas")
 	}
-	return json.Marshal(map[string]any{"kind": selected.Kind, "id": selected.ID, "record": record, "instruction": "The user selected this item. Target this item for compatible actions. Do not silently target a different item. Explain unsupported edits. Selection alone is not approval for generation."})
+	return json.Marshal(map[string]any{"kind": selected.Kind, "id": selected.ID, "record": record, "instruction": "The user selected this item. It is the default target for compatible actions. When the user clearly names a different scene or character, or asks for a project-level step such as story settings, do that instead, set that item's id, and say in the reply which item the button works on. Selection alone is not approval for generation."})
 }
 
 func selectedChatActionAllowed(kind, action string) bool {

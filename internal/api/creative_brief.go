@@ -60,6 +60,43 @@ func languageLabel(v string) string {
 	return v
 }
 
+// fillCreativeBriefDefaults decides the mechanical choices so the user is not asked for
+// what follows from what they already said: the format from the platform, a scene count
+// that fits the video model's clip length, and the project's own look.
+func fillCreativeBriefDefaults(b *agents.CreativeBrief, projectHasStyle bool) {
+	platform := strings.ToLower(b.Platform)
+	if b.AspectRatio == "" {
+		switch {
+		case strings.Contains(platform, "short"), strings.Contains(platform, "tiktok"), strings.Contains(platform, "reel"), strings.Contains(platform, "douyin"), strings.Contains(platform, "xiaohongshu"), strings.Contains(platform, "story"):
+			b.AspectRatio = "9:16"
+		case strings.Contains(platform, "youtube"), strings.Contains(platform, "website"), strings.Contains(platform, "linkedin"), strings.Contains(platform, "bilibili"), strings.Contains(platform, "tv"):
+			b.AspectRatio = "16:9"
+		}
+	}
+	if b.Platform == "" {
+		switch b.AspectRatio {
+		case "9:16":
+			b.Platform = "TikTok"
+		case "16:9":
+			b.Platform = "YouTube"
+		}
+	}
+	if b.Resolution == "" && (b.Platform != "" || b.AspectRatio != "") {
+		b.Resolution = "720p"
+	}
+	if b.PresetID == "" && projectHasStyle {
+		b.PresetID = "project-style"
+	}
+	if b.TargetDuration > 0 {
+		// One scene is one clip of at most about 10 to 15 seconds on current video models.
+		if fit := (b.TargetDuration + 9) / 10; b.SceneCount <= 0 || (b.TargetDuration+b.SceneCount-1)/b.SceneCount > 12 {
+			b.SceneCount = min(20, max(1, fit))
+		}
+	} else if b.SceneCount > 0 {
+		b.TargetDuration = b.SceneCount * 8
+	}
+}
+
 // creativeBriefQuestion asks for what is still missing, after echoing what was understood,
 // so a follow-up like "English, 15 seconds" visibly lands instead of the same question repeating.
 func creativeBriefQuestion(b agents.CreativeBrief) string {

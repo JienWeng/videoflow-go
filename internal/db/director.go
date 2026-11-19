@@ -16,6 +16,9 @@ type DirectorSession struct {
 	Status    string `json:"status"`
 	Selected  bool   `json:"selected"`
 	CreatedAt string `json:"created_at"`
+	// Model and Effort are optional: empty means the AI tool's own default.
+	Model  string `json:"model"`
+	Effort string `json:"effort"`
 }
 type DirectorTurn struct {
 	ID          string          `json:"id"`
@@ -36,7 +39,30 @@ func (d *DB) ensureDirectorWorkflow() error {
  CREATE TABLE IF NOT EXISTS director_proposals(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES director_sessions(id) ON DELETE CASCADE,project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,revision TEXT NOT NULL,selection TEXT NOT NULL);
  UPDATE director_sessions SET status='review_required' WHERE status='running';
  UPDATE director_turns SET status='interrupted',error='Backend restarted during this turn. Review saved native session before continuing; no automatic replay.' WHERE status='running';`)
-	return err
+	if err != nil {
+		return err
+	}
+	for _, column := range []string{"model", "effort"} {
+		var n int
+		if d.conn.QueryRow(`SELECT count(*) FROM pragma_table_info('director_sessions') WHERE name=?`, column).Scan(&n) == nil && n == 0 {
+			if _, err = d.conn.Exec(`ALTER TABLE director_sessions ADD COLUMN ` + column + ` TEXT NOT NULL DEFAULT ''`); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// SetDirectorSessionModel saves which model and reasoning level a conversation uses.
+func (d *DB) SetDirectorSessionModel(id, project, model, effort string) error {
+	result, err := d.conn.Exec(`UPDATE director_sessions SET model=?,effort=? WHERE id=? AND project_id=?`, model, effort, id, project)
+	if err != nil {
+		return err
+	}
+	if n, _ := result.RowsAffected(); n != 1 {
+		return fmt.Errorf("session not found in project")
+	}
+	return nil
 }
 func (d *DB) CreateDirectorSession(project, engine, title string) (*DirectorSession, error) {
 	if engine != "codex" && engine != "claude" {
@@ -68,11 +94,11 @@ func (d *DB) CreateDirectorSession(project, engine, title string) (*DirectorSess
 }
 func (d *DB) GetDirectorSession(id, project string) (*DirectorSession, error) {
 	s := &DirectorSession{}
-	err := d.conn.QueryRow(`SELECT id,project_id,engine,native_id,title,status,selected,created_at FROM director_sessions WHERE id=? AND project_id=?`, id, project).Scan(&s.ID, &s.ProjectID, &s.Engine, &s.NativeID, &s.Title, &s.Status, &s.Selected, &s.CreatedAt)
+	err := d.conn.QueryRow(`SELECT id,project_id,engine,native_id,title,status,selected,created_at,model,effort FROM director_sessions WHERE id=? AND project_id=?`, id, project).Scan(&s.ID, &s.ProjectID, &s.Engine, &s.NativeID, &s.Title, &s.Status, &s.Selected, &s.CreatedAt, &s.Model, &s.Effort)
 	return s, err
 }
 func (d *DB) ListDirectorSessions(project string) ([]DirectorSession, error) {
-	rows, err := d.conn.Query(`SELECT id,project_id,engine,native_id,title,status,selected,created_at FROM director_sessions WHERE project_id=? ORDER BY created_at DESC`, project)
+	rows, err := d.conn.Query(`SELECT id,project_id,engine,native_id,title,status,selected,created_at,model,effort FROM director_sessions WHERE project_id=? ORDER BY created_at DESC`, project)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +106,7 @@ func (d *DB) ListDirectorSessions(project string) ([]DirectorSession, error) {
 	result := []DirectorSession{}
 	for rows.Next() {
 		var s DirectorSession
-		if err = rows.Scan(&s.ID, &s.ProjectID, &s.Engine, &s.NativeID, &s.Title, &s.Status, &s.Selected, &s.CreatedAt); err != nil {
+		if err = rows.Scan(&s.ID, &s.ProjectID, &s.Engine, &s.NativeID, &s.Title, &s.Status, &s.Selected, &s.CreatedAt, &s.Model, &s.Effort); err != nil {
 			return nil, err
 		}
 		result = append(result, s)

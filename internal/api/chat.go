@@ -20,6 +20,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		History       []map[string]string   `json:"history"`
 		Selected      *chatSelection        `json:"selected"`
 		Attachments   []string              `json:"attachments"`
+		Auto          bool                  `json:"auto"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Message == "" {
 		http.Error(w, "message is required", http.StatusBadRequest)
@@ -101,7 +102,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	progress, _ := s.projectProgress(r.Context(), projectID)
-	contextJSON, _ := json.Marshal(map[string]any{"production_progress": progress, "recent_activity": s.chatActivity(projectID, jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "attached_media": attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "missing_voices_setup": "inline_render_card", "render_audio_modes": []string{"native", "saved", "silent"}, "native_audio_requires_saved_voices": false, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false, "exact_dialogue_requires_speech_and_lipsync": true}})
+	contextJSON, _ := json.Marshal(map[string]any{"production_progress": progress, "recent_activity": s.chatActivity(projectID, jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "assistant_mode": chatMode(body.Auto), "attached_media": attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "missing_voices_setup": "inline_render_card", "render_audio_modes": []string{"native", "saved", "silent"}, "native_audio_requires_saved_voices": false, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false, "exact_dialogue_requires_speech_and_lipsync": true}})
 	ctx := r.Context()
 	var plannedSnapshot *directorContext
 	if s.cfg.UseLocalText {
@@ -142,10 +143,9 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	action := canonicalChatAction(res.Action)
-	if body.Selected != nil && !selectedChatActionAllowed(body.Selected.Kind, action) {
-		action = "unknown"
-		res.Reply = "That action does not match the selected item. Edit its fields in Details, or clear the selection to work on the project. No generation has been submitted."
-	}
+	// A selection is the default target, not a cage: when the user clearly asks for
+	// something else (another scene, or a project-level step), follow the request.
+	selectionApplies := body.Selected != nil && selectedChatActionAllowed(body.Selected.Kind, action)
 
 	intent := map[string]interface{}{
 		"action":      action,
@@ -156,6 +156,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	if action == "generate_script" {
 		brief := mergeCreativeBrief(body.CreationBrief, res.CreationBrief, body.Message)
+		fillCreativeBriefDefaults(&brief, style != nil && strings.TrimSpace(style.StylePrompt) != "")
 		if brief.PresetID == "project-style" {
 			if style != nil {
 				brief.StyleFingerprint = creativeStyleFingerprint(style)
@@ -174,6 +175,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		if lang := strings.ToLower(strings.TrimSpace(res.UserLanguage)); lang != "" && !strings.HasPrefix(lang, "en") && strings.TrimSpace(res.Reply) != "" {
 			intent["reply"] = res.Reply
 		}
+	}
+	if v := strings.TrimSpace(res.Instruction); v != "" && len(v) <= 4000 && action != "generate_script" && action != "unknown" {
+		// The planner's own worked-out direction fills the button, not the user's raw words.
+		intent["idea"] = v
 	}
 	if action == "update_character" {
 		changes := map[string]string{}
@@ -241,10 +246,37 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if body.Selected != nil {
+	if body.Selected != nil && !selectionApplies {
+		// Outside the selection only a clearly named target or a project-level step may run.
+		named := action == "generate_script" || action == "generate_image" || action == "style_ingest"
+		for _, scene := range scenes {
+			if sceneScopedAction(action) && res.SceneID != "" && (scene.ID == res.SceneID || strings.EqualFold(strings.TrimSpace(res.SceneID), strings.TrimSpace(scene.Title))) {
+				named = true
+			}
+		}
+		for _, character := range chars {
+			if (action == "generate_character_reference" || action == "update_character") && res.CharacterID == character.ID {
+				named = true
+			}
+		}
+		if !named {
+			action = "unknown"
+			intent["action"] = action
+			intent["reply"] = "I'm not sure which item you mean. Tell me the scene or character by name, or clear the selection above the message box to work on the whole project. Nothing was changed."
+		}
+	}
+	namedOtherScene := false
+	for _, scene := range scenes {
+		if body.Selected != nil && body.Selected.Kind == "scene" && scene.ID != body.Selected.ID && (scene.ID == res.SceneID || (res.SceneID != "" && strings.EqualFold(strings.TrimSpace(res.SceneID), strings.TrimSpace(scene.Title)))) {
+			namedOtherScene = true
+		}
+	}
+	if selectionApplies && !namedOtherScene {
 		switch body.Selected.Kind {
 		case "character":
-			intent["character_id"] = body.Selected.ID
+			if _, named := intent["character_id"]; !named || res.CharacterID == "" || action == "generate_character_reference" || action == "update_character" {
+				intent["character_id"] = body.Selected.ID
+			}
 		case "scene":
 			if action == "refine_scene" || action == "render_scene" || action == "audit_storyboard" || action == "storyboard" || action == "generate_shots" || action == "delete_scene" {
 				intent["scene_id"] = body.Selected.ID
@@ -365,4 +397,11 @@ func (s *Server) chatClip(project string, res *agents.ChatIntentResponse, attach
 		aspect = "9:16"
 	}
 	return map[string]any{"prompt": prompt, "duration": duration, "aspect_ratio": aspect, "generate_audio": res.ClipAudio, "references": references}
+}
+
+func chatMode(auto bool) string {
+	if auto {
+		return "auto: free planning steps (refine_scene, refine_shot, generate_shots, plan_assets) start by themselves right after your reply, so write a complete instruction and say what you are doing now (\"I'm rewriting the scene so that…\"), not \"press the button\". Steps that use credits or delete things still wait for the user's click; say so. Decide details yourself and do not ask for confirmation of free steps."
+	}
+	return "manual: every step waits for the user to press its button."
 }

@@ -107,8 +107,13 @@
     onop,
     onsuggest,
     onbriefchange,
-    onreference
+    onreference,
+    auto = false,
+    onautostart
   }: {
+    /** Auto mode: run this step right away when it is free and ready. */
+    auto?: boolean;
+    onautostart?: () => void;
     intent: Intent;
     options: Options;
     projectState?: ProjectState | null;
@@ -324,6 +329,16 @@
     }
   }
 
+  // Free planning steps the assistant may carry out itself in Auto mode. Nothing here
+  // spends image, video or voice credits, and each result can be changed again.
+  const AUTO_FREE = new Set(['refine_scene', 'refine_shot', 'generate_shots', 'plan_assets']);
+  let autoStarted = false;
+  $effect(() => {
+    if (!auto || autoStarted || busy || !ready || !AUTO_FREE.has(intent.action)) return;
+    autoStarted = true;
+    onautostart?.();
+    untrack(() => void run());
+  });
   async function run() {
     const ctx: RunContext = {
       action: intent.action,

@@ -16,7 +16,9 @@ async function handle(resp: Response) {
   if (!resp.ok) {
     const text = await resp.text();
     let detail: unknown = text || resp.statusText;let code:string|undefined;
-    try { const body=JSON.parse(text);detail=body.detail ?? body.error ?? JSON.stringify(body);code=typeof body.code==='string'?body.code:undefined; } catch { /* plain-text backend error is already useful */ }
+    // The web server answers with an HTML page while the app restarts; say that plainly.
+    if ([502,503,504].includes(resp.status) && /^\s*</.test(text)) detail = 'VideoFlow is restarting. Wait a few seconds and try again; nothing was lost.';
+    else try { const body=JSON.parse(text);detail=body.detail ?? body.error ?? JSON.stringify(body);code=typeof body.code==='string'?body.code:undefined; } catch { /* plain-text backend error is already useful */ }
     throw new APIError(resp.status,formatDetail(detail),code);
   }
   return resp.json();

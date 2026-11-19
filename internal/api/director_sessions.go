@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -156,7 +157,7 @@ func (s *Server) localTextJSON(ctx context.Context, kind, system, prompt string,
 	defer cleanup()
 	images, _ := ctx.Value(directorImagesKey{}).([]string)
 	instruction := "You are VideoFlow's production planner. Prepare proposals only; no tools or side effects. Preserve selected identity rules.\n" + composition.SkillOverride + "\n" + system + "\nReturn only JSON matching this shape: " + string(shape) + "\nSelected project context: " + string(contextJSON) + "\nRequest: " + prompt
-	raw, runErr := s.directorRunner.Run(turnCtx, director.Request{Engine: session.Engine, Workspace: workspace, NativeID: session.NativeID, Prompt: instruction, Images: images}, func(id string) error { return s.database.SetDirectorNativeID(session.ID, id) })
+	raw, runErr := s.directorRunner.Run(turnCtx, director.Request{Engine: session.Engine, Workspace: workspace, NativeID: session.NativeID, Prompt: instruction, Images: images, Model: session.Model, Effort: session.Effort}, func(id string) error { return s.database.SetDirectorNativeID(session.ID, id) })
 	if runErr == nil {
 		current, currentErr := s.buildDirectorContext(binding.ProjectID, binding.Selection)
 		if currentErr != nil || current.Revision != snapshot.Revision {
@@ -286,6 +287,35 @@ func (s *Server) registerDirectorRoutes() {
 		}
 		writeJSON(w, 200, sessions)
 	})
+	s.router.Get("/director/models", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{
+			"claude": map[string]any{"models": []string{"fable", "opus", "sonnet", "haiku"}, "efforts": director.Efforts("claude")},
+			"codex":  map[string]any{"models": codexModelSlugs(), "efforts": director.Efforts("codex")},
+		})
+	})
+	s.router.Put("/director/sessions/{id}/model", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Model  string `json:"model"`
+			Effort string `json:"effort"`
+		}
+		binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)
+		session, err := s.database.GetDirectorSession(chi.URLParam(r, "id"), binding.ProjectID)
+		if err != nil {
+			http.Error(w, "session not found", 404)
+			return
+		}
+		body.Model, body.Effort = strings.TrimSpace(body.Model), strings.TrimSpace(body.Effort)
+		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&body) != nil || !director.ValidModel(strings.TrimSpace(body.Model)) || !director.ValidEffort(session.Engine, strings.TrimSpace(body.Effort)) {
+			http.Error(w, "choose a listed model and reasoning level", 400)
+			return
+		}
+		if err = s.database.SetDirectorSessionModel(session.ID, binding.ProjectID, strings.TrimSpace(body.Model), strings.TrimSpace(body.Effort)); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		session.Model, session.Effort = strings.TrimSpace(body.Model), strings.TrimSpace(body.Effort)
+		writeJSON(w, 200, session)
+	})
 	s.router.Post("/director/sessions", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Engine string `json:"engine"`
@@ -364,4 +394,33 @@ func authEngine(w http.ResponseWriter, r *http.Request) (string, bool) {
 func (s *Server) authManager() *director.AuthManager {
 	s.agentAuthOnce.Do(func() { s.agentAuth = director.NewAuthManager(s.directorRunner) })
 	return s.agentAuth
+}
+
+// codexModelSlugs reads the model names the installed Codex already knows about.
+func codexModelSlugs() []string {
+	home := os.Getenv("CODEX_HOME")
+	if home == "" {
+		if base, err := os.UserHomeDir(); err == nil {
+			home = filepath.Join(base, ".codex")
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(home, "models_cache.json"))
+	if err != nil || len(data) > 8<<20 {
+		return []string{}
+	}
+	var cache struct {
+		Models []struct {
+			Slug string `json:"slug"`
+		} `json:"models"`
+	}
+	slugs := []string{}
+	if json.Unmarshal(data, &cache) == nil {
+		for _, m := range cache.Models {
+			if director.ValidModel(m.Slug) && m.Slug != "" && !strings.Contains(m.Slug, "review") && !strings.Contains(m.Slug, "reserve") {
+				slugs = append(slugs, m.Slug)
+			}
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(slugs)))
+	return slugs
 }

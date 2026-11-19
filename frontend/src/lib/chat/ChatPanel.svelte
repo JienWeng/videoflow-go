@@ -6,6 +6,10 @@
  import Paperclip from '@lucide/svelte/icons/paperclip';
  import ClipCard from './ClipCard.svelte';
  import {upload as apiUpload} from '$lib/api';
+ // Auto: the assistant carries out free planning steps itself. Manual: every step waits for a click.
+ let autoMode=$state(false);
+ try{autoMode=localStorage.getItem('videoflow.chat.auto')==='1'}catch{}
+ function setAuto(on:boolean){autoMode=on;try{localStorage.setItem('videoflow.chat.auto',on?'1':'0')}catch{}}
  let referenceOpen=$state(false);
  let referenceURL=$state('');
  // Media pasted, dropped, picked or linked into the next message.
@@ -109,6 +113,7 @@
   interface Msg {
  editProposal?:{base:string;manifest:any;changes:string[];applied?:boolean;error?:string};
     role: 'user' | 'assistant';
+    autoRun?: boolean;
     attachments?: {id:string;name:string;kind:string;file_path:string}[];
     retry?: string;
     setupSceneId?:string;
@@ -755,7 +760,7 @@
     if(useSpecialists)messages.push({role:'assistant',text:'Specialist review requested. No story changes will run.',activity:normalizeActivity((capabilities.subagents.roles??[]).map((role:any)=>({kind:'subagent',title:role.name,status:'pending'})))});
     try {
       if(editing){const base=JSON.stringify(editing.draft);const result=await post('/director/composition-plan',{instruction:message,manifest:JSON.parse(base),selected_clip_id:editing.selected});if(generation!==conversationGeneration)return;messages.push({role:'assistant',text:'I prepared an edit proposal. Apply it to the current edit, then save or undo as needed.',editProposal:{base,manifest:result.manifest,changes:editChanges(JSON.parse(base),result.manifest)}});return;}
-      const r = await post(useSpecialists?'/chat/review':'/chat', { message, ...(useSpecialists?{}:{history,creation_brief:activeCreativeBrief()}), selected: selected ? {id:selected.id,kind:selected.kind} : null, ...(sent.length?{attachments:sent.map(a=>a.id)}:{}) });
+      const r = await post(useSpecialists?'/chat/review':'/chat', { message, ...(useSpecialists?{}:{history,creation_brief:activeCreativeBrief()}), selected: selected ? {id:selected.id,kind:selected.kind} : null, ...(autoMode&&!useSpecialists?{auto:true}:{}), ...(sent.length?{attachments:sent.map(a=>a.id)}:{}) });
       if(generation!==conversationGeneration)return;
       if(useSpecialists){messages[reviewIndex]={role:'assistant',text:r.reply,activity:subagentEvents(r.subagents??[])};void refreshCapabilities();return;}
       const intent = { ...r.intent };
@@ -764,6 +769,7 @@
         role: 'assistant',
         text: intent.reply,
         intent,
+        autoRun: autoMode,
         options: r.options,
         warnings: r.warnings ?? [],
         state: r.state,
@@ -964,6 +970,8 @@
               <ClipCard clip={m.intent.clip} onjob={id=>m.intent={...m.intent,clip:{...m.intent.clip,job_id:id}}} ondismiss={()=>m.dismissed=true} />
             {:else if !editing && m.intent && m.intent.action !== 'unknown' && !m.dismissed}
               <ActionCard
+                auto={!!m.autoRun&&autoMode}
+                onautostart={()=>m.autoRun=false}
                 intent={m.intent}
  onbriefchange={brief=>m.intent={...m.intent,creation_brief:brief,idea:brief.idea}}
  onreference={referenceSaved}
@@ -1011,6 +1019,7 @@
               <DropdownMenu.Item onclick={()=>{referenceURL='';referenceOpen=true}}><span class="grid"><span>Match a look</span><span class="text-xs text-muted-foreground">Copy the art style of an image, video or link</span></span></DropdownMenu.Item>
             </DropdownMenu.Content>
           </DropdownMenu.Root>
+          {#if !editing}<InputGroup.Button type="button" size="sm" aria-pressed={autoMode} aria-label={autoMode?'Auto mode is on. Switch to manual.':'Manual mode is on. Switch to auto.'} title={autoMode?'Auto: the assistant does free steps itself (rewriting scenes, planning shots). Anything that uses credits still waits for you. Click for Manual.':'Manual: every step waits for your click. Click for Auto.'} class={autoMode?'bg-primary text-primary-foreground hover:bg-primary/90':''} onclick={()=>setAuto(!autoMode)}>{autoMode?'Auto':'Manual'}</InputGroup.Button>{/if}
           <DropdownMenu.Root><DropdownMenu.Trigger>{#snippet child({props})}<InputGroup.Button {...props} type="button" size="sm" aria-label="Assistant mode" disabled={busy}>{reviewMode?'Review':'Chat'}<ChevronDown class="size-3.5" /></InputGroup.Button>{/snippet}</DropdownMenu.Trigger>
             <DropdownMenu.Content align="start" side="top" class="w-64 max-w-[calc(100vw-2rem)]">
               <DropdownMenu.RadioGroup value={reviewMode?'specialists':'assistant'} onValueChange={value=>reviewMode=value==='specialists'}>

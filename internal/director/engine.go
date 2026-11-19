@@ -18,8 +18,10 @@ import (
 
 type Request struct {
 	Engine, Workspace, NativeID, Prompt string
-	ImageGeneration                     bool
-	Images                              []string
+	// Model and Effort are optional overrides; empty keeps the tool's default.
+	Model, Effort   string
+	ImageGeneration bool
+	Images          []string
 }
 type Runner struct{ Codex, Claude string }
 
@@ -74,6 +76,25 @@ func (r *Runner) Run(ctx context.Context, request Request, saveNative func(strin
 		args = []string{"--restricted", "-p", "--output-format", "stream-json", "--verbose", "--tools", "", "--disallowedTools", "mcp__*", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--setting-sources", ""}
 		if request.NativeID != "" {
 			args = append(args, "--resume", request.NativeID)
+		}
+	}
+	if !request.ImageGeneration && ValidModel(request.Model) && ValidEffort(request.Engine, request.Effort) {
+		if request.Engine == "claude" {
+			if request.Model != "" {
+				args = append(args, "--model", request.Model)
+			}
+			if request.Effort != "" {
+				args = append(args, "--effort", request.Effort)
+			}
+		} else {
+			overrides := []string{}
+			if request.Model != "" {
+				overrides = append(overrides, "-c", `model="`+request.Model+`"`)
+			}
+			if request.Effort != "" {
+				overrides = append(overrides, "-c", `model_reasoning_effort="`+request.Effort+`"`)
+			}
+			args = append(overrides, args...) // global options go before "exec"
 		}
 	}
 	stdin := request.Prompt
@@ -278,4 +299,37 @@ func claudeImageInput(prompt string, images []string) (string, error) {
 	content = append(content, map[string]any{"type": "text", "text": prompt})
 	line, err := json.Marshal(map[string]any{"type": "user", "message": map[string]any{"role": "user", "content": content}})
 	return string(line) + "\n", err
+}
+
+// ValidModel accepts a model alias or full name; empty means the default.
+func ValidModel(model string) bool {
+	if len(model) > 80 {
+		return false
+	}
+	for _, r := range model {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("._-:[]", r)) {
+			return false
+		}
+	}
+	return true
+}
+
+// Efforts lists the reasoning levels each tool accepts, lowest first.
+func Efforts(engine string) []string {
+	if engine == "claude" {
+		return []string{"low", "medium", "high", "xhigh", "max"}
+	}
+	return []string{"low", "medium", "high", "xhigh"}
+}
+
+func ValidEffort(engine, effort string) bool {
+	if effort == "" {
+		return true
+	}
+	for _, e := range Efforts(engine) {
+		if e == effort {
+			return true
+		}
+	}
+	return false
 }
