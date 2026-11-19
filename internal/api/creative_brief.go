@@ -44,12 +44,26 @@ func mergeCreativeBrief(previous, next *agents.CreativeBrief, message string) ag
 	return result
 }
 
+var languageLabels = map[string]string{"en": "English", "es": "Spanish", "zh": "Chinese", "ja": "Japanese", "ko": "Korean", "fr": "French", "de": "German", "pt": "Portuguese", "it": "Italian", "ru": "Russian", "ar": "Arabic", "hi": "Hindi", "id": "Indonesian", "ms": "Malay", "th": "Thai", "vi": "Vietnamese", "tr": "Turkish", "nl": "Dutch"}
+
+// languageLabel shows a language code such as "en" or "zh-CN" as a name; other text is kept.
+func languageLabel(v string) string {
+	code := strings.ToLower(strings.TrimSpace(v))
+	if base, _, found := strings.Cut(strings.ReplaceAll(code, "_", "-"), "-"); found {
+		code = base
+	}
+	if name, ok := languageLabels[code]; ok {
+		return name
+	}
+	return v
+}
+
 // creativeBriefQuestion asks for what is still missing, after echoing what was understood,
 // so a follow-up like "English, 15 seconds" visibly lands instead of the same question repeating.
 func creativeBriefQuestion(b agents.CreativeBrief) string {
 	question := creativeBriefNextQuestion(b)
 	got := []string{}
-	for _, v := range []string{b.Tone, b.Audience, b.Platform, b.AspectRatio, b.Language} {
+	for _, v := range []string{b.Tone, b.Audience, b.Platform, b.AspectRatio, languageLabel(b.Language)} {
 		if strings.TrimSpace(v) != "" {
 			got = append(got, v)
 		}
