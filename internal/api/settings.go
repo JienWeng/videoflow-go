@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"videoflow-go/internal/costs"
 	"videoflow-go/internal/providers"
 	"videoflow-go/internal/routing"
 
@@ -32,6 +33,15 @@ var presetCatalog = map[string]ProviderPresetInfo{
 	"byteplus":   {Label: "BytePlus ModelArk (Seedance)", Protocol: "video", URL: providers.BytePlusURL, DefaultModel: providers.BytePlusVideoModel, SuggestedModels: []string{providers.BytePlusVideoModel}, EnvKey: "BYTEPLUS_API_KEY"},
 	"openrouter": {Label: "OpenRouter", Protocol: "chat", URL: providers.OpenRouterURL, DefaultModel: "openai/gpt-4o-mini", SuggestedModels: []string{"openai/gpt-4o-mini", "meta-llama/llama-3.3-70b-instruct"}, EnvKey: "OPENROUTER_API_KEY"},
 }
+
+func init() {
+	for _, host := range costs.Hosts {
+		if providers.VideoHost(host.Name) {
+			presetCatalog[host.Name] = ProviderPresetInfo{Label: host.Label, Protocol: "video", URL: host.URL, DefaultModel: host.Models[costs.Families[0].ID], EnvKey: host.EnvKey}
+		}
+	}
+}
+
 var presetOrder = []string{"fal", "openai", "openrouter", "byteplus", "fish", "elevenlabs"}
 
 func maskKey(raw string) string {
@@ -421,7 +431,7 @@ func (s *Server) handlePutProviderConfig(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleTestProvider(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
-	if name == "openai" || name == "fal" || name == "byteplus" || name == "fish" || name == "elevenlabs" {
+	if name == "openai" || name == "fal" || name == "byteplus" || name == "fish" || name == "elevenlabs" || providers.VideoHost(name) {
 		_, _, _, err := s.routes().Credentials(name)
 		var message any
 		if err != nil {
@@ -450,7 +460,7 @@ func (s *Server) handleDiscoverModels(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("modality") == "" {
 		if name == "fal" {
 			modality = "image"
-		} else if name == "byteplus" {
+		} else if name == "byteplus" || providers.VideoHost(name) {
 			modality = "video"
 		}
 	}
@@ -481,7 +491,7 @@ func (s *Server) handleVerifyModel(w http.ResponseWriter, r *http.Request) {
 	if body.Modality == "" {
 		body.Modality = "text"
 		name := chi.URLParam(r, "name")
-		if name == "byteplus" {
+		if name == "byteplus" || providers.VideoHost(name) {
 			body.Modality = "video"
 		} else if name == "fal" {
 			body.Modality = "video"

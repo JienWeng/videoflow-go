@@ -33,6 +33,7 @@ const BytePlusVideoModel = "dreamina-seedance-2-0-260128"
 type mediaHTTP struct {
 	key, base, provider, auth string
 	client                    *http.Client
+	headers                   map[string]string // extra headers a service requires on every call
 }
 
 func newMediaHTTP(key, base, provider, auth string) mediaHTTP {
@@ -59,6 +60,9 @@ func (c *mediaHTTP) requestBody(ctx context.Context, method, path, contentType s
 	}
 	req.Header.Set("Authorization", c.auth+c.key)
 	req.Header.Set("Content-Type", contentType)
+	for name, value := range c.headers {
+		req.Header.Set(name, value)
+	}
 	res, err := c.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("%s request failed: %w", c.provider, err)
@@ -115,10 +119,12 @@ func mediaCatalog(provider, modality string) []Model {
 		add(FalImageModel, "image", false)
 		add(FalImageModel+"/edit", "image", false)
 		add(FalVideoModel, "video", true)
+		add("bytedance/seedance-2.0/image-to-video", "video", true)
 		add("bytedance/seedance-2.0/fast/text-to-video", "video", false)
 		add(FalNativeVoiceModel, "video", false)
 	case "byteplus":
 		add(BytePlusVideoModel, "video", true)
+		add("dreamina-seedance-2-0-fast-260128", "video", true)
 	}
 	return models
 }

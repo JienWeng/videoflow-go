@@ -24,7 +24,7 @@ func ValidBaseURL(raw string) bool {
 }
 
 func (r Resolver) Credentials(name string) (key, endpoint string, fromDB bool, err error) {
-	if name == "openai" || name == "fal" || name == "byteplus" || name == "fish" || name == "elevenlabs" {
+	if name == "openai" || name == "fal" || name == "byteplus" || name == "fish" || name == "elevenlabs" || providers.VideoHost(name) {
 		return r.mediaCredentials(name)
 	}
 	endpoint = r.Config.OpenRouterBaseURL

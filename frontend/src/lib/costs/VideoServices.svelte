@@ -1,0 +1,124 @@
+<script lang="ts">
+  // Compare what each service charges for the same video model, connect services,
+  // and choose between "always the cheapest" and one fixed service.
+  import { onMount } from 'svelte';
+  import { get, put } from '$lib/api';
+  import { Button } from '$lib/components/ui/button';
+  import { Badge } from '$lib/components/ui/badge';
+  import { Input } from '$lib/components/ui/input';
+  import * as Table from '$lib/components/ui/table';
+  import { LoaderCircle } from '@lucide/svelte';
+
+  type Service = { provider: string; label: string; model: string; per_second: number; total: number; frames: boolean; checked: string; connected: boolean; usable: boolean; cheapest: boolean; in_use: boolean; note?: string };
+  type State = { families: { id: string; label: string }[]; model: string; resolution: string; seconds: number; routing: string; current: { provider: string; label: string; model: string; family: string }; services: Service[] };
+
+  let data = $state<State | null>(null), error = $state(''), busy = $state('');
+  let model = $state(''), resolution = $state('720p');
+  let adding = $state(''), key = $state('');
+  const usd = (v: number, digits = 2) => '$' + v.toFixed(digits);
+  const keyHint: Record<string, string> = { higgsfield: 'KEY_ID:KEY_SECRET' };
+
+  async function load() {
+    try {
+      const q = new URLSearchParams({ resolution, seconds: '10' });
+      if (model) q.set('model', model);
+      data = await get('/video-services?' + q);
+      model = data!.model; error = '';
+    } catch (e) { error = (e as Error).message; }
+  }
+  async function route(mode: 'cheapest' | 'manual', provider = '') {
+    busy = provider || mode; error = '';
+    try { await put('/video-services/routing', { mode, model, provider }); await load(); }
+    catch (e) { error = (e as Error).message; }
+    busy = '';
+  }
+  async function saveKey(provider: string) {
+    if (!key.trim()) return;
+    busy = provider; error = '';
+    try { await put('/settings/providers/' + provider, { api_key: key.trim() }); adding = ''; key = ''; await load(); }
+    catch (e) { error = (e as Error).message; }
+    busy = '';
+  }
+  // Changing the model while "cheapest" is on must move the automatic pick too.
+  async function modelChanged() { if (data?.routing === 'cheapest') await route('cheapest'); else await load(); }
+  onMount(() => void load());
+  const pick = $derived(data?.services.find((s) => s.cheapest));
+</script>
+
+<section class="grid gap-4" aria-labelledby="video-services">
+  <div class="grid gap-1">
+    <h2 id="video-services" class="text-base font-medium">Video service</h2>
+    <p class="text-sm text-muted-foreground">The same video model is sold by several services at different prices. Connect the ones you have an account with and VideoFlow can use the cheapest.</p>
+  </div>
+
+  {#if !data && !error}
+    <p role="status" class="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />Loading prices…</p>
+  {:else if data}
+    <div class="flex flex-wrap items-end gap-3">
+      <label class="grid gap-1 text-xs font-medium">Video model
+        <select class="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal" bind:value={model} onchange={modelChanged}>
+          {#each data.families as f (f.id)}<option value={f.id}>{f.label}</option>{/each}
+        </select>
+      </label>
+      <label class="grid gap-1 text-xs font-medium">Quality
+        <select class="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal" bind:value={resolution} onchange={load}>
+          <option value="480p">480p</option><option value="720p">720p</option><option value="1080p">1080p</option>
+        </select>
+      </label>
+    </div>
+
+    <label class="flex items-start gap-3 rounded-lg border border-border p-3 text-sm">
+      <input type="checkbox" class="mt-0.5 size-4" checked={data.routing === 'cheapest'} disabled={!!busy}
+        onchange={(e) => (e.currentTarget.checked ? route('cheapest') : route('manual'))} />
+      <span class="grid gap-0.5">
+        <span class="font-medium">Always use the cheapest connected service</span>
+        <span class="text-muted-foreground">
+          {#if data.routing === 'cheapest' && pick}Prices are compared each time a video is made. Right now that is {pick.label} at {usd(pick.per_second, 3)} per second.
+          {:else if data.routing === 'cheapest'}No connected service sells this model, so videos keep using {data.current.label}.
+          {:else}Off. Videos use {data.current.label}.{/if}
+        </span>
+      </span>
+    </label>
+
+    <Table.Root>
+      <Table.Header>
+        <Table.Row><Table.Head>Service</Table.Head><Table.Head class="text-right">Per second</Table.Head><Table.Head class="text-right">10-second clip</Table.Head><Table.Head>Status</Table.Head></Table.Row>
+      </Table.Header>
+      <Table.Body>
+        {#each data.services as s (s.provider)}
+          <Table.Row>
+            <Table.Cell class="whitespace-normal">
+              <span class="font-medium">{s.label}</span>
+              {#if s.note && !s.usable && !s.frames}<span class="block text-xs text-muted-foreground">{s.note}</span>{/if}
+            </Table.Cell>
+            <Table.Cell class="text-right tabular-nums">{usd(s.per_second, 3)}</Table.Cell>
+            <Table.Cell class="text-right tabular-nums">{usd(s.total)}</Table.Cell>
+            <Table.Cell class="whitespace-normal">
+              <div class="flex flex-wrap items-center gap-2">
+                {#if s.in_use}<Badge>In use</Badge>{/if}
+                {#if s.cheapest && !s.in_use}<Badge variant="outline">Cheapest connected</Badge>{/if}
+                {#if s.connected && !s.in_use && !s.cheapest}<Badge variant="outline">Connected</Badge>{/if}
+                {#if s.usable && !s.in_use && data.routing !== 'cheapest'}
+                  <Button size="sm" variant="outline" disabled={!!busy} onclick={() => route('manual', s.provider)}>Use this</Button>
+                {/if}
+                {#if !s.connected && adding !== s.provider}
+                  <Button size="sm" variant="ghost" onclick={() => { adding = s.provider; key = ''; }}>Add API key</Button>
+                {/if}
+              </div>
+              {#if adding === s.provider}
+                <form class="mt-2 flex flex-wrap items-center gap-2" onsubmit={(e) => { e.preventDefault(); void saveKey(s.provider); }}>
+                  <Input type="password" class="h-9 w-56" bind:value={key} placeholder={keyHint[s.provider] ?? 'API key'} aria-label={`API key for ${s.label}`} autocomplete="off" />
+                  <Button size="sm" type="submit" disabled={busy === s.provider || !key.trim()}>Save</Button>
+                  <Button size="sm" variant="ghost" type="button" onclick={() => (adding = '')}>Cancel</Button>
+                </form>
+              {/if}
+            </Table.Cell>
+          </Table.Row>
+        {/each}
+      </Table.Body>
+    </Table.Root>
+    {#if data.services.length === 0}<p class="text-sm text-muted-foreground">No service lists a price for this model at {resolution}.</p>{/if}
+    <p class="text-xs text-muted-foreground">List prices checked on 19 Nov 2026. fal.ai and OpenRouter prices are refreshed from those services daily; the others change only when VideoFlow is updated, so check the service's own page before a large job.</p>
+  {/if}
+  {#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}
+</section>

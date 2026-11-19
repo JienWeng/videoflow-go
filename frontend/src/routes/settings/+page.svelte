@@ -936,7 +936,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
               <div class="flex flex-wrap items-center gap-3">
                 <div class="min-w-[180px] flex-1">
                   <div class="settings-label">Video provider</div>
-                  <div class="settings-help">Used by one-click renders.</div>
+                  <div class="settings-help">Used by one-click renders. To compare prices, add keys or always use the cheapest service, open <a class="underline" href="/costs">Costs</a>.</div>
                 </div>
                 <select
                   aria-label="Video provider"
@@ -947,6 +947,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                 >
 
                   <option value="fal">fal.ai</option><option value="openrouter">OpenRouter</option><option value="byteplus">BytePlus ModelArk (Seedance)</option>
+                  <option value="argolink">ArgoLink</option><option value="replicate">Replicate</option><option value="kie">Kie.ai</option><option value="wavespeed">WaveSpeed</option><option value="runway">Runway API</option><option value="higgsfield">Higgsfield API</option>
                 </select>
               </div>
 

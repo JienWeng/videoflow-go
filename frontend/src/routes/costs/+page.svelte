@@ -8,6 +8,7 @@
   import * as Card from '$lib/components/ui/card';
   import * as Table from '$lib/components/ui/table';
   import { LoaderCircle, TriangleAlert } from '@lucide/svelte';
+  import VideoServices from '$lib/costs/VideoServices.svelte';
 
   type Group = { key: string; label: string; amount: number; count: number; quantity: number; unit: string; exact: boolean };
   type Entry = { ref: string; category: string; provider: string; model: string; label: string; quantity: number; unit: string; amount: number; basis: string; created_at: string };
@@ -140,6 +141,8 @@
         </ul>
       </section>
     {/if}
+
+    <VideoServices />
 
     {#if data.projects && data.projects.length > 1}
       <section class="grid gap-3" aria-labelledby="all-projects">

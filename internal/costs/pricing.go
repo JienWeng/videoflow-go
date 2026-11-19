@@ -30,14 +30,6 @@ var seedanceSizes = map[string]map[string][2]int{
 	"1080p": {"16:9": {1920, 1080}, "9:16": {1080, 1920}, "1:1": {1440, 1440}, "4:3": {1664, 1248}, "3:4": {1248, 1664}, "21:9": {2206, 946}},
 }
 
-// Dollars per 1,000 Seedance tokens on fal.ai.
-func seedanceTokenRate(model string) float64 {
-	if strings.Contains(model, "/fast/") {
-		return 0.0112
-	}
-	return 0.014
-}
-
 func seedanceTokens(resolution, aspect string, seconds float64) float64 {
 	sizes, ok := seedanceSizes[resolution]
 	if !ok {
@@ -76,8 +68,10 @@ func Video(provider, model, resolution, aspect string, seconds float64, live *Li
 			return round(live.UnitPrice), Rate
 		}
 	}
-	if provider == "fal" && seedance {
-		return round(seedanceTokens(resolution, aspect, seconds) / 1000 * seedanceTokenRate(model)), Rate
+	if family := FamilyOf(provider, model); family != "" {
+		if price, ok := HostPrice(provider, family, resolution, aspect, 0); ok {
+			return round(price * seconds), Rate
+		}
 	}
 	return 0, Unpriced
 }
