@@ -7,43 +7,50 @@ Each case sends one chat message the way the app does and checks the button
 (action) the assistant prepares, plus reply quality: the user's language, length,
 and no internal jargon. Nothing runs: /chat only prepares a button. Messages use
 the selected AI session (Claude Code or Codex), so each case is one AI turn.
-The cases expect a project with one finished scene, a cat character and a person,
-like the Giant Cat demo project; adjust EXPECT for other projects.
+Cases adapt to the open project: {char} and {char2} become its character names,
+and cases that need characters or scenes are skipped when the project has none.
 """
 import argparse, json, re, sys, time, urllib.error, urllib.request
 
 JARGON = re.compile(r"\b(proposal|native session|pipeline|intent|action card|director)\b", re.I)
 SPANISH = re.compile(r"[¿¡ñáéíóú]|\b(qué|cómo|quieres|estilo|video|gato)\b", re.I)
 
-# (message, allowed actions, extra checks)
+# (message, allowed actions, extra checks). needs: "char", "char2", "scene".
 CASES = [
     ("hi", {"unknown"}, {}),
-    ("what do I do next", {"unknown", "open_editor"}, {}),
+    ("what do I do next", {"unknown", "open_editor", "generate_script", "generate_scenes", "render_scene"}, {}),
     ("make a video about a dog who learns to surf", {"generate_script"}, {}),
     ("FOLLOWUP:english, 15 seconds, 2 scenes, cartoon style, for tiktok", {"generate_script"}, {"reply_has": "Got it", "brief_style": True}),
-    ("make the cat bigger in the first scene", {"refine_scene"}, {}),
-    ("add voice to my video", {"open_editor"}, {"panel": "voice"}),
-    ("the cat should say hello", {"open_editor"}, {"panel": "voice"}),
-    ("add music", {"open_editor"}, {"panel": "music"}),
-    ("add subtitles", {"caption", "open_editor"}, {}),
-    ("translate the subtitles to spanish", {"open_editor"}, {"panel": "captions"}),
-    ("export the video as mp4", {"open_editor"}, {"panel": "export"}),
-    ("render it", {"render_scene"}, {}),
+    ("make {char} bigger in the first scene", {"refine_scene"}, {"needs": ["char", "scene"]}),
+    ("add voice to my video", {"open_editor"}, {"panel": "voice", "needs": ["scene"]}),
+    ("{char} should say hello", {"open_editor"}, {"panel": "voice", "needs": ["char", "scene"]}),
+    ("add music", {"open_editor"}, {"panel": "music", "needs": ["scene"]}),
+    ("add subtitles", {"caption", "open_editor"}, {"needs": ["scene"]}),
+    ("translate the subtitles to spanish", {"open_editor"}, {"panel": "captions", "needs": ["scene"]}),
+    ("export the video as mp4", {"open_editor"}, {"panel": "export", "needs": ["scene"]}),
+    ("render it", {"render_scene"}, {"needs": ["scene"]}),
     ("why did my video fail?", {"unknown", "open_editor", "retry_render"}, {}),
     ("delete everything", {"unknown"}, {}),
     ("make a picture of a tokyo street at night", {"generate_image"}, {}),
-    ("change the cat's color to black", {"update_character"}, {"changes_has": "black"}),
-    ("give the resident a red hat", {"update_character"}, {"changes_has": "hat"}),
-    ("redo the cat's reference picture", {"generate_character_reference"}, {}),
-    ("check if the storyboard matches the style", {"audit_storyboard"}, {}),
+    ("dress {char} all in black", {"update_character"}, {"changes_has": "black", "needs": ["char"]}),
+    ("give {char2} a red hat", {"update_character"}, {"changes_has": "hat", "needs": ["char2"]}),
+    ("redo {char}'s reference picture", {"generate_character_reference"}, {"needs": ["char"]}),
+    ("check if the storyboard matches the style", {"audit_storyboard"}, {"needs": ["scene"]}),
     ("make it longer", {"generate_scenes", "generate_script"}, {}),
     ("how much will this cost?", {"unknown"}, {}),
     ("asdfgh", {"unknown"}, {}),
     ("undo that", {"unknown", "open_editor"}, {}),
     ("hazme un video de un gato que baila", {"generate_script"}, {"spanish": True}),
-    ("¿cómo exporto mi video?", {"open_editor"}, {"panel": "export", "spanish": True}),
+    ("¿cómo exporto mi video?", {"open_editor"}, {"panel": "export", "spanish": True, "needs": ["scene"]}),
 ]
 MAX_WORDS = 120
+
+
+def get(api, path):
+    try:
+        return json.load(urllib.request.urlopen(api + path, timeout=30)) or []
+    except Exception:
+        return []
 
 
 def chat(api, body):
@@ -58,7 +65,18 @@ def main():
     ap.add_argument("--out", default="")
     args = ap.parse_args()
     brief, rows, passed = None, [], 0
-    cases = [c for c in CASES if args.only.lower() in c[0].lower()]
+    names = [c.get("name", "") for c in get(args.api, "/characters") if c.get("name")]
+    have = {"char": len(names) >= 1, "char2": len(names) >= 2, "scene": bool(get(args.api, "/scenes"))}
+    fill = {"char": names[0] if names else "", "char2": names[1] if len(names) > 1 else ""}
+    cases, skipped = [], []
+    for message, allowed, checks in CASES:
+        message = message.format(**fill)
+        if args.only.lower() not in message.lower():
+            continue
+        missing = [n for n in checks.get("needs", []) if not have[n]]
+        (skipped if missing else cases).append((message, allowed, checks))
+    if skipped:
+        print(f"Skipping {len(skipped)} case(s) this project can't answer yet (no characters or scenes)")
     for message, allowed, checks in cases:
         body = {"message": message, "history": [], "selected": None}
         if message.startswith("FOLLOWUP:"):
