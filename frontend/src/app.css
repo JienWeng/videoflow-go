@@ -150,3 +150,14 @@
 :where(button, a, input, select, textarea, summary):focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 ::selection { background: var(--primary); color: var(--primary-foreground); }
 @media (max-width: 767px) { main :where(input:not([type="checkbox"]):not([type="radio"]), select) { min-height: 44px; } }
+
+/* Printing a report: only the report itself goes on paper. */
+@media print {
+  body * { visibility: hidden; }
+  .print-area, .print-area * { visibility: visible; }
+  .print-area { position: absolute; inset: 0 auto auto 0; width: 100%; max-width: none; padding: 0; }
+  .h-dvh { height: auto !important; }
+  main, .h-dvh { overflow: visible !important; }
+  .no-print { display: none !important; }
+  .print-area section { break-inside: avoid; }
+}

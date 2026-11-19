@@ -42,8 +42,9 @@ func (d *DB) RecordCost(e CostEntry) error {
 	return err
 }
 
+// ListCosts returns one project's entries, or every project's when project is "".
 func (d *DB) ListCosts(project string) ([]CostEntry, error) {
-	rows, err := d.conn.Query(`SELECT ref,project_id,script_id,scene_id,category,provider,model,label,quantity,unit,amount,basis,created_at FROM cost_entries WHERE project_id=? ORDER BY created_at DESC, ref`, project)
+	rows, err := d.conn.Query(`SELECT ref,project_id,script_id,scene_id,category,provider,model,label,quantity,unit,amount,basis,created_at FROM cost_entries WHERE project_id=? OR ?='' ORDER BY created_at DESC, ref`, project, project)
 	if err != nil {
 		return nil, err
 	}

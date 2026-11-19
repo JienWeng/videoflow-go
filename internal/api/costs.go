@@ -313,6 +313,22 @@ func (s *Server) handleCosts(w http.ResponseWriter, r *http.Request) {
 			_ = s.database.SyncCosts(p.ID)
 		}
 	}
+	// The report view filters and totals these itself, across one project or all of them.
+	projectNames, episodeNames := map[string]string{}, map[string]string{}
+	for _, p := range projects {
+		projectNames[p.ID] = p.Name
+		list := s.seriesEpisodes(p.ID)
+		for _, e := range list {
+			episodeNames[e.ScriptID] = e.Title
+			if len(list) > 1 {
+				episodeNames[e.ScriptID] = fmt.Sprintf("Episode %d: %s", e.Number, e.Title)
+			}
+		}
+	}
+	out["project_id"], out["project_names"], out["episode_names"], out["generated_at"] = project, projectNames, episodeNames, time.Now().UTC()
+	if everything, e := s.database.ListCosts(""); e == nil {
+		out["all_items"] = everything
+	}
 	if totals, e := s.database.CostTotals(); e == nil {
 		all, sum := []costGroup{}, 0.0
 		for _, p := range projects {
