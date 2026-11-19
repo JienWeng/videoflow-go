@@ -226,6 +226,12 @@ func (s *Server) generateAssets(ctx context.Context, projectID *string, characte
 			return nil, err
 		}
 		metadata, _ := json.Marshal(map[string]any{"scene_id": sceneID, "provider": provider, "model": model, "media_type": image.MediaType, "fallback_reason": fallbackReason, "scene_input_revision": sceneRevision, "creative_preset": presets.From(ctx)})
+		if len(image.Usage) > 0 && string(image.Usage) != "null" {
+			var fields map[string]any
+			_ = json.Unmarshal(metadata, &fields)
+			fields["usage"] = image.Usage
+			metadata, _ = json.Marshal(fields)
+		}
 		if frozenIdentity != nil {
 			var fields map[string]any
 			_ = json.Unmarshal(metadata, &fields)
@@ -244,6 +250,9 @@ func (s *Server) generateAssets(ctx context.Context, projectID *string, characte
 			return nil, err
 		}
 		assets = append(assets, asset)
+	}
+	if projectID != nil {
+		_ = s.database.SyncCosts(*projectID)
 	}
 	return assets, nil
 }

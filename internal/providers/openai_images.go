@@ -91,6 +91,7 @@ func (c *OpenAIImages) GenerateImages(ctx context.Context, payload map[string]an
 		Data []struct {
 			Image string `json:"b64_json"`
 		} `json:"data"`
+		Usage json.RawMessage `json:"usage"`
 	}
 	if json.Unmarshal(response, &result) != nil || len(result.Data) != 1 {
 		return nil, fmt.Errorf("OpenAI did not return one image")
@@ -99,7 +100,7 @@ func (c *OpenAIImages) GenerateImages(ctx context.Context, payload map[string]an
 	if err != nil || http.DetectContentType(image) != "image/png" {
 		return nil, fmt.Errorf("OpenAI returned invalid PNG data")
 	}
-	return []GeneratedImage{{Data: image, MediaType: "image/png"}}, nil
+	return []GeneratedImage{{Data: image, MediaType: "image/png", Usage: result.Usage}}, nil
 }
 
 func (c *OpenAIImages) edit(ctx context.Context, fields map[string]string, refs []map[string]any) ([]byte, error) {

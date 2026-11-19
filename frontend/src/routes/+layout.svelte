@@ -7,7 +7,7 @@
   import { Button } from '$lib/components/ui/button';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
   import * as Dialog from '$lib/components/ui/dialog';
-  import { Menu, Search, PanelLeftClose, PanelLeftOpen, Ellipsis, Compass } from '@lucide/svelte';
+  import { Menu, Search, PanelLeftClose, PanelLeftOpen, Ellipsis, Compass, Receipt } from '@lucide/svelte';
   import GuidePanel from '$lib/shell/GuidePanel.svelte';
   import Tour from '$lib/shell/Tour.svelte';
   import { guide } from '$lib/shell/guide.svelte';
@@ -61,7 +61,7 @@
 
   let navigationOpen = $state(false);
   afterNavigate(() => { navigationOpen = false;storyCreation.open=false; });
-  const navGroups = [{label:'Workspace',items:[{href:'/',label:'Studio',icon:Clapperboard},{href:'/library',label:'Library',icon:FolderOpen},{href:'/render',label:'Videos',icon:Film}]}];
+  const navGroups = [{label:'Workspace',items:[{href:'/',label:'Studio',icon:Clapperboard},{href:'/library',label:'Library',icon:FolderOpen},{href:'/render',label:'Videos',icon:Film},{href:'/costs',label:'Costs',icon:Receipt}]}];
   // The editor is contextual (reached from a render output), so it highlights Render.
   function isActive(href: string, pathname: string): boolean {
     if (href === '/') return pathname === '/' || pathname === '/director';

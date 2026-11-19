@@ -4,7 +4,8 @@
  import StyleReference from '$lib/brief/StyleReference.svelte';
  import * as Dialog from '$lib/components/ui/dialog';
  import Paperclip from '@lucide/svelte/icons/paperclip';
- import ClipCard from './ClipCard.svelte';
+ import FinishCost from '$lib/costs/FinishCost.svelte';
+  import ClipCard from './ClipCard.svelte';
  import {upload as apiUpload} from '$lib/api';
  // Auto: the assistant carries out free planning steps itself. Manual: every step waits for a click.
  // Full auto: after one confirmation the app also renders, edits and exports the video.
@@ -1004,7 +1005,7 @@
               <Button size="sm" variant="outline" class="self-start rounded-full px-4" href={mediaUrl(m.video)??''} download>Download video</Button>
             {/if}
             {#if !editing && m.intent?.action === 'finish_video' && m.intent.script_id && !m.dismissed}
-              <div class="mt-2 flex flex-wrap items-center gap-2"><Button size="sm" class="rounded-full px-4" onclick={()=>{m.dismissed=true;void startAutopilot(m.intent.script_id)}}>Finish the video for me</Button><span class="text-xs text-muted-foreground">Makes every missing scene video, joins them with captions and exports. Uses video credits.</span></div>
+              <div class="mt-2 flex flex-wrap items-center gap-2"><Button size="sm" class="rounded-full px-4" onclick={()=>{m.dismissed=true;void startAutopilot(m.intent.script_id)}}>Finish the video for me</Button><FinishCost scriptId={m.intent.script_id} /><span class="text-xs text-muted-foreground">Makes every missing scene video, joins them with captions and exports. Uses video credits.</span></div>
             {:else if !editing && m.intent?.action === 'make_clip' && m.intent.clip && !m.dismissed}
               <ClipCard clip={m.intent.clip} onjob={id=>m.intent={...m.intent,clip:{...m.intent.clip,job_id:id}}} ondismiss={()=>m.dismissed=true} />
             {:else if !editing && m.intent && m.intent.action !== 'unknown' && !m.dismissed}

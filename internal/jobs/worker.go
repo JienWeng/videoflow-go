@@ -144,6 +144,9 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 			return err
 		}
 		w.broker.Publish(map[string]any{"type": "job_updated", "job_id": job.ID, "status": status, "stage": stage, "progress": progress, "project_id": job.ProjectID})
+		if status == "succeeded" && job.ProjectID != nil {
+			_ = w.database.SyncCosts(*job.ProjectID)
+		}
 		return nil
 	}
 	defer func() {

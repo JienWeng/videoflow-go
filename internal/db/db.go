@@ -58,6 +58,9 @@ func Open(databasePath string) (*DB, error) {
 	if err := d.ensureMediaProviders(); err != nil {
 		return nil, err
 	}
+	if err := d.ensureCosts(); err != nil {
+		return nil, err
+	}
 	if err := d.ensureRequestReplay(); err != nil {
 		return nil, err
 	}
@@ -693,6 +696,7 @@ func (d *DB) UpdateScene(s *models.Scene) error {
 }
 
 func (d *DB) DeleteScene(id string) error {
+	d.syncCostsFor("scenes", id)
 	_, err := d.conn.Exec("DELETE FROM scenes WHERE id = ?", id)
 	return err
 }
@@ -963,6 +967,7 @@ func (d *DB) UpdateAsset(a *models.Asset) error {
 }
 
 func (d *DB) DeleteAsset(id string) error {
+	d.syncCostsFor("assets", id)
 	_, err := d.conn.Exec("DELETE FROM assets WHERE id = ?", id)
 	return err
 }

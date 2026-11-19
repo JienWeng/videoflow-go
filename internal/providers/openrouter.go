@@ -182,10 +182,21 @@ func contains[T comparable](values []T, value T) bool {
 }
 
 func (c *OpenRouterClient) chat(ctx context.Context, model, system string, content any) (string, error) {
-	payload := map[string]any{"model": model, "messages": []map[string]any{{"role": "system", "content": system}, {"role": "user", "content": content}}}
+	payload := map[string]any{"model": model, "usage": map[string]any{"include": true}, "messages": []map[string]any{{"role": "system", "content": system}, {"role": "user", "content": content}}}
 	data, err := c.request(ctx, "POST", "/chat/completions", payload)
 	if err != nil {
 		return "", err
+	}
+	if OnTextCost != nil {
+		var billed struct {
+			Usage struct {
+				Cost   float64 `json:"cost"`
+				Tokens float64 `json:"total_tokens"`
+			} `json:"usage"`
+		}
+		if json.Unmarshal(data, &billed) == nil && billed.Usage.Tokens > 0 {
+			OnTextCost(model, billed.Usage.Tokens, billed.Usage.Cost)
+		}
 	}
 	var res struct {
 		Choices []struct {
@@ -246,9 +257,13 @@ func (c *OpenRouterClient) StructuredVision(ctx context.Context, model, system, 
 	return fmt.Errorf("OpenRouter model %s returned invalid JSON after two attempts: %v", model, last)
 }
 
+// OnTextCost receives what OpenRouter says each text call cost. Set once at startup.
+var OnTextCost func(model string, tokens, dollars float64)
+
 type GeneratedImage struct {
 	Data      []byte
 	MediaType string
+	Usage     json.RawMessage // units the service says it billed, when it reports them
 }
 
 func (c *OpenRouterClient) GenerateImages(ctx context.Context, payload map[string]any) ([]GeneratedImage, error) {
