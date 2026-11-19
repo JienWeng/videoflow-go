@@ -144,6 +144,9 @@ var runwayRatios = map[string]map[string]string{
 	"1080p": {"21:9": "2206:946", "16:9": "1920:1080", "4:3": "1664:1248", "1:1": "1440:1440", "3:4": "1248:1664", "9:16": "1080:1920"},
 }
 
+// runwayRatioFor holds the sizes a model takes in place of the ones above.
+var runwayRatioFor = map[string]map[string]string{"seedance2_5": {"864:496": "854:480", "496:864": "480:854"}}
+
 func (c *HostClient) CreateVideo(ctx context.Context, p map[string]any) (string, error) {
 	if err := c.ValidateVideo(ctx, p); err != nil {
 		return "", err
@@ -207,6 +210,9 @@ func (c *HostClient) CreateVideo(ctx context.Context, p map[string]any) (string,
 			aspect = "16:9"
 		}
 		ratio := runwayRatios[resolution][aspect]
+		if own := runwayRatioFor[model][ratio]; own != "" {
+			ratio = own
+		}
 		if ratio == "" {
 			return "", fmt.Errorf("Runway does not offer %s at %s", aspect, resolution)
 		}

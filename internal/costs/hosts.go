@@ -1,6 +1,7 @@
 package costs
 
 import (
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,7 +16,10 @@ type Family struct {
 	Label string `json:"label"`
 }
 
-var Families = []Family{{"seedance-2.0", "Seedance 2.0"}, {"seedance-2.0-fast", "Seedance 2.0 Fast"}}
+var Families = []Family{
+	{"seedance-2.0", "Seedance 2.0"}, {"seedance-2.0-fast", "Seedance 2.0 Fast"}, {"seedance-2.0-mini", "Seedance 2.0 Mini"},
+	{"seedance-2.5", "Seedance 2.5"}, {"seedance-2.5-flash", "Seedance 2.5 Flash"},
+}
 
 // Host is one service that sells video generation.
 type Host struct {
@@ -39,32 +43,41 @@ type Host struct {
 // comparison supplied by the user where a page gave no per-second figure.
 var Hosts = []Host{
 	{Name: "argolink", Label: "ArgoLink", URL: "https://argolink.io/v1", EnvKey: "ARGOLINK_API_KEY", Frames: true, Checked: "argolink.io model page",
-		Models:    map[string]string{"seedance-2.0": "seedance-2.0", "seedance-2.0-fast": "seedance-2.0-fast"},
-		PerSecond: map[string]map[string]float64{"seedance-2.0": {"480p": 0.0598, "720p": 0.129, "1080p": 0.318}, "seedance-2.0-fast": {"480p": 0.0478, "720p": 0.103}}},
+		Models: map[string]string{"seedance-2.0": "seedance-2.0", "seedance-2.0-fast": "seedance-2.0-fast", "seedance-2.0-mini": "seedance-2.0-mini", "seedance-2.5": "seedance-2.5", "seedance-2.5-flash": "seedance-2.5-flash"},
+		PerSecond: map[string]map[string]float64{"seedance-2.0": {"480p": 0.0598, "720p": 0.129, "1080p": 0.318}, "seedance-2.0-fast": {"480p": 0.0478, "720p": 0.103},
+			"seedance-2.0-mini": {"480p": 0.0299, "720p": 0.0643}, "seedance-2.5": {"480p": 0.0874, "720p": 0.196, "1080p": 0.483}, "seedance-2.5-flash": {"480p": 0.0572, "720p": 0.129}}},
 	{Name: "loopling", Label: "Loopling", URL: "https://loopling.ai/v1", EnvKey: "LOOPLING_API_KEY", Frames: false, Checked: "loopling.ai pricing",
-		Models:    map[string]string{"seedance-2.0": "seedance-2.0", "seedance-2.0-fast": "seedance-2.0-fast"},
-		PerSecond: map[string]map[string]float64{"seedance-2.0": {"480p": 0.0604, "720p": 0.13, "1080p": 0.3218}, "seedance-2.0-fast": {"480p": 0.0483, "720p": 0.104}}},
+		Models: map[string]string{"seedance-2.0": "seedance-2.0", "seedance-2.0-fast": "seedance-2.0-fast", "seedance-2.5": "seedance-2.5"},
+		PerSecond: map[string]map[string]float64{"seedance-2.0": {"480p": 0.0604, "720p": 0.13, "1080p": 0.3218}, "seedance-2.0-fast": {"480p": 0.0483, "720p": 0.104},
+			"seedance-2.5": {"480p": 0.0884, "720p": 0.1987, "1080p": 0.489}}},
 	{Name: "byteplus", Label: "BytePlus (official)", URL: "https://ark.ap-southeast.bytepluses.com/api/v3", EnvKey: "BYTEPLUS_API_KEY", Frames: true, Checked: "official token rate, as passed through by OpenRouter",
 		Models:    map[string]string{"seedance-2.0": "dreamina-seedance-2-0-260128", "seedance-2.0-fast": "dreamina-seedance-2-0-fast-260128"},
 		TokenRate: map[string]float64{"seedance-2.0": 0.007, "seedance-2.0-fast": 0.0056}},
 	{Name: "openrouter", Label: "OpenRouter", URL: "https://openrouter.ai/api/v1", EnvKey: "OPENROUTER_API_KEY", Frames: true, Checked: "openrouter.ai live price feed",
-		Models:    map[string]string{"seedance-2.0": "bytedance/seedance-2.0", "seedance-2.0-fast": "bytedance/seedance-2.0-fast"},
-		TokenRate: map[string]float64{"seedance-2.0": 0.007, "seedance-2.0-fast": 0.0056}},
+		Models: map[string]string{"seedance-2.0": "bytedance/seedance-2.0", "seedance-2.0-fast": "bytedance/seedance-2.0-fast", "seedance-2.0-mini": "bytedance/seedance-2.0-mini",
+			"seedance-2.5": "bytedance/seedance-2.5", "seedance-2.5-flash": "bytedance/seedance-2.5-flash"},
+		TokenRate: map[string]float64{"seedance-2.0": 0.007, "seedance-2.0-fast": 0.0056, "seedance-2.0-mini": 0.0035, "seedance-2.5": 0.0107, "seedance-2.5-flash": 0.007}},
 	{Name: "replicate", Label: "Replicate", URL: "https://api.replicate.com/v1", EnvKey: "REPLICATE_API_TOKEN", Frames: true, Checked: "replicate.com model page",
-		Models:    map[string]string{"seedance-2.0": "bytedance/seedance-2.0", "seedance-2.0-fast": "bytedance/seedance-2.0-fast"},
-		PerSecond: map[string]map[string]float64{"seedance-2.0": {"480p": 0.08, "720p": 0.18, "1080p": 0.45}, "seedance-2.0-fast": {"480p": 0.07}}},
+		Models: map[string]string{"seedance-2.0": "bytedance/seedance-2.0", "seedance-2.0-fast": "bytedance/seedance-2.0-fast", "seedance-2.0-mini": "bytedance/seedance-2.0-mini", "seedance-2.5": "bytedance/seedance-2.5"},
+		PerSecond: map[string]map[string]float64{"seedance-2.0": {"480p": 0.08, "720p": 0.18, "1080p": 0.45}, "seedance-2.0-fast": {"480p": 0.07},
+			"seedance-2.0-mini": {"480p": 0.04, "720p": 0.09}, "seedance-2.5": {"480p": 0.1028, "720p": 0.2312}}},
 	{Name: "kie", Label: "Kie.ai", URL: "https://api.kie.ai/api", EnvKey: "KIE_API_KEY", Frames: true, Checked: "kie.ai model page",
-		Models:    map[string]string{"seedance-2.0": "bytedance/seedance-2", "seedance-2.0-fast": "bytedance/seedance-2-fast"},
-		PerSecond: map[string]map[string]float64{"seedance-2.0": {"480p": 0.095, "720p": 0.205, "1080p": 0.51}, "seedance-2.0-fast": {"480p": 0.059, "720p": 0.124}}},
+		Models: map[string]string{"seedance-2.0": "bytedance/seedance-2", "seedance-2.0-fast": "bytedance/seedance-2-fast", "seedance-2.0-mini": "bytedance/seedance-2-mini",
+			"seedance-2.5": "bytedance/seedance-2-5", "seedance-2.5-flash": "bytedance/seedance-2-5-flash"},
+		PerSecond: map[string]map[string]float64{"seedance-2.0": {"480p": 0.095, "720p": 0.205, "1080p": 0.51}, "seedance-2.0-fast": {"480p": 0.059, "720p": 0.124},
+			"seedance-2.0-mini": {"480p": 0.019, "720p": 0.041}, "seedance-2.5": {"480p": 0.14, "720p": 0.315, "1080p": 0.79}, "seedance-2.5-flash": {"480p": 0.0925, "720p": 0.205}}},
 	{Name: "wavespeed", Label: "WaveSpeed", URL: "https://api.wavespeed.ai/api/v3", EnvKey: "WAVESPEED_API_KEY", Frames: true, Checked: "wavespeed.ai model page",
-		Models:    map[string]string{"seedance-2.0": "bytedance/seedance-2.0", "seedance-2.0-fast": "bytedance/seedance-2.0-fast"},
-		PerSecond: map[string]map[string]float64{"seedance-2.0": {"480p": 0.108, "720p": 0.216, "1080p": 0.54}, "seedance-2.0-fast": {"480p": 0.09, "720p": 0.18}}},
+		Models: map[string]string{"seedance-2.0": "bytedance/seedance-2.0", "seedance-2.0-fast": "bytedance/seedance-2.0-fast", "seedance-2.0-mini": "bytedance/seedance-2.0-mini", "seedance-2.5": "bytedance/seedance-2.5"},
+		PerSecond: map[string]map[string]float64{"seedance-2.0": {"480p": 0.108, "720p": 0.216, "1080p": 0.54}, "seedance-2.0-fast": {"480p": 0.09, "720p": 0.18},
+			"seedance-2.0-mini": {"480p": 0.054, "720p": 0.108, "1080p": 0.27}, "seedance-2.5": {"480p": 0.162, "720p": 0.324, "1080p": 0.81}}},
 	{Name: "runway", Label: "Runway API", URL: "https://api.dev.runwayml.com/v1", EnvKey: "RUNWAYML_API_SECRET", Frames: true, Checked: "dev.runwayml.com pricing",
-		Models:    map[string]string{"seedance-2.0": "seedance2", "seedance-2.0-fast": "seedance2_fast"},
-		PerSecond: map[string]map[string]float64{"seedance-2.0": {"480p": 0.14, "720p": 0.30, "1080p": 0.40}, "seedance-2.0-fast": {"480p": 0.11, "720p": 0.24}}},
+		Models: map[string]string{"seedance-2.0": "seedance2", "seedance-2.0-fast": "seedance2_fast", "seedance-2.0-mini": "seedance2_mini", "seedance-2.5": "seedance2_5"},
+		PerSecond: map[string]map[string]float64{"seedance-2.0": {"480p": 0.14, "720p": 0.30, "1080p": 0.40}, "seedance-2.0-fast": {"480p": 0.11, "720p": 0.24},
+			"seedance-2.0-mini": {"480p": 0.07, "720p": 0.15}, "seedance-2.5": {"480p": 0.20, "720p": 0.30, "1080p": 0.68}}},
 	{Name: "fal", Label: "fal.ai", URL: "https://queue.fal.run", EnvKey: "FAL_KEY", Frames: true, Checked: "fal.ai price list",
-		Models:    map[string]string{"seedance-2.0": "bytedance/seedance-2.0/image-to-video", "seedance-2.0-fast": "bytedance/seedance-2.0/fast/image-to-video"},
-		TokenRate: map[string]float64{"seedance-2.0": 0.014, "seedance-2.0-fast": 0.0112}},
+		Models: map[string]string{"seedance-2.0": "bytedance/seedance-2.0/image-to-video", "seedance-2.0-fast": "bytedance/seedance-2.0/fast/image-to-video",
+			"seedance-2.0-mini": "bytedance/seedance-2.0/mini/image-to-video", "seedance-2.5": "bytedance/seedance-2.5/image-to-video"},
+		TokenRate: map[string]float64{"seedance-2.0": 0.014, "seedance-2.0-fast": 0.0112, "seedance-2.0-mini": 0.007, "seedance-2.5": 0.0214}},
 }
 
 func HostByName(name string) *Host {
@@ -87,11 +100,14 @@ func FamilyOf(provider, model string) string {
 			return family
 		}
 	}
-	if provider == "fal" && strings.Contains(model, "seedance-2.0") {
-		if strings.Contains(model, "/fast/") {
-			return "seedance-2.0-fast"
+	// fal names one endpoint per kind of input under a model's path, such as
+	// bytedance/seedance-2.0/fast/text-to-video beside .../fast/image-to-video.
+	if provider == "fal" {
+		for family, id := range h.Models {
+			if path.Dir(id) == path.Dir(model) {
+				return family
+			}
 		}
-		return "seedance-2.0"
 	}
 	return ""
 }

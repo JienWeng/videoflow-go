@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,10 +39,13 @@ var (
 	spacePattern  = regexp.MustCompile(`\s+`)
 	argoPattern   = regexp.MustCompile(`(480p|720p|1080p) \$([0-9.]+) / second`)
 	runwayPattern = regexp.MustCompile(`(480p|720p|1080p) [0-9.]+ credits per second \$([0-9.]+) per second`)
-	kiePattern    = regexp.MustCompile(`Seedance 2\.0 costs [0-9.]+ credits \(\$([0-9.]+)\) per second at 480p, [0-9.]+ credits \(\$([0-9.]+)\) at 720p(?:, [0-9.]+ credits \(\$([0-9.]+)\) at 1080p)?`)
-	kieFast       = regexp.MustCompile(`Seedance 2\.0 Fast costs [0-9.]+ credits \(\$([0-9.]+)\) per second at 480p and [0-9.]+ credits \(\$([0-9.]+)\) at 720p`)
-	wavePerSecond = regexp.MustCompile(`(?m)^\| *(480p|720p|1080p) *\| *(?:~~\$[0-9.]+~~ *)?\$([0-9.]+) *\|\s*$`)
-	wavePerFive   = regexp.MustCompile(`(?m)^\| *(480p|720p|1080p) *\| *5 s *\| *(?:~~\$[0-9.]+~~ *)?\$([0-9.]+) *\|`)
+	// Kie states a price as "41 credits ($0.205) at 720p" in a sentence, or in a card as
+	// "720P: 5.0 credits/s ($0.025/s, with video) | 8.2 credits/s ($0.041/s, no video)",
+	// matched against lower-cased text.
+	kieSentence   = regexp.MustCompile(`[0-9.]+ credits \(\$([0-9.]+)\)(?: per second)? at (480p|720p|1080p)`)
+	kieCard       = regexp.MustCompile(`(480p|720p|1080p)\W+[0-9.]+ credits/s \(\$[0-9.]+/s, with video\) \| [0-9.]+ credits/s \(\$([0-9.]+)/s, no video\)`)
+	cellPrice     = regexp.MustCompile(`\$([0-9.]+)\s*$`)
+	fiveSeconds   = regexp.MustCompile(`(^|[^0-9])5 s\b`)
 	replicateTier = regexp.MustCompile(`"value": "non_video_in"\}, \{[^}]*"value": "(480p|720p|1080p)"\}\][^\[]*"prices": \[\{[^}]*"price": "\$([0-9.]+)"`)
 )
 
@@ -64,6 +69,55 @@ func firstPerResolution(pattern *regexp.Regexp, text, family string, divide floa
 	return out
 }
 
+// waveRates reads WaveSpeed's price tables, whose layout differs from model to model. A
+// row's price comes from the column headed "per second"; failing that, a 5-second price
+// is divided by five. A price cell may show the struck-out list price before the real one.
+func waveRates(body, family string) map[string]float64 {
+	perSecond, perFive := map[string]float64{}, map[string]float64{}
+	var header []string
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "|") {
+			header = nil
+			continue
+		}
+		cells := strings.Split(strings.Trim(line, "|"), "|")
+		for j := range cells {
+			cells[j] = strings.TrimSpace(cells[j])
+		}
+		if i+1 < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[i+1]), "|--") {
+			header = cells
+			continue
+		}
+		resolution := strings.ToLower(cells[0])
+		if resolution != "480p" && resolution != "720p" && resolution != "1080p" {
+			continue
+		}
+		perRow := slices.Contains(cells, "5 s") // a "Duration" column says which clip length the row prices
+		for j := 1; j < len(cells) && j < len(header); j++ {
+			m := cellPrice.FindStringSubmatch(cells[j])
+			if m == nil {
+				continue
+			}
+			price, err := strconv.ParseFloat(m[1], 64)
+			if err != nil {
+				continue
+			}
+			label, key := strings.ToLower(header[j]), family+":"+resolution
+			if _, seen := perSecond[key]; !seen && strings.Contains(label, "per second") {
+				perSecond[key] = price
+			} else if _, seen := perFive[key]; !seen && !strings.Contains(label, "per second") && (fiveSeconds.MatchString(label) || perRow) {
+				perFive[key] = price / 5
+			}
+		}
+	}
+	if len(perSecond) > 0 {
+		return perSecond
+	}
+	return perFive
+}
+
 func sectionAfter(text, start, end string) string {
 	i := strings.Index(text, start)
 	if i < 0 {
@@ -83,11 +137,34 @@ func defaultPriceSources() []priceSource {
 		}
 	}
 	wave := func(family string) func(string) map[string]float64 {
+		return func(body string) map[string]float64 { return waveRates(body, family) }
+	}
+	runway := func(sections map[string]string) func(string) map[string]float64 {
 		return func(body string) map[string]float64 {
-			if out := firstPerResolution(wavePerSecond, body, family, 1); len(out) > 0 {
-				return out
+			text, out := pageText(body), map[string]float64{}
+			for family, start := range sections {
+				maps.Copy(out, firstPerResolution(runwayPattern, sectionAfter(text, start, "Minimum"), family, 1))
 			}
-			return firstPerResolution(wavePerFive, body, family, 5)
+			return out
+		}
+	}
+	// kie reads the sentence that follows start, up to end, for each family.
+	kie := func(sections map[string][2]string) func(string) map[string]float64 {
+		return func(body string) map[string]float64 {
+			text, out := pageText(body), map[string]float64{}
+			for family, bounds := range sections {
+				for _, m := range kieSentence.FindAllStringSubmatch(sectionAfter(text, bounds[0], bounds[1]), -1) {
+					if price, err := strconv.ParseFloat(m[1], 64); err == nil {
+						out[family+":"+m[2]] = price
+					}
+				}
+			}
+			return out
+		}
+	}
+	kieCardRates := func(family string) func(string) map[string]float64 {
+		return func(body string) map[string]float64 {
+			return firstPerResolution(kieCard, strings.ToLower(pageText(body)), family, 1)
 		}
 	}
 	replicate := func(family string) func(string) map[string]float64 {
@@ -142,33 +219,25 @@ func defaultPriceSources() []priceSource {
 		}},
 		{Providers: []string{"argolink"}, URL: "https://argolink.io/en/models/seedance-2.0", Parse: argo("seedance-2.0")},
 		{Providers: []string{"argolink"}, URL: "https://argolink.io/en/models/seedance-2.0-fast", Parse: argo("seedance-2.0-fast")},
+		{Providers: []string{"argolink"}, URL: "https://argolink.io/en/models/seedance-2.0-mini", Parse: argo("seedance-2.0-mini")},
+		{Providers: []string{"argolink"}, URL: "https://argolink.io/en/models/seedance-2.5", Parse: argo("seedance-2.5")},
+		{Providers: []string{"argolink"}, URL: "https://argolink.io/en/models/seedance-2.5-flash", Parse: argo("seedance-2.5-flash")},
 		{Providers: []string{"wavespeed"}, URL: "https://wavespeed.ai/models/bytedance/seedance-2.0/image-to-video/llms.txt", Parse: wave("seedance-2.0")},
 		{Providers: []string{"wavespeed"}, URL: "https://wavespeed.ai/models/bytedance/seedance-2.0-fast/image-to-video/llms.txt", Parse: wave("seedance-2.0-fast")},
+		{Providers: []string{"wavespeed"}, URL: "https://wavespeed.ai/models/bytedance/seedance-2.0-mini/image-to-video/llms.txt", Parse: wave("seedance-2.0-mini")},
+		{Providers: []string{"wavespeed"}, URL: "https://wavespeed.ai/models/bytedance/seedance-2.5/image-to-video/llms.txt", Parse: wave("seedance-2.5")},
 		{Providers: []string{"replicate"}, URL: "https://replicate.com/bytedance/seedance-2.0", Parse: replicate("seedance-2.0")},
 		{Providers: []string{"replicate"}, URL: "https://replicate.com/bytedance/seedance-2.0-fast", Parse: replicate("seedance-2.0-fast")},
-		{Providers: []string{"runway"}, URL: "https://dev.runwayml.com/learn/seedance-2-0-api", Parse: func(body string) map[string]float64 {
-			text := pageText(body)
-			out := firstPerResolution(runwayPattern, sectionAfter(text, "Seedance 2.0 Resolution Credits USD", "Minimum"), "seedance-2.0", 1)
-			for key, price := range firstPerResolution(runwayPattern, sectionAfter(text, "Seedance 2.0 Fast Resolution Credits USD", "Minimum"), "seedance-2.0-fast", 1) {
-				out[key] = price
-			}
-			return out
-		}},
-		{Providers: []string{"kie"}, URL: "https://kie.ai/seedance-2-0", Parse: func(body string) map[string]float64 {
-			text, out := pageText(body), map[string]float64{}
-			put := func(family string, m []string) {
-				for i, resolution := range []string{"480p", "720p", "1080p"} {
-					if i+1 < len(m) && m[i+1] != "" {
-						if price, err := strconv.ParseFloat(m[i+1], 64); err == nil {
-							out[family+":"+resolution] = price
-						}
-					}
-				}
-			}
-			put("seedance-2.0", kiePattern.FindStringSubmatch(text))
-			put("seedance-2.0-fast", kieFast.FindStringSubmatch(text))
-			return out
-		}},
+		{Providers: []string{"replicate"}, URL: "https://replicate.com/bytedance/seedance-2.0-mini", Parse: replicate("seedance-2.0-mini")},
+		{Providers: []string{"replicate"}, URL: "https://replicate.com/bytedance/seedance-2.5", Parse: replicate("seedance-2.5")},
+		{Providers: []string{"runway"}, URL: "https://dev.runwayml.com/learn/seedance-2-0-api", Parse: runway(map[string]string{
+			"seedance-2.0": "Seedance 2.0 Resolution Credits USD", "seedance-2.0-fast": "Seedance 2.0 Fast Resolution Credits USD", "seedance-2.0-mini": "Seedance 2.0 Mini Resolution Credits USD"})},
+		{Providers: []string{"runway"}, URL: "https://dev.runwayml.com/learn/seedance-2-5-api", Parse: runway(map[string]string{"seedance-2.5": "Resolution Credits USD"})},
+		{Providers: []string{"kie"}, URL: "https://kie.ai/seedance-2-0", Parse: kie(map[string][2]string{
+			"seedance-2.0": {"Seedance 2.0 costs", "Seedance 2.0 Fast costs"}, "seedance-2.0-fast": {"Seedance 2.0 Fast costs", "With video input"}})},
+		{Providers: []string{"kie"}, URL: "https://kie.ai/seedance-2-5", Parse: kie(map[string][2]string{"seedance-2.5": {"Without a reference video, it costs", "With reference videos"}})},
+		{Providers: []string{"kie"}, URL: "https://kie.ai/seedance-2-0-mini", Parse: kieCardRates("seedance-2.0-mini")},
+		{Providers: []string{"kie"}, URL: "https://kie.ai/seedance-2-5-flash", Parse: kieCardRates("seedance-2.5-flash")},
 	}
 }
 

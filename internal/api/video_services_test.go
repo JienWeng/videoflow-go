@@ -38,6 +38,10 @@ func TestCheapestRoutingPicksLowestPricedConnectedService(t *testing.T) {
 			t.Fatalf("nothing is connected yet, but %s is usable", r.Provider)
 		}
 	}
+	// Only the services that list a model are shown for it.
+	if rows, _, _ := read(call(t, s, "GET", "/video-services?model=seedance-2.5-flash&resolution=720p", "").Body.Bytes()); len(rows) != 3 || rows[0].Provider != "argolink" || rows[2].Provider != "kie" {
+		t.Fatalf("2.5 Flash list = %v", rows)
+	}
 	// Connect two services; the cheaper of them must win, not the cheapest overall.
 	for _, name := range []string{"runway", "kie"} {
 		if w := call(t, s, "PUT", "/settings/providers/"+name, `{"api_key":"k-`+name+`"}`); w.Code != 200 {

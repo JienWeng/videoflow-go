@@ -121,6 +121,8 @@ func mediaCatalog(provider, modality string) []Model {
 		add(FalVideoModel, "video", true)
 		add("bytedance/seedance-2.0/image-to-video", "video", true)
 		add("bytedance/seedance-2.0/fast/text-to-video", "video", false)
+		add("bytedance/seedance-2.0/mini/image-to-video", "video", true)
+		add("bytedance/seedance-2.5/image-to-video", "video", true)
 		add(FalNativeVoiceModel, "video", false)
 	case "byteplus":
 		add(BytePlusVideoModel, "video", true)

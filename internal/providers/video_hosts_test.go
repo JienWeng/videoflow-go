@@ -137,3 +137,25 @@ func TestVideoHostReportsRefusalsAndFailures(t *testing.T) {
 		t.Fatalf("loopling with a picture: %v", err)
 	}
 }
+
+// Runway's Seedance 2.5 takes 854:480 at 480p where the 2.0 models take 864:496.
+func TestRunwaySendsEachModelsOwnFrameSize(t *testing.T) {
+	sent := map[string]any{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		sent[body["model"].(string)] = body["ratio"]
+		_, _ = w.Write([]byte(`{"id":"job1"}`))
+	}))
+	defer server.Close()
+	client := NewHostClient("runway", "secret", server.URL)
+	for _, family := range []string{"seedance-2.0", "seedance-2.5"} {
+		model := costs.HostByName("runway").Models[family]
+		if _, err := client.CreateVideo(context.Background(), map[string]any{"model": model, "prompt": "A cat walks", "duration": 5, "resolution": "480p", "aspect_ratio": "16:9"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if sent["seedance2"] != "864:496" || sent["seedance2_5"] != "854:480" {
+		t.Fatalf("ratios sent = %v", sent)
+	}
+}
