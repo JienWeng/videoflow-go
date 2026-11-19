@@ -85,6 +85,9 @@ func validateProduction(p productionSettings) error {
 	return nil
 }
 func (s *Server) productionVideoModel(ctx context.Context) (string, *providers.Model, error) {
+	if s.routes().Setting("video_routing", "manual") == "cheapest" {
+		s.refreshVideoPrices(ctx, false)
+	}
 	provider, model := s.routes().MediaSelection("video")
 	// These are the same documented capabilities used by the existing adapter.
 	if (provider == "fal" && (model == providers.FalVideoModel || model == "bytedance/seedance-2.0/fast/text-to-video")) || (provider == "byteplus" && model == providers.BytePlusVideoModel) {

@@ -16,14 +16,14 @@ func TestVideoUsesSeedanceTokenPrice(t *testing.T) {
 	if small <= 0 || small >= got/4 {
 		t.Fatalf("4 s of 480p = %v, want well under a quarter of %v", small, got)
 	}
-	live, _ := Video("fal", "bytedance/seedance-2.0/fast/image-to-video", "720p", "16:9", 10, &LivePrice{UnitPrice: 0.02, Unit: "1k tokens"})
+	live, _ := Video("fal", "bytedance/seedance-2.0/fast/image-to-video", "720p", "16:9", 10, map[string]float64{"fal:seedance-2.0-fast": 0.02})
 	if live < 4.3 || live > 4.4 {
 		t.Fatalf("live token price not applied: %v", live)
 	}
 	if _, basis := Video("fal", "some/new-model", "720p", "16:9", 5, nil); basis != Unpriced {
 		t.Fatalf("unknown model should be unpriced, got %s", basis)
 	}
-	if amount, _ := Video("fal", "some/new-model", "720p", "16:9", 5, &LivePrice{UnitPrice: 0.1, Unit: "second"}); amount != 0.5 {
+	if amount, _ := Video("kie", "bytedance/seedance-2", "720p", "16:9", 5, map[string]float64{"kie:seedance-2.0:720p": 0.1}); amount != 0.5 {
 		t.Fatalf("per-second live price = %v, want 0.5", amount)
 	}
 }

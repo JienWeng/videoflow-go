@@ -65,7 +65,7 @@ func (c *HostClient) Models(_ context.Context, kind string) ([]Model, error) {
 			m.Durations = append(m.Durations, n)
 		}
 		for _, resolution := range []string{"480p", "720p", "1080p"} {
-			if _, ok := costs.HostPrice(c.host.Name, family, resolution, "16:9", 0); ok {
+			if _, ok := costs.HostPrice(c.host.Name, family, resolution, "16:9", nil); ok {
 				m.Resolutions = append(m.Resolutions, resolution)
 			}
 		}

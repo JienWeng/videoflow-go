@@ -2,6 +2,7 @@ package costs
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -39,7 +40,7 @@ type Host struct {
 var Hosts = []Host{
 	{Name: "argolink", Label: "ArgoLink", URL: "https://argolink.io/v1", EnvKey: "ARGOLINK_API_KEY", Frames: true, Checked: "argolink.io model page",
 		Models:    map[string]string{"seedance-2.0": "seedance-2.0", "seedance-2.0-fast": "seedance-2.0-fast"},
-		PerSecond: map[string]map[string]float64{"seedance-2.0": {"480p": 0.0598, "720p": 0.129, "1080p": 0.318}, "seedance-2.0-fast": {"480p": 0.042}}},
+		PerSecond: map[string]map[string]float64{"seedance-2.0": {"480p": 0.0598, "720p": 0.129, "1080p": 0.318}, "seedance-2.0-fast": {"480p": 0.0478, "720p": 0.103}}},
 	{Name: "loopling", Label: "Loopling", URL: "https://loopling.ai/v1", EnvKey: "LOOPLING_API_KEY", Frames: false, Checked: "loopling.ai pricing",
 		Models:    map[string]string{"seedance-2.0": "seedance-2.0", "seedance-2.0-fast": "seedance-2.0-fast"},
 		PerSecond: map[string]map[string]float64{"seedance-2.0": {"480p": 0.0604, "720p": 0.13, "1080p": 0.3218}, "seedance-2.0-fast": {"480p": 0.0483, "720p": 0.104}}},
@@ -49,15 +50,15 @@ var Hosts = []Host{
 	{Name: "openrouter", Label: "OpenRouter", URL: "https://openrouter.ai/api/v1", EnvKey: "OPENROUTER_API_KEY", Frames: true, Checked: "openrouter.ai live price feed",
 		Models:    map[string]string{"seedance-2.0": "bytedance/seedance-2.0", "seedance-2.0-fast": "bytedance/seedance-2.0-fast"},
 		TokenRate: map[string]float64{"seedance-2.0": 0.007, "seedance-2.0-fast": 0.0056}},
-	{Name: "replicate", Label: "Replicate", URL: "https://api.replicate.com/v1", EnvKey: "REPLICATE_API_TOKEN", Frames: true, Checked: "your comparison",
+	{Name: "replicate", Label: "Replicate", URL: "https://api.replicate.com/v1", EnvKey: "REPLICATE_API_TOKEN", Frames: true, Checked: "replicate.com model page",
 		Models:    map[string]string{"seedance-2.0": "bytedance/seedance-2.0", "seedance-2.0-fast": "bytedance/seedance-2.0-fast"},
-		PerSecond: map[string]map[string]float64{"seedance-2.0": {"720p": 0.18}}},
-	{Name: "kie", Label: "Kie.ai", URL: "https://api.kie.ai/api", EnvKey: "KIE_API_KEY", Frames: true, Checked: "your comparison",
+		PerSecond: map[string]map[string]float64{"seedance-2.0": {"480p": 0.08, "720p": 0.18, "1080p": 0.45}, "seedance-2.0-fast": {"480p": 0.07}}},
+	{Name: "kie", Label: "Kie.ai", URL: "https://api.kie.ai/api", EnvKey: "KIE_API_KEY", Frames: true, Checked: "kie.ai model page",
 		Models:    map[string]string{"seedance-2.0": "bytedance/seedance-2", "seedance-2.0-fast": "bytedance/seedance-2-fast"},
-		PerSecond: map[string]map[string]float64{"seedance-2.0": {"720p": 0.205}}},
+		PerSecond: map[string]map[string]float64{"seedance-2.0": {"480p": 0.095, "720p": 0.205, "1080p": 0.51}, "seedance-2.0-fast": {"480p": 0.059, "720p": 0.124}}},
 	{Name: "wavespeed", Label: "WaveSpeed", URL: "https://api.wavespeed.ai/api/v3", EnvKey: "WAVESPEED_API_KEY", Frames: true, Checked: "wavespeed.ai model page",
 		Models:    map[string]string{"seedance-2.0": "bytedance/seedance-2.0", "seedance-2.0-fast": "bytedance/seedance-2.0-fast"},
-		PerSecond: map[string]map[string]float64{"seedance-2.0": {"480p": 0.108, "720p": 0.216, "1080p": 0.54}}},
+		PerSecond: map[string]map[string]float64{"seedance-2.0": {"480p": 0.108, "720p": 0.216, "1080p": 0.54}, "seedance-2.0-fast": {"480p": 0.09, "720p": 0.18}}},
 	{Name: "runway", Label: "Runway API", URL: "https://api.dev.runwayml.com/v1", EnvKey: "RUNWAYML_API_SECRET", Frames: true, Checked: "dev.runwayml.com pricing",
 		Models:    map[string]string{"seedance-2.0": "seedance2", "seedance-2.0-fast": "seedance2_fast"},
 		PerSecond: map[string]map[string]float64{"seedance-2.0": {"480p": 0.14, "720p": 0.30, "1080p": 0.40}, "seedance-2.0-fast": {"480p": 0.11, "720p": 0.24}}},
@@ -98,9 +99,26 @@ func FamilyOf(provider, model string) string {
 	return ""
 }
 
+// LiveFromSettings collects the prices last read from the services themselves. Keys are
+// "provider:family" for a token rate (dollars per 1,000 tokens) and
+// "provider:family:resolution" for dollars per second.
+func LiveFromSettings(settings map[string]string) map[string]float64 {
+	live := map[string]float64{}
+	for key, raw := range settings {
+		for _, prefix := range []string{"video_rate_", "video_price_"} {
+			if name, found := strings.CutPrefix(key, prefix); found {
+				if value, err := strconv.ParseFloat(raw, 64); err == nil && value > 0 {
+					live[name] = value
+				}
+			}
+		}
+	}
+	return live
+}
+
 // HostPrice is the dollars per second a service charges for a family at a resolution.
-// override, when above zero, replaces the token rate (fal publishes its rate live).
-func HostPrice(provider, family, resolution, aspect string, override float64) (float64, bool) {
+// live holds prices read from the services themselves; they replace the built-in ones.
+func HostPrice(provider, family, resolution, aspect string, live map[string]float64) (float64, bool) {
 	h := HostByName(provider)
 	if h == nil || family == "" {
 		return 0, false
@@ -109,13 +127,16 @@ func HostPrice(provider, family, resolution, aspect string, override float64) (f
 		resolution = "720p"
 	}
 	if rate, ok := h.TokenRate[family]; ok {
-		if override > 0 {
-			rate = override
+		if fresh := live[provider+":"+family]; fresh > 0 {
+			rate = fresh
 		}
 		if _, known := seedanceSizes[resolution]; !known {
 			return 0, false
 		}
 		return seedanceTokens(resolution, aspect, 1) / 1000 * rate, true
+	}
+	if fresh := live[provider+":"+family+":"+resolution]; fresh > 0 {
+		return fresh, true
 	}
 	price, ok := h.PerSecond[family][resolution]
 	return price, ok
@@ -139,7 +160,7 @@ func Offers(family, resolution, aspect string, live map[string]float64) []Offer 
 		if !sold {
 			continue
 		}
-		price, ok := HostPrice(h.Name, family, resolution, aspect, live[h.Name+":"+family])
+		price, ok := HostPrice(h.Name, family, resolution, aspect, live)
 		if !ok {
 			continue
 		}

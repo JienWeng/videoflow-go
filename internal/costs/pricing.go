@@ -17,12 +17,6 @@ const (
 	Unpriced = "unpriced" // no known price for this service or model
 )
 
-// LivePrice is a unit price fetched from the service's own pricing API.
-type LivePrice struct {
-	UnitPrice float64 `json:"unit_price"`
-	Unit      string  `json:"unit"`
-}
-
 // Seedance prices by tokens: width × height × seconds × 24 / 1024.
 var seedanceSizes = map[string]map[string][2]int{
 	"480p":  {"16:9": {864, 480}, "9:16": {480, 864}, "1:1": {640, 640}, "4:3": {752, 560}, "3:4": {560, 752}, "21:9": {992, 432}},
@@ -42,34 +36,13 @@ func seedanceTokens(resolution, aspect string, seconds float64) float64 {
 	return float64(size[0]*size[1]) * seconds * 24 / 1024
 }
 
-// Video prices one generated clip. live may be nil.
-func Video(provider, model, resolution, aspect string, seconds float64, live *LivePrice) (amount float64, basis string) {
+// Video prices one generated clip. live holds prices read from the services themselves.
+func Video(provider, model, resolution, aspect string, seconds float64, live map[string]float64) (amount float64, basis string) {
 	if provider == "local" {
 		return 0, Included
 	}
-	if resolution == "" {
-		resolution = "720p"
-	}
-	seedance := strings.Contains(model, "seedance")
-	if live != nil && live.UnitPrice > 0 {
-		unit := strings.ToLower(live.Unit)
-		switch {
-		case strings.Contains(unit, "token") && seedance:
-			per := 1.0
-			if strings.Contains(unit, "1m") || strings.Contains(unit, "million") {
-				per = 1e6
-			} else if strings.Contains(unit, "1k") || strings.Contains(unit, "1000") || strings.Contains(unit, "thousand") {
-				per = 1e3
-			}
-			return round(seedanceTokens(resolution, aspect, seconds) / per * live.UnitPrice), Rate
-		case strings.Contains(unit, "second") && !seedance:
-			return round(seconds * live.UnitPrice), Rate
-		case unit == "video" || unit == "request" || unit == "generation":
-			return round(live.UnitPrice), Rate
-		}
-	}
 	if family := FamilyOf(provider, model); family != "" {
-		if price, ok := HostPrice(provider, family, resolution, aspect, 0); ok {
+		if price, ok := HostPrice(provider, family, resolution, aspect, live); ok {
 			return round(price * seconds), Rate
 		}
 	}

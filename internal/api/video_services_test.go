@@ -60,9 +60,9 @@ func TestCheapestRoutingPicksLowestPricedConnectedService(t *testing.T) {
 	if provider, model := s.routes().MediaSelection("video"); provider != "kie" || model != "bytedance/seedance-2" {
 		t.Fatalf("renders would use %s %s", provider, model)
 	}
-	// The fast model is not sold by Kie at a known price, so the pick moves to Runway.
+	// Changing the model re-runs the comparison for that model.
 	call(t, s, "PUT", "/video-services/routing", `{"mode":"cheapest","model":"seedance-2.0-fast"}`)
-	if provider, model := s.routes().MediaSelection("video"); provider != "runway" || model != "seedance2_fast" {
+	if provider, model := s.routes().MediaSelection("video"); provider != "kie" || model != "bytedance/seedance-2-fast" {
 		t.Fatalf("fast model would use %s %s", provider, model)
 	}
 	// Pinning one service by hand turns automatic picking off.

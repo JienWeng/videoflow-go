@@ -1,15 +1,11 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"strconv"
-	"time"
 
 	"videoflow-go/internal/costs"
-	"videoflow-go/internal/routing"
 )
 
 // Video services: the same video model is sold by many services at different prices.
@@ -28,14 +24,14 @@ type videoService struct {
 	Cheapest  bool    `json:"cheapest"`
 	InUse     bool    `json:"in_use"`
 	Note      string  `json:"note,omitempty"`
+	// CheckedAt is when the price was last read from the service itself; empty means never.
+	CheckedAt string `json:"checked_at,omitempty"`
+	Problem   string `json:"problem,omitempty"`
 }
 
 func (s *Server) videoServices(r *http.Request, family, resolution string, seconds float64) map[string]any {
 	routes := s.routes()
-	if fal := costs.HostByName("fal"); fal != nil && routes.VideoConnected("fal") {
-		s.refreshVideoPrices(r.Context(), fal.Models["seedance-2.0"], fal.Models["seedance-2.0-fast"])
-	}
-	s.refreshOpenRouterVideoPrices(r.Context())
+	s.refreshVideoPrices(r.Context(), r.URL.Query().Get("refresh") == "1")
 	settings, _ := s.database.AppSettingsSnapshot()
 	text := func(key, fallback string) string {
 		var value string
@@ -52,8 +48,9 @@ func (s *Server) videoServices(r *http.Request, family, resolution string, secon
 	}
 	provider, model := routes.MediaSelection("video")
 	list, picked := []videoService{}, false
-	for _, offer := range costs.Offers(family, resolution, "16:9", routing.LiveVideoPrices(settings)) {
+	for _, offer := range costs.Offers(family, resolution, "16:9", costs.LiveFromSettings(settings)) {
 		v := videoService{Offer: offer, Total: money(offer.PerSecond * seconds), Connected: routes.VideoConnected(offer.Provider), InUse: offer.Provider == provider && offer.Model == model}
+		v.CheckedAt, v.Problem = settings["video_checked_"+offer.Provider], settings["video_problem_"+offer.Provider]
 		switch {
 		case !offer.Frames:
 			v.Note = "Text prompts only. It cannot start a clip from your storyboard picture, so scenes cannot use it."
@@ -74,49 +71,6 @@ func (s *Server) videoServices(r *http.Request, family, resolution string, secon
 	return map[string]any{"families": costs.Families, "model": family, "resolution": resolution, "seconds": seconds, "routing": text("video_routing", "manual"), "current": current, "services": list}
 }
 
-// openRouterVideoFeed is OpenRouter's public list of video models and prices. Tests replace it.
-var openRouterVideoFeed = "https://openrouter.ai/api/v1/videos/models"
-
-// refreshOpenRouterVideoPrices reads OpenRouter's public price list at most once a day.
-func (s *Server) refreshOpenRouterVideoPrices(ctx context.Context) {
-	if at, err := s.database.GetAppSetting("video_rates_checked_openrouter"); err == nil {
-		if t, e := time.Parse(time.RFC3339, at); e == nil && time.Since(t) < 24*time.Hour {
-			return
-		}
-	}
-	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "GET", openRouterVideoFeed, nil)
-	if err != nil {
-		return
-	}
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return
-	}
-	defer res.Body.Close()
-	var feed struct {
-		Data []struct {
-			ID   string `json:"id"`
-			SKUs struct {
-				Tokens string `json:"video_tokens"`
-			} `json:"pricing_skus"`
-		} `json:"data"`
-	}
-	if res.StatusCode != 200 || json.NewDecoder(io.LimitReader(res.Body, 4<<20)).Decode(&feed) != nil {
-		return
-	}
-	host := costs.HostByName("openrouter")
-	for _, m := range feed.Data {
-		if family := costs.FamilyOf("openrouter", m.ID); family != "" && host != nil {
-			if perToken, e := strconv.ParseFloat(m.SKUs.Tokens, 64); e == nil && perToken > 0 {
-				_ = s.database.SetAppSetting("video_rate_openrouter:"+family, strconv.FormatFloat(perToken*1000, 'f', -1, 64))
-			}
-		}
-	}
-	_ = s.database.SetAppSetting("video_rates_checked_openrouter", time.Now().UTC().Format(time.RFC3339))
-}
-
 // chatVideoService tells the assistant which service makes the videos and what it charges.
 func (s *Server) chatVideoService() map[string]any {
 	provider, model := s.routes().MediaSelection("video")
@@ -129,7 +83,7 @@ func (s *Server) chatVideoService() map[string]any {
 	}
 	settings, _ := s.database.AppSettingsSnapshot()
 	family := costs.FamilyOf(provider, model)
-	if price, ok := costs.HostPrice(provider, family, "720p", "16:9", routing.LiveVideoPrices(settings)[provider+":"+family]); ok {
+	if price, ok := costs.HostPrice(provider, family, "720p", "16:9", costs.LiveFromSettings(settings)); ok {
 		out["dollars_per_second_720p"] = money(price)
 	}
 	return out

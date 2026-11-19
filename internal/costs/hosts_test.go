@@ -19,7 +19,7 @@ func TestOffersAreCheapestFirstAndMatchPublishedPrices(t *testing.T) {
 	for _, o := range offers {
 		price[o.Provider] = o.PerSecond
 	}
-	if price["byteplus"] != 0.1512 || price["fal"] != 0.3024 || price["runway"] != 0.30 {
+	if price["byteplus"] != 0.1512 || price["fal"] != 0.3024 || price["runway"] != 0.30 || price["kie"] != 0.205 {
 		t.Fatalf("token-priced services wrong: %v", price)
 	}
 	// A live rate from the service replaces the built-in one.
@@ -30,6 +30,9 @@ func TestOffersAreCheapestFirstAndMatchPublishedPrices(t *testing.T) {
 		t.Fatal("family lookup")
 	}
 	if amount, basis := Video("kie", "bytedance/seedance-2", "720p", "9:16", 10, nil); basis != Rate || amount != 2.05 {
-		t.Fatalf("kie 10 s = %v %s", amount, basis)
+		t.Fatalf("kie = %v %s", amount, basis)
+	}
+	if amount, _ := Video("runway", "seedance2", "720p", "9:16", 10, map[string]float64{"runway:seedance-2.0:720p": 0.25}); amount != 2.5 {
+		t.Fatalf("live per-second price ignored: %v", amount)
 	}
 }

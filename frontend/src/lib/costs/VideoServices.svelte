@@ -9,7 +9,7 @@
   import * as Table from '$lib/components/ui/table';
   import { LoaderCircle } from '@lucide/svelte';
 
-  type Service = { provider: string; label: string; model: string; per_second: number; total: number; frames: boolean; checked: string; connected: boolean; usable: boolean; cheapest: boolean; in_use: boolean; note?: string };
+  type Service = { provider: string; label: string; model: string; per_second: number; total: number; frames: boolean; checked: string; connected: boolean; usable: boolean; checked_at?: string; problem?: string; cheapest: boolean; in_use: boolean; note?: string };
   type State = { families: { id: string; label: string }[]; model: string; resolution: string; seconds: number; routing: string; current: { provider: string; label: string; model: string; family: string }; services: Service[] };
 
   let data = $state<State | null>(null), error = $state(''), busy = $state('');
@@ -18,9 +18,20 @@
   const usd = (v: number, digits = 2) => '$' + v.toFixed(digits);
   const keyHint: Record<string, string> = { higgsfield: 'KEY_ID:KEY_SECRET' };
 
-  async function load() {
+  let refreshing = $state(false);
+  function ago(v?: string) {
+    if (!v) return '';
+    const minutes = Math.round((Date.now() - new Date(v).getTime()) / 60000);
+    if (minutes < 1) return 'just now';
+    if (minutes < 60) return `${minutes} min ago`;
+    if (minutes < 1440) return `${Math.round(minutes / 60)} h ago`;
+    return new Date(v).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  }
+  async function refresh() { refreshing = true; await load(true); refreshing = false; }
+  async function load(fresh = false) {
     try {
       const q = new URLSearchParams({ resolution, seconds: '10' });
+      if (fresh) q.set('refresh', '1');
       if (model) q.set('model', model);
       data = await get('/video-services?' + q);
       model = data!.model; error = '';
@@ -61,10 +72,11 @@
         </select>
       </label>
       <label class="grid gap-1 text-xs font-medium">Quality
-        <select class="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal" bind:value={resolution} onchange={load}>
+        <select class="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal" bind:value={resolution} onchange={() => load()}>
           <option value="480p">480p</option><option value="720p">720p</option><option value="1080p">1080p</option>
         </select>
       </label>
+      <Button variant="outline" size="sm" class="h-9" disabled={refreshing} onclick={refresh}>{#if refreshing}<LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />{/if}Check prices now</Button>
     </div>
 
     <label class="flex items-start gap-3 rounded-lg border border-border p-3 text-sm">
@@ -90,6 +102,7 @@
             <Table.Cell class="whitespace-normal">
               <span class="font-medium">{s.label}</span>
               {#if s.note && !s.usable && !s.frames}<span class="block text-xs text-muted-foreground">{s.note}</span>{/if}
+              <span class="block text-xs text-muted-foreground">{#if s.problem}{s.problem}{:else if s.checked_at}Price read from {s.label} {ago(s.checked_at)}{:else}Fixed price, entered by hand: {s.label} publishes none{/if}</span>
             </Table.Cell>
             <Table.Cell class="text-right tabular-nums">{usd(s.per_second, 3)}</Table.Cell>
             <Table.Cell class="text-right tabular-nums">{usd(s.total)}</Table.Cell>
@@ -118,7 +131,7 @@
       </Table.Body>
     </Table.Root>
     {#if data.services.length === 0}<p class="text-sm text-muted-foreground">No service lists a price for this model at {resolution}.</p>{/if}
-    <p class="text-xs text-muted-foreground">List prices checked on 19 Nov 2026. fal.ai and OpenRouter prices are refreshed from those services daily; the others change only when VideoFlow is updated, so check the service's own page before a large job.</p>
+    <p class="text-xs text-muted-foreground">Prices are read from each service's own price feed or pricing page whenever this page opens and again before a video is made, at most every 15 minutes. Discounts on your own account are not included.</p>
   {/if}
   {#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}
 </section>

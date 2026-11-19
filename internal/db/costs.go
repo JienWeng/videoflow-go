@@ -108,18 +108,6 @@ func (d *DB) syncCostsFor(table, id string) {
 	}
 }
 
-func (d *DB) livePrice(model string) *costs.LivePrice {
-	raw, err := d.GetAppSetting("price_" + model)
-	if err != nil {
-		return nil
-	}
-	var p costs.LivePrice
-	if json.Unmarshal([]byte(raw), &p) != nil || p.UnitPrice <= 0 {
-		return nil
-	}
-	return &p
-}
-
 // SyncCosts records every finished video, generated picture and voice line of a
 // project that is not in the ledger yet. It is safe to call as often as needed.
 func (d *DB) SyncCosts(project string) error {
@@ -134,6 +122,8 @@ func (d *DB) SyncCosts(project string) error {
 			script[s.ID] = *s.ScriptID
 		}
 	}
+	settings, _ := d.AppSettingsSnapshot()
+	live := costs.LiveFromSettings(settings)
 	jobs, err := d.ListRenderJobs(project)
 	if err != nil {
 		return err
@@ -159,7 +149,7 @@ func (d *DB) SyncCosts(project string) error {
 			req.Resolution = "720p"
 		}
 		e.Label += " · " + req.Resolution
-		e.Amount, e.Basis = costs.Video(j.Provider, j.Model, req.Resolution, req.Aspect, req.Duration, d.livePrice(j.Model))
+		e.Amount, e.Basis = costs.Video(j.Provider, j.Model, req.Resolution, req.Aspect, req.Duration, live)
 		if j.Status != "succeeded" {
 			// The service accepted the job but the result never arrived, so the charge is unknown.
 			e.Ref, e.Basis = "job-unconfirmed:"+j.ID, "unconfirmed"

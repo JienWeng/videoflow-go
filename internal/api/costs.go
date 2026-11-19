@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -65,54 +64,6 @@ func (s *Server) falPlatform(ctx context.Context, path string, target any) error
 		return fmt.Errorf("fal HTTP %d", resp.StatusCode)
 	}
 	return json.Unmarshal(body, target)
-}
-
-// refreshVideoPrices asks fal for today's unit price of each video model, at most daily.
-func (s *Server) refreshVideoPrices(ctx context.Context, wanted ...string) {
-	ids := []string{}
-	for _, model := range wanted {
-		if model == "" {
-			continue
-		}
-		if at, err := s.database.GetAppSetting("price_checked_" + model); err == nil {
-			if t, e := time.Parse(time.RFC3339, at); e == nil && time.Since(t) < 24*time.Hour {
-				continue
-			}
-		}
-		ids = append(ids, model)
-	}
-	if len(ids) == 0 {
-		return
-	}
-	var result struct {
-		Prices []struct {
-			Endpoint  string  `json:"endpoint_id"`
-			UnitPrice float64 `json:"unit_price"`
-			Unit      string  `json:"unit"`
-		} `json:"prices"`
-	}
-	if s.falPlatform(ctx, "/models/pricing?endpoint_id="+url.QueryEscape(strings.Join(ids, ",")), &result) != nil {
-		return
-	}
-	for _, p := range result.Prices {
-		raw, _ := json.Marshal(costs.LivePrice{UnitPrice: p.UnitPrice, Unit: p.Unit})
-		_ = s.database.SetAppSetting("price_"+p.Endpoint, string(raw))
-	}
-	for _, id := range ids {
-		_ = s.database.SetAppSetting("price_checked_"+id, time.Now().UTC().Format(time.RFC3339))
-	}
-}
-
-func (s *Server) videoPrice(model string) *costs.LivePrice {
-	raw, err := s.database.GetAppSetting("price_" + model)
-	if err != nil {
-		return nil
-	}
-	var p costs.LivePrice
-	if json.Unmarshal([]byte(raw), &p) != nil || p.UnitPrice <= 0 {
-		return nil
-	}
-	return &p
 }
 
 // falBilled returns what fal's own billing says the whole account was charged since a date.
@@ -178,9 +129,7 @@ func (s *Server) handleCosts(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no active project", 400)
 		return
 	}
-	if _, model, e := s.productionVideoModel(r.Context()); e == nil {
-		s.refreshVideoPrices(r.Context(), model.ID)
-	}
+	s.refreshVideoPrices(r.Context(), false)
 	_ = s.database.SyncCosts(project)
 	entries, err := s.database.ListCosts(project)
 	if err != nil {
@@ -387,6 +336,9 @@ func (s *Server) handleCostEstimate(w http.ResponseWriter, r *http.Request) {
 		Amount  float64 `json:"amount"`
 		Note    string  `json:"note,omitempty"`
 	}
+	s.refreshVideoPrices(r.Context(), false)
+	settings, _ := s.database.AppSettingsSnapshot()
+	live := costs.LiveFromSettings(settings)
 	lines, total, seconds, known := []line{}, 0.0, 0, true
 	model := ""
 	for i := range scenes {
@@ -400,7 +352,6 @@ func (s *Server) handleCostEstimate(w http.ResponseWriter, r *http.Request) {
 		}
 		if model == "" {
 			model = plan.Model
-			s.refreshVideoPrices(r.Context(), model)
 		}
 		l.Seconds, l.Clips = plan.NewSeconds, plan.Calls
 		if plan.Blocked != "" {
@@ -408,7 +359,7 @@ func (s *Server) handleCostEstimate(w http.ResponseWriter, r *http.Request) {
 		} else if plan.Calls == 0 {
 			l.Note = "Already made"
 		} else {
-			amount, basis := costs.Video(plan.Provider, plan.Model, plan.Resolution, scene.AspectRatio, float64(plan.NewSeconds), s.videoPrice(plan.Model))
+			amount, basis := costs.Video(plan.Provider, plan.Model, plan.Resolution, scene.AspectRatio, float64(plan.NewSeconds), live)
 			if basis == costs.Unpriced {
 				known, l.Note = false, "No known price for this video model"
 			}

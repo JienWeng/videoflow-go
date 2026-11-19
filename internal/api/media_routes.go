@@ -39,6 +39,10 @@ func (s *Server) selectedMedia(ctx context.Context, kind string) (providers.Medi
 	return s.routes().SelectedMedia(kind)
 }
 func (s *Server) prepareVideoJob(job *models.RenderJob) error {
+	// With "always use the cheapest" on, compare today's prices before picking.
+	if job.Provider == "" && s.routes().Setting("video_routing", "manual") == "cheapest" {
+		s.refreshVideoPrices(context.Background(), false)
+	}
 	if job.Provider == "" {
 		job.Provider, job.Model = s.routes().MediaSelection("video")
 	}
