@@ -6,6 +6,7 @@
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
   import { Input } from '$lib/components/ui/input';
+  import { Skeleton } from '$lib/components/ui/skeleton';
   import * as Table from '$lib/components/ui/table';
   import { LoaderCircle } from '@lucide/svelte';
 
@@ -62,7 +63,7 @@
   </div>
 
   {#if !data && !error}
-    <p role="status" class="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />Loading prices…</p>
+    <div role="status" aria-busy="true" aria-label="Loading prices" class="grid gap-2"><Skeleton class="h-9 w-72" /><Skeleton class="h-48 w-full" /></div>
   {:else if data}
     <div class="flex flex-wrap items-end gap-3">
       <label class="grid gap-1 text-xs font-medium">Video model

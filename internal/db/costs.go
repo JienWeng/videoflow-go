@@ -122,6 +122,21 @@ func (d *DB) SyncCosts(project string) error {
 			script[s.ID] = *s.ScriptID
 		}
 	}
+	// Most calls find nothing new, so skip everything already recorded without writing.
+	recorded := map[string]bool{}
+	refs, err := d.conn.Query(`SELECT ref FROM cost_entries WHERE project_id=?`, project)
+	if err != nil {
+		return err
+	}
+	for refs.Next() {
+		var ref string
+		if err = refs.Scan(&ref); err != nil {
+			refs.Close()
+			return err
+		}
+		recorded[ref] = true
+	}
+	refs.Close()
 	settings, _ := d.AppSettingsSnapshot()
 	live := costs.LiveFromSettings(settings)
 	jobs, err := d.ListRenderJobs(project)
@@ -129,7 +144,7 @@ func (d *DB) SyncCosts(project string) error {
 		return err
 	}
 	for _, j := range jobs {
-		if j.Provider == "local" || (j.Status != "succeeded" && j.Status != "reconciliation_required") {
+		if j.Provider == "local" || (j.Status != "succeeded" && j.Status != "reconciliation_required") || (j.Status == "succeeded" && recorded["job:"+j.ID]) {
 			continue
 		}
 		var req struct {
@@ -170,7 +185,7 @@ func (d *DB) SyncCosts(project string) error {
 			Text     string            `json:"text"`
 			Usage    *costs.ImageUsage `json:"usage"`
 		}
-		if json.Unmarshal(a.MetadataJSON, &m) != nil || m.Provider == "" {
+		if recorded["asset:"+a.ID] || json.Unmarshal(a.MetadataJSON, &m) != nil || m.Provider == "" {
 			continue
 		}
 		e := CostEntry{Ref: "asset:" + a.ID, ProjectID: project, SceneID: m.SceneID, ScriptID: script[m.SceneID], Provider: m.Provider, Model: m.Model, Label: a.Name, CreatedAt: a.CreatedAt}

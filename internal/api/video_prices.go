@@ -267,17 +267,39 @@ func fetchPricePage(ctx context.Context, link string) (string, error) {
 	return string(body), nil
 }
 
-// refreshVideoPrices reads every service's current price. It does nothing when the
-// prices on hand are newer than videoPriceMaxAge, unless force is set. A source that
-// fails keeps its last known price and is marked so the screen can say so.
+// videoPriceTooOld is the age past which a caller waits for fresh prices instead of
+// using the ones on hand.
+const videoPriceTooOld = 6 * time.Hour
+
+// refreshVideoPrices keeps the prices current without making anyone wait. Prices newer
+// than videoPriceMaxAge are used as they are. Older ones are still used, and a fresh
+// read starts in the background. The caller waits only when force is set, or when the
+// prices are missing or older than videoPriceTooOld.
 func (s *Server) refreshVideoPrices(ctx context.Context, force bool) {
-	videoPriceRefresh.Lock()
-	defer videoPriceRefresh.Unlock()
-	if at, err := s.database.GetAppSetting("video_prices_checked"); err == nil && !force {
-		if t, e := time.Parse(time.RFC3339, at); e == nil && time.Since(t) < videoPriceMaxAge {
-			return
+	age := videoPriceTooOld
+	if at, err := s.database.GetAppSetting("video_prices_checked"); err == nil {
+		if t, e := time.Parse(time.RFC3339, at); e == nil {
+			age = time.Since(t)
 		}
 	}
+	switch {
+	case force || age >= videoPriceTooOld:
+		videoPriceRefresh.Lock()
+		defer videoPriceRefresh.Unlock()
+		s.readVideoPrices(ctx)
+	case age >= videoPriceMaxAge:
+		if videoPriceRefresh.TryLock() {
+			go func() {
+				defer videoPriceRefresh.Unlock()
+				s.readVideoPrices(context.Background())
+			}()
+		}
+	}
+}
+
+// readVideoPrices reads every service's current price. A source that fails keeps its
+// last known price and is marked so the screen can say so.
+func (s *Server) readVideoPrices(ctx context.Context) {
 	type result struct {
 		source priceSource
 		found  map[string]float64

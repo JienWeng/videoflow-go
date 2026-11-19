@@ -233,17 +233,16 @@ media_model_preferences:Record<string,Record<string,string>>;
 
   // -------------------------------------------------------------- load
   async function refresh() {
-    try {
-      presets = await get('/settings/connection-presets');
-    } catch {
-      presets = FALLBACK_PRESETS;
-    }
-    const [ag, pv, ap] = await Promise.all([
+    // Everything the page needs is asked for at once, so it appears after one round trip.
+    const [pr, ag, pv, ap, voice] = await Promise.all([
+      get('/settings/connection-presets').catch(() => FALLBACK_PRESETS),
       get('/settings/agents'),
       get('/settings/providers'),
-      get('/settings/app')
+      get('/settings/app'),
+      get('/voice/preferences').catch(() => null)
     ]);
-    try{voicePrimary=(await get('/voice/preferences')).primary_provider??'fal'}catch{}
+    presets = pr;
+    voicePrimary = voice?.primary_provider ?? 'fal';
     agents = ag;
     providers = pv;
     testModelInput = Object.fromEntries(
@@ -266,7 +265,8 @@ media_model_preferences:Record<string,Record<string,string>>;
     provCfg = cfgMap;
     provKeyInput = keyMap;
     provUrlInput = urlMap;
-    await loadEngineCatalogs();
+    // Model lists come from outside services and can be slow; the page does not wait for them.
+    void loadEngineCatalogs();
   }
 
   onMount(() => {
@@ -630,7 +630,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
     <div role="status" aria-busy="true" aria-label="Loading settings" class="grid gap-6 md:grid-cols-[200px_minmax(0,1fr)]">
 
       <div aria-hidden="true" class="grid grid-cols-2 gap-2 self-start md:block md:space-y-2">{#each Array(4) as _, i (i)}<Skeleton aria-hidden="true" class="h-12 motion-reduce:animate-none" />{/each}</div>
-      <div class="space-y-6"><p class="settings-help">Loading settings…</p><Skeleton aria-hidden="true" class="h-8 w-36 motion-reduce:animate-none" /><Skeleton aria-hidden="true" class="h-24 w-full motion-reduce:animate-none" /><Skeleton aria-hidden="true" class="h-8 w-44 motion-reduce:animate-none" /><Skeleton aria-hidden="true" class="h-40 w-full motion-reduce:animate-none" /></div>
+      <div class="space-y-6"><Skeleton aria-hidden="true" class="h-8 w-36 motion-reduce:animate-none" /><Skeleton aria-hidden="true" class="h-24 w-full motion-reduce:animate-none" /><Skeleton aria-hidden="true" class="h-8 w-44 motion-reduce:animate-none" /><Skeleton aria-hidden="true" class="h-40 w-full motion-reduce:animate-none" /></div>
     </div>
   {:else if !error}
     <div class="grid gap-6 md:grid-cols-[200px_minmax(0,1fr)]">
