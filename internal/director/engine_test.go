@@ -2,6 +2,7 @@ package director
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,5 +51,30 @@ func TestNativeEnvironmentRemovesMediaCredentials(t *testing.T) {
 	}
 	if !strings.Contains(joined, "ANTHROPIC_API_KEY=auth") {
 		t.Fatal("native auth removed")
+	}
+}
+
+func TestClaudeImageInputCarriesImagesThenPrompt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a.jpg")
+	os.WriteFile(path, []byte("jpegbytes"), 0600)
+	line, err := claudeImageInput("describe it", []string{path, filepath.Join(t.TempDir(), "missing.jpg")})
+	var message struct {
+		Type    string
+		Message struct {
+			Content []struct {
+				Type   string
+				Text   string
+				Source struct {
+					MediaType string `json:"media_type"`
+				}
+			}
+		}
+	}
+	if err != nil || json.Unmarshal([]byte(line), &message) != nil || message.Type != "user" {
+		t.Fatal(err, line)
+	}
+	c := message.Message.Content
+	if len(c) != 2 || c[0].Type != "image" || c[0].Source.MediaType != "image/jpeg" || c[1].Text != "describe it" {
+		t.Fatalf("%+v", c)
 	}
 }

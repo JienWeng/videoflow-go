@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 	"videoflow-go/internal/agents"
 	"videoflow-go/internal/models"
@@ -18,6 +19,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		Message       string                `json:"message"`
 		History       []map[string]string   `json:"history"`
 		Selected      *chatSelection        `json:"selected"`
+		Attachments   []string              `json:"attachments"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Message == "" {
 		http.Error(w, "message is required", http.StatusBadRequest)
@@ -25,6 +27,11 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	projectID, _ := s.activeProjectID(r.Context())
+	attachments, attachErr := s.chatAttachments(projectID, body.Attachments)
+	if attachErr != nil {
+		http.Error(w, attachErr.Error(), 400)
+		return
+	}
 	selectedContext, selectionErr := s.chatSelectionContext(projectID, body.Selected)
 	if selectionErr != nil {
 		http.Error(w, selectionErr.Error(), 409)
@@ -94,7 +101,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	progress, _ := s.projectProgress(r.Context(), projectID)
-	contextJSON, _ := json.Marshal(map[string]any{"production_progress": progress, "recent_activity": s.chatActivity(projectID, jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "missing_voices_setup": "inline_render_card", "render_audio_modes": []string{"native", "saved", "silent"}, "native_audio_requires_saved_voices": false, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false, "exact_dialogue_requires_speech_and_lipsync": true}})
+	contextJSON, _ := json.Marshal(map[string]any{"production_progress": progress, "recent_activity": s.chatActivity(projectID, jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "attached_media": attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "missing_voices_setup": "inline_render_card", "render_audio_modes": []string{"native", "saved", "silent"}, "native_audio_requires_saved_voices": false, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false, "exact_dialogue_requires_speech_and_lipsync": true}})
 	ctx := r.Context()
 	var plannedSnapshot *directorContext
 	if s.cfg.UseLocalText {
@@ -112,6 +119,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		ctx = context.WithValue(ctx, directorSnapshotKey{}, plannedSnapshot)
 		body.History = nil
 		ctx = context.WithValue(ctx, directorUserMessageKey{}, body.Message)
+	}
+	if previews, dir, e := attachmentPreviews(ctx, attachments); e == nil && len(previews) > 0 {
+		defer os.RemoveAll(dir)
+		ctx = context.WithValue(ctx, directorImagesKey{}, previews)
 	}
 	res, err := s.agents.Chat(ctx, body.Message, body.History, string(contextJSON))
 	if err != nil {
@@ -174,6 +185,18 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		intent["character_changes"] = changes
+	}
+	if action == "make_clip" {
+		clip := s.chatClip(projectID, res, attachments)
+		if clip == nil {
+			action = "unknown"
+			intent["action"] = action
+			if len(attachments) == 0 {
+				intent["reply"] = "I need a picture or clip to work from. Paste, drag in or attach a photo (the paperclip), then tell me what should happen in the video."
+			}
+		} else {
+			intent["clip"] = clip
+		}
 	}
 	if action == "open_editor" {
 		switch res.EditorPanel {
@@ -288,7 +311,7 @@ func canonicalChatAction(action string) string {
 	switch action {
 	case "create_script", "add_scene":
 		return "generate_script"
-	case "open_editor", "update_character", "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "caption", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
+	case "open_editor", "make_clip", "update_character", "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "caption", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
 		return action
 	default:
 		return "unknown"
@@ -301,4 +324,45 @@ func sceneScopedAction(action string) bool {
 		return true
 	}
 	return false
+}
+
+// chatClip turns the planner's make_clip answer into a checked request for one
+// reference clip. Only this project's usable media can be referenced.
+func (s *Server) chatClip(project string, res *agents.ChatIntentResponse, attachments []chatAttachment) map[string]any {
+	ids := res.ClipReferenceIDs
+	if len(ids) == 0 {
+		for _, a := range attachments {
+			ids = append(ids, a.ID)
+		}
+	}
+	references := []map[string]string{}
+	seen := map[string]bool{}
+	visual := false
+	for _, id := range ids {
+		asset, err := s.database.GetAsset(id)
+		if seen[id] || len(references) >= 12 || err != nil || asset.ProjectID == nil || *asset.ProjectID != project || !models.ReferenceApproved(asset.MetadataJSON) {
+			continue
+		}
+		seen[id] = true
+		kind := mediaKindForPath(asset.FilePath)
+		purpose := map[string]string{"image": "Who or what appears: keep this look", "video": "Movement and camera to follow", "audio": "Sound and rhythm"}[kind]
+		if kind == "" || kind == "audio" && !strings.HasSuffix(strings.ToLower(asset.FilePath), ".mp3") && !strings.HasSuffix(strings.ToLower(asset.FilePath), ".wav") {
+			continue
+		}
+		visual = visual || kind != "audio"
+		references = append(references, map[string]string{"asset_id": asset.ID, "kind": kind, "purpose": purpose, "name": asset.Name, "file_path": asset.FilePath})
+	}
+	prompt := strings.TrimSpace(res.ClipPrompt)
+	if !visual || prompt == "" || len(prompt) > 4000 {
+		return nil
+	}
+	duration := res.ClipDuration
+	if duration < 4 || duration > 15 {
+		duration = 8
+	}
+	aspect := res.ClipAspect
+	if aspect != "9:16" && aspect != "16:9" && aspect != "1:1" {
+		aspect = "9:16"
+	}
+	return map[string]any{"prompt": prompt, "duration": duration, "aspect_ratio": aspect, "generate_audio": res.ClipAudio, "references": references}
 }

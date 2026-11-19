@@ -231,6 +231,7 @@ func (s *Server) setupRoutes() {
 	s.router.Get("/assets", s.handleListAssets)
 	s.router.Get("/assets/types", s.handleAssetTypes)
 	s.router.Post("/assets/upload", s.handleUploadAsset)
+	s.router.Post("/assets/import-link", s.handleImportLinkAsset)
 	s.router.Patch("/assets/{id}", s.handleUpdateAssetDetails)
 	s.router.Post("/assets/{id}/regenerate", s.handleRegenerateAsset)
 	s.router.Get("/assets/{id}/usage", s.handleAssetUsage)

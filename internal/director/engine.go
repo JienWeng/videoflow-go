@@ -4,11 +4,13 @@ package director
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"time"
@@ -74,6 +76,23 @@ func (r *Runner) Run(ctx context.Context, request Request, saveNative func(strin
 			args = append(args, "--resume", request.NativeID)
 		}
 	}
+	stdin := request.Prompt
+	if !request.ImageGeneration && len(request.Images) > 0 {
+		// Attached media for the planner to look at. It never gains tools or file access.
+		if request.Engine == "claude" {
+			if stdin, err = claudeImageInput(request.Prompt, request.Images); err != nil {
+				return nil, err
+			}
+			args = append(args, "--input-format", "stream-json")
+		} else {
+			last := len(args) - 1 // keep the trailing "-" (prompt from stdin)
+			withImages := append([]string{}, args[:last]...)
+			for _, path := range request.Images {
+				withImages = append(withImages, "--image="+path)
+			}
+			args = append(withImages, "-")
+		}
+	}
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Dir = request.Workspace
 	cmd.Env = SafeEnvironment(os.Environ())
@@ -87,7 +106,7 @@ func (r *Runner) Run(ctx context.Context, request Request, saveNative func(strin
 		}
 		cmd.Env = filtered
 	}
-	cmd.Stdin = strings.NewReader(request.Prompt)
+	cmd.Stdin = strings.NewReader(stdin)
 	cmd.WaitDelay = 2 * time.Second
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -235,4 +254,28 @@ func engineLabel(engine string) string {
 		return "Claude Code"
 	}
 	return "Codex"
+}
+
+// claudeImageInput is one stream-json user message carrying the images and the prompt.
+func claudeImageInput(prompt string, images []string) (string, error) {
+	content := []map[string]any{}
+	for _, path := range images {
+		data, err := os.ReadFile(path)
+		if err != nil || len(data) > 4<<20 {
+			continue // Unreadable or oversized previews are left out rather than failing the turn.
+		}
+		media := "image/jpeg"
+		switch strings.ToLower(filepath.Ext(path)) {
+		case ".png":
+			media = "image/png"
+		case ".gif":
+			media = "image/gif"
+		case ".webp":
+			media = "image/webp"
+		}
+		content = append(content, map[string]any{"type": "image", "source": map[string]string{"type": "base64", "media_type": media, "data": base64.StdEncoding.EncodeToString(data)}})
+	}
+	content = append(content, map[string]any{"type": "text", "text": prompt})
+	line, err := json.Marshal(map[string]any{"type": "user", "message": map[string]any{"role": "user", "content": content}})
+	return string(line) + "\n", err
 }

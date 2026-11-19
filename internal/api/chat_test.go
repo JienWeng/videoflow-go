@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"videoflow-go/internal/models"
 )
 
 func TestChatReturnsRunnableCanonicalActions(t *testing.T) {
@@ -153,5 +155,46 @@ func TestChatStoryQuestionFollowsTheUsersLanguage(t *testing.T) {
 		if !strings.HasPrefix(body.Intent.Reply, tc.want) {
 			t.Fatalf("lang %q: reply %q", tc.lang, body.Intent.Reply)
 		}
+	}
+}
+
+func TestChatMakeClipUsesAttachedPhotoAndRefusesWithoutOne(t *testing.T) {
+	answer := `{"reply":"I'll make him dance.","action":"make_clip","clip_prompt":"The man from the image dances energetically","clip_duration":99,"clip_aspect":"4:5","clip_audio":true}`
+	s := routerServer(t, fakeChatModel(answer))
+	project, _ := s.database.GetActiveProjectID()
+
+	// Nothing attached: no button, and a plain request for a photo.
+	result := call(t, s, "POST", "/chat", `{"message":"make him dance"}`)
+	if result.Code != 200 || !strings.Contains(result.Body.String(), `"action":"unknown"`) || !strings.Contains(result.Body.String(), "attach a photo") {
+		t.Fatal(result.Code, result.Body.String())
+	}
+
+	if e := s.database.CreateAsset(&models.Asset{ID: "asset_photo", ProjectID: &project, Type: "other", Name: "man.jpg", FilePath: "storage/assets/asset_photo.jpg", TagsJSON: []byte("[]"), MetadataJSON: []byte("{}")}); e != nil {
+		t.Fatal(e)
+	}
+	result = call(t, s, "POST", "/chat", `{"message":"make him dance","attachments":["asset_photo"]}`)
+	var body struct {
+		Intent struct {
+			Action string
+			Clip   struct {
+				Prompt     string
+				Duration   int
+				Aspect     string `json:"aspect_ratio"`
+				Audio      bool   `json:"generate_audio"`
+				References []map[string]string
+			}
+		}
+	}
+	if result.Code != 200 || json.Unmarshal(result.Body.Bytes(), &body) != nil {
+		t.Fatal(result.Code, result.Body.String())
+	}
+	clip := body.Intent.Clip
+	if body.Intent.Action != "make_clip" || clip.Duration != 8 || clip.Aspect != "9:16" || !clip.Audio || len(clip.References) != 1 || clip.References[0]["asset_id"] != "asset_photo" || clip.References[0]["kind"] != "image" {
+		t.Fatalf("%+v", body.Intent)
+	}
+
+	// Files from elsewhere are rejected rather than silently ignored.
+	if result = call(t, s, "POST", "/chat", `{"message":"make him dance","attachments":["asset_missing"]}`); result.Code != 400 {
+		t.Fatal(result.Code, result.Body.String())
 	}
 }

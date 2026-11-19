@@ -4,8 +4,44 @@
  import StyleReference from '$lib/brief/StyleReference.svelte';
  import * as Dialog from '$lib/components/ui/dialog';
  import Paperclip from '@lucide/svelte/icons/paperclip';
+ import ClipCard from './ClipCard.svelte';
+ import {upload as apiUpload} from '$lib/api';
  let referenceOpen=$state(false);
  let referenceURL=$state('');
+ // Media pasted, dropped, picked or linked into the next message.
+ type Attached={id:string;name:string;kind:string;file_path:string};
+ const ATTACH_MAX=4;
+ let attachments=$state<Attached[]>([]),attaching=$state(0),attachError=$state(''),dragging=$state(false),filePicker=$state<HTMLInputElement|null>(null);
+ const attachKind=(path:string)=>/\.(png|jpe?g|gif|webp)$/i.test(path)?'image':'video';
+ function attached(asset:any){if(attachments.some(a=>a.id===asset.id))return;attachments=[...attachments,{id:asset.id,name:asset.name,kind:attachKind(asset.file_path??''),file_path:asset.file_path}]}
+ async function attachFiles(files:Iterable<File>){
+  attachError='';
+  for(const file of files){
+   if(attachments.length+attaching>=ATTACH_MAX){attachError=`You can attach up to ${ATTACH_MAX} files to one message.`;break}
+   if(!/^image\/(png|jpeg|gif|webp)$|^video\/(mp4|quicktime|webm)$/.test(file.type)){attachError='Attach a picture (PNG, JPEG, GIF, WebP) or a video (MP4, MOV, WebM).';continue}
+   if(file.size>50*1024*1024){attachError=`${file.name||'That file'} is larger than 50 MB.`;continue}
+   attaching++;
+   try{const data=new FormData();const ext=({'image/png':'.png','image/jpeg':'.jpg','image/gif':'.gif','image/webp':'.webp','video/mp4':'.mp4','video/quicktime':'.mov','video/webm':'.webm'} as Record<string,string>)[file.type];data.append('file',file,/\.[a-z0-9]{2,5}$/i.test(file.name)?file.name:`pasted-${Date.now()}${ext}`);data.append('type','other');attached(await apiUpload('/assets/upload',data))}
+   catch(e){attachError=`Couldn't add ${file.name||'that file'}. ${(e as Error).message}`}
+   finally{attaching--}
+  }
+ }
+ async function attachLink(url:string){
+  if(attachments.length+attaching>=ATTACH_MAX){attachError=`You can attach up to ${ATTACH_MAX} files to one message.`;return false}
+  attachError='';attaching++;
+  try{attached(await post('/assets/import-link',{url}));return true}
+  catch(e){attachError=(e as Error).message.replace(/^\d+:\s*/,'');return false}
+  finally{attaching--}
+ }
+ function onComposerPaste(e:ClipboardEvent){
+  if(editing)return;
+  const files=[...(e.clipboardData?.files??[])];
+  if(files.length){e.preventDefault();void attachFiles(files);return}
+  const text=(e.clipboardData?.getData('text/plain')??'').trim();
+  // A bare link pasted on its own is fetched and attached; the text stays if that fails.
+  if(/^https:\/\/\S+$/i.test(text)){e.preventDefault();void attachLink(text).then(ok=>{if(!ok)input=(input?input+' ':'')+text})}
+ }
+ function onComposerDrop(e:DragEvent){dragging=false;if(editing||!e.dataTransfer)return;const files=[...e.dataTransfer.files];if(files.length){e.preventDefault();void attachFiles(files);return}const link=(e.dataTransfer.getData('text/uri-list')||e.dataTransfer.getData('text/plain')).trim().split(/\s+/)[0];if(/^https:\/\/\S+$/i.test(link??'')){e.preventDefault();void attachLink(link)}}
  function referenceSaved(preset:any,style:any){
   referenceOpen=false;input='';
   const current=activeCreativeBrief()?[...messages].reverse().find(m=>m.intent?.action==='generate_script'&&!m.dismissed):undefined;
@@ -73,6 +109,7 @@
   interface Msg {
  editProposal?:{base:string;manifest:any;changes:string[];applied?:boolean;error?:string};
     role: 'user' | 'assistant';
+    attachments?: {id:string;name:string;kind:string;file_path:string}[];
     retry?: string;
     setupSceneId?:string;
     storyOperationId?:string;storyStage?:string;storyReady?:boolean;referenceIds?:string[];castIds?:string[];
@@ -701,22 +738,24 @@
  }
   async function send(text?: string) {
     const message = (text ?? input).trim();
-    if (!message || busy || pendingOps.length || historyLoading || sessionRequired || historyError) return;
+    if (!message || busy || attaching || pendingOps.length || historyLoading || sessionRequired || historyError) return;
+    const sent=editing||(!editing&&reviewMode&&specialistSupported)?[]:attachments;
     const referenceLink=message.match(/https:\/\/[^\s<>]+/i)?.[0];
-    if(referenceLink&&(message===referenceLink||/\b(style|reference|look)\b/i.test(message))){referenceURL=referenceLink;referenceOpen=true;return;}
+    if(referenceLink&&!sent.length&&(message===referenceLink||/\b(style|reference|look)\b/i.test(message))){referenceURL=referenceLink;referenceOpen=true;return;}
     const generation=conversationGeneration;
     input = '';
     if(isEmpty)messages=[];
     // Conversation memory: the last 6 turns (text only — no cards/state).
     const history = messages.slice(-6).map((m) => ({ role: m.role, text: m.text }));
-    messages.push({ role: 'user', text: message });
+    messages.push({ role: 'user', text: message, ...(sent.length?{attachments:sent}:{}) });
+    if(sent.length){attachments=[];attachError=''}
     busy = true;cancelling=false;cancelError='';
     const useSpecialists=!editing&&reviewMode&&specialistSupported;
     const reviewIndex=messages.length;
     if(useSpecialists)messages.push({role:'assistant',text:'Specialist review requested. No story changes will run.',activity:normalizeActivity((capabilities.subagents.roles??[]).map((role:any)=>({kind:'subagent',title:role.name,status:'pending'})))});
     try {
       if(editing){const base=JSON.stringify(editing.draft);const result=await post('/director/composition-plan',{instruction:message,manifest:JSON.parse(base),selected_clip_id:editing.selected});if(generation!==conversationGeneration)return;messages.push({role:'assistant',text:'I prepared an edit proposal. Apply it to the current edit, then save or undo as needed.',editProposal:{base,manifest:result.manifest,changes:editChanges(JSON.parse(base),result.manifest)}});return;}
-      const r = await post(useSpecialists?'/chat/review':'/chat', { message, ...(useSpecialists?{}:{history,creation_brief:activeCreativeBrief()}), selected: selected ? {id:selected.id,kind:selected.kind} : null });
+      const r = await post(useSpecialists?'/chat/review':'/chat', { message, ...(useSpecialists?{}:{history,creation_brief:activeCreativeBrief()}), selected: selected ? {id:selected.id,kind:selected.kind} : null, ...(sent.length?{attachments:sent.map(a=>a.id)}:{}) });
       if(generation!==conversationGeneration)return;
       if(useSpecialists){messages[reviewIndex]={role:'assistant',text:r.reply,activity:subagentEvents(r.subagents??[])};void refreshCapabilities();return;}
       const intent = { ...r.intent };
@@ -879,7 +918,7 @@
             <Message.Header class="text-xs font-medium text-muted-foreground">{m.role === 'user' ? 'You' : 'Story assistant'}</Message.Header>
 
             {#if m.text}
-              <Bubble.Root align={m.role==='user'?'end':'start'} variant={m.role==='user'?'muted':'ghost'}>{#if m.role==='assistant'}<Bubble.Content class="break-words leading-relaxed"><Response content={m.text} class="text-sm [&_p]:my-2 [&_ul]:my-2 [&_ol]:my-2" /></Bubble.Content>{:else}<Bubble.Content class="whitespace-pre-wrap break-words leading-relaxed">{m.text}</Bubble.Content>{/if}</Bubble.Root>
+              <Bubble.Root align={m.role==='user'?'end':'start'} variant={m.role==='user'?'muted':'ghost'}>{#if m.role==='assistant'}<Bubble.Content class="break-words leading-relaxed"><Response content={m.text} class="text-sm [&_p]:my-2 [&_ul]:my-2 [&_ol]:my-2" /></Bubble.Content>{:else}<Bubble.Content class="whitespace-pre-wrap break-words leading-relaxed">{#if m.attachments?.length}<span class="mb-2 flex flex-wrap gap-2">{#each m.attachments as a (a.id)}{#if a.kind==='image'}<img class="size-20 rounded-md object-cover" src={mediaUrl(a.file_path)??''} alt={a.name}/>{:else}<video class="size-20 rounded-md object-cover" src={mediaUrl(a.file_path)??''} muted preload="metadata" aria-label={a.name}></video>{/if}{/each}</span>{/if}{m.text}</Bubble.Content>{/if}</Bubble.Root>
               {#if m.role==='assistant'&&(m.setupSceneId||missingVoiceCharacter(m.text))}<Button variant="outline" size="sm" disabled={busy} onclick={()=>openSceneSetup(m)}>Set up scene voices here</Button>{/if}
             {/if}
             {#if m.intent?.action==='unknown' && m.state?.next_steps?.length}<ol class="list-decimal space-y-1 pl-5 text-sm">{#each m.state.next_steps as step}<li>{step}</li>{/each}</ol>{/if}
@@ -921,7 +960,9 @@
             {#if m.editProposal}<section class="mt-3 space-y-3 rounded-md border border-border p-3" aria-label="Proposed edit changes"><h3 class="text-sm font-medium">Proposed changes</h3><ul class="list-inside list-disc text-xs">{#each m.editProposal.changes as change}<li>{change}</li>{/each}</ul>{#if !m.editProposal.changes.length}<p class="text-xs text-muted-foreground">No changes proposed.</p>{/if}
  {#if editing}<Button size="sm" disabled={!!m.editProposal.applied||!m.editProposal.changes.length} onclick={()=>{try{editing?.apply(applyEditProposal(editing.draft,m.editProposal));m.editProposal!.applied=true;}catch(e){m.editProposal!.error=String(e)}}}>{m.editProposal.applied?'Applied · Undo in editor':'Apply edit changes'}</Button>{:else}<a class="text-xs underline" href="/?view=edit">Open editing workspace</a>{/if}
  {#if m.editProposal.error}<p role="alert" class="text-xs text-destructive">{m.editProposal.error}</p>{/if}</section>{/if}
-            {#if !editing && m.intent && m.intent.action !== 'unknown' && !m.dismissed}
+            {#if !editing && m.intent?.action === 'make_clip' && m.intent.clip && !m.dismissed}
+              <ClipCard clip={m.intent.clip} onjob={id=>m.intent={...m.intent,clip:{...m.intent.clip,job_id:id}}} ondismiss={()=>m.dismissed=true} />
+            {:else if !editing && m.intent && m.intent.action !== 'unknown' && !m.dismissed}
               <ActionCard
                 intent={m.intent}
  onbriefchange={brief=>m.intent={...m.intent,creation_brief:brief,idea:brief.idea}}
@@ -958,11 +999,18 @@
       {#if embedded&&!isEmpty}<Button variant="ghost" size="icon" class="size-9 shrink-0 text-muted-foreground" aria-label="Clear chat" title="Clear visible chat; saved session history is kept" disabled={busy||historyLoading||isEmpty} onclick={clearChat}><Eraser class="size-4" /></Button>{/if}
     </div>{/if}
     {#if !editing&&!guidedSteps.length&&chips.length&&(!isEmpty||selected)}<div aria-label="Suggested prompts" class="mb-2 flex flex-wrap items-center gap-2">{@render chipRow(chips)}</div>{/if}
-    <form onsubmit={e=>{e.preventDefault();void send();}}>
+    {#if !editing&&(attachments.length||attaching||attachError)}<div class="mb-2 space-y-1"><ul class="flex flex-wrap gap-2" aria-label="Attached to your next message">{#each attachments as a (a.id)}<li class="relative">{#if a.kind==='image'}<img class="size-16 rounded-md border border-border object-cover" src={mediaUrl(a.file_path)??''} alt={a.name} title={a.name}/>{:else}<video class="size-16 rounded-md border border-border object-cover" src={mediaUrl(a.file_path)??''} muted preload="metadata" title={a.name}></video>{/if}<button type="button" class="absolute -right-2 -top-2 grid size-7 place-items-center rounded-full border border-border bg-background shadow-sm hover:bg-muted" aria-label={`Remove ${a.name}`} onclick={()=>attachments=attachments.filter(x=>x.id!==a.id)}><X class="size-3.5"/></button></li>{/each}{#if attaching}<li class="grid size-16 place-items-center rounded-md border border-dashed border-border text-xs text-muted-foreground" role="status">Adding…</li>{/if}</ul>{#if attachError}<p role="alert" class="text-xs text-destructive">{attachError}</p>{/if}</div>{/if}
+    <input bind:this={filePicker} type="file" class="hidden" multiple accept="image/png,image/jpeg,image/gif,image/webp,video/mp4,video/quicktime,video/webm" onchange={e=>{void attachFiles([...(e.currentTarget.files??[])]);e.currentTarget.value=''}} />
+    <form class={dragging?'rounded-2xl outline-2 outline-dashed outline-ring':''} onsubmit={e=>{e.preventDefault();void send();}} ondragover={e=>{if(!editing&&e.dataTransfer?.types.some(t=>t==='Files'||t==='text/uri-list')){e.preventDefault();dragging=true}}} ondragleave={()=>dragging=false} ondrop={onComposerDrop}>
       <InputGroup.Root class="rounded-2xl bg-background shadow-none has-disabled:opacity-100 has-disabled:bg-background dark:has-disabled:bg-background">
-        <InputGroup.Textarea aria-label="Message story assistant" bind:value={input} class="min-h-24 max-h-40 px-3 pt-3" placeholder={editing?'Describe an edit to this video…':selected ? `What should change in ${selected.label}?` : 'Tell me your idea…'} onkeydown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();void send();}}} />
+        <InputGroup.Textarea aria-label="Message story assistant" bind:value={input} class="min-h-24 max-h-40 px-3 pt-3" placeholder={editing?'Describe an edit to this video…':selected ? `What should change in ${selected.label}?` : attachments.length?'What should I do with this? e.g. “make him dance”':'Tell me your idea… paste a picture or link to use it'} onpaste={onComposerPaste} onkeydown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();void send();}}} />
         <InputGroup.Addon align="block-end" class="gap-2">
-          <InputGroup.Button type="button" size="icon-sm" aria-label="Attach style reference" disabled={busy||pendingOps.length>0} onclick={()=>{referenceURL='';referenceOpen=true}}><Paperclip class="size-4"/></InputGroup.Button>
+          <DropdownMenu.Root><DropdownMenu.Trigger>{#snippet child({props})}<InputGroup.Button {...props} type="button" size="icon-sm" aria-label="Attach" title="Attach a picture or video. You can also paste or drag one in." disabled={busy||pendingOps.length>0}><Paperclip class="size-4"/></InputGroup.Button>{/snippet}</DropdownMenu.Trigger>
+            <DropdownMenu.Content align="start" side="top" class="w-72 max-w-[calc(100vw-2rem)]">
+              <DropdownMenu.Item disabled={!!editing} onclick={()=>filePicker?.click()}><span class="grid"><span>Picture or video</span><span class="text-xs text-muted-foreground">Show it to the assistant or turn it into a clip. Paste and drag-and-drop work too.</span></span></DropdownMenu.Item>
+              <DropdownMenu.Item onclick={()=>{referenceURL='';referenceOpen=true}}><span class="grid"><span>Match a look</span><span class="text-xs text-muted-foreground">Copy the art style of an image, video or link</span></span></DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Root>
           <DropdownMenu.Root><DropdownMenu.Trigger>{#snippet child({props})}<InputGroup.Button {...props} type="button" size="sm" aria-label="Assistant mode" disabled={busy}>{reviewMode?'Review':'Chat'}<ChevronDown class="size-3.5" /></InputGroup.Button>{/snippet}</DropdownMenu.Trigger>
             <DropdownMenu.Content align="start" side="top" class="w-64 max-w-[calc(100vw-2rem)]">
               <DropdownMenu.RadioGroup value={reviewMode?'specialists':'assistant'} onValueChange={value=>reviewMode=value==='specialists'}>
