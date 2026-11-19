@@ -1,6 +1,7 @@
 <script lang="ts">
  import ReferenceGeneration from "./ReferenceGeneration.svelte";
  import FinishingPanel from "./FinishingPanel.svelte";
+ import VoiceoverPanel from "./VoiceoverPanel.svelte";
  import ChatPanel from "$lib/chat/ChatPanel.svelte";
  import NleTimeline from "./NleTimeline.svelte";
  import {Button} from "$lib/components/ui/button";
@@ -47,6 +48,8 @@
  async function add(track:'clips'|'audio',id:string,at?:number){if(!id||busy)return;busy=true;error='';try{const info=await sourceInfo(id);const start=at!==undefined?Math.max(0,at):track==='clips'?Math.max(0,...draft.clips.map(c=>c.start+c.duration)):0;const duration=info.duration>0?info.duration:3;if(start+duration>600)throw Error('This source would exceed the 600-second composition limit. Trim it in a separate edit first.');draft.duration=!draft.clips.length&&!draft.audio.length?duration:Math.max(draft.duration,start+duration);const clip={id:uid(track==='audio'?'audio':'clip'),asset_id:id,start,trim:0,duration,speed:1,has_audio:info.has_audio,...(track==='audio'?{volume:0.15,fade_in:Math.min(0.4,duration/4),fade_out:Math.min(1,duration/4)}:{})};draft[track]=[...draft[track],clip];activeClip=clip.id;invalidate()}catch(e){error=String(e)}finally{busy=false}}
 
  async function uploadMusic(event:Event){const input=event.currentTarget as HTMLInputElement;const file=input.files?.[0];if(!file||busy)return;busy=true;error='';let id='';try{const form=new FormData();form.append('file',file);form.append('type','audio_reference');form.append('name',file.name);const asset=await upload('/assets/upload',form);id=asset.id;assets=await get('/compositions/sources');}catch(e){error=String(e)}finally{busy=false;input.value=''}if(id)await add('audio',id)}
+ // Voice lines replace earlier voice lines; music and other sounds stay. Video sound can be lowered under them.
+ async function addVoices(items:any[],lower:boolean){try{assets=await get('/compositions/sources')}catch{}draft.audio=[...draft.audio.filter(a=>!String(a.asset_id).startsWith('voiceover_')),...items.map(i=>({id:uid('audio'),asset_id:i.asset_id,start:i.start,trim:0,duration:i.duration,speed:1,has_audio:true,volume:1,fade_in:Math.min(0.05,i.duration/4),fade_out:Math.min(0.1,i.duration/4)}))];if(lower)draft.clips=draft.clips.map(c=>String(c.asset_id).startsWith('output-')&&c.has_audio&&!c.muted?{...c,volume:Math.min(c.volume??1,0.25)}:c);fitLength();invalidate()}
  function remove(track:'clips'|'audio',index:number){if(track==='clips')removeLinkedCaptions(draft.clips[index].id);draft[track]=draft[track].filter((_,i)=>i!==index);invalidate()}
  function move(index:number,direction:number){const clips=[...draft.clips];[clips[index],clips[index+direction]]=[clips[index+direction],clips[index]];draft.clips=clips;invalidate()}
  function dimensions(value:string){[draft.width,draft.height]=value.split('x').map(Number);invalidate()}
@@ -129,6 +132,7 @@
      </div>
      <ReferenceGeneration onready={async id=>{assets=await get("/compositions/sources");await add("clips","output-"+id);fitLength()}}/>
     {:else if leftTab==='audio'}
+     <VoiceoverPanel clips={draft.clips} disabled={busy} hasVoice={draft.audio.some(a=>String(a.asset_id).startsWith('voiceover_'))} onbusy={value=>busy=value} onvoices={addVoices}/>
      <label class="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-border px-3 hover:bg-accent"><Upload class="size-4"/>Upload music or sound<input class="sr-only" type="file" accept="audio/*" onchange={uploadMusic}/></label>
      <p class="text-xs text-muted-foreground">Use one soundtrack across the whole video. It starts quiet under dialogue; change the volume in Properties.</p>
      {#if !audioSources.length}<p class="text-muted-foreground">No audio yet.</p>{/if}

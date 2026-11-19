@@ -42,8 +42,8 @@ export function makeOverview(snapshot, now = Date.now()) {
   } else if (!selected || state.needsSetup) {
     attention.push(issue('ai-setup', selected ? 'Your AI assistant needs setup' : 'Choose an AI session', selected ? state.help : 'Choose Codex or Claude Code for this project.', '/director', selected ? 'Set up AI' : 'Choose AI session'));
   }
-  if (!snapshot.appHealth) attention.push(issue('media-unknown', 'Media setup status is unavailable', 'Check provider settings before generating images or video.', '/settings#connections', 'Check media setup'));
-  else if (snapshot.appHealth.missing_keys?.length) attention.push(issue('media-setup', 'Provider credentials need setup', 'Add the required provider keys before generating media.', '/settings#connections', 'Set up providers'));
+  if (!snapshot.appHealth) attention.push(issue('media-unknown', 'Media setup status is unavailable', 'Check provider settings before generating images or video.', '/settings#providers', 'Check media setup'));
+  else if (snapshot.appHealth.missing_keys?.length) attention.push(issue('media-setup', 'Provider credentials need setup', 'Add the required provider keys before generating media.', '/settings#providers', 'Set up providers'));
 
   let primary;
   const blocker = attention.find(item => item.urgent);

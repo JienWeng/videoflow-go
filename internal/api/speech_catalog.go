@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"videoflow-go/internal/models"
 	"videoflow-go/internal/providers"
 )
 
@@ -177,10 +178,15 @@ func (s *Server) handleSpeechVoices(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "choose Fish Audio or ElevenLabs", 400)
 		return
 	}
-	character, err := s.database.GetCharacter(r.URL.Query().Get("character_id"))
-	if err != nil || character.ProjectID == nil || *character.ProjectID != project {
-		http.Error(w, "character not in active project", 404)
-		return
+	// Without a character (narrator voice in the editor) the list is unranked.
+	var character *models.Character
+	if id := r.URL.Query().Get("character_id"); id != "" {
+		c, err := s.database.GetCharacter(id)
+		if err != nil || c.ProjectID == nil || *c.ProjectID != project {
+			http.Error(w, "character not in active project", 404)
+			return
+		}
+		character = c
 	}
 	q := r.URL.Query()
 	if len(q.Get("search")) > 160 || len(q.Get("language")) > 35 || len(q.Get("page")) > 512 {
@@ -195,6 +201,10 @@ func (s *Server) handleSpeechVoices(w http.ResponseWriter, r *http.Request) {
 	list, err := providers.ListSpeechVoices(r.Context(), p, key, base, q.Get("search"), q.Get("language"), q.Get("page"))
 	if err != nil {
 		http.Error(w, err.Error(), 400)
+		return
+	}
+	if character == nil {
+		writeJSON(w, 200, map[string]any{"voices": list.Voices, "next_page": list.Next, "checked_at": time.Now().UTC()})
 		return
 	}
 	rules, _ := json.Marshal(character.VoiceRulesJSON)

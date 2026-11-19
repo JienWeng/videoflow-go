@@ -2,7 +2,7 @@
 /** @param {any} [value] @param {string} [idea] @returns {CreativeBrief} */
 export function normalizeBrief(value={},idea=''){
  /** @param {string} key */ const text=key=>typeof value?.[key]==='string'?value[key]:'';
- return {storytelling_id:text('storytelling_id'),idea:text('idea')||idea,instruction:text('instruction'),style_preset_id:text('style_preset_id'),style_fingerprint:text('style_fingerprint'),tone:text('tone'),audience:text('audience'),platform:text('platform'),aspect_ratio:text('aspect_ratio'),resolution:text('resolution'),language:text('language'),conversation_mode:text('conversation_mode'),target_duration:Number.isInteger(value?.target_duration)?value.target_duration:0,scene_count:Number.isInteger(value?.scene_count)?value.scene_count:0};
+ return {storytelling_id:text('storytelling_id'),idea:text('idea')||idea,instruction:text('instruction'),style_preset_id:text('style_preset_id'),style_fingerprint:text('style_fingerprint'),tone:text('tone'),audience:text('audience'),platform:text('platform'),aspect_ratio:text('aspect_ratio'),resolution:text('resolution'),language:text('language'),conversation_mode:text('conversation_mode')||'dialogue',target_duration:Number.isInteger(value?.target_duration)?value.target_duration:0,scene_count:Number.isInteger(value?.scene_count)?value.scene_count:0};
 }
 /** @param {CreativeBrief} value @returns {string[]} */
 export function missingBriefFields(value){
