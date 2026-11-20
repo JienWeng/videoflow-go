@@ -12,7 +12,17 @@ import (
 // applyDirectorVoicePolicy mutates the durable request before enqueue. Ordinary
 // video is the visual pass; speech and visible-speaker lip sync remain explicit
 // /voices stages. It never contacts a provider or replaces a native audio sample.
+// applyDirectorVoicePolicy decides how a video request gets its sound, then writes the
+// prompt of a planned scene clip from the scene's records.
 func (s *Server) applyDirectorVoicePolicy(ctx context.Context, job *models.RenderJob) error {
+	if err := s.voicePolicy(ctx, job); err != nil {
+		return err
+	}
+	s.writeScenePrompt(job)
+	return nil
+}
+
+func (s *Server) voicePolicy(ctx context.Context, job *models.RenderJob) error {
 	payload := map[string]any{}
 	if len(job.RequestJSON) > 0 {
 		if err := json.Unmarshal(job.RequestJSON, &payload); err != nil || payload == nil {

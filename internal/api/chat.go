@@ -110,7 +110,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	progress, _ := s.projectProgress(r.Context(), projectID)
 	failedShown, _ := s.database.FailedRendersShown(projectID)
-	contextJSON, _ := json.Marshal(map[string]any{"production_progress": progress, "recent_activity": s.chatActivity(projectID, jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "video_service": s.chatVideoService(), "failed_video_attempts": failedShown, "assistant_mode": chatMode(body.Auto, body.Full), "attached_media": attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "missing_voices_setup": "inline_render_card", "render_audio_modes": []string{"native", "saved", "silent"}, "native_audio_requires_saved_voices": false, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false, "exact_dialogue_requires_speech_and_lipsync": true}})
+	contextJSON, _ := json.Marshal(map[string]any{"production_progress": progress, "recent_activity": s.chatActivity(projectID, jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "video_service": s.chatVideoService(), "episode_sound": s.episodeSound(projectID), "failed_video_attempts": failedShown, "assistant_mode": chatMode(body.Auto, body.Full), "attached_media": attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "missing_voices_setup": "inline_render_card", "render_audio_modes": []string{"native", "saved", "silent"}, "native_audio_requires_saved_voices": false, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false, "exact_dialogue_requires_speech_and_lipsync": true}})
 	ctx := r.Context()
 	var plannedSnapshot *directorContext
 	if s.cfg.UseLocalText {
@@ -245,6 +245,21 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			intent["reply"] = "No scene is waiting on an answer from the video service right now, so there is nothing to check."
 		} else {
 			intent["job_id"], intent["scene_id"], intent["scene_title"], intent["service"], intent["waiting_reason"] = waiting.Video.JobID, waiting.SceneID, waiting.Title, waiting.Video.Service, waiting.Video.Reason
+		}
+	}
+	if action == "set_music" {
+		// Saving the direction is free and done at once; making the videos again is the
+		// paid step, offered as one button with its price.
+		if batch, reply := s.chatSetMusic(r.Context(), scenes, s.seriesEpisodes(projectID), res); len(batch) == 0 {
+			action = "unknown"
+			intent["action"], intent["reply"] = action, reply
+		} else {
+			ids := []string{}
+			for _, scene := range batch {
+				ids = append(ids, scene["id"].(string))
+			}
+			action = "render_scenes"
+			intent["action"], intent["reply"], intent["scene_ids"], intent["scenes"] = action, reply, ids, batch
 		}
 	}
 	if action == "clear_failed_videos" {
@@ -421,7 +436,7 @@ func canonicalChatAction(action string) string {
 	switch action {
 	case "create_script", "add_scene":
 		return "generate_script"
-	case "open_editor", "make_clip", "finish_video", "render_scenes", "check_video", "stop_waiting", "switch_video_service", "clear_failed_videos", "update_character", "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "caption", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
+	case "open_editor", "make_clip", "finish_video", "render_scenes", "check_video", "stop_waiting", "switch_video_service", "clear_failed_videos", "set_music", "update_character", "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "caption", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
 		return action
 	default:
 		return "unknown"

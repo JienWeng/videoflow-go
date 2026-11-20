@@ -199,7 +199,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 			}
 		}
 		// Only fields in the provider contract are forwarded. Local IDs never leave the app.
-		allowed := map[string]bool{"prompt": true, "duration": true, "aspect_ratio": true, "resolution": true, "generate_audio": true, "seed": true, "frame_images": true, "input_references": true, "provider": true, "director_context": true, "director_keyframe": true, "voice_policy": true, "request_fingerprint": true, "audio_mode": true, "music_prompt": true, "render_unit": true, "render_plan_id": true, "scene_input_revision": true, "reference_plan_id": true, "image_urls": true, "video_urls": true, "audio_urls": true}
+		allowed := map[string]bool{"final_prompt": true, "prompt": true, "duration": true, "aspect_ratio": true, "resolution": true, "generate_audio": true, "seed": true, "frame_images": true, "input_references": true, "provider": true, "director_context": true, "director_keyframe": true, "voice_policy": true, "request_fingerprint": true, "audio_mode": true, "music_prompt": true, "render_unit": true, "render_plan_id": true, "scene_input_revision": true, "reference_plan_id": true, "image_urls": true, "video_urls": true, "audio_urls": true}
 		for key := range payload {
 			if !allowed[key] {
 				delete(payload, key)
@@ -270,6 +270,12 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 			prompt += "\nFinal audio requirement: SILENT VISUAL PASS. No generated dialogue, narration or substitute voice; approved saved speech is a separate explicit stage."
 			payload["generate_audio"] = false
 		}
+		// A planned scene clip carries its finished prompt, written for the video model
+		// from the scene's records; it replaces everything gathered above.
+		if final, _ := payload["final_prompt"].(string); strings.TrimSpace(final) != "" {
+			prompt = final
+		}
+		delete(payload, "final_prompt")
 		payload["prompt"] = prompt
 		if job.Model == "" {
 			job.Model = resolver.DefaultMediaModel(provider, "video")

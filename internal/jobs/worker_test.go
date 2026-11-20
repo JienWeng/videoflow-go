@@ -403,3 +403,41 @@ func TestRenderRefusedForItsKeyMarksTheKeyRejected(t *testing.T) {
 		t.Fatalf("after a 401 render the key check is %+v", check)
 	}
 }
+
+// A planned scene clip carries its finished prompt; the worker sends exactly that and
+// adds nothing of its own.
+func TestWorkerSendsAPlannedClipsFinishedPromptUnchanged(t *testing.T) {
+	sent := ""
+	worker, job := workerFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/videos/models" {
+			w.Write([]byte(`{"data":[{"id":"test/video","supported_durations":[4],"supported_aspect_ratios":["16:9"],"supported_frame_images":["first_frame"]}]}`))
+			return
+		}
+		if r.URL.Path == "/videos" {
+			var payload map[string]any
+			json.NewDecoder(r.Body).Decode(&payload)
+			sent, _ = payload["prompt"].(string)
+			if payload["final_prompt"] != nil {
+				t.Error("the internal field reached the video service")
+			}
+			w.Write([]byte(`{"id":"upstream"}`))
+			return
+		}
+		w.Write([]byte(`{"status":"failed","error":"mock stop after submission"}`))
+	})
+	pid, _ := worker.database.GetActiveProjectID()
+	scene := &models.Scene{ProjectID: &pid, Title: "Ocean", Summary: "Wave", Duration: 4, AspectRatio: "16:9", SceneJSON: json.RawMessage(`{"generation_brief":{"idea":"x","tone":"gloomy","instruction":"internal note"}}`)}
+	worker.database.CreateScene(scene)
+	var request map[string]any
+	json.Unmarshal(job.RequestJSON, &request)
+	request["prompt"], request["final_prompt"] = "everything gathered along the way", "Shot 1: a wave rolls in."
+	raw, _ := json.Marshal(request)
+	job = &models.RenderJob{ProjectID: &pid, SceneID: &scene.ID, Provider: "openrouter", Model: "test/video", Status: "pending", RequestJSON: raw}
+	if err := worker.database.CreateRenderJob(job); err != nil {
+		t.Fatal(err)
+	}
+	_ = worker.processJob(job.ID)
+	if sent != "Shot 1: a wave rolls in." {
+		t.Fatalf("sent %q", sent)
+	}
+}

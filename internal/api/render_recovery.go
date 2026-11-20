@@ -43,6 +43,7 @@ func (s *Server) registerRenderRecoveryRoutes() {
 	s.router.Post("/render-jobs/{id}/check", s.handleCheckRender)
 	s.router.Post("/render-jobs/{id}/stop-waiting", s.handleStopWaitingRender)
 	s.router.Post("/render-jobs/clear-failed", s.handleClearFailedRenders)
+	s.router.Get("/scenes/{id}/video-prompt", s.handleScenePromptPreview)
 }
 
 // projectRenderJob loads a render job of the open project.

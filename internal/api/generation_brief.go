@@ -29,6 +29,7 @@ type generationBrief struct {
 	AspectRatio        string          `json:"aspect_ratio"`
 	Language           string          `json:"language"`
 	ConversationMode   string          `json:"conversation_mode"`
+	Music              string          `json:"music,omitempty"`
 	Instruction        string          `json:"instruction"`
 	CharacterIDs       []string        `json:"character_ids"`
 	CreateCharacters   bool            `json:"create_characters"`

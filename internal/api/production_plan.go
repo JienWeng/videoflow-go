@@ -222,6 +222,10 @@ func (s *Server) sceneProductionPlan(ctx context.Context, scene *models.Scene) (
 			p.Settings.AudioMode = "silent"
 		}
 	}
+	if p.Settings.AudioMode == "native" && p.Settings.MusicPrompt == "" {
+		// The music chosen with the story applies until a scene sets its own.
+		p.Settings.MusicPrompt = sceneBrief(scene).Music
+	}
 	if err = validateProduction(p.Settings); err != nil {
 		return p, err
 	}

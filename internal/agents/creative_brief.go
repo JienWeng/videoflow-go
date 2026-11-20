@@ -16,8 +16,10 @@ type CreativeBrief struct {
 	Resolution       string `json:"resolution"`
 	Language         string `json:"language"`
 	ConversationMode string `json:"conversation_mode"`
-	TargetDuration   int    `json:"target_duration"`
-	SceneCount       int    `json:"scene_count"`
+	// Music is a short direction for background music made with the video; empty means none.
+	Music          string `json:"music"`
+	TargetDuration int    `json:"target_duration"`
+	SceneCount     int    `json:"scene_count"`
 }
 
 type creativeDirectionKey struct{}
