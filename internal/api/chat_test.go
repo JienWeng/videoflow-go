@@ -33,10 +33,13 @@ func TestChatReturnsRunnableCanonicalActions(t *testing.T) {
 	}
 }
 
-func TestChatRejectsMissingSelectedNodeBeforeInference(t *testing.T) {
-	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("must not invoke model for invalid selection") })
+// A selection that no longer exists is dropped, not a reason to refuse the message.
+func TestChatDropsAMissingSelectedNode(t *testing.T) {
+	s := routerServer(t, nil)
+	answer := `{"reply":"Which shot do you mean?","action":"none"}`
+	_, prompt := plannerSays(s, &answer)
 	result := call(t, s, "POST", "/chat", `{"message":"Change this","selected":{"kind":"shot","id":"missing"}}`)
-	if result.Code != 409 {
+	if result.Code != 200 || strings.Contains(*prompt, `"id":"missing"`) {
 		t.Fatalf("got %d %s", result.Code, result.Body.String())
 	}
 }

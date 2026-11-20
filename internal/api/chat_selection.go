@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 )
 
 type chatSelection struct {
@@ -43,6 +42,14 @@ func (s *Server) chatSelectionContext(project string, selected *chatSelection) (
 			record = v
 			owned = v.ProjectID != nil && *v.ProjectID == project
 		}
+	case "final_video":
+		// A joined episode export. It has no actions of its own in chat; the assistant is
+		// told what it is so "this video" means something.
+		v, e := s.database.GetAsset(selected.ID)
+		if e == nil && v.Type == "output_video" {
+			record = map[string]any{"id": v.ID, "name": v.Name, "what": "the finished, joined video of an episode", "made": v.CreatedAt}
+			owned = v.ProjectID != nil && *v.ProjectID == project
+		}
 	case "output", "render_job":
 		jobs, e := s.database.ListRenderJobs(project)
 		if e == nil {
@@ -64,7 +71,9 @@ func (s *Server) chatSelectionContext(project string, selected *chatSelection) (
 		}
 	}
 	if !owned {
-		return nil, fmt.Errorf("selected item is unavailable in this project; refresh the canvas")
+		// The item was deleted, replaced or belongs elsewhere. The message still goes
+		// through, just without a selection: a stale click must never block the chat.
+		return nil, nil
 	}
 	return json.Marshal(map[string]any{"kind": selected.Kind, "id": selected.ID, "record": record, "instruction": "The user selected this item. It is the default target for compatible actions. When the user clearly names a different scene or character, or asks for a project-level step such as story settings, do that instead, set that item's id, and say in the reply which item the button works on. Selection alone is not approval for generation."})
 }

@@ -101,3 +101,24 @@ func TestJoiningAnEpisodeNeverMakesAVideo(t *testing.T) {
 		t.Fatalf("%d render jobs, want only the finished one", len(jobs))
 	}
 }
+
+// Selecting a final video on the canvas, or something that no longer exists, must never
+// stop a chat message from going through.
+func TestChatAcceptsASelectedFinalVideoAndIgnoresAStaleSelection(t *testing.T) {
+	s := routerServer(t, nil)
+	answer := `{"reply":"The voice came from the video model.","action":"none"}`
+	_, prompt := plannerSays(s, &answer)
+	project, _ := s.database.GetActiveProjectID()
+	scenes := storyScenes(t, s, "One")
+	final := exported(t, s, project, finishedVideo(t, s, scenes[0]))
+
+	w := call(t, s, "POST", "/chat", fmt.Sprintf(`{"message":"is the voice from the video model?","selected":{"id":%q,"kind":"final_video"}}`, final))
+	if w.Code != 200 || !strings.Contains(*prompt, "the finished, joined video of an episode") {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	for _, stale := range []string{`{"id":"asset_gone","kind":"final_video"}`, `{"id":"scene_gone","kind":"scene"}`, `{"id":"x","kind":"something_new"}`} {
+		if w = call(t, s, "POST", "/chat", `{"message":"hello","selected":`+stale+`}`); w.Code != 200 {
+			t.Fatalf("selection %s blocked the message: %d %s", stale, w.Code, w.Body.String())
+		}
+	}
+}

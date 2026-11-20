@@ -40,6 +40,11 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, selectionErr.Error(), 409)
 		return
 	}
+	if selectedContext == nil || body.Selected != nil && body.Selected.Kind == "final_video" {
+		// A stale selection is dropped; a final video is only context, it never narrows
+		// what the assistant may do.
+		body.Selected = nil
+	}
 	scenes, _ := s.database.ListScenes(projectID)
 	chars, _ := s.database.ListCharacters(projectID)
 	jobs, _ := s.database.ListRenderJobs(projectID)

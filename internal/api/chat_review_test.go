@@ -167,21 +167,23 @@ func TestChatReviewPartialFailureAndContextMutationRecorded(t *testing.T) {
 		})
 	}
 }
-func TestChatReviewRejectsCrossProjectSelectionAndInputBounds(t *testing.T) {
+func TestChatReviewIgnoresCrossProjectSelectionAndBoundsInput(t *testing.T) {
 	s := reviewServer(t)
 	log := reviewCLI(t, s, "")
 	other, _ := s.database.CreateProject("Other", "")
 	asset := &models.Asset{ProjectID: &other.ID, Name: "Foreign", Type: "prop"}
 	s.database.CreateAsset(asset)
+	// Another project's item is never read: the review runs without a selection.
 	w := call(t, s, "POST", "/chat/review", fmt.Sprintf(`{"message":"review","selected":{"kind":"asset","id":%q}}`, asset.ID))
-	if w.Code != 409 {
-		t.Fatal(w.Code, w.Body.String())
+	if seen, _ := os.ReadFile(log); w.Code != 200 || strings.Contains(string(seen), "Foreign") {
+		t.Fatal(w.Code, w.Body.String(), string(seen))
 	}
+	before, _ := os.ReadFile(log)
 	w = call(t, s, "POST", "/chat/review", `{"message":"`+strings.Repeat("x", 16001)+`"}`)
 	if w.Code != 400 {
 		t.Fatal(w.Code)
 	}
-	if _, err := os.Stat(log); !os.IsNotExist(err) {
+	if after, _ := os.ReadFile(log); len(after) != len(before) {
 		t.Fatal("CLI started for rejected input")
 	}
 }
