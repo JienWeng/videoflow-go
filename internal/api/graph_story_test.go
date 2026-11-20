@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -120,5 +121,20 @@ func TestChatAcceptsASelectedFinalVideoAndIgnoresAStaleSelection(t *testing.T) {
 		if w = call(t, s, "POST", "/chat", `{"message":"hello","selected":`+stale+`}`); w.Code != 200 {
 			t.Fatalf("selection %s blocked the message: %d %s", stale, w.Code, w.Body.String())
 		}
+	}
+}
+
+// A run started by POST /autopilot/finish reads the episode plan with an in-process GET.
+// That GET must route as a GET, not take on the outer request's POST (which chi answers 405).
+func TestInternalGetFromAPostRouteIsRoutedAsAGet(t *testing.T) {
+	s := routerServer(t, nil)
+	scenes := storyScenes(t, s, "One")
+	var code int
+	s.router.Post("/test/internal-get", func(w http.ResponseWriter, r *http.Request) {
+		code, _ = s.internalCall(r.Context(), "GET", "/scripts/"+*scenes[0].ScriptID+"/composition-draft", nil)
+	})
+	call(t, s, "POST", "/test/internal-get", `{}`)
+	if code == http.StatusMethodNotAllowed || code == 0 {
+		t.Fatalf("internal GET answered %d: it was routed as the outer POST", code)
 	}
 }

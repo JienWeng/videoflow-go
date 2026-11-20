@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"videoflow-go/internal/models"
+
+	"github.com/go-chi/chi/v5"
 )
 
 // Autopilot makes scene videos without further clicks. Finishing a story renders every
@@ -30,6 +32,9 @@ func (s *Server) internalCall(ctx context.Context, method, path string, body any
 	if body != nil {
 		payload, _ = json.Marshal(body)
 	}
+	// chi reuses a routing context it finds on the request, so the caller's own route
+	// (POST /autopilot/finish) would decide this call's method. Start a fresh one.
+	ctx = context.WithValue(ctx, chi.RouteCtxKey, nil)
 	request := httptest.NewRequest(method, path, bytes.NewReader(payload)).WithContext(ctx)
 	request.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()

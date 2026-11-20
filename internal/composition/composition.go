@@ -316,7 +316,7 @@ func Document(m Manifest) string {
 		factor = 0.07
 	}
 	captionSize := int(float64(short)*factor + 0.5)
-	fmt.Fprintf(&b, `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src 'self' blob:; img-src 'self' blob: data:; script-src 'self' 'unsafe-inline' blob:; connect-src 'self'; worker-src blob:; font-src 'self'; style-src 'unsafe-inline'"><style>@font-face{font-family:VideoFlowCaptions;src:url(assets/captions.woff2)}html,body{margin:0;background:#111}#root{position:relative;overflow:hidden;width:%dpx;height:%dpx}.clip{position:absolute;inset:0;width:100%%;height:100%%;object-fit:contain}.caption{inset:auto 5%% 8%%;height:auto;width:90%%;color:white;text-align:center;font:700 %dpx/1.25 VideoFlowCaptions,sans-serif;text-shadow:-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000,0 3px 8px rgba(0,0,0,.8)}</style></head><body><div id="root" data-composition-id="root" data-no-timeline data-width="%d" data-height="%d" data-duration="%g" data-fps="%d">`, m.Width, m.Height, captionSize, m.Width, m.Height, m.Duration, m.FPS)
+	fmt.Fprintf(&b, `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src 'self' blob:; img-src 'self' blob: data:; script-src 'self' 'unsafe-inline' blob:; connect-src 'self'; worker-src blob:; font-src 'self' data:; style-src 'unsafe-inline'"><style>@font-face{font-family:VideoFlowCaptions;src:url(assets/captions.woff2)}html,body{margin:0;background:#111}#root{position:relative;overflow:hidden;width:%dpx;height:%dpx}.clip{position:absolute;inset:0;width:100%%;height:100%%;object-fit:contain}.caption{inset:auto 5%% 8%%;height:auto;width:90%%;color:white;text-align:center;font:700 %dpx/1.25 VideoFlowCaptions,sans-serif;text-shadow:-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000,0 3px 8px rgba(0,0,0,.8)}</style></head><body><div id="root" data-composition-id="root" data-no-timeline data-width="%d" data-height="%d" data-duration="%g" data-fps="%d">`, m.Width, m.Height, captionSize, m.Width, m.Height, m.Duration, m.FPS)
 	for _, group := range []struct {
 		clips []Clip
 		audio bool
@@ -380,7 +380,9 @@ func Verify(dir string, m Manifest) error {
 	}
 	m.Revision = revision
 	b, e := os.ReadFile(filepath.Join(dir, "index.html"))
-	if e != nil || string(b) != Document(m) {
+	// Edits saved before the caption font was allowed inline carry the earlier policy.
+	current := Document(m)
+	if earlier := strings.Replace(current, "font-src 'self' data:", "font-src 'self'", 1); e != nil || (string(b) != current && string(b) != earlier) {
 		return fmt.Errorf("composition source changed; save a new manifest revision")
 	}
 	for _, c := range append(m.Clips, m.Audio...) {
