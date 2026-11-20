@@ -209,7 +209,7 @@ func (s *Server) handleListRenderJobs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no active project", http.StatusInternalServerError)
 		return
 	}
-	jobs, err := s.database.ListRenderJobs(projectID)
+	jobs, err := s.database.ShownRenderJobs(projectID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

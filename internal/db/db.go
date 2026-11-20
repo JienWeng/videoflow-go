@@ -58,6 +58,9 @@ func Open(databasePath string) (*DB, error) {
 	if err := d.ensureMediaProviders(); err != nil {
 		return nil, err
 	}
+	if err := d.ensureRenderCleanup(); err != nil {
+		return nil, err
+	}
 	if err := d.ensureCosts(); err != nil {
 		return nil, err
 	}
@@ -1484,7 +1487,7 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 	}
 
 	// RenderJobs & RenderOutputs
-	jobs, err := d.ListRenderJobs(projectID)
+	jobs, err := d.ShownRenderJobs(projectID)
 	if err == nil {
 		for _, j := range jobs {
 			var request struct {

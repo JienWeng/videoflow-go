@@ -825,6 +825,8 @@
       const intent = { ...r.intent };
       if(intent.action==='generate_script'){for(const m of messages)if(m.intent?.action==='generate_script'&&!m.dismissed){m.dismissed=true;m.briefSuperseded=true;}}
       if(intent.action==='finish_video'&&intent.script_id&&mode==='full'){messages.push({role:'assistant',text:intent.reply,dismissed:true,intent});void startAutopilot(intent.script_id);return}
+      // Already done by the assistant (free, nothing deleted): show what it said and refresh the canvas.
+      if(intent.action==='clear_failed_videos'){messages.push({role:'assistant',text:intent.reply,dismissed:true,intent});void onmutate?.();void refreshChips();return}
       if(intent.action==='render_scenes'&&intent.scene_ids?.length&&mode==='full'){messages.push({role:'assistant',text:intent.reply,dismissed:true,intent});void startScenes(intent.scene_ids);return}
       messages.push({
         role: 'assistant',

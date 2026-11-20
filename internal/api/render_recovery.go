@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -41,6 +42,7 @@ func videoServiceLabel(provider string) string {
 func (s *Server) registerRenderRecoveryRoutes() {
 	s.router.Post("/render-jobs/{id}/check", s.handleCheckRender)
 	s.router.Post("/render-jobs/{id}/stop-waiting", s.handleStopWaitingRender)
+	s.router.Post("/render-jobs/clear-failed", s.handleClearFailedRenders)
 }
 
 // projectRenderJob loads a render job of the open project.
@@ -156,4 +158,30 @@ func (s *Server) stopWaitingRender(job *models.RenderJob) renderCheck {
 		out.Outcome, out.Message = "unknown", "VideoFlow could not save that. Press Stop waiting again."
 	}
 	return out
+}
+
+// handleClearFailedRenders puts away the open project's failed video attempts. Free;
+// nothing is deleted and every scene can still be made again.
+func (s *Server) handleClearFailedRenders(w http.ResponseWriter, r *http.Request) {
+	project, err := s.activeProjectID(r.Context())
+	if err != nil {
+		http.Error(w, "no active project", 500)
+		return
+	}
+	n, err := s.database.ClearFailedRenders(project)
+	if err != nil {
+		http.Error(w, "could not clear the failed videos", 500)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"cleared": n, "message": clearedFailedReply(n)})
+}
+
+func clearedFailedReply(n int) string {
+	switch n {
+	case 0:
+		return "There are no failed video attempts left to clear."
+	case 1:
+		return "Cleared 1 failed video attempt. Your scenes and pictures are untouched, and the scene can be made again."
+	}
+	return fmt.Sprintf("Cleared %d failed video attempts. Your scenes and pictures are untouched, and the scenes can be made again.", n)
 }

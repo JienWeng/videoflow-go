@@ -146,6 +146,17 @@
     outputs = outputs;
   }
 
+  // Failed attempts are records, not queued work: clearing puts them away (free, nothing
+  // is deleted) and every scene can still be made again.
+  const failedCount = $derived(jobs.filter((j) => j.status === 'failed' || j.status === 'canceled').length);
+  let clearing = $state(false);
+  async function clearFailed() {
+    clearing = true;
+    try { const r = await post('/render-jobs/clear-failed', {}); toast.success(r.message); await refresh(); }
+    catch (e) { toast.error(`Could not clear the failed videos. ${(e as Error).message}`); }
+    finally { clearing = false; }
+  }
+
   onMount(() => {
     refresh()
       .catch((e) => (error = e.message))
@@ -375,7 +386,7 @@
   <div class="shrink-0 px-6 pt-6 pb-4">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div><h1 class="text-lg font-semibold">Videos</h1><p class="mt-0.5 text-sm text-muted-foreground">Your scene videos and edited exports. Watch, download, or combine them in the editor.</p></div>
-      <div class="flex flex-wrap gap-2"><Button variant="ghost" href="/voices">Voices</Button><Button href="/?view=edit"><Clapperboard class="size-4" />Edit & combine</Button></div>
+      <div class="flex flex-wrap gap-2">{#if failedCount}<Button variant="outline" disabled={clearing} onclick={clearFailed}>{clearing ? 'Clearing…' : `Clear ${failedCount} failed`}</Button>{/if}<Button variant="ghost" href="/voices">Voices</Button><Button href="/?view=edit"><Clapperboard class="size-4" />Edit & combine</Button></div>
     </div>
   </div>
   <PaneGroup direction="horizontal" class="flex-1 min-h-0 border-t border-border">
