@@ -8,7 +8,8 @@ export const KIND_COLORS: Record<string, string> = {
   scene: 'hsl(270, 70%, 65%)', // purple
   shot: 'hsl(35, 90%, 55%)', // orange
   render_job: 'hsl(330, 70%, 60%)', // pink
-  output: 'hsl(190, 80%, 55%)' // cyan
+  output: 'hsl(190, 80%, 55%)', // cyan
+  final_video: 'hsl(48, 95%, 58%)' // gold: the finished deliverable
 };
 
 export function kindColor(kind: string): string {
@@ -23,11 +24,12 @@ export const KIND_LABELS: Record<string, string> = {
   character: 'Character',
   asset: 'Asset',
   render_job: 'Render',
-  output: 'Output'
+  output: 'Scene video',
+  final_video: 'Final video'
 };
 
 /** Order the legend swatches follow the pipeline left→right. */
-export const LEGEND_KINDS = ['scene', 'shot', 'character', 'asset', 'render_job', 'output'];
+export const LEGEND_KINDS = ['scene', 'shot', 'character', 'asset', 'render_job', 'output', 'final_video'];
 
 /** Edge accent by relationship label — colors the lines by what they mean so a
  * "casts" link reads differently from a "render" link even when labels are
@@ -39,6 +41,7 @@ export const EDGE_COLORS: Record<string, string> = {
   shot: 'hsl(35, 90%, 55%)', // scene → shot (orange, matches shot)
   render: 'hsl(330, 70%, 60%)', // → render job (pink)
   output: 'hsl(190, 80%, 55%)', // render job → output (cyan)
+  joined: 'hsl(48, 95%, 58%)', // scene video → the final video it is joined into (gold)
   storyboard: 'hsl(270, 70%, 65%)' // scene → storyboard asset (purple)
 };
 

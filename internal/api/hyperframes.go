@@ -183,11 +183,12 @@ func (s *Server) handleCompositionRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "exact source revision required", 409)
 		return
 	}
+	// Exports run one at a time on this server; a second one waits its turn.
 	select {
 	case compositionSlots <- struct{}{}:
 		defer func() { <-compositionSlots }()
-	default:
-		http.Error(w, "another local composition operation is running", 409)
+	case <-r.Context().Done():
+		http.Error(w, "stopped while waiting for another export to finish", 409)
 		return
 	}
 	dir := filepath.Join(s.compositionRoot(), project, revision)

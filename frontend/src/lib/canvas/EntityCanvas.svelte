@@ -1,4 +1,5 @@
 <script lang="ts">
+  import JoinEpisode from './JoinEpisode.svelte';
   import { onMount, untrack, tick } from 'svelte';
   import {
     SvelteFlow,
@@ -328,7 +329,7 @@
       const kind = String(selNode.data?.kind ?? '');
       // render_job / output have no delete affordance in the context menu, so
       // the gesture is a no-op for them rather than a confusing error.
-      if (kind === 'render_job' || kind === 'output') return;
+      if (kind === 'render_job' || kind === 'output' || kind === 'final_video') return;
       menu = {
         node: selNode,
         x: window.innerWidth / 2,
@@ -506,7 +507,7 @@
     </Panel>
 
     {#if panelNode&&connectionsOpen}<Panel position="top-right" class="z-20"><Connections node={panelNode} {nodes} {edges} busy={connectionBusy} onconnect={(source,target)=>handleConnect({source,target,sourceHandle:null,targetHandle:null})} ondetach={disconnect} onselect={selectNode} onclose={()=>connectionsOpen=false}/></Panel>{/if}
-    {#if panelNode}<Panel position="bottom-center" class="z-10 max-w-[calc(100%-6rem)]"><div role="toolbar" aria-label="Selected item actions" class="flex flex-wrap items-center gap-1 rounded-xl border border-border bg-card p-2"><span class="max-w-40 truncate px-2 text-xs font-medium">{panelNode.data?.label}</span><Button variant="ghost" size="sm" onclick={()=>oninspect?oninspect():onselect(panelNode)}>Details</Button>{#if panelNode.data?.kind==='scene'&&onopenscene}<Button variant="ghost" size="sm" onclick={()=>onopenscene?.(panelNode!.id)}>Scene stages</Button>{/if}{#if panelNode.data?.kind==='output'}<Button variant="ghost" size="sm" href={`/editor/${panelNode.id}`}>Edit video</Button>{/if}<Button variant="ghost" size="sm" onclick={()=>{connectionsOpen=!connectionsOpen;if(connectionsOpen)focusConnections();}} aria-expanded={connectionsOpen} aria-label="Manage selected item connections"><Focus class="size-3.5"/>Connections</Button><Button variant="ghost" size="icon" aria-label="Clear selection" onclick={()=>selectNode(null)}><X class="size-4"/></Button></div></Panel>{/if}
+    {#if panelNode}<Panel position="bottom-center" class="z-10 max-w-[calc(100%-6rem)]"><div role="toolbar" aria-label="Selected item actions" class="flex flex-wrap items-center gap-1 rounded-xl border border-border bg-card p-2"><span class="max-w-40 truncate px-2 text-xs font-medium">{panelNode.data?.label}</span><Button variant="ghost" size="sm" onclick={()=>oninspect?oninspect():onselect(panelNode)}>Details</Button>{#if panelNode.data?.kind==='scene'&&onopenscene}<Button variant="ghost" size="sm" onclick={()=>onopenscene?.(panelNode!.id)}>Scene stages</Button>{/if}{#if panelNode.data?.kind==='output'}<Button variant="ghost" size="sm" href={`/editor/${panelNode.id}`}>Edit video</Button>{/if}{#if panelNode.data?.script_id&&['scene','output','final_video'].includes(String(panelNode.data?.kind))}{#key panelNode.data.script_id}<JoinEpisode scriptId={String(panelNode.data.script_id)} episode={`episode ${panelNode.data.episode_number}`} again={panelNode.data?.kind==='final_video'} onjoined={refresh}/>{/key}{/if}<Button variant="ghost" size="sm" onclick={()=>{connectionsOpen=!connectionsOpen;if(connectionsOpen)focusConnections();}} aria-expanded={connectionsOpen} aria-label="Manage selected item connections"><Focus class="size-3.5"/>Connections</Button><Button variant="ghost" size="icon" aria-label="Clear selection" onclick={()=>selectNode(null)}><X class="size-4"/></Button></div></Panel>{/if}
 
     <Background />
     <Controls showFitView={false} />

@@ -11,6 +11,8 @@ export function nodeSize(n: Node): { w: number; h: number } {
   if (hasPreview) h += 70;
   if (kind === 'render_job') h += 26;
   if(kind==='character')h+=58;
+  if(kind==='final_video')h+=40;
+  if(kind==='scene'&&d.episode_number)h+=18;
   return { w: kind === 'scene' ? 190 : W, h };
 }
 
@@ -39,7 +41,7 @@ export function layout(nodes:Node[],edges:Edge[]):Node[]{
  let frontier=scenes.flatMap(scene=>sorted.filter(n=>owner.get(n.id)===scene.id).map(n=>n.id));
  while(frontier.length){const next:string[]=[];for(const id of frontier)for(const other of adjacent.get(id)??[]){if(owner.has(other)||kind(byId.get(other)!)==='character'||references.has(other))continue;owner.set(other,owner.get(id)!);next.push(other)}frontier=next}
  let top=0;
- for(const scene of scenes){let bottom=top;const group=sorted.filter(n=>owner.get(n.id)===scene.id);const columns=[['scene'],['shot'],['asset'],['render_job'],['output']];
+ for(const scene of scenes){let bottom=top;const group=sorted.filter(n=>owner.get(n.id)===scene.id);const columns=[['scene'],['shot'],['asset'],['render_job'],['output'],['final_video']];
   columns.forEach((kinds,column)=>{let y=top;for(const n of group.filter(n=>kinds.includes(kind(n))).sort(compare)){positions.set(n.id,{x:column*COLUMN,y});y+=nodeSize(n).h+GAP;bottom=Math.max(bottom,y)}});top=bottom+80;
  }
  // Character/reference pairs form a separate band, not branches between shots.

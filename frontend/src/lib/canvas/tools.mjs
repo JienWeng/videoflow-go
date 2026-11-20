@@ -7,6 +7,7 @@ export function nodeTools(kind,id,data={}){
  if(kind==='shot')return scene?[{label:'Open shot in Story',href:`/?view=story&scene_id=${scene}&shot_id=${q}`}]:[];
  if(kind==='asset')return [{label:'Open asset library',href:`/library?tab=media&asset_id=${q}`},...(/\.(png|jpe?g|webp|mp4|webm|mov|wav|mp3|m4a|ogg)$/i.test(data.file_path??'')?[{label:'Use in video editor',href:`/?view=edit&source=${q}`}]:[])];
  if(kind==='output')return [{label:'Edit video',href:`/?view=edit&source=${encodeURIComponent('output-'+id)}`},{label:'Classic caption editor',href:`/editor/${q}`}];
+ if(kind==='final_video')return [{label:'Edit this video',href:data.script_id?`/?view=edit&script_id=${encodeURIComponent(data.script_id)}`:'/?view=edit'},{label:'Open Videos',href:'/render'}];
  if(kind==='render_job')return [{label:'Open Videos',href:'/render'},...(scene?[{label:'Open scene in Story',href:`/?view=story&scene_id=${scene}`}]:[])];
  return [];
 }

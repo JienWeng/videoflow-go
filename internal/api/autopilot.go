@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"videoflow-go/internal/models"
@@ -43,7 +44,16 @@ type autopilotRequest struct {
 	ScriptID   string   `json:"script_id"`
 	SceneIDs   []string `json:"scene_ids"`
 	VideosOnly bool     `json:"videos_only"`
+	// JoinOnly joins and exports what is already made and never makes a video: the run
+	// is refused, naming the scenes, when one has no finished video. Free.
+	JoinOnly bool `json:"join_only"`
 }
+
+// autopilotRuns are the background runs in progress, by what they make.
+var autopilotRuns = struct {
+	sync.Mutex
+	ops map[string]string
+}{ops: map[string]string{}}
 
 // autopilotPoll is how often the run looks at the video service's progress.
 var autopilotPoll = 8 * time.Second
@@ -103,8 +113,55 @@ func (s *Server) handleAutopilotFinish(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, problem, code)
 		return
 	}
+	if body.JoinOnly {
+		jobs, _ := s.database.ListRenderJobs(project)
+		done, missing := completedSceneRenders(jobs), []string{}
+		for _, scene := range scenes {
+			if !done[scene.ID] {
+				missing = append(missing, "“"+scene.Title+"”")
+			}
+		}
+		if body.VideosOnly || len(missing) > 0 {
+			problem := "Joining only works on a whole episode."
+			if len(missing) == 1 {
+				problem = missing[0] + " has no finished video yet. Make its video first, then join the episode."
+			} else if len(missing) > 1 {
+				problem = strings.Join(missing, ", ") + " have no finished video yet. Make their videos first, then join the episode."
+			}
+			http.Error(w, problem, 409)
+			return
+		}
+	}
+	// The same run asked for twice (two tabs, a double click, the assistant and a button)
+	// is one run: the second caller follows the first instead of colliding with it.
+	background := r.URL.Query().Get("background") == "true"
+	ids := []string{}
+	for _, scene := range scenes {
+		ids = append(ids, scene.ID)
+	}
+	run := fmt.Sprintf("%s|%s|%t|%s", project, body.ScriptID, body.VideosOnly, strings.Join(ids, ","))
+	if background {
+		autopilotRuns.Lock()
+		defer autopilotRuns.Unlock()
+		if id := autopilotRuns.ops[run]; id != "" {
+			writeJSON(w, 202, map[string]any{"op_id": id, "status": "running", "already_running": true})
+			return
+		}
+	}
 	op := &models.Op{Kind: "autopilot", ProjectID: &project}
+	defer func() {
+		if background && op.ID != "" {
+			autopilotRuns.ops[run] = op.ID
+		}
+	}()
 	s.operation(w, r, op, func(ctx context.Context) (any, error) {
+		if background {
+			defer func() {
+				autopilotRuns.Lock()
+				delete(autopilotRuns.ops, run)
+				autopilotRuns.Unlock()
+			}()
+		}
 		stage := func(text string) {
 			raw, _ := json.Marshal(map[string]any{"stage": text, "script_id": body.ScriptID, "videos_only": body.VideosOnly})
 			_ = s.database.UpdateOp(op.ID, "running", raw, nil)

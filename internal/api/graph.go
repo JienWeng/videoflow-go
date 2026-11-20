@@ -17,5 +17,6 @@ func (s *Server) handleGetGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.storyGraph(projectID, graphData)
 	writeJSON(w, http.StatusOK, graphData)
 }

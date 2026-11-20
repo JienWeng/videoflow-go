@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
-  import { Users, Image, Clapperboard, ListVideo, Film, RefreshCw } from '@lucide/svelte';
+  import { Users, Image, Clapperboard, ListVideo, Film, RefreshCw, Trophy } from '@lucide/svelte';
   import { Badge } from '$lib/components/ui/badge';
   import { mediaUrl, isImage } from '$lib/api';
   import { kindColor, KIND_LABELS } from './transform';
@@ -13,7 +13,8 @@
     scene: Clapperboard,
     shot: ListVideo,
     render_job: Film,
-    output: Film
+    output: Film,
+    final_video: Trophy
   };
 
   const kind = $derived(String(data.kind ?? ''));
@@ -21,7 +22,9 @@
   // Scenes are authored roots; render_job/output are machine-derived. Tinting
   // the card background by family makes that hierarchy readable at a glance.
   const isScene = $derived(kind === 'scene');
+  const isFinal = $derived(kind === 'final_video');
   const isDerived = $derived(kind === 'render_job' || kind === 'output');
+  const generated = $derived(isDerived || isFinal);
   const preview = $derived(
     kind === 'character' && isImage(data.reference_preview_path as string)
       ? mediaUrl(data.reference_preview_path as string)
@@ -47,6 +50,8 @@
     {selected ? 'ring-2 ring-primary ring-offset-2 ring-offset-background' : ''}
     {isScene
       ? 'w-[190px] border-primary/60 bg-card ring-1 ring-primary/30'
+      : isFinal
+        ? 'w-[180px] border-amber-400/60 bg-card ring-1 ring-amber-400/30'
       : isDerived
         ? 'w-[180px] border-dashed border-border bg-muted/40'
         : 'w-[180px] border-border bg-card'}"
@@ -62,14 +67,16 @@
     id="l"
     type="source"
     position={Position.Left}
-    isConnectable={!isDerived}
+    isConnectable={!generated}
     class="entity-handle"
-    title={isDerived?'Generated relationship':'Connect cast, scene props or locations, or shot assets'}
+    title={generated?'Generated relationship':'Connect cast, scene props or locations, or shot assets'}
   />
   <div class="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground"><Icon class="size-3 shrink-0" /><span>{KIND_LABELS[kind] ?? kind}</span>{#if data.duration}<span class="ml-auto">{data.duration}s</span>{/if}</div>
   <div class="flex items-center gap-1.5">
     <span class="truncate text-[13px] font-semibold" title={String(data.label ?? '')}>{data.label}</span>
   </div>
+  {#if isScene && data.episode_number}<div class="mt-0.5 truncate text-[11px] text-muted-foreground" title={`Episode ${data.episode_number} · ${data.episode_title ?? ''}`}>Episode {data.episode_number} · {data.episode_title}</div>{/if}
+  {#if isFinal}<div class="mt-1 text-[11px] text-muted-foreground">Joins {data.scene_count} scene {Number(data.scene_count) === 1 ? 'video' : 'videos'}</div><div class="truncate text-[11px] text-muted-foreground" title={(data.scene_titles as string[] ?? []).join(' → ')}>{(data.scene_titles as string[] ?? []).join(' → ')}</div>{/if}
   {#if preview}
     <img src={preview} alt={String(data.label ?? '')} loading="lazy" class="mt-1 h-16 w-full rounded object-cover" />
   {/if}
@@ -83,9 +90,9 @@
     id="r"
     type="source"
     position={Position.Right}
-    isConnectable={!isDerived}
+    isConnectable={!generated}
     class="entity-handle"
-    title={isDerived?'Generated relationship':'Connect cast, scene props or locations, or shot assets'}
+    title={generated?'Generated relationship':'Connect cast, scene props or locations, or shot assets'}
   />
 </div>
 

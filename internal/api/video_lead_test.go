@@ -451,3 +451,51 @@ func TestSceneIsBlockedUpFrontWhenTheServiceRefusedTheKey(t *testing.T) {
 		t.Fatal("a request went to a service that refused the key")
 	}
 }
+
+// "Finish the video" asked for twice while the first run is still going is one run:
+// the second caller follows the first instead of starting a rival that collides with it.
+func TestTheSameVideoRunAskedForTwiceIsOneRun(t *testing.T) {
+	fastAutopilot(t)
+	release := make(chan struct{})
+	s := videoFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		<-release // the video service takes its time answering
+		http.Error(w, "busy", 500)
+	})
+	s.database.SetAppSetting("video_prices_checked", time.Now().UTC().Format(time.RFC3339))
+	s.database.SetAppSetting("default_video_provider", `"fal"`)
+	scene := renderableScene(t, s, nil, "The Quiet End", 1, "auto")
+	uncertainJob(t, s, scene)
+	start := func() (id string, again bool) {
+		t.Helper()
+		w := call(t, s, "POST", "/autopilot/finish?background=true", fmt.Sprintf(`{"scene_ids":[%q],"videos_only":true}`, scene.ID))
+		var out struct {
+			OpID  string `json:"op_id"`
+			Again bool   `json:"already_running"`
+		}
+		if w.Code != 202 || json.Unmarshal(w.Body.Bytes(), &out) != nil || out.OpID == "" {
+			t.Fatal(w.Code, w.Body.String())
+		}
+		return out.OpID, out.Again
+	}
+	first, _ := start()
+	second, again := start()
+	if second != first || !again {
+		t.Fatalf("second request started its own run %s (first %s)", second, first)
+	}
+	close(release)
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if op, _ := s.database.GetOp(first); op != nil && op.Status != "running" {
+			break
+		}
+	}
+	// Once it is over, asking again is a new run.
+	var third string
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if third, _ = start(); third != first {
+			break
+		}
+	}
+	if third == first {
+		t.Fatal("a finished run still blocks a new one")
+	}
+}

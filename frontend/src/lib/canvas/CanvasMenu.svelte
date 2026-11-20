@@ -205,7 +205,7 @@
       </button>
     {/if}
 
-    {#if kind !== 'render_job' && kind !== 'output'}
+    {#if kind !== 'render_job' && kind !== 'output' && kind !== 'final_video'}
       <div class="my-1 h-px bg-border"></div>
       <button class="{itemCls} text-destructive hover:bg-destructive/10" role="menuitem" onclick={() => (view = 'confirm-delete')}>
         <Trash2 class="size-3.5" />Delete {kind}…

@@ -344,7 +344,7 @@
   }
 
   const videoSrc = $derived(
-    kind === 'output' ? mediaUrl(data.captioned_path || data.video_path) : null
+    kind === 'output' ? mediaUrl(data.captioned_path || data.video_path) : kind === 'final_video' ? mediaUrl(data.file_path) : null
   );
   const imageSrc = $derived(
     kind === 'asset' && isImage(data.file_path) ? mediaUrl(data.file_path) : null
@@ -518,6 +518,14 @@
           <Trash2 class="size-4 mr-1" />
           {deleting ? 'Deleting…' : confirmingDelete ? 'Confirm delete' : 'Delete asset'}
         </Button>
+      {:else if kind === 'final_video'}
+        <!-- svelte-ignore a11y_media_has_caption -->
+        <video controls src={videoSrc} class="mx-auto max-h-64 w-full rounded-md border border-border object-contain"></video>
+        <div class="space-y-1 text-sm">
+          <p class="font-medium">Joined from, in order</p>
+          <ol class="list-decimal space-y-0.5 pl-5 text-muted-foreground">{#each data.scene_titles ?? [] as title}<li>{title}</li>{/each}</ol>
+          <p class="text-xs text-muted-foreground">Exported {new Date(data.created_at).toLocaleString()}. Only the newest export of an episode is shown here; older ones are in Videos.</p>
+        </div>
       {:else if kind === 'render_job'}
         <RenderProgress id={shown.id} initialStatus={String(data.status??'pending')}/>
       {:else if kind === 'character'}
