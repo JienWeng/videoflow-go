@@ -28,7 +28,7 @@ func (s *Server) generationPrerequisites(ctx context.Context, brief generationBr
 			}
 			add("local_text", name+" is signed out, so it can't plan this story. Switch to a connected AI, or sign in again.")
 		} else if session.Status != "ready" {
-			add("local_text", "Local session is busy or requires review in Local sessions")
+			add("local_text", "The AI session is busy with another request. Wait for it to finish, or stop it.")
 		}
 	} else {
 		for _, agent := range []string{"script_agent", "shot_agent", "prompt_agent"} {

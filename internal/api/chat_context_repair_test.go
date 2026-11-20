@@ -8,7 +8,7 @@ import (
 	"videoflow-go/internal/models"
 )
 
-func TestRepairChatContextPreservesOwnedIdentityAndReviewGate(t *testing.T) {
+func TestRepairChatContextPreservesOwnedIdentityAndNeedsNoReview(t *testing.T) {
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("repair must never invoke AI") })
 	s.cfg.UseLocalText = true
 	project, _ := s.database.GetActiveProjectID()
@@ -44,16 +44,16 @@ func TestRepairChatContextPreservesOwnedIdentityAndReviewGate(t *testing.T) {
 		t.Fatal("concurrent selection overwrite allowed", ok, err)
 	}
 	current, _ := s.database.GetDirectorSession(session.ID, project)
-	if current.Status != "review_required" {
-		t.Fatal("repair bypassed review", current.Status)
+	if current.Status != "ready" {
+		t.Fatal("a failed request left the session locked", current.Status)
 	}
 	r = call(t, s, "POST", "/director/sessions/"+session.ID+"/repair-context", `{}`)
 	if r.Code != 200 {
 		t.Fatal("repair not idempotent", r.Body.String())
 	}
-	blocked := call(t, s, "POST", "/chat", `{"message":"Plan shots"}`)
-	if blocked.Code != 409 || !strings.Contains(blocked.Body.String(), "chat_session_review_required") {
-		t.Fatal("review gate not actionable", blocked.Code, blocked.Body.String())
+	// The failed request needs no review: the next message goes straight to the AI session.
+	if next := call(t, s, "POST", "/chat", `{"message":"Plan shots"}`); strings.Contains(next.Body.String(), "review") {
+		t.Fatal("chat still asks for a review", next.Code, next.Body.String())
 	}
 	other, _ := s.database.CreateProject("Other", "")
 	s.database.ActivateProject(other.ID)

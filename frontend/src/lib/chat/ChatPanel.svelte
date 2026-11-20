@@ -172,7 +172,6 @@
     setupSceneId?:string;
     storyOperationId?:string;storyStage?:string;storyReady?:boolean;referenceIds?:string[];castIds?:string[];
     repairContext?: boolean;
-    sessionReview?: boolean;
     activity?: unknown[];
     dismissed?: boolean;
  briefSuperseded?:boolean;
@@ -270,8 +269,8 @@
   /** Drop the non-serializable / refetched parts (state, callbacks live in
    * the template anyway — cards re-render fine from intent + options). */
   function serializableMsg(m: Msg) {
-    const { role, text, intent, options, warnings, chips, op, thumbs, retry, activity,editProposal, dismissed,briefSuperseded,repairContext,sessionReview,storyOperationId,storyStage,storyReady,referenceIds,castIds,setupSceneId } = m;
-    return { role, text, intent, options, warnings, chips, op, thumbs, retry, activity:normalizeActivity(activity),editProposal, dismissed,briefSuperseded,repairContext,sessionReview,storyOperationId,storyStage,storyReady,referenceIds,castIds,setupSceneId };
+    const { role, text, intent, options, warnings, chips, op, thumbs, retry, activity,editProposal, dismissed,briefSuperseded,repairContext,storyOperationId,storyStage,storyReady,referenceIds,castIds,setupSceneId } = m;
+    return { role, text, intent, options, warnings, chips, op, thumbs, retry, activity:normalizeActivity(activity),editProposal, dismissed,briefSuperseded,repairContext,storyOperationId,storyStage,storyReady,referenceIds,castIds,setupSceneId };
   }
 
   let conversationGeneration=0;
@@ -793,7 +792,7 @@
   }
 
   let repairingContext=$state(false);
-  async function repairContext(message:Msg){if(!activeSessionId||repairingContext)return;repairingContext=true;const generation=conversationGeneration;try{const result=await post(`/director/sessions/${activeSessionId}/repair-context`,{});if(generation!==conversationGeneration)return;message.repairContext=false;message.sessionReview=!!result.review_required;message.text=result.review_required?'Unavailable references removed. Review the interrupted AI session before sending again.':'Unavailable references removed. Your message is ready to retry.';reusePrompt(message.retry??'');void refreshCapabilities();}catch(e){if(generation===conversationGeneration)message.text=`Could not repair context. ${String(e)}`;}finally{repairingContext=false}}
+  async function repairContext(message:Msg){if(!activeSessionId||repairingContext)return;repairingContext=true;const generation=conversationGeneration;try{const result=await post(`/director/sessions/${activeSessionId}/repair-context`,{});if(generation!==conversationGeneration)return;message.repairContext=false;message.text='Unavailable references removed. Your message is ready to retry.';reusePrompt(message.retry??'');void refreshCapabilities();}catch(e){if(generation===conversationGeneration)message.text=`Could not repair context. ${String(e)}`;}finally{repairingContext=false}}
  function activeCreativeBrief(){
   for(let i=messages.length-1;i>=0;i--){const m=messages[i];if(m.intent?.action!=='generate_script'||m.dismissed)continue;
    if(messages.slice(i+1).some(next=>next.op?.label==='Story & reference images'&&next.op.status!=='failed'))return undefined;
@@ -845,8 +844,7 @@
         role: 'assistant',
         text: `Could not send your message. ${(e as Error).message}`,
         retry: message,
-        repairContext:e instanceof APIError&&e.code==='chat_context_invalid',
-        sessionReview:e instanceof APIError&&e.code==='chat_session_review_required'
+        repairContext:e instanceof APIError&&e.code==='chat_context_invalid'
       });
     } finally {
       if(generation===conversationGeneration){busy = false;
@@ -992,9 +990,8 @@
             {/if}
             {#if m.intent?.action==='unknown' && m.state?.next_steps?.length}<ol class="list-decimal space-y-1 pl-5 text-sm">{#each m.state.next_steps as step}<li>{step}</li>{/each}</ol>{/if}
             {#if m.repairContext}<Button variant="outline" size="sm" class="mt-2" disabled={busy||repairingContext} onclick={()=>repairContext(m)}>{repairingContext?'Repairing…':'Repair chat context'}</Button>{/if}
-            {#if m.sessionReview}<Button variant="outline" size="sm" class="mt-2" href="/director">Review AI session</Button>{/if}
             {#if m.storyStage==='awaiting_character_review'}<div class="space-y-2"><p class="text-xs text-muted-foreground">{m.storyReady?'References ready. Continue to scene images.':'Replace missing or excluded images before continuing.'}</p><Button size="sm" disabled={!m.storyReady||continuingStory||busy} onclick={()=>continueStory(m)}>{continuingStory?'Creating storyboard images…':'Continue storyboarding'}</Button></div>{/if}
-            {#if m.retry&&!m.repairContext&&!m.sessionReview}<Button variant="outline" size="sm" class="mt-2" disabled={busy} onclick={()=>reusePrompt(m.retry??'')}>Edit and retry</Button>{/if}
+            {#if m.retry&&!m.repairContext}<Button variant="outline" size="sm" class="mt-2" disabled={busy} onclick={()=>reusePrompt(m.retry??'')}>Edit and retry</Button>{/if}
             <ActivityView events={messageActivity(m)} />
             {#if normalizeActivity(m.activity).some(e=>e.kind==='subagent'&&e.status==='done')}<Button variant="outline" size="sm" class="self-start" disabled={busy} onclick={()=>prepareReviewChanges(m)}>Prepare changes from review</Button>{/if}
             {#if m.thumbs?.length}

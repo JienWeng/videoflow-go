@@ -116,10 +116,6 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			chatContextError(w)
 			return
 		}
-		if session, err := s.directorSession(ctx); err == nil && session.Status == "review_required" {
-			writeJSON(w, 409, map[string]string{"code": "chat_session_review_required", "error": "Review the interrupted AI session before sending another message."})
-			return
-		}
 		ctx = context.WithValue(ctx, directorSnapshotKey{}, plannedSnapshot)
 		body.History = nil
 		ctx = context.WithValue(ctx, directorUserMessageKey{}, body.Message)

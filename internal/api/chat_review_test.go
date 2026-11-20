@@ -243,34 +243,23 @@ func TestChatReviewRequiresSelectedSession(t *testing.T) {
 	}
 }
 
-func TestChatReviewPartialFailureRequiresAcknowledgement(t *testing.T) {
+func TestChatReviewPartialFailureNeedsNoAcknowledgement(t *testing.T) {
 	s := reviewServer(t)
 	log := reviewCLI(t, s, `case "$PWD" in *review-story-*) exit 2;; esac`)
 	w := call(t, s, "POST", "/chat/review", `{"message":"review"}`)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"status":"failed"`) {
 		t.Fatal(w.Code, w.Body.String())
 	}
+	// The session is free again at once; nothing has to be reviewed or acknowledged.
 	w = call(t, s, "GET", "/chat/capabilities", "")
-	if !strings.Contains(w.Body.String(), `"supported":false`) || !strings.Contains(w.Body.String(), "requires review") {
+	if !strings.Contains(w.Body.String(), `"supported":true`) || strings.Contains(w.Body.String(), "requires review") {
 		t.Fatal(w.Body.String())
 	}
-	w = call(t, s, "POST", "/chat/review", `{"message":"do not start"}`)
-	if w.Code != 409 || !strings.Contains(w.Body.String(), "acknowledge") {
-		t.Fatal(w.Code, w.Body.String())
-	}
-	raw, _ := os.ReadFile(log)
-	if strings.Count(string(raw), "\n") != 2 {
-		t.Fatal("unexpected retry", string(raw))
-	}
-	project, _ := s.database.GetActiveProjectID()
-	sessions, _ := s.database.ListDirectorSessions(project)
-	w = call(t, s, "POST", "/director/sessions/"+sessions[0].ID+"/acknowledge", `{}`)
-	if w.Code != 200 {
-		t.Fatal(w.Code, w.Body.String())
-	}
-	w = call(t, s, "GET", "/chat/capabilities", "")
-	if !strings.Contains(w.Body.String(), `"supported":true`) {
-		t.Fatal(w.Body.String())
+	before, _ := os.ReadFile(log)
+	w = call(t, s, "POST", "/chat/review", `{"message":"try again"}`)
+	after, _ := os.ReadFile(log)
+	if w.Code != 200 || len(after) <= len(before) {
+		t.Fatal("the next review did not run", w.Code, w.Body.String())
 	}
 }
 

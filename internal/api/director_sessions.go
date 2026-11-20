@@ -354,14 +354,6 @@ func (s *Server) registerDirectorRoutes() {
 		}
 		writeJSON(w, 200, map[string]bool{"selected": true})
 	})
-	s.router.Post("/director/sessions/{id}/acknowledge", func(w http.ResponseWriter, r *http.Request) {
-		binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)
-		if err := s.database.AcknowledgeDirectorSession(chi.URLParam(r, "id"), binding.ProjectID); err != nil {
-			http.Error(w, err.Error(), 409)
-			return
-		}
-		writeJSON(w, 200, map[string]bool{"ready": true})
-	})
 	s.router.Post("/director/sessions/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
 		binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)
 		id := chi.URLParam(r, "id")

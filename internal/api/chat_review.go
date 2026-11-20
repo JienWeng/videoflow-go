@@ -53,9 +53,6 @@ func (s *Server) chatReviewAvailability(ctx context.Context) (string, string) {
 	if session.Status == "running" {
 		return session.Engine, "The selected local session is busy. Wait for its active turn or cancel it in Local sessions."
 	}
-	if session.Status != "ready" {
-		return session.Engine, "The selected local session requires review. Review its saved turns and acknowledge it in Local sessions before starting another review."
-	}
 	if _, err = s.directorRunner.Available(session.Engine); err != nil {
 		return session.Engine, err.Error()
 	}

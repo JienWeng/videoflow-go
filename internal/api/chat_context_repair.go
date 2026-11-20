@@ -75,5 +75,5 @@ func (s *Server) handleRepairChatContext(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "session context changed; reload before repairing", 409)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"removed": removed, "selection": next, "review_required": session.Status == "review_required"})
+	writeJSON(w, 200, map[string]any{"removed": removed, "selection": next})
 }

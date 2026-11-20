@@ -24,11 +24,9 @@ test('detected executable allows first use without claiming authenticated access
 test('an existing native conversation is described as resumable', () => {
   assert.equal(sessionState({ ...saved, native_id: 'conversation' }, available).label, 'Session selected');
 });
-test('running and interrupted sessions keep their recovery gates', () => {
+test('a running session waits for its request', () => {
   assert.equal(sessionState({ ...saved, status: 'running' }, available).label, 'Planning in progress');
   assert.equal(sessionState({ ...saved, status: 'running' }, available).canContinue, false);
-  assert.equal(sessionState({ ...saved, status: 'review_required' }, available).label, 'Review needed');
-  assert.equal(sessionState({ ...saved, status: 'review_required' }, available).canContinue, false);
 });
 test('disabled local routing cannot be presented as usable', () => {
   const state = sessionState(saved, { ...available, all_text_local: false });

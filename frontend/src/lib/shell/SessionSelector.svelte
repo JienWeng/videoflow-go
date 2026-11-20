@@ -26,7 +26,7 @@
       </DropdownMenu.Trigger>
       <DropdownMenu.Content align="start" class="w-80 max-w-[min(420px,90vw)]">
         <DropdownMenu.RadioGroup value={selected} onValueChange={id=>{if(id!==selected)void run(async()=>{await post(`/director/sessions/${id}/select`,{});await refresh();});}}>
-          {#each sessions as session}<DropdownMenu.RadioItem value={session.id} closeOnSelect><span class="min-w-0"><span class="block truncate">{session.title||'Untitled'}</span><span class="block text-xs text-muted-foreground">{session.engine==='claude'?'Claude Code':'Codex'} · {({ready:'Ready',running:'Working…',review_required:'Needs review'} as Record<string,string>)[session.status]??session.status}</span></span></DropdownMenu.RadioItem>{/each}
+          {#each sessions as session}<DropdownMenu.RadioItem value={session.id} closeOnSelect><span class="min-w-0"><span class="block truncate">{session.title||'Untitled'}</span><span class="block text-xs text-muted-foreground">{session.engine==='claude'?'Claude Code':'Codex'} · {({ready:'Ready',running:'Working…'} as Record<string,string>)[session.status]??session.status}</span></span></DropdownMenu.RadioItem>{/each}
         </DropdownMenu.RadioGroup>
         {#if !sessions.length}<p class="px-2 py-2 text-sm text-muted-foreground">No saved conversations</p>{/if}
         {#if current}{@const options=catalog[current.engine]}

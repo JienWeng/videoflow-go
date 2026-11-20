@@ -19,7 +19,6 @@ func recoveryHint(message *string) string {
 		{"exhausted balance", "check provider quota"},
 		{"not in this project", "project selection mismatch"},
 		{"invalid duration", "invalid timing"},
-		{"requires review", "session needs review"},
 		{"not installed", "local CLI unavailable"},
 		{"sign in", "check sign-in"},
 		{"unauthorized", "check provider authentication"},

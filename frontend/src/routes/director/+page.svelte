@@ -84,16 +84,10 @@
   }
   function discardReferences() { characterIDs = [...savedCharacters]; assetIDs = [...savedAssets]; warnings = []; }
   async function showSetup() { setupOpen = true; await tick(); setupSummary?.focus(); setupSummary?.scrollIntoView({ block: 'nearest' }); }
-  async function showHistory() { historyOpen = true; await tick(); historySummary?.focus(); historySummary?.scrollIntoView({ block: 'nearest' }); }
   async function cancel() {
     if (!selected) return;
     const id = selected.id;
     await run(async () => { await post(`/director/sessions/${id}/cancel`, {}); await refresh(); notice = 'Stop requested. Refresh to check the final status.'; });
-  }
-  async function acknowledge() {
-    if (!selected || dirty) return;
-    const id = selected.id;
-    await run(async () => { await post(`/director/sessions/${id}/acknowledge`, {}); await refresh(); notice = 'Review saved. You can continue this session.'; });
   }
 </script>
 
@@ -143,7 +137,6 @@
         </div>
         {#if !showCreate}
           {#if selected.status === 'running'}<Button variant="outline" class="min-h-11" disabled={busy} onclick={cancel}>Stop request</Button>
-          {:else if selected.status === 'review_required'}<Button class="min-h-11" onclick={showHistory}>Review history<ArrowRight class="size-4" /></Button>
           {:else if selectedState.needsSetup}<Button class="min-h-11" onclick={showSetup}>Connect {engineName(selected.engine)}<ArrowRight class="size-4" /></Button>
           {:else if selectedState.canContinue}<Button href="/?view=studio" class="min-h-11" disabled={busy || dirty || !detailReady || !!error}>Continue in Studio<ArrowRight class="size-4" /></Button>{/if}
         {/if}
@@ -202,7 +195,6 @@ docker compose exec backend claude auth login</code></pre>
                 <div class="space-y-3 pb-4 text-sm">{#if turn.error}<p role="alert" class="break-words text-destructive">{turn.error}</p>{/if}<h3 class="font-medium">Request &amp; references</h3><pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-3 text-xs">{json(turn.request_json)}</pre><h3 class="font-medium">Result</h3><pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-3 text-xs">{json(turn.result_json)}</pre></div>
               </details>
             {/each}
-            {#if selected.status === 'review_required'}<div class="space-y-3 pt-2 text-sm"><p>Review the interrupted request above before continuing. It may have left partial work in the AI conversation.</p>{#if dirty}<p class="text-muted-foreground">Save or discard your reference changes first.</p>{/if}<Button class="min-h-11 max-w-full whitespace-normal text-left" disabled={busy || dirty || !turns.length} onclick={acknowledge}>I reviewed this request — continue</Button></div>{/if}
           </div>
         </details>
       {/if}

@@ -32,7 +32,6 @@ export function makeOverview(snapshot, now = Date.now()) {
   const uncertainOps = ops.filter(op => op.status === 'reconciliation_required');
   if (uncertainJobs.length) attention.push(issue('uncertain-renders', 'Review an unfinished render request', 'Check existing provider work before starting another render.', '/render', 'Review renders', true));
   if (uncertainOps.length) attention.push(issue('uncertain-requests', 'Review an interrupted generation request', 'Open the saved workflow and review its status before starting again.', operationHref(uncertainOps[0]), 'Review request', true));
-  if (selected?.status === 'review_required') attention.push(issue('session-review', 'Your AI session needs review', 'Review the interrupted request before continuing.', '/director', 'Review session', true));
   const target = job => job.shot_id ? `shot:${job.shot_id}` : job.scene_id ? `scene:${job.scene_id}` : null;
   const failed = jobs.filter(job => job.status === 'failed' && now - timestamp(job) >= 0 && now - timestamp(job) < 86400000 && !jobs.some(later => later.status === 'succeeded' && target(job) && target(later) === target(job) && timestamp(later) > timestamp(job)));
   if (failed.length) attention.push(issue('failed-renders', `${failed.length} ${failed.length === 1 ? 'render failed' : 'renders failed'} in the last 24 hours`, 'Open the saved error and review the request before running again.', '/render', 'View renders', true));
