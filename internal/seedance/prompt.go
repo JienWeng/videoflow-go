@@ -39,9 +39,17 @@ type Line struct {
 
 // Character is a member of the cast as the video model should see them.
 type Character struct {
-	Name  string
-	Look  string
-	Voice string // how they sound, when known
+	Name   string `json:"name"`
+	Look   string `json:"look"`
+	Voice  string `json:"voice,omitempty"`  // how they sound, when known
+	Manner string `json:"manner,omitempty"` // how they carry themselves and speak
+}
+
+// Thing is a place or prop connected to the scene.
+type Thing struct {
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+	Look string `json:"look"`
 }
 
 // Audio modes.
@@ -58,6 +66,7 @@ type Clip struct {
 	Tone      string // mood of the story, used for how voices sound
 	Narration bool   // an unseen narrator tells it; otherwise characters talk
 	Cast      []Character
+	Things    []Thing // places and props connected to the scene
 	Shots     []Shot
 	Lines     []Line
 	Language  string

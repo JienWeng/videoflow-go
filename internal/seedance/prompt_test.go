@@ -84,3 +84,54 @@ func TestALinePinnedToAShotIsWrittenUnderThatShot(t *testing.T) {
 		t.Fatalf("pinned line is not under shot 1:\n%s", prompt)
 	}
 }
+
+func TestTheWriterReadsOnlyTheSectionsItsClipNeeds(t *testing.T) {
+	narration := narrated("seedance-2.0")
+	if got := strings.Join(Sections(narration), " "); got != "index bindings shots-2.0 action camera speech-2.0 music-2.0 constraints example-2.0" {
+		t.Errorf("narrated 2.0 clip reads: %s", got)
+	}
+	silent := narrated("seedance-2.5-flash")
+	silent.Audio = Silent
+	if got := strings.Join(Sections(silent), " "); got != "index bindings shots-2.5 action camera constraints example-2.5" {
+		t.Errorf("silent 2.5 clip reads: %s", got)
+	}
+	system, facts := Brief(narration)
+	for _, want := range []string{"Do NOT put second counts or timestamps on shots", "Put each spoken line in curly braces", "Specify only ONE type of camera movement", "Externalise emotion"} {
+		if !strings.Contains(system, want) {
+			t.Errorf("the 2.0 writer is not given %q", want)
+		}
+	}
+	if strings.Contains(system, "1-second intervals") || strings.Contains(system, "Seedance 2.5 series)") {
+		t.Error("the 2.0 writer is given 2.5 guidance")
+	}
+	if !strings.Contains(facts, `"spoken_lines_to_place_in_the_shot_they_fit"`) || !strings.Contains(facts, "人类的终结，没有爆炸。") || !strings.Contains(facts, `"draft"`) {
+		t.Errorf("facts:\n%s", facts)
+	}
+	if len(system) > 12000 {
+		t.Errorf("the writer's playbook is %d characters", len(system))
+	}
+}
+
+func TestAWrittenPromptMustKeepTheFacts(t *testing.T) {
+	clip := narrated("seedance-2.0")
+	good := "A quiet end. Shot 1: wide shot, slow push-in; robots glide past. Voiceover: a low warm male voice says {人类的终结，没有爆炸。} Shot 2: Chen Wei turns his head and the voice continues {我们把选择交给机器。} No BGM. Keep it subtitle-free."
+	if err := Check(clip, good); err != nil {
+		t.Fatalf("a faithful prompt was refused: %v", err)
+	}
+	for name, bad := range map[string]string{
+		"a line said twice":       good + " {人类的终结，没有爆炸。}",
+		"a line reworded":         strings.Replace(good, "没有爆炸", "没有战争", 1),
+		"a shot dropped":          strings.Replace(good, "Shot 2:", "Then", 1),
+		"a shot invented":         good + " Shot 3: fireworks.",
+		"an id leaked":            good + " (char_46d21012)",
+		"music slipped in":        strings.Replace(good, "No BGM.", "(soft piano)", 1),
+		"subtitles not ruled out": strings.Replace(good, "Keep it subtitle-free.", "", 1),
+	} {
+		if Check(clip, bad) == nil {
+			t.Errorf("accepted a prompt with %s", name)
+		}
+	}
+	if err := Check(clip, Compose(clip)); err != nil {
+		t.Errorf("the plain draft itself fails the check: %v", err)
+	}
+}

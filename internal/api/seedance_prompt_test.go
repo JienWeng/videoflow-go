@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -78,5 +79,51 @@ func TestSceneClipIsSentAGuideShapedPrompt(t *testing.T) {
 	}
 	if t.Failed() {
 		t.Log("\n" + sent)
+	}
+}
+
+// The AI prompt writer's prompt is used when it keeps the scene's facts, remembered so
+// the same clip is written once, and replaced by the plain draft when it does not.
+func TestAIWrittenPromptIsUsedOnlyWhenItKeepsTheFacts(t *testing.T) {
+	s, _ := falServer(t, "done")
+	scene := renderableScene(t, s, nil, "One", 1, "auto")
+	asked, answer := 0, ""
+	previous := writeVideoPrompt
+	t.Cleanup(func() { writeVideoPrompt = previous })
+	writeVideoPrompt = func(_ *Server, _ context.Context, system, facts string) (string, error) {
+		asked++
+		if !strings.Contains(system, "Do NOT put second counts or timestamps on shots") || !strings.Contains(facts, `"what_happens": "Action 2"`) {
+			t.Errorf("the writer was not given the playbook and the scene's shots")
+		}
+		return answer, nil
+	}
+	read := func(query string) (prompt, by string) {
+		t.Helper()
+		var out struct {
+			Clips []struct {
+				Prompt string
+				By     string `json:"written_by"`
+			}
+		}
+		if w := call(t, s, "GET", "/scenes/"+scene.ID+"/video-prompt"+query, ""); w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &out) != nil || len(out.Clips) != 1 {
+			t.Fatal(w.Code, w.Body.String())
+		}
+		return out.Clips[0].Prompt, out.Clips[0].By
+	}
+
+	if _, by := read(""); by != "template" || asked != 0 {
+		t.Fatalf("a plain look asked the writer: by=%s asked=%d", by, asked)
+	}
+	answer = "Shot 1: Action 1. Shot 2: Action 2. No BGM. Keep it subtitle-free."
+	if _, by := read("?write=1"); by != "template" {
+		t.Fatalf("a prompt that dropped shot 3 was accepted")
+	}
+	answer = "A calm morning. Shot 1: wide shot, Action 1. Shot 2: slow push-in, Action 2. Shot 3: close-up, Action 3. No BGM; only natural sound. Keep it subtitle-free."
+	if prompt, by := read("?write=1"); by != "ai" || prompt != answer {
+		t.Fatalf("by=%s prompt=%q", by, prompt)
+	}
+	before := asked
+	if prompt, by := read(""); by != "ai" || prompt != answer || asked != before {
+		t.Fatalf("the written prompt was not remembered: by=%s asked %d times more", by, asked-before)
 	}
 }
