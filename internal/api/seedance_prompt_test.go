@@ -122,6 +122,31 @@ func TestAIWrittenPromptIsUsedOnlyWhenItKeepsTheFacts(t *testing.T) {
 	if prompt, by := read("?write=1"); by != "ai" || prompt != answer {
 		t.Fatalf("by=%s prompt=%q", by, prompt)
 	}
+	// A refused prompt gets one repair, with the reason, before the draft is used.
+	scene.Summary = "A different morning"
+	s.database.UpdateScene(scene)
+	repair := ""
+	writeVideoPrompt = func(_ *Server, _ context.Context, _, facts string) (string, error) {
+		if strings.Contains(facts, "Your previous prompt was refused: shot 3 is missing") {
+			repair = facts
+			return answer, nil
+		}
+		return "Shot 1: Action 1. Shot 2: Action 2. No BGM. Keep it subtitle-free.", nil
+	}
+	revision, _ := s.sceneInputRevision(scene)
+	project, _ := s.database.GetActiveProjectID()
+	boards, _ := s.database.ListAssets(project)
+	for i := range boards {
+		if boards[i].Type == "storyboard" {
+			boards[i].MetadataJSON = voiceJSON(map[string]any{"scene_id": scene.ID, "scene_input_revision": revision, "consistency_review": "ready"})
+			s.database.UpdateAsset(&boards[i])
+		}
+	}
+	if prompt, by := read("?write=1"); by != "ai" || prompt != answer || repair == "" {
+		t.Fatalf("the writer was not given a chance to repair: by=%s", by)
+	}
+	asked = 0
+	writeVideoPrompt = func(_ *Server, _ context.Context, _, _ string) (string, error) { asked++; return answer, nil }
 	before := asked
 	if prompt, by := read(""); by != "ai" || prompt != answer || asked != before {
 		t.Fatalf("the written prompt was not remembered: by=%s asked %d times more", by, asked-before)

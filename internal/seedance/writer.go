@@ -56,7 +56,7 @@ func Brief(c Clip) (system, facts string) {
 	for _, name := range Sections(c) {
 		parts = append(parts, section(name))
 	}
-	system = strings.Join(parts, "\n\n") + "\n\n# Your task\nWrite the one prompt for the clip described in the facts. Use every shot, in order, labelled \"Shot 1\", \"Shot 2\" and so on. Improve the wording of each shot to follow the playbook (specific small actions, feelings shown through the body, one camera move, the sound of the shot), but keep what happens, who is in it and where. Write in English; spoken lines stay exactly as given, in their own language. The draft shows the minimum that must be there; your prompt should be better directed than the draft, not longer for its own sake. Return JSON: {\"prompt\": \"...\"}."
+	system = strings.Join(parts, "\n\n") + "\n\n# Your task\nWrite the one prompt for the clip described in the facts. Use every shot, in order, labelled \"Shot 1\", \"Shot 2\" and so on. Improve the wording of each shot to follow the playbook (specific small actions, feelings shown through the body, one camera move, the sound of the shot), but keep what happens, who is in it and where. Write in English; spoken lines stay exactly as given, in their own language. The draft shows the minimum that must be there; your prompt should be better directed than the draft and shorter where the draft repeats itself: say the look once, describe each character once, and keep the whole prompt under 3,000 characters. Return JSON: {\"prompt\": \"...\"}."
 
 	type line struct {
 		Speaker string `json:"speaker"`

@@ -52,6 +52,13 @@ func (s *Server) writtenPrompt(ctx context.Context, clip seedance.Clip, write bo
 	if err == nil {
 		err = seedance.Check(clip, prompt)
 	}
+	if err != nil && strings.TrimSpace(prompt) != "" {
+		// One chance to repair: the writer is told exactly what was refused.
+		refused := err.Error()
+		if prompt, err = writeVideoPrompt(s, ctx, system, facts+"\n\nYour previous prompt was refused: "+refused+". Fix exactly that, keep everything else, and return the whole prompt again.\nPrevious prompt:\n"+prompt); err == nil {
+			err = seedance.Check(clip, prompt)
+		}
+	}
 	if err != nil {
 		slog.Warn("video prompt writer fell back to the plain draft", "reason", err.Error())
 		return "", false
