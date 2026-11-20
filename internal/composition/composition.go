@@ -270,14 +270,35 @@ func Save(root, project string, m Manifest, sources map[string]string) (string, 
 		return "", e
 	}
 	for p, data := range files {
-		if e := os.WriteFile(filepath.Join(dir, p), data, 0600); e != nil {
+		if e := replaceFile(filepath.Join(dir, p), data); e != nil {
 			return "", e
 		}
 	}
-	if e := os.WriteFile(filepath.Join(dir, "index.html"), []byte(Document(m)), 0600); e != nil {
+	if e := replaceFile(filepath.Join(dir, "index.html"), []byte(Document(m))); e != nil {
 		return "", e
 	}
-	return revision, os.WriteFile(filepath.Join(dir, "manifest.json"), b, 0600)
+	return revision, replaceFile(filepath.Join(dir, "manifest.json"), b)
+}
+
+// replaceFile swaps in a complete file. Saving an edit again rewrites its
+// revision, which a render may be reading; writing in place would show that
+// render a truncated clip, and it would freeze on the clip's last frame.
+func replaceFile(path string, data []byte) error {
+	f, e := os.CreateTemp(filepath.Dir(path), ".saving-*")
+	if e != nil {
+		return e
+	}
+	defer os.Remove(f.Name())
+	if _, e = f.Write(data); e == nil {
+		e = f.Chmod(0600)
+	}
+	if closeErr := f.Close(); e == nil {
+		e = closeErr
+	}
+	if e != nil {
+		return e
+	}
+	return os.Rename(f.Name(), path)
 }
 func Document(m Manifest) string {
 	var b strings.Builder

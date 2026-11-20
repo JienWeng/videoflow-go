@@ -1,6 +1,7 @@
 package composition
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,6 +29,50 @@ func TestRevisionAndTimeline(t *testing.T) {
 	m.Clips[0].Trim = 1
 	if _, err = Save(root, "project", m, map[string]string{"asset-1": source}); err == nil {
 		t.Fatal("accepted trim beyond original duration")
+	}
+}
+
+// A render reads a revision's clips while the same edit can be saved again
+// (the editor, or a second "finish the video"). The renderer must only ever see
+// whole clips: a clip cut short mid-render froze the rest of that scene.
+func TestSavingARevisionAgainNeverShowsAReaderAPartialClip(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "scene.mp4")
+	clip := bytes.Repeat([]byte("frame-data"), 800_000)
+	os.WriteFile(source, clip, 0600)
+	m := Manifest{Version: 1, Width: 720, Height: 1280, FPS: 24, Duration: 10, Clips: []Clip{{ID: "scene", AssetID: "scene", Duration: 10, Speed: 1}}}
+	sources := map[string]string{"scene": source}
+	revision, err := Save(root, "project", m, sources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, _ := Load(root, "project", revision)
+	staged := filepath.Join(root, "project", revision, saved.Clips[0].Path)
+
+	done := make(chan struct{})
+	short := make(chan int, 1)
+	go func() {
+		defer close(short)
+		for {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			if got, e := os.ReadFile(staged); e == nil && len(got) != len(clip) {
+				short <- len(got)
+				return
+			}
+		}
+	}()
+	for i := 0; i < 40; i++ {
+		if again, e := Save(root, "project", m, sources); e != nil || again != revision {
+			t.Fatal(again, e)
+		}
+	}
+	close(done)
+	if n, cut := <-short; cut {
+		t.Fatalf("a reader saw the clip cut to %d of %d bytes while the revision was saved again", n, len(clip))
 	}
 }
 func TestStillImageCanBeHeldLongerThanWhenAdded(t *testing.T) {
