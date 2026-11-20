@@ -121,6 +121,9 @@ type Model struct {
 	FrameImages         []string        `json:"supported_frame_images"`
 	InputReferences     json.RawMessage `json:"supported_input_references"`
 	GenerateAudio       bool            `json:"generate_audio"`
+	// ReferenceImages is how many pictures a clip may be given as references in place of a
+	// first frame, sent as image_urls and named in the prompt as @Image 1, @Image 2, ...
+	ReferenceImages int `json:"reference_images,omitempty"`
 }
 
 func (c *OpenRouterClient) Models(ctx context.Context, modality string) ([]Model, error) {

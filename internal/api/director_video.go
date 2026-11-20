@@ -112,6 +112,15 @@ func (s *Server) freezeDirectorVideo(ctx context.Context, job *models.RenderJob)
 		job.RequestJSON = voiceJSON(payload)
 		return s.applyDirectorVoicePolicy(bound, job)
 	}
+	if payload["video_input"] == inputReferences {
+		// Reference mode: the connected pictures go as references and no storyboard is made.
+		payload["director_context"] = snapshot
+		if sceneRevision, err := s.currentSceneInputRevision(sceneID); err == nil && sceneID != "" {
+			payload["scene_input_revision"] = sceneRevision
+		}
+		job.RequestJSON = voiceJSON(payload)
+		return s.applyDirectorVoicePolicy(bound, job)
+	}
 	unreviewed := false
 	hasSceneBoards := false
 	sceneRevision := ""
@@ -216,8 +225,37 @@ func (s *Server) freezeDirectorVideo(ctx context.Context, job *models.RenderJob)
 	job.RequestJSON = voiceJSON(payload)
 	return s.applyDirectorVoicePolicy(bound, job)
 }
+
+// freezeReferencePictures attaches a reference-mode clip's pictures, checked against
+// what the chosen model takes, before the request's sources are frozen.
+func (s *Server) freezeReferencePictures(ctx context.Context, job *models.RenderJob) error {
+	var payload map[string]any
+	if json.Unmarshal(job.RequestJSON, &payload) != nil || payload["video_input"] != inputReferences {
+		return nil
+	}
+	client, _, err := s.routes().Media(job.Provider, job.Model, job.ProviderEndpoint)
+	if err != nil {
+		return err
+	}
+	model, err := client.Model(ctx, job.Model, "video")
+	if err != nil {
+		return err
+	}
+	if model.ReferenceImages == 0 {
+		return fmt.Errorf("the chosen video model cannot take reference pictures; choose first frame for this scene")
+	}
+	if err = s.attachReferencePictures(job, payload, model.ReferenceImages); err != nil {
+		return err
+	}
+	job.RequestJSON = voiceJSON(payload)
+	return nil
+}
+
 func (s *Server) prepareDirectorVideoJob(ctx context.Context, job *models.RenderJob) error {
 	if err := s.prepareVideoJob(job); err != nil {
+		return err
+	}
+	if err := s.freezeReferencePictures(ctx, job); err != nil {
 		return err
 	}
 	var err error

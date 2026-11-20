@@ -73,6 +73,7 @@ func (c *HostClient) Models(_ context.Context, kind string) ([]Model, error) {
 			m.FrameImages = []string{"first_frame", "last_frame"}
 			m.Architecture.Input = append(m.Architecture.Input, "image")
 		}
+		m.ReferenceImages = c.host.References
 		out = append(out, m)
 	}
 	return out, nil
@@ -114,9 +115,23 @@ func (c *HostClient) ValidateVideo(ctx context.Context, p map[string]any) error 
 	for key := range p {
 		switch key {
 		case "model", "prompt", "duration", "aspect_ratio", "resolution", "generate_audio", "seed", "frame_images":
+		case "image_urls":
+			if m.ReferenceImages == 0 {
+				return fmt.Errorf("%s cannot take reference pictures; choose first-frame mode for this scene", c.host.Label)
+			}
 		default:
 			return fmt.Errorf("%s does not support video field %s", c.host.Label, key)
 		}
+	}
+	refs, err := referenceImageURLs(p)
+	if err != nil {
+		return err
+	}
+	if len(refs) > m.ReferenceImages {
+		return fmt.Errorf("%s takes at most %d reference pictures per clip", c.host.Label, m.ReferenceImages)
+	}
+	if len(refs) > 0 && len(frames) > 0 {
+		return fmt.Errorf("a clip is made either from reference pictures or from a first frame, not both")
 	}
 	first := false
 	for _, f := range frames {
@@ -126,6 +141,36 @@ func (c *HostClient) ValidateVideo(ctx context.Context, p map[string]any) error 
 		return fmt.Errorf("a last frame requires a first frame")
 	}
 	return nil
+}
+
+// referenceImageURLs reads image_urls: the reference pictures of a clip, in the order the
+// prompt numbers them.
+func referenceImageURLs(p map[string]any) ([]string, error) {
+	raw, ok := p["image_urls"]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+	list := []string{}
+	switch v := raw.(type) {
+	case []string:
+		list = v
+	case []any:
+		for _, item := range v {
+			text, isText := item.(string)
+			if !isText {
+				return nil, fmt.Errorf("reference pictures must be addresses")
+			}
+			list = append(list, text)
+		}
+	default:
+		return nil, fmt.Errorf("reference pictures must be a list")
+	}
+	for _, link := range list {
+		if strings.TrimSpace(link) == "" {
+			return nil, fmt.Errorf("a reference picture has no address")
+		}
+	}
+	return list, nil
 }
 
 func hostSeconds(p map[string]any) int {
@@ -166,6 +211,15 @@ func (c *HostClient) CreateVideo(ctx context.Context, p map[string]any) (string,
 		}
 	}
 	model, prompt := stringValue(p["model"]), stringValue(p["prompt"])
+	refs, _ := referenceImageURLs(p)
+	references := []map[string]string{}
+	for _, ref := range refs {
+		link, err := c.publicImage(ctx, ref, model)
+		if err != nil {
+			return "", err
+		}
+		references = append(references, map[string]string{"url": link})
+	}
 	resolution, aspect := stringValue(p["resolution"]), stringValue(p["aspect_ratio"])
 	if resolution == "" {
 		resolution = "720p"
@@ -192,6 +246,9 @@ func (c *HostClient) CreateVideo(ctx context.Context, p map[string]any) (string,
 		}
 		if last != "" {
 			body["end_image"] = map[string]string{"url": last}
+		}
+		if len(references) > 0 {
+			body["reference_images"] = references // named @Image 1, @Image 2, ... in the prompt
 		}
 	case "loopling":
 		body, path = common(), "/video/generations"

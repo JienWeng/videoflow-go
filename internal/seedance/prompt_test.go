@@ -87,12 +87,12 @@ func TestALinePinnedToAShotIsWrittenUnderThatShot(t *testing.T) {
 
 func TestTheWriterReadsOnlyTheSectionsItsClipNeeds(t *testing.T) {
 	narration := narrated("seedance-2.0")
-	if got := strings.Join(Sections(narration), " "); got != "index bindings shots-2.0 action camera speech-2.0 music-2.0 constraints example-2.0" {
+	if got := strings.Join(Sections(narration), " "); got != "index bindings first-frame shots-2.0 action camera speech-2.0 music-2.0 constraints example-2.0" {
 		t.Errorf("narrated 2.0 clip reads: %s", got)
 	}
 	silent := narrated("seedance-2.5-flash")
 	silent.Audio = Silent
-	if got := strings.Join(Sections(silent), " "); got != "index bindings shots-2.5 action camera constraints example-2.5" {
+	if got := strings.Join(Sections(silent), " "); got != "index bindings first-frame shots-2.5 action camera constraints example-2.5" {
 		t.Errorf("silent 2.5 clip reads: %s", got)
 	}
 	system, facts := Brief(narration)
@@ -133,5 +133,40 @@ func TestAWrittenPromptMustKeepTheFacts(t *testing.T) {
 	}
 	if err := Check(clip, Compose(clip)); err != nil {
 		t.Errorf("the plain draft itself fails the check: %v", err)
+	}
+}
+
+// Pictures sent as references are defined once, in the order sent, and the check refuses
+// a prompt that leaves one out or names one that was not sent.
+func TestReferencePicturesAreBoundAndChecked(t *testing.T) {
+	c := Clip{Family: "seedance-2.0", Summary: "Chen Wei meets The Visitor on a rooftop", Audio: Silent,
+		Cast:       []Character{{Name: "Chen Wei", Look: "a tired man in a green jacket"}},
+		References: []Reference{{Kind: "character", Name: "Chen Wei", Sheet: true}, {Kind: "place", Name: "Dusk City Rooftop"}},
+		Shots:      []Shot{{Seconds: 5, Framing: "wide shot", Move: "slow push-in", Action: "Chen Wei stands at the railing"}}}
+	draft := Compose(c)
+	for _, want := range []string{"Define the person in @Image 1 as Chen Wei", "seen from several angles", "@Image 2 is the place Dusk City Rooftop"} {
+		if !strings.Contains(draft, want) {
+			t.Fatalf("draft lacks %q:\n%s", want, draft)
+		}
+	}
+	if err := Check(c, draft); err != nil {
+		t.Fatalf("draft refused: %v", err)
+	}
+	if err := Check(c, strings.Replace(draft, "@Image 2", "the rooftop", 1)); err == nil || !strings.Contains(err.Error(), "@Image 2 is never named") {
+		t.Fatalf("missing picture: %v", err)
+	}
+	if err := Check(c, draft+" The light of @Image 3."); err == nil || !strings.Contains(err.Error(), "past the 2") {
+		t.Fatalf("extra picture: %v", err)
+	}
+	if got := Sections(c); got[2] != "references" {
+		t.Fatalf("sections = %v", got)
+	}
+	system, facts := Brief(c)
+	if !strings.Contains(system, "## Reference pictures") || strings.Contains(system, "## The first frame") || !strings.Contains(facts, `"tag": "@Image 1"`) || strings.Contains(facts, "first_frame") {
+		t.Fatalf("brief does not describe the pictures:\n%s", facts)
+	}
+	c.References = nil
+	if got := Sections(c); got[2] != "first-frame" {
+		t.Fatalf("sections without pictures = %v", got)
 	}
 }

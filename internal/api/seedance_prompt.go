@@ -101,6 +101,7 @@ func (s *Server) writeScenePrompt(ctx context.Context, job *models.RenderJob, wr
 	if policy, _ := payload["voice_policy"].(map[string]any); policy["mode"] == "native" {
 		clip.Audio = seedance.Native
 	}
+	clip.References = clipReferences(payload)
 	if clip.Music, _ = payload["music_prompt"].(string); clip.Music == "" {
 		clip.Music = settings.MusicPrompt
 	}
@@ -189,13 +190,28 @@ func (s *Server) handleScenePromptPreview(w http.ResponseWriter, r *http.Request
 	for _, unit := range plan.Units {
 		job := sceneRenderJob(project, scene)
 		job.Provider, job.Model = plan.Provider, plan.Model
-		request := map[string]any{"render_unit": unit, "music_prompt": plan.Settings.MusicPrompt, "voice_policy": map[string]any{"mode": plan.Settings.AudioMode}}
+		request := map[string]any{"render_unit": unit, "music_prompt": plan.Settings.MusicPrompt, "voice_policy": map[string]any{"mode": plan.Settings.AudioMode}, "video_input": plan.VideoInput}
 		job.RequestJSON = voiceJSON(request)
+		if plan.VideoInput == inputReferences {
+			if model, e := s.productionModelLimit(r.Context()); e == nil {
+				_ = s.attachReferencePictures(job, request, model)
+				job.RequestJSON = voiceJSON(request)
+			}
+		}
 		s.writeScenePrompt(r.Context(), job, r.URL.Query().Get("write") == "1")
 		var written map[string]any
 		_ = json.Unmarshal(job.RequestJSON, &written)
 		prompt, _ := written[finalPromptKey].(string)
-		clips = append(clips, map[string]any{"clip": unit.Index + 1, "seconds": unit.Duration, "prompt": prompt, "characters": len(prompt), "written_by": written["prompt_writer"], "playbook": written["prompt_playbook"]})
+		clips = append(clips, map[string]any{"clip": unit.Index + 1, "seconds": unit.Duration, "prompt": prompt, "characters": len(prompt), "written_by": written["prompt_writer"], "playbook": written["prompt_playbook"], "pictures": written["reference_pictures"]})
 	}
-	writeJSON(w, 200, map[string]any{"scene_id": scene.ID, "model": plan.Model, "audio": plan.Settings.AudioMode, "clips": clips})
+	writeJSON(w, 200, map[string]any{"scene_id": scene.ID, "model": plan.Model, "audio": plan.Settings.AudioMode, "video_input": plan.VideoInput, "clips": clips})
+}
+
+// productionModelLimit is how many reference pictures the chosen video model takes.
+func (s *Server) productionModelLimit(ctx context.Context) (int, error) {
+	_, model, err := s.productionVideoModel(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return model.ReferenceImages, nil
 }

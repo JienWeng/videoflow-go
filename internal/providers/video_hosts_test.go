@@ -159,3 +159,50 @@ func TestRunwaySendsEachModelsOwnFrameSize(t *testing.T) {
 		t.Fatalf("ratios sent = %v", sent)
 	}
 }
+
+// ArgoLink takes a clip's connected pictures as Seedance reference images, never
+// together with a first frame, and other services refuse them instead of dropping them.
+func TestArgoLinkSendsReferencePictures(t *testing.T) {
+	var body map[string]any
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		switch r.URL.Path {
+		case "/media/uploads":
+			_, _ = w.Write([]byte(`{"upload_url":"` + server.URL + `/put","media_url":"https://media.example.com/ref.png"}`))
+		case "/put":
+		case "/videos/generations":
+			_ = json.Unmarshal(raw, &body)
+			_, _ = w.Write([]byte(`{"request_id":"job1"}`))
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	client := NewHostClient("argolink", "secret", server.URL)
+	request := func() map[string]any {
+		return map[string]any{"model": "seedance-2.0", "prompt": "The man in @Image 1 walks through @Image 2", "duration": 5, "aspect_ratio": "9:16",
+			"image_urls": []any{tinyPNG, "https://example.com/place.png"}}
+	}
+	if _, err := client.CreateVideo(context.Background(), request()); err != nil {
+		t.Fatal(err)
+	}
+	refs, _ := body["reference_images"].([]any)
+	if len(refs) != 2 || refs[0].(map[string]any)["url"] != "https://media.example.com/ref.png" || refs[1].(map[string]any)["url"] != "https://example.com/place.png" || body["start_image"] != nil || body["image_urls"] != nil {
+		t.Fatalf("argolink body = %v", body)
+	}
+	mixed := request()
+	mixed["frame_images"] = []map[string]any{{"type": "image_url", "frame_type": "first_frame", "image_url": map[string]string{"url": tinyPNG}}}
+	if err := client.ValidateVideo(context.Background(), mixed); err == nil || !strings.Contains(err.Error(), "not both") {
+		t.Fatalf("references with a first frame: %v", err)
+	}
+	many := request()
+	many["image_urls"] = []any{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"}
+	if err := client.ValidateVideo(context.Background(), many); err == nil || !strings.Contains(err.Error(), "at most 9") {
+		t.Fatalf("ten references: %v", err)
+	}
+	other := NewHostClient("loopling", "secret", server.URL)
+	if err := other.ValidateVideo(context.Background(), request()); err == nil || !strings.Contains(err.Error(), "cannot take reference pictures") {
+		t.Fatalf("loopling with references: %v", err)
+	}
+}

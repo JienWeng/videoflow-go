@@ -30,7 +30,11 @@ func Sections(c Clip) []string {
 	if c.timed() {
 		series = "2.5"
 	}
-	names := []string{"index", "bindings", "shots-" + series, "action", "camera"}
+	frame := "first-frame"
+	if len(c.References) > 0 {
+		frame = "references"
+	}
+	names := []string{"index", "bindings", frame, "shots-" + series, "action", "camera"}
 	if c.Audio == Native {
 		if c.speaks() {
 			names = append(names, "speech-"+series)
@@ -83,6 +87,14 @@ func Brief(c Clip) (system, facts string) {
 		"music": c.Music, "cast": c.Cast, "connected_places_and_props": c.Things, "first_frame": "a storyboard picture of the opening is sent as the first frame",
 		"draft": Compose(c),
 	}
+	if len(c.References) > 0 {
+		pictures := []map[string]any{}
+		for i, ref := range c.References {
+			pictures = append(pictures, map[string]any{"tag": Tag(i), "shows": ref.Kind, "name": ref.Name, "reference_sheet": ref.Sheet})
+		}
+		delete(doc, "first_frame")
+		doc["reference_pictures"] = pictures
+	}
 	if c.Audio == Native && c.Music == "" {
 		doc["music"] = "none"
 	}
@@ -112,6 +124,12 @@ func Brief(c Clip) (system, facts string) {
 	return system, string(raw)
 }
 
+// imageTag finds a mention of the n-th picture, written as the guides allow: "@Image 2",
+// "@image2", "Image 2".
+func imageTag(n int) *regexp.Regexp {
+	return regexp.MustCompile(fmt.Sprintf(`(?i)@?\bimage ?%d\b`, n))
+}
+
 var internalID = regexp.MustCompile(`\b(char|asset|scene|shot|project|job|script|output)_[0-9a-f]{6,}\b`)
 
 // Check says whether a written prompt may be sent for this clip. It guards the facts
@@ -135,6 +153,14 @@ func Check(c Clip, prompt string) error {
 	}
 	if strings.Contains(prompt, fmt.Sprintf("Shot %d", len(c.Shots)+1)) {
 		return fmt.Errorf("prompt has more shots than the scene")
+	}
+	for i := range c.References {
+		if !imageTag(i + 1).MatchString(prompt) {
+			return fmt.Errorf("reference picture %s is never named", Tag(i))
+		}
+	}
+	if imageTag(len(c.References) + 1).MatchString(prompt) {
+		return fmt.Errorf("prompt names a picture past the %d that are sent", len(c.References))
 	}
 	for _, l := range c.Lines {
 		text := strings.TrimSpace(l.Text)

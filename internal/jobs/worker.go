@@ -199,7 +199,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 			}
 		}
 		// Only fields in the provider contract are forwarded. Local IDs never leave the app.
-		allowed := map[string]bool{"final_prompt": true, "prompt": true, "duration": true, "aspect_ratio": true, "resolution": true, "generate_audio": true, "seed": true, "frame_images": true, "input_references": true, "provider": true, "director_context": true, "director_keyframe": true, "voice_policy": true, "request_fingerprint": true, "audio_mode": true, "music_prompt": true, "render_unit": true, "render_plan_id": true, "scene_input_revision": true, "reference_plan_id": true, "image_urls": true, "video_urls": true, "audio_urls": true}
+		allowed := map[string]bool{"final_prompt": true, "prompt": true, "duration": true, "aspect_ratio": true, "resolution": true, "generate_audio": true, "seed": true, "frame_images": true, "input_references": true, "provider": true, "director_context": true, "director_keyframe": true, "voice_policy": true, "request_fingerprint": true, "audio_mode": true, "music_prompt": true, "render_unit": true, "render_plan_id": true, "scene_input_revision": true, "reference_plan_id": true, "image_urls": true, "video_urls": true, "audio_urls": true, "video_input": true, "reference_pictures": true}
 		for key := range payload {
 			if !allowed[key] {
 				delete(payload, key)
@@ -321,7 +321,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 			payload["aspect_ratio"] = aspect
 		}
 		// Use a generated storyboard as the first frame only when the selected model supports it.
-		if _, explicit := payload["frame_images"]; !explicit && payload["input_references"] == nil && job.SceneID != nil && job.ProjectID != nil {
+		if _, explicit := payload["frame_images"]; !explicit && payload["input_references"] == nil && payload["video_input"] != "references" && job.SceneID != nil && job.ProjectID != nil {
 			model, e := client.Model(ctx, job.Model, "video")
 			if e != nil {
 				return e
@@ -405,6 +405,19 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 					}
 				}
 				payload[key] = refs
+			}
+		}
+		// Reference pictures are kept as files until now and sent as the pictures themselves.
+		if refs, ok := payload["image_urls"].([]any); ok {
+			for i, ref := range refs {
+				path, _ := ref.(string)
+				if path != "" && !strings.HasPrefix(path, "https://") && !strings.HasPrefix(path, "http://") && !strings.HasPrefix(path, "data:") {
+					encoded, e := media.ImageDataURL(w.cfg.StorageRoot, path)
+					if e != nil {
+						return e
+					}
+					refs[i] = encoded
+				}
 			}
 		}
 		job.RequestJSON, err = json.Marshal(payload)

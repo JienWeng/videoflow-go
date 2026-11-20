@@ -52,6 +52,18 @@ type Thing struct {
 	Look string `json:"look"`
 }
 
+// Reference is a picture sent with the clip in place of a first frame. The prompt calls
+// the first one @Image 1, the next @Image 2, in the order they are sent.
+type Reference struct {
+	Kind string `json:"kind"` // "character", "place" or "prop"
+	Name string `json:"name"`
+	// Sheet is true for a character reference sheet: one person drawn from several angles.
+	Sheet bool `json:"sheet,omitempty"`
+}
+
+// Tag is how the prompt names the i-th reference picture (counted from 0).
+func Tag(i int) string { return fmt.Sprintf("@Image %d", i+1) }
+
 // Audio modes.
 const (
 	Native = "native" // the video model makes voices, sound and music
@@ -67,14 +79,30 @@ type Clip struct {
 	Narration bool   // an unseen narrator tells it; otherwise characters talk
 	Cast      []Character
 	Things    []Thing // places and props connected to the scene
-	Shots     []Shot
-	Lines     []Line
-	Language  string
-	Audio     string
-	Music     string // music direction; empty means no music
+	// References are pictures sent instead of a first frame, in the order they are sent.
+	References []Reference
+	Shots      []Shot
+	Lines      []Line
+	Language   string
+	Audio      string
+	Music      string // music direction; empty means no music
 }
 
 func (c Clip) timed() bool { return strings.Contains(c.Family, "2.5") }
+
+// binding defines what a reference picture shows, the way the guides ask: "Define ... in
+// Image N as <name>", after which the name alone refers to it.
+func (r Reference) binding(i int) string {
+	switch {
+	case r.Kind == "character" && r.Sheet:
+		return fmt.Sprintf("Define the person in %s as %s; the picture is a reference sheet of this one person seen from several angles, so keep exactly this face, build and clothing.", Tag(i), r.Name)
+	case r.Kind == "character":
+		return fmt.Sprintf("Define the person in %s as %s; keep exactly this face, build and clothing.", Tag(i), r.Name)
+	case r.Kind == "place":
+		return fmt.Sprintf("%s is the place %s; match its layout, light and materials.", Tag(i), r.Name)
+	}
+	return fmt.Sprintf("%s is %s; keep its shape and colours.", Tag(i), r.Name)
+}
 
 // Compose writes the prompt.
 func Compose(c Clip) string {
@@ -82,6 +110,9 @@ func Compose(c Clip) string {
 	line := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
 
 	line("%s", sentence(join(". ", c.Style, c.Summary)))
+	for i, ref := range c.References {
+		line("%s", ref.binding(i))
+	}
 	used := strings.ToLower(c.Summary)
 	for _, shot := range c.Shots {
 		used += " " + strings.ToLower(shot.Action)

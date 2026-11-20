@@ -19,6 +19,10 @@ type productionSettings struct {
 	AudioMode     string            `json:"audio_mode"`
 	Strategy      string            `json:"strategy"`
 	MusicPrompt   string            `json:"music_prompt"`
+	// VideoInput is "references", "first_frame", or empty to choose: references when the
+	// model takes them and pictures are connected, unless the scene's clips were already
+	// made from a first frame.
+	VideoInput string `json:"video_input,omitempty"`
 }
 type renderUnit struct {
 	Count    int      `json:"count"`
@@ -57,6 +61,10 @@ type productionPlan struct {
 	StoryboardReady  bool               `json:"storyboard_ready"`
 	ReferencesReady  bool               `json:"references_ready"`
 	Blocked          string             `json:"blocked,omitempty"`
+	// VideoInput is how the clips get their pictures: "references" or "first_frame".
+	VideoInput string `json:"video_input"`
+	// Pictures are what reference mode sends, scene-wide; each clip sends those it shows.
+	Pictures []referencePicture `json:"pictures,omitempty"`
 }
 
 // uncertainRenderBlock is what a scene shows while an earlier request has no answer.
@@ -81,6 +89,9 @@ func validateProduction(p productionSettings) error {
 	}
 	if len(p.MusicPrompt) > 1500 {
 		return fmt.Errorf("music direction must be at most 1500 characters")
+	}
+	if p.VideoInput != "" && p.VideoInput != inputReferences && p.VideoInput != inputFirstFrame {
+		return fmt.Errorf("choose references or first frame for the scene's pictures")
 	}
 	if p.AudioMode != "native" && strings.TrimSpace(p.MusicPrompt) != "" {
 		return fmt.Errorf("native music direction requires native audio; add a separate soundtrack in the editor for saved or silent mode")
@@ -246,16 +257,40 @@ func (s *Server) sceneProductionPlan(ctx context.Context, scene *models.Scene) (
 	}
 	p.StoryboardReady = refs["storyboard_ready"] == true
 	p.ReferencesReady = refs["references_ready"] == true
-	identity := map[string]any{"scene_id": scene.ID, "project": scene.ProjectID, "scene_revision": refs["scene_input_revision"], "identity_revision": refs["context_revision"], "settings": p.Settings, "resolution": p.Resolution, "provider": provider, "model": model.ID, "units": p.Units}
+	// The plan's identity holds what the clips are made from: the resolved picture mode is
+	// added below, never the owner's choice itself, so choosing first frame keeps clips.
+	idSettings := p.Settings
+	idSettings.VideoInput = ""
+	identity := map[string]any{"scene_id": scene.ID, "project": scene.ProjectID, "scene_revision": refs["scene_input_revision"], "identity_revision": refs["context_revision"], "settings": idSettings, "resolution": p.Resolution, "provider": provider, "model": model.ID, "units": p.Units}
 	if p.Resolution == "auto" {
 		delete(identity, "resolution")
 	} // Preserve existing default-resolution plan IDs.
-	raw := voiceJSON(identity)
-	hash := sha256.Sum256(raw)
-	p.ID = hex.EncodeToString(hash[:])
+	planID := func() string {
+		hash := sha256.Sum256(voiceJSON(identity))
+		return hex.EncodeToString(hash[:])
+	}
+	p.ID = planID() // the first-frame plan, as plans were made before reference mode
 	jobs, err := s.database.ListRenderJobs(*scene.ProjectID)
 	if err != nil {
 		return p, err
+	}
+	p.VideoInput = inputFirstFrame
+	if p.Settings.VideoInput != inputFirstFrame && model.ReferenceImages > 0 {
+		if pictures := s.referencePictures(scene, nil, model.ReferenceImages); len(pictures) > 0 {
+			madeFromFrames := false
+			for _, job := range jobs {
+				madeFromFrames = madeFromFrames || job.SceneID != nil && *job.SceneID == scene.ID && job.Status == "succeeded" && strings.HasPrefix(renderRequestUnit(job.RequestJSON).Key, p.ID+":")
+			}
+			// Clips already made from a first frame are kept until the owner asks for references.
+			if p.Settings.VideoInput == inputReferences || !madeFromFrames {
+				p.VideoInput, p.Pictures = inputReferences, pictures
+				identity["video_input"] = inputReferences
+				p.ID = planID()
+			}
+		}
+	}
+	if p.Settings.VideoInput == inputReferences && p.VideoInput != inputReferences {
+		return p, fmt.Errorf("the chosen video model cannot take reference pictures, or no pictures are connected to this scene; choose first frame instead")
 	}
 	for i := range p.Units {
 		u := &p.Units[i]

@@ -42,7 +42,7 @@ func (s *Server) renderProductionPlan(ctx context.Context, scene *models.Scene, 
 		return nil, err
 	}
 	updated := false
-	if !plan.StoryboardReady {
+	if !plan.StoryboardReady && plan.VideoInput != inputReferences {
 		if _, err := s.generateMatchingStoryboard(ctx, scene); err != nil {
 			return nil, fmt.Errorf("could not update the storyboard: %w", err)
 		}
@@ -87,7 +87,7 @@ func (s *Server) renderProductionPlan(ctx context.Context, scene *models.Scene, 
 		}
 		job := sceneRenderJob(*scene.ProjectID, current)
 		// Padding is generated to satisfy model minimums and trimmed during assembly.
-		job.RequestJSON = voiceJSON(map[string]any{"duration": unit.Duration, "aspect_ratio": current.AspectRatio, "audio_mode": plan.Settings.AudioMode, "music_prompt": plan.Settings.MusicPrompt, "render_plan_id": plan.ID, "render_unit": unit, "prompt": current.Title + ". " + current.Summary + "\nRender only this consecutive part of the scene. Follow this local shot schedule:" + unit.Prompt})
+		job.RequestJSON = voiceJSON(map[string]any{"duration": unit.Duration, "aspect_ratio": current.AspectRatio, "audio_mode": plan.Settings.AudioMode, "music_prompt": plan.Settings.MusicPrompt, "render_plan_id": plan.ID, "render_unit": unit, "video_input": plan.VideoInput, "prompt": current.Title + ". " + current.Summary + "\nRender only this consecutive part of the scene. Follow this local shot schedule:" + unit.Prompt})
 		if plan.Resolution != "" && plan.Resolution != "auto" {
 			var payload map[string]any
 			_ = json.Unmarshal(job.RequestJSON, &payload)
@@ -162,7 +162,7 @@ func productionSpend(plan productionPlan, newVersion bool) productionSpendLimit 
 			}
 		}
 	}
-	if result.Calls > 0 && !plan.StoryboardReady {
+	if result.Calls > 0 && !plan.StoryboardReady && plan.VideoInput != inputReferences {
 		result.Storyboards = 1
 	}
 	return result
