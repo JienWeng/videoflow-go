@@ -225,7 +225,6 @@ func (s *Server) setupRoutes() {
 	s.router.Post("/ideas/develop", s.handleDevelopIdea)
 	s.router.Post("/scripts/generate", s.handleGenerateScript)
 	s.router.Get("/scripts", s.handleListScripts)
-	s.router.Get("/series", s.handleSeries)
 
 	// Assets
 	s.router.Post("/assets/generate", s.handleGenerateImage)
@@ -248,18 +247,15 @@ func (s *Server) setupRoutes() {
 	s.router.Post("/render-jobs/{id}/resubmit", s.handleResubmitJob)
 	s.registerRenderRecoveryRoutes()
 
-	s.router.Post("/outputs/assemble", s.handleAssembleOutputs)
 	s.router.Get("/outputs/{id}/editor", s.handleGetEditorData)
 	s.router.Post("/outputs/{id}/retry", s.handleRetryOutput)
 	s.router.Patch("/outputs/{id}/select", s.handleSelectOutput)
 	s.router.Get("/outputs/{id}/download", s.handleDownloadOutput)
-	s.router.Post("/outputs/{id}/run-qa", s.handleRunQA)
 	s.router.Get("/outputs/{id}/captions", s.handleGetCaptions)
 	s.router.Put("/outputs/{id}/captions", s.handleUpdateCaptions)
 	s.router.Post("/outputs/{id}/captions/transcribe", s.handleTranscribeCaptions)
 	s.router.Get("/outputs/{id}/captions/from-script", s.handleOutputScriptCaptions)
 	s.router.Post("/outputs/{id}/caption", s.handleCaptionOutput)
-	s.router.Get("/caption-styles", s.handleCaptionStyles)
 	s.router.Get("/caption-config", s.handleCaptionConfig)
 
 	// Style Guide

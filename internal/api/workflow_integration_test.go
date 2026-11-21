@@ -138,23 +138,4 @@ func TestGuidedCharacterToTwoOutputsAndCombinedExport(t *testing.T) {
 	if out.CaptionedPath == nil {
 		t.Fatal("captioned file missing")
 	}
-	raw, _ := json.Marshal(map[string]any{"output_ids": outputIDs, "aspect_ratio": "16:9"})
-	response = call(t, s, "POST", "/outputs/assemble", string(raw))
-	if response.Code != 200 {
-		t.Fatalf("assembly: %d %s", response.Code, response.Body.String())
-	}
-	var assembled struct {
-		ID string `json:"output_id"`
-	}
-	json.Unmarshal(response.Body.Bytes(), &assembled)
-	combined, _ := s.database.GetRenderOutput(assembled.ID)
-	full, _ := s.storagePath(combined.VideoPath)
-	if b, err := exec.Command(binary, "-v", "error", "-i", full, "-c:v", "rawvideo", "-c:a", "pcm_s16le", "-f", "null", "-").CombinedOutput(); err != nil {
-		t.Fatalf("export decode failed: %v %s", err, b)
-	}
-	response = call(t, s, "GET", "/outputs/"+assembled.ID+"/download", "")
-	if response.Code != 200 || response.Body.Len() == 0 {
-		t.Fatal("combined download unavailable")
-	}
-
 }

@@ -1,10 +1,6 @@
 <script lang="ts">
   import { editOutputHref } from '$lib/editor/links';
- const operationScope=new AbortController();
- onDestroy(()=>operationScope.abort());
   import { onMount,onDestroy } from 'svelte';
-  import {goto} from '$app/navigation';
-  import {runBackgroundOp} from '$lib/ops';
   import { get, post, API_BASE, mediaUrl } from '$lib/api';
   import { subscribeJobs } from '$lib/sse';
   import VideoPreview from '$lib/components/VideoPreview.svelte';
@@ -29,28 +25,12 @@
     Film
   } from '@lucide/svelte';
 
-  let assemblyIDs:string[]=$state([]);
-  let assemblyAspect=$state('9:16');
-  let assemblyCaptioned=$state(false);
-  let assembling=$state(false);
-  async function assemble(){
-   if(assemblyIDs.length<2||assembling)return;assembling=true;
-   try{await runBackgroundOp('/outputs/assemble',{output_ids:assemblyIDs,aspect_ratio:assemblyAspect,captioned:assemblyCaptioned},{signal:operationScope.signal,
-          label:'Assembling selected clips',onDone:async(op)=>{assembling=false;assemblyIDs=[];await refresh();if(op.result_json?.output_id)await goto(editOutputHref(op.result_json.output_id))},onFail:()=>assembling=false})}catch(e:any){assembling=false;toast.error(e.message)}
-  }
   let jobs: any[] = $state([]);
   let scenes: any[] = $state([]);
   let scripts: any[] = $state([]);
-  let shots: any[] = $state([]);
   let outputs: Record<string, any[]> = $state({});
   let error = $state('');
-  let busy = $state(false);
   let loaded = $state(false);
-
-  // Advanced single-shot render form state.
-  let sceneId = $state('');
-  let shotId = $state('');
-  let showAdvanced = $state(false);
 
   // Re-run state for a FAILED render (keyed by job id).
   let rerunning = $state('');
@@ -188,24 +168,6 @@
     }
   }
 
-  async function loadShots() {
-    shots = sceneId ? await get(`/scenes/${sceneId}/shots`) : [];
-    shotId = '';
-  }
-
-  async function renderFromShot(e: Event) {
-    e.preventDefault();
-    busy = true;
-    error = '';
-    try {
-      await post('/render/from-shot', { scene_id: sceneId, shot_id: shotId });
-      await refresh();
-    } catch (e: any) {
-      toast.error(e.message);
-    } finally {
-      busy = false;
-    }
-  }
 
   // Group jobs by scene — humans browse renders per scene, not per job id. Only
   // scenes WITH render activity appear in the master list.

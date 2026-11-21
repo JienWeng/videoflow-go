@@ -57,10 +57,6 @@ func TestNextEpisodeKeepsFormatCastAndStorySoFar(t *testing.T) {
 		t.Fatalf("%+v", i.Brief)
 	}
 
-	w = call(t, s, "GET", "/series", "")
-	if !strings.Contains(w.Body.String(), `"number":1`) || !strings.Contains(w.Body.String(), "First Noodles") {
-		t.Fatal(w.Body.String())
-	}
 }
 
 func TestFinishVideoTargetsNewestEpisodeAndAutopilotChecksTheStory(t *testing.T) {

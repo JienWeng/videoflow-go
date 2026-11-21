@@ -161,3 +161,17 @@ func (m *MediaEngine) BurnCaptions(ctx context.Context, videoPath, destPath stri
 	}
 	return nil
 }
+
+func (m *MediaEngine) acquire(ctx context.Context) (func(), error) {
+	m.transcodeOnce.Do(func() {
+		if m.transcode == nil {
+			m.transcode = make(chan struct{}, 1)
+		}
+	})
+	select {
+	case m.transcode <- struct{}{}:
+		return func() { <-m.transcode }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}

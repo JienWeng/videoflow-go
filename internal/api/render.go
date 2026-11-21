@@ -516,66 +516,6 @@ func (s *Server) handleSelectOutput(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleRunQA(w http.ResponseWriter, r *http.Request) {
-	outputID := chi.URLParam(r, "id")
-	output, err := s.database.GetRenderOutput(outputID)
-	if err != nil {
-		http.Error(w, "output not found", 404)
-		return
-	}
-	s.operation(w, r, &models.Op{Kind: "qa", OutputID: &outputID}, func(ctx context.Context) (any, error) {
-		path, err := s.storagePath(output.VideoPath)
-		if err != nil {
-			return nil, err
-		}
-		directory, err := os.MkdirTemp(s.cfg.StorageRoot, "qa-")
-		if err != nil {
-			return nil, err
-		}
-		defer os.RemoveAll(directory)
-		frames := []string{}
-		for index, second := range []float64{0, 1, 2} {
-			frame := filepath.Join(directory, fmt.Sprintf("frame-%d.jpg", index))
-			if err = s.media.MakeThumbnail(ctx, path, frame, second); err != nil {
-				return nil, fmt.Errorf("extract QA frame: %w", err)
-			}
-			image, err := s.imageURL(&models.Asset{FilePath: frame})
-			if err != nil {
-				return nil, err
-			}
-			frames = append(frames, image)
-		}
-		var result struct {
-			Score          *float64 `json:"score"`
-			Issues         []string `json:"qa_issues"`
-			Recommendation string   `json:"recommendation"`
-		}
-		prompt := "Evaluate these sampled video frames for visual consistency, artifacts, composition and adherence to the requested scene. Score from 0 to 10; do not claim to assess audio or motion from still frames."
-		if job, err := s.database.GetRenderJob(output.RenderJobID); err == nil {
-			prompt += "\nRender request: " + string(withoutInlineMedia(job.RequestJSON))
-		}
-		if err = s.agentJSON(ctx, "qa_agent", "You are a film quality reviewer. Return score, qa_issues, recommendation.", prompt, frames, &result); err != nil {
-			return nil, err
-		}
-		if result.Score == nil || *result.Score < 0 || *result.Score > 10 {
-			return nil, fmt.Errorf("OpenRouter returned an invalid QA score")
-		}
-		if result.Issues == nil {
-			result.Issues = []string{}
-		}
-		output.Score = result.Score
-		output.QAJSON, _ = json.Marshal(result)
-		if err = s.database.UpdateRenderOutput(output); err != nil {
-			return nil, err
-		}
-		return map[string]any{"id": output.ID, "output_id": output.ID, "score": result.Score, "qa_issues": result.Issues, "recommendation": result.Recommendation, "assessment": "sampled_frames"}, nil
-	})
-}
-
-func (s *Server) handleCaptionStyles(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, defaultCaptionStyles)
-}
-
 func (s *Server) handleCaptionConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"styles":           defaultCaptionStyles,

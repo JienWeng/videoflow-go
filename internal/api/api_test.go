@@ -175,14 +175,7 @@ func TestMissingEndpointsResolution(t *testing.T) {
 		t.Fatalf("expected types object wrapper, got %v", typesRes)
 	}
 
-	// 6. GET /caption-styles and /caption-config
-	req = httptest.NewRequest("GET", "/caption-styles", nil)
-	rr = httptest.NewRecorder()
-	server.Router().ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200 for /caption-styles, got %d", rr.Code)
-	}
-
+	// 6. GET /caption-config
 	req = httptest.NewRequest("GET", "/caption-config", nil)
 	rr = httptest.NewRecorder()
 	server.Router().ServeHTTP(rr, req)
@@ -321,19 +314,6 @@ func TestEditorAndPanelEndpoints(t *testing.T) {
 	server.Router().ServeHTTP(rr, req)
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected missing credentials to reject retry, got %d: %s", rr.Code, rr.Body.String())
-	}
-
-	// 4. Test POST /outputs/{id}/run-qa?background=true
-	req = httptest.NewRequest("POST", "/outputs/"+out.ID+"/run-qa?background=true", nil)
-	rr = httptest.NewRecorder()
-	server.Router().ServeHTTP(rr, req)
-	if rr.Code != http.StatusAccepted {
-		t.Fatalf("expected 202 for run-qa background, got %d", rr.Code)
-	}
-	var qaOpRes map[string]interface{}
-	_ = json.Unmarshal(rr.Body.Bytes(), &qaOpRes)
-	if qaOpRes["op_id"] == nil {
-		t.Fatalf("expected op_id for run-qa background, got %v", qaOpRes)
 	}
 
 	// 5. Test PUT /outputs/{id}/captions?background=true

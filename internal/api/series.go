@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"sort"
 	"strings"
 
@@ -109,13 +108,4 @@ func (s *Server) continueSeries(project string, brief *agents.CreativeBrief, edi
 		brief.Instruction = brief.Instruction[:4800]
 	}
 	return cast, number
-}
-
-func (s *Server) handleSeries(w http.ResponseWriter, r *http.Request) {
-	project, err := s.activeProjectID(r.Context())
-	if err != nil {
-		http.Error(w, "no active project", 400)
-		return
-	}
-	writeJSON(w, 200, map[string]any{"episodes": s.seriesEpisodes(project)})
 }
