@@ -377,16 +377,15 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 				intent["scene_id"] = shot.SceneID
 			}
 		case "output":
-			if action == "caption" || action == "retry_render" {
+			if action == "retry_render" {
 				intent["output_id"] = body.Selected.ID
 			}
 		}
 	}
 	options := map[string]interface{}{
-		"scenes":         sceneOptions,
-		"characters":     charOptions,
-		"outputs":        outputsList,
-		"caption_styles": defaultCaptionStyles,
+		"scenes":     sceneOptions,
+		"characters": charOptions,
+		"outputs":    outputsList,
 	}
 
 	state, err := s.projectState(projectID)
@@ -432,7 +431,7 @@ func canonicalChatAction(action string) string {
 	switch action {
 	case "create_script", "add_scene":
 		return "generate_script"
-	case "open_editor", "make_clip", "finish_video", "render_scenes", "check_video", "stop_waiting", "switch_video_service", "clear_failed_videos", "set_music", "update_character", "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "caption", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
+	case "open_editor", "make_clip", "finish_video", "render_scenes", "check_video", "stop_waiting", "switch_video_service", "clear_failed_videos", "set_music", "update_character", "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
 		return action
 	default:
 		return "unknown"

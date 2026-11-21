@@ -82,14 +82,11 @@ func (s *Server) handleGetAppSettings(w http.ResponseWriter, r *http.Request) {
 		"default_video_provider": "fal",
 		"default_image_provider": "fal",
 		"default_scene_duration": 5.0,
-		"caption_style":          "clean",
-		"caption_language":       "auto",
 		"dialogue_language":      "English",
 		"image_model":            s.cfg.OpenRouterImageModel,
 		"ref_image_model":        s.cfg.OpenRouterImageModel,
 		"video_model":            s.cfg.OpenRouterVideoModel,
 		"vl_model":               s.cfg.OpenRouterVisionModel,
-		"max_video_refs":         3,
 		"render_negatives":       []string{"blurry", "low quality", "distorted", "watermark"},
 	}
 

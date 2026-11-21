@@ -249,8 +249,6 @@ func (s *Server) setupRoutes() {
 
 	s.router.Post("/outputs/{id}/retry", s.handleRetryOutput)
 	s.router.Get("/outputs/{id}/download", s.handleDownloadOutput)
-	s.router.Post("/outputs/{id}/caption", s.handleCaptionOutput)
-	s.router.Get("/caption-config", s.handleCaptionConfig)
 
 	// Style Guide
 	s.router.Get("/style-presets", s.handlePresetCatalog)

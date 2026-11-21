@@ -175,14 +175,6 @@ func TestMissingEndpointsResolution(t *testing.T) {
 		t.Fatalf("expected types object wrapper, got %v", typesRes)
 	}
 
-	// 6. GET /caption-config
-	req = httptest.NewRequest("GET", "/caption-config", nil)
-	rr = httptest.NewRecorder()
-	server.Router().ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200 for /caption-config, got %d", rr.Code)
-	}
-
 	// 7. Create scene and test scene action endpoints
 	scenePayload := []byte(`{"title":"Act 2","summary":"Middle scene","duration":5,"aspect_ratio":"16:9"}`)
 	req = httptest.NewRequest("POST", "/scenes", bytes.NewReader(scenePayload))

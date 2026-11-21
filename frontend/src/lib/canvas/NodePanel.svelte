@@ -1,14 +1,3 @@
-<script lang="ts" module>
-  // Caption config is project-wide — fetch once per app session, lazily on
-  // the first output-node selection, and share across panel instances.
-  type CaptionConfig = {
-    styles: string[];
-    default_language: string;
-    default_style: string;
-  };
-  let captionConfigPromise: Promise<CaptionConfig> | null = null;
-</script>
-
 <script lang="ts">
   import { editOutputHref } from '$lib/editor/links';
   import NodeTools from './NodeTools.svelte';
@@ -28,7 +17,6 @@
   import { toast } from 'svelte-sonner';
   import { Captions, Clapperboard, History, RefreshCw, Sparkles, Trash2, X } from '@lucide/svelte';
   import { get, put, patch, post, del, mediaUrl, isImage } from '$lib/api';
-  import { runBackgroundOp } from '$lib/ops';
 
   let {
     node,
@@ -66,11 +54,8 @@
   let revisions = $state<any[]>([]);
   let reverting = $state('');
 
-  // Output node actions (QA retry + re-burning saved captions in the /caption-config default style).
+  // Output node action: make another take.
   let retrying = $state(false);
-  let captioning = $state(false);
-  let captionStyle = $state('');
-  let captionLanguage = $state('zh');
 
   export function canLeave(){if(saving||refining||reverting||deleting)return false;return !formDirty || confirm('Discard unsaved changes?');}
   export function hasUnsavedChanges(){return formDirty;}
@@ -123,7 +108,6 @@
       form = {};
     }
     untrack(()=>{if(!loadingRecord)remember();});
-    if (shown && String(d.kind) === 'output') void loadCaptionConfig();
   });
 
   // Close requested via Escape or the X button. Dirty edits get a confirm;
@@ -146,17 +130,6 @@
     requestClose();
   }
 
-  async function loadCaptionConfig() {
-    captionConfigPromise ??= get('/caption-config');
-    try {
-      const cfg = await captionConfigPromise;
-      captionStyle = cfg.default_style || cfg.styles?.[0] || 'kids';
-      captionLanguage = cfg.default_language || 'zh';
-    } catch {
-      captionConfigPromise = null; // allow retry on next selection
-    }
-  }
-
   async function fixAndRerender() {
     if (!shown) return;
     retrying = true;
@@ -168,31 +141,6 @@
       toast.error(err.message);
     } finally {
       retrying = false;
-    }
-  }
-
-  async function addCaptions() {
-    if (!shown) return;
-    captioning = true;
-    try {
-      await runBackgroundOp(
-        `/outputs/${shown.id}/caption`,
-        {
-          style: captionStyle || undefined,
-          language: captionLanguage === 'auto' ? null : captionLanguage
-        },
-        {
-          label: 'Captioning',
-          onDone: () => {
-            captioning = false;
-            onsaved();
-          },
-          onFail: () => (captioning = false)
-        }
-      );
-    } catch (err: any) {
-      captioning = false;
-      toast.error(err.message);
     }
   }
 
@@ -473,18 +421,6 @@
 
         <div class="grid gap-1.5">
           <Label>Captions</Label>
-          {#if data.captioned_path}
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={captioning}
-              title="Burn this video's saved captions again in the default style"
-              onclick={addCaptions}
-            >
-              <Captions class="size-4 mr-1" />
-              {captioning ? 'Captioning…' : 'Re-caption'}
-            </Button>
-          {/if}
           <Button variant="outline" size="sm" href={editOutputHref(shown.id)}>
             <Captions class="size-4 mr-1" />
             Add captions in Edit video

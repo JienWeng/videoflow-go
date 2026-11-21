@@ -66,14 +66,11 @@
     default_video_provider: string;
     default_image_provider: string;
     default_scene_duration: number;
-    caption_style: string;
-    caption_language: string;
     dialogue_language: string;
     image_model: string;
     ref_image_model: string;
     video_model: string;
     vl_model: string;
-    max_video_refs: number;
 media_model_preferences:Record<string,Record<string,string>>;
     render_negatives: string[];
   };
@@ -122,7 +119,7 @@ media_model_preferences:Record<string,Record<string,string>>;
         protocol: newProtocol, base_url: newUrl || null, model: newModel.trim(), mode: newMode, vision: newVision });
       newLabel = '';
       await refresh();
-      toast.success('Connection added. Configure its credentials below, then assign agents.');
+      toast.success('Connection added. Add its key in AI connections, then assign agents.');
     } catch (e: any) { toast.error(e.message); }
     finally { busy = ''; }
   }
@@ -163,7 +160,8 @@ media_model_preferences:Record<string,Record<string,string>>;
 
   // Active settings tab (bound so clicking a trigger switches sections).
   let tab = $state('ai');
-  function settingsHash(){const h=window.location.hash.slice(1);tab=h==='presets'?'presets':['providers','connections'].includes(h)?'connections':['engines','models'].includes(h)?'models':['agents','advanced'].includes(h)?'advanced':['general','appearance'].includes(h)?'general':'ai';}
+  function settingsHash(){const h=window.location.hash.slice(1);tab=h==='presets'?'presets':['providers','connections'].includes(h)?'connections':['agents','advanced'].includes(h)?'advanced':['general','appearance'].includes(h)?'general':'ai';}
+  // Links to the removed Media models tab (#models, #engines) land on AI setup.
   function chooseSection(value:string){tab=value;replaceState('#'+value,page.state);}
 
   // ------------------------------------------------------------- labels
@@ -191,12 +189,6 @@ media_model_preferences:Record<string,Record<string,string>>;
 
   // -------------------------------------------------------------- options
   const ASPECT_RATIOS = ['9:16', '16:9', '1:1', '21:9', '4:3', '3:4'];
-  const CAPTION_STYLES = ['clean', 'bold', 'minimal', 'cinematic', 'neon', 'kids', 'classic', 'comic'];
-  const CAPTION_LANGUAGES = [
-    { value: 'auto', label: 'Auto-detect' },
-    { value: 'zh', label: 'Chinese' },
-    { value: 'en', label: 'English' }
-  ];
   // The backend writes the language name into prompts, so save names; `code` reads older saves.
   const DIALOGUE_LANGUAGES = [
     { value: 'Chinese', code: 'zh', label: 'Chinese' },
@@ -224,8 +216,6 @@ media_model_preferences:Record<string,Record<string,string>>;
   const primaryTextProvider = $derived(
     agents.find((agent) => agent.agent === 'script_agent')?.provider ?? 'openrouter'
   );
-  let voicePrimary=$state('fish');
-  async function primaryVoice(p:string){try{await put('/voice/preferences',{primary_provider:p});voicePrimary=p;toast.success('Primary speech provider saved')}catch(e){toast.error(String(e))}}
   let providerOpen=$state<Record<string,boolean>>({});
   const orderedProviders = $derived(
     providers
@@ -236,15 +226,13 @@ media_model_preferences:Record<string,Record<string,string>>;
   // -------------------------------------------------------------- load
   async function refresh() {
     // Everything the page needs is asked for at once, so it appears after one round trip.
-    const [pr, ag, pv, ap, voice] = await Promise.all([
+    const [pr, ag, pv, ap] = await Promise.all([
       get('/settings/connection-presets').catch(() => FALLBACK_PRESETS),
       get('/settings/agents'),
       get('/settings/providers'),
-      get('/settings/app'),
-      get('/voice/preferences').catch(() => null)
+      get('/settings/app')
     ]);
     presets = pr;
-    voicePrimary = voice?.primary_provider ?? 'fish';
     agents = ag;
     providers = pv;
     testModelInput = Object.fromEntries(
@@ -541,18 +529,8 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
     }));
     if(sequence===catalogSequence){catalogError=failures.join('; ');catalogBusy=false}
   }
-  function mediaProviderChanged(kind:'image'|'video',provider:string){
-    void saveApp({[kind==='image'?'default_image_provider':'default_video_provider']:provider});
-  }
   function engineOptions(key: keyof AppSettings): string[] {
     return engineCatalogs[key === 'vl_model' ? 'vision' : key === 'video_model' ? 'video' : 'image'] ?? [];
-  }
-  function videoImageInputLimit(): number {
-    return videoCapabilities.find(model => model.id === app?.video_model)?.supported_frame_images?.length ?? 0;
-  }
-  function videoImageInputDescription(): string {
-    const model = videoCapabilities.find(model => model.id === app?.video_model);
-    return model ? `Supported frame anchors: ${model.supported_frame_images?.join(', ') || 'none'}.` : 'Load the catalog to check frame support.';
   }
   function videoModelHint(): string {
     const model = videoCapabilities.find(model => model.id === app?.video_model);
@@ -639,12 +617,12 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
   {:else if !error}
     <div class="grid gap-6 md:grid-cols-[200px_minmax(0,1fr)]">
       <nav aria-label="Settings sections" class="grid grid-cols-2 gap-2 self-start md:sticky md:top-8 md:block md:space-y-2">
-        {#each [{id:'ai',label:'AI setup',hint:'Which AI does each job'},{id:'general',label:'General',hint:'Video defaults & appearance'},{id:'connections',label:'AI connections',hint:'Provider keys & access'},{id:'models',label:'Media models',hint:'Image, video & vision'},{id:'presets',label:'Creative presets',hint:'Styles & community packs'},{id:'advanced',label:'Advanced',hint:'Routing & recovery'}] as section}
+        {#each [{id:'ai',label:'AI setup',hint:'Which AI does each job'},{id:'general',label:'General',hint:'Video defaults & appearance'},{id:'connections',label:'AI connections',hint:'Service keys'},{id:'presets',label:'Creative presets',hint:'Styles & community packs'},{id:'advanced',label:'Advanced',hint:'Troubleshooting'}] as section}
           <button type="button" aria-label={section.label} aria-current={tab===section.id?'page':undefined} onclick={()=>chooseSection(section.id)} class="min-h-11 flex-1 rounded-lg px-3 py-2 text-left md:w-full {tab===section.id?'bg-accent font-semibold':'hover:bg-accent text-muted-foreground'}"><span class="block text-sm">{section.label}</span><span class="hidden text-xs font-normal md:block">{section.hint}</span></button>
         {/each}
       </nav>
       <div class="min-w-0 space-y-6" data-testid="settings-content">
-        <div class="space-y-1 text-sm text-muted-foreground"><p>{tab === 'ai' ? '' : tab === 'connections' ? 'Save each provider key before checking its connection.' : tab === 'presets' ? 'Preview a pack before installing it.' : 'Preferences save automatically when changed.'}</p><p role="status" aria-live="polite" class="min-h-5 text-foreground">{saveStatus}</p></div>
+        <div class="space-y-1 text-sm text-muted-foreground"><p>{tab === 'ai' ? '' : tab === 'connections' ? 'Save each provider key before checking its connection.' : tab === 'presets' ? 'Preview a pack before installing it.' : tab === 'advanced' ? 'These are for troubleshooting. Most people never need them.' : 'Preferences save automatically when changed.'}</p><p role="status" aria-live="polite" class="min-h-5 text-foreground">{saveStatus}</p></div>
       {#if tab === 'ai'}<AISetup onopen={chooseSection} />{/if}
       {#if tab === 'presets'}<CreativePresetManager />{/if}
       <!-- ============================================ APPEARANCE -->
@@ -700,7 +678,6 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
               <details open={providerOpen[p.name] ?? (p.name === primaryTextProvider || p.name === app?.default_image_provider || p.name === app?.default_video_provider)} ontoggle={e=>providerOpen[p.name]=e.currentTarget.open}>
                 <summary class="cursor-pointer rounded-md py-2 text-sm font-medium">
                   {providerLabels[p.name] ?? p.name}
-                  {#if p.name===voicePrimary}<Badge variant="secondary">Primary voice provider</Badge>{/if}
                   {#if cfg?.key_check?.state === 'rejected'}<span class="ml-2 text-xs font-normal text-destructive">Key rejected</span>{:else if cfg?.key_check?.state === 'no_credit'}<span class="ml-2 text-xs font-normal text-destructive">No balance</span>{:else}<span class="ml-2 text-xs font-normal text-muted-foreground">{cfg?.configured ? 'Configured' : 'Not configured'}</span>{/if}
                 </summary>
               <div data-provider={p.name}>
@@ -731,15 +708,9 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                     </div>
                   </div>
                 </div>
-                <details class="mt-2">
-                  <summary class="cursor-pointer text-xs text-muted-foreground">Provider endpoint</summary>
-                  <label class="mt-2 block max-w-xl text-xs text-muted-foreground" for="url-{p.name}">Base URL</label>
-                  <Input id="url-{p.name}" readonly value={cfg?.base_url ?? ''} />
-                </details>
-
                 <p class="settings-help mt-2" role="status">{providerDirty(p.name) ? 'Unsaved credential changes' : 'No unsaved credential changes'}</p>
                 <div class="mt-2 flex flex-wrap items-center gap-2">
-                  {#if p.name === 'openai'}<p class="settings-help">Used for images when native Codex image generation is unavailable.</p>{:else if p.protocol === 'speech'}<p class="settings-help">Choose each character's voice in <a class="underline" href="/voices">Voices</a>. Configuration checks do not generate speech.</p>{:else}
+                  {#if p.name === 'openai'}<p class="settings-help">Used for images when native Codex image generation is unavailable.</p>{:else if p.protocol === 'speech'}<p class="settings-help">Choose the voice service in AI setup and each character's voice in <a class="underline" href="/voices">Voices</a>. Configuration checks do not generate speech.</p>{:else}
                   {#if providerModelInput[p.name]}
                     <Input
                       class="max-w-64"
@@ -805,7 +776,6 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                       <Wifi class="size-3.5 mr-1" />{cfg?.key_check?.state === 'no_credit' ? 'Check again' : p.protocol === 'chat' ? 'Test connection' : p.protocol === 'video' && p.name !== 'byteplus' ? 'Check key' : 'Check configuration'}
                     {/if}
                   </Button>
-                  {#if ['fish','elevenlabs'].includes(p.name)&&voicePrimary!==p.name}<Button variant="outline" size="sm" disabled={!cfg?.configured} onclick={()=>primaryVoice(p.name)}>Make primary voice provider</Button>{/if}
                   {#if cfg?.from_db}
                     <Button
                       size="sm"
@@ -842,156 +812,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
               {/if}
               </details>
             {/each}
-            <details class="rounded-lg border p-4">
-              <summary class="cursor-pointer text-sm font-medium">Additional connections</summary>
-              <div class="mt-3 space-y-3">
-              <p class="settings-help">Only add a named OpenRouter connection if you need a separate account or configuration. To set up your primary account, use OpenRouter above.</p>
-              <div class="grid gap-3 sm:grid-cols-2">
-                <label class="text-xs">Name<Input bind:value={newLabel} placeholder="My OpenRouter" /></label>
-                <label class="text-xs">Provider<select class="block w-full rounded border p-2 bg-background" bind:value={newPreset} onchange={choosePreset}>
-                  {#each selectablePresets as [id, p]}<option value={id}>{p.label}</option>{/each}
-                </select></label>
-                <label class="text-xs">Protocol<select class="block w-full rounded border p-2 bg-background" bind:value={newProtocol}>
-                  <option value="chat">OpenRouter Chat Completions</option>
 
-                </select></label>
-                <label class="text-xs">Default model<Input bind:value={newModel} placeholder="Model ID from your provider" /></label>
-                {#if newProtocol !== 'codex'}
-                  <label class="text-xs">Base URL<Input bind:value={newUrl} /></label>
-                  <label class="text-xs">Chat Completions output mode<select class="block w-full rounded border p-2 bg-background" bind:value={newMode} disabled={newProtocol !== 'chat'}>
-                    <option value="auto">Provider default</option><option value="prompt">JSON in prompt</option>
-                  </select></label>
-                {/if}
-              </div>
-              <label class="flex items-center gap-2 text-xs"><input type="checkbox" bind:checked={newVision} />Models on this connection accept images</label>
-              <Button size="sm" disabled={!newLabel.trim() || busy === 'add-connection'} onclick={addConnection}>Add connection</Button>
-              </div>
-            </details>
-
-          </CardContent>
-        </Card>
-      </section>
-      {/if}
-
-      <!-- ============================================ ENGINES -->
-      {#if tab === 'models'}
-      <section id="engines" class="settings-section">
-        <Card>
-          <CardHeader>
-            <CardTitle role="heading" aria-level={2} class="flex items-center gap-2 text-base">
-              <Sparkles class="size-4" />Media models
-            </CardTitle>
-            <CardDescription>
-              Choose defaults for new media. Provider keys are managed in AI connections; planning and writing use local AI sessions.
-            </CardDescription>
-          </CardHeader>
-          <CardContent class="settings-section">
-            <Button size="sm" variant="outline" disabled={catalogBusy} onclick={loadEngineCatalogs}>{catalogBusy ? 'Loading catalogs…' : 'Refresh model catalogs'}</Button>
-            {#if catalogError}<p class="text-sm text-destructive">{catalogError}</p>{/if}
-            {#if app}
-              {@const engines = [
-                { key: 'image_model', label: 'Image model', hint: `Image generation via ${providerLabels[app.default_image_provider] ?? app.default_image_provider}.` },
-                { key: 'ref_image_model', label: 'Character and prop image model', hint: `Character references and props via ${providerLabels[app.default_image_provider] ?? app.default_image_provider}.` },
-                { key: 'video_model', label: 'Video model', hint: videoModelHint() },
-                { key: 'vl_model', label: 'Vision model', hint: 'Reads frames for QA.' }
-              ] as const}
-              {#each engines as eng (eng.key)}
-                {@const cur = app[eng.key] as string}
-                <div class="flex flex-wrap items-center gap-3">
-                  <div class="min-w-[180px] flex-1">
-                    <div class="settings-label">{eng.label}</div>
-                    <div class="settings-help">{eng.hint}</div>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    {#if app.default_image_provider === 'openai' && (eng.key === 'image_model' || eng.key === 'ref_image_model')}
-                      <span class="text-sm">{cur}</span>
-                    {:else if engineCustomOpen[eng.key]}
-                      <Input
-                        class="h-8 w-64 text-sm"
-                        placeholder="Custom model id"
-                        bind:value={engineCustomVal[eng.key]}
-                        onkeydown={(e) => e.key === 'Enter' && commitEngineCustom(eng.key, cur)}
-                      />
-                      <Button size="sm" disabled={busy === 'app'} onclick={() => commitEngineCustom(eng.key, cur)}>
-                        Save
-                      </Button>
-                      <Button size="sm" variant="ghost" onclick={() => (engineCustomOpen[eng.key] = false)}>
-                        Cancel
-                      </Button>
-                    {:else}
-                      <select
-                        aria-label={eng.label}
-                        class="w-64 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                        disabled={busy === 'app'}
-                        value={cur}
-                        onchange={(e) => onEngineSelect(eng.key, (e.currentTarget as HTMLSelectElement).value, cur)}
-                      >
-                        {#if cur && !engineOptions(eng.key).includes(cur)}
-                          <option value={cur}>{cur} — unverified custom ID</option>
-                        {/if}
-                        {#each engineOptions(eng.key) as m (m)}
-                          <option value={m}>{m}</option>
-                        {/each}
-                        <option value={CUSTOM}>Custom…</option>
-                      </select>
-                    {/if}
-                  </div>
-                </div>
-              {/each}
-
-              <Separator />
-
-              <div class="flex flex-wrap items-center gap-3">
-                <div class="min-w-[180px] flex-1">
-                  <div class="settings-label">Video provider</div>
-                  <div class="settings-help">Used by one-click renders. To compare prices, add keys or always use the cheapest service, open <a class="underline" href="/costs">Costs</a>.</div>
-                </div>
-                <select
-                  aria-label="Video provider"
-                  class="w-64 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                  disabled={busy === 'app'}
-                  value={app.default_video_provider}
-                  onchange={(e) => mediaProviderChanged('video', (e.currentTarget as HTMLSelectElement).value)}
-                >
-
-                  <option value="fal">fal.ai</option><option value="openrouter">OpenRouter</option><option value="byteplus">BytePlus ModelArk (Seedance)</option>
-                  <option value="argolink">ArgoLink</option>
-                </select>
-              </div>
-
-              <div class="flex flex-wrap items-center gap-3">
-                <div class="min-w-[180px] flex-1">
-                  <div class="settings-label">Image provider</div>
-                  <div class="settings-help">Used when native Codex image generation is unavailable.</div>
-                </div>
-                {#if app.default_image_provider === 'openai'}
-                  <span class="text-sm">OpenAI Images</span>
-                {:else}
-                <select
-                  aria-label="Image provider"
-                  class="w-64 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                  disabled={busy === 'app'}
-                  value={app.default_image_provider}
-                  onchange={(e) => mediaProviderChanged('image', (e.currentTarget as HTMLSelectElement).value)}
-                >
-
-                  <option value="fal">fal.ai</option><option value="openrouter">OpenRouter</option>
-                </select>
-                {/if}
-              </div>
-
-              <Separator />
-
-              <div class="flex flex-wrap items-center gap-3">
-              <div class="min-w-[180px] flex-1">
-                  <div class="settings-label">Image references accepted by the selected video route</div>
-                  <div class="settings-help">
-                    {videoImageInputDescription()}
-                  </div>
-                </div>
-                <span class="rounded-md border border-border px-3 py-1.5 text-sm tabular-nums">{videoImageInputLimit()} image references</span>
-              </div>
-            {/if}
           </CardContent>
         </Card>
       </section>
@@ -1052,49 +873,78 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
           </CardContent>
         </Card>
 
-        <Card class="mt-4">
+      </section>
+      {/if}
+
+      <!-- ============================================ MODEL NAMES -->
+      {#if tab === 'advanced'}
+      <section id="engines" class="settings-section">
+        <Card>
           <CardHeader>
-            <CardTitle role="heading" aria-level={2} class="text-base">Captions</CardTitle>
-            <CardDescription>Caption style and language.</CardDescription>
+            <CardTitle role="heading" aria-level={2} class="flex items-center gap-2 text-base">
+              <Sparkles class="size-4" />Exact model names
+            </CardTitle>
+            <CardDescription>
+              The exact model each service is asked for. The service itself is chosen in AI setup.
+            </CardDescription>
           </CardHeader>
           <CardContent class="settings-section">
+            <Button size="sm" variant="outline" disabled={catalogBusy} onclick={loadEngineCatalogs}>{catalogBusy ? 'Loading catalogs…' : 'Refresh model catalogs'}</Button>
+            {#if catalogError}<p class="text-sm text-destructive">{catalogError}</p>{/if}
             {#if app}
-              <div class="flex flex-wrap items-center gap-3">
-                <div class="min-w-[180px] flex-1 text-sm font-medium">Caption style</div>
-                <select
-                  aria-label="Caption style"
-                  class="w-48 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                  disabled={busy === 'app'}
-                  value={app.caption_style}
-                  onchange={(e) =>
-                    saveApp({ caption_style: (e.currentTarget as HTMLSelectElement).value })}
-                >
-                  {#each CAPTION_STYLES as s (s)}
-                    <option value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
-                  {/each}
-                </select>
-              </div>
+              {@const engines = [
+                { key: 'image_model', label: 'Image model', hint: `Image generation via ${providerLabels[app.default_image_provider] ?? app.default_image_provider}.` },
+                { key: 'ref_image_model', label: 'Character and prop image model', hint: `Character references and props via ${providerLabels[app.default_image_provider] ?? app.default_image_provider}.` },
+                { key: 'video_model', label: 'Video model', hint: videoModelHint() },
+                { key: 'vl_model', label: 'Vision model', hint: 'Reads frames for QA.' }
+              ] as const}
+              {#each engines as eng (eng.key)}
+                {@const cur = app[eng.key] as string}
+                <div class="flex flex-wrap items-center gap-3">
+                  <div class="min-w-[180px] flex-1">
+                    <div class="settings-label">{eng.label}</div>
+                    <div class="settings-help">{eng.hint}</div>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    {#if app.default_image_provider === 'openai' && (eng.key === 'image_model' || eng.key === 'ref_image_model')}
+                      <span class="text-sm">{cur}</span>
+                    {:else if engineCustomOpen[eng.key]}
+                      <Input
+                        class="h-8 w-64 text-sm"
+                        placeholder="Custom model id"
+                        bind:value={engineCustomVal[eng.key]}
+                        onkeydown={(e) => e.key === 'Enter' && commitEngineCustom(eng.key, cur)}
+                      />
+                      <Button size="sm" disabled={busy === 'app'} onclick={() => commitEngineCustom(eng.key, cur)}>
+                        Save
+                      </Button>
+                      <Button size="sm" variant="ghost" onclick={() => (engineCustomOpen[eng.key] = false)}>
+                        Cancel
+                      </Button>
+                    {:else}
+                      <select
+                        aria-label={eng.label}
+                        class="w-64 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                        disabled={busy === 'app'}
+                        value={cur}
+                        onchange={(e) => onEngineSelect(eng.key, (e.currentTarget as HTMLSelectElement).value, cur)}
+                      >
+                        {#if cur && !engineOptions(eng.key).includes(cur)}
+                          <option value={cur}>{cur} — unverified custom ID</option>
+                        {/if}
+                        {#each engineOptions(eng.key) as m (m)}
+                          <option value={m}>{m}</option>
+                        {/each}
+                        <option value={CUSTOM}>Custom…</option>
+                      </select>
+                    {/if}
+                  </div>
+                </div>
+              {/each}
 
-              <div class="flex flex-wrap items-center gap-3">
-                <div class="min-w-[180px] flex-1 text-sm font-medium">Caption language</div>
-                <select
-                  aria-label="Caption language"
-                  class="w-48 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                  disabled={busy === 'app'}
-                  value={app.caption_language}
-                  onchange={(e) =>
-                    saveApp({ caption_language: (e.currentTarget as HTMLSelectElement).value })}
-                >
-                  {#each CAPTION_LANGUAGES as l (l.value)}
-                    <option value={l.value}>{l.label}</option>
-                  {/each}
-                </select>
-              </div>
             {/if}
           </CardContent>
         </Card>
-
-
       </section>
       {/if}
 
@@ -1304,6 +1154,51 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
               </div>
             </div>
            </div>
+          </CardContent>
+        </Card>
+      </section>
+      {/if}
+
+      <!-- ============================================ CONNECTION DETAILS -->
+      {#if tab === 'advanced'}
+      <section id="endpoints" class="settings-section">
+        <Card>
+          <CardHeader>
+            <CardTitle role="heading" aria-level={2} class="text-base">Connection details</CardTitle>
+            <CardDescription>The address each service is reached at, and extra named connections. Keys are saved in AI connections.</CardDescription>
+          </CardHeader>
+          <CardContent class="space-y-3">
+            {#each orderedProviders as p (p.name)}
+              <div class="flex flex-wrap items-center gap-3">
+                <label class="min-w-[180px] flex-1 text-sm font-medium" for="url-{p.name}">{providerLabels[p.name] ?? p.name} base URL</label>
+                <Input id="url-{p.name}" class="h-8 w-full text-sm sm:w-96" readonly value={provCfg[p.name]?.base_url ?? ''} />
+              </div>
+            {/each}
+            <details class="rounded-lg border p-4">
+              <summary class="cursor-pointer text-sm font-medium">Additional connections</summary>
+              <div class="mt-3 space-y-3">
+              <p class="settings-help">Only add a named OpenRouter connection if you need a separate account or configuration. To set up your primary account, use OpenRouter in AI connections.</p>
+              <div class="grid gap-3 sm:grid-cols-2">
+                <label class="text-xs">Name<Input bind:value={newLabel} placeholder="My OpenRouter" /></label>
+                <label class="text-xs">Provider<select class="block w-full rounded border p-2 bg-background" bind:value={newPreset} onchange={choosePreset}>
+                  {#each selectablePresets as [id, p]}<option value={id}>{p.label}</option>{/each}
+                </select></label>
+                <label class="text-xs">Protocol<select class="block w-full rounded border p-2 bg-background" bind:value={newProtocol}>
+                  <option value="chat">OpenRouter Chat Completions</option>
+
+                </select></label>
+                <label class="text-xs">Default model<Input bind:value={newModel} placeholder="Model ID from your provider" /></label>
+                {#if newProtocol !== 'codex'}
+                  <label class="text-xs">Base URL<Input bind:value={newUrl} /></label>
+                  <label class="text-xs">Chat Completions output mode<select class="block w-full rounded border p-2 bg-background" bind:value={newMode} disabled={newProtocol !== 'chat'}>
+                    <option value="auto">Provider default</option><option value="prompt">JSON in prompt</option>
+                  </select></label>
+                {/if}
+              </div>
+              <label class="flex items-center gap-2 text-xs"><input type="checkbox" bind:checked={newVision} />Models on this connection accept images</label>
+              <Button size="sm" disabled={!newLabel.trim() || busy === 'add-connection'} onclick={addConnection}>Add connection</Button>
+              </div>
+            </details>
           </CardContent>
         </Card>
       </section>

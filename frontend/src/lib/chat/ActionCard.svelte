@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { editHref, editOutputHref } from '$lib/editor/links';
+  import { editHref } from '$lib/editor/links';
  import CreativeBriefEditor from '$lib/brief/CreativeBriefEditor.svelte';
  import {normalizeBrief,missingBriefFields,confirmedBriefRequest} from '$lib/brief/brief.mjs';
  let newRenderVersion = $state(false);
@@ -40,7 +40,6 @@
     character_id?: string | null;
     shot_id?: string | null;
     output_id?: string | null;
-    style?: string | null;
     language?: string | null;
     idea?: string | null;
     scene_count?: number | null;
@@ -52,7 +51,6 @@
     scenes: Option[];
     characters: Option[];
     outputs: Option[];
-    caption_styles: string[];
   }
 
   interface IdeaOption {
@@ -157,8 +155,6 @@
   let shotId = $state(intent.shot_id ?? '');
   // svelte-ignore state_referenced_locally
   let outputId = $state(intent.output_id ?? '');
-  // svelte-ignore state_referenced_locally
-  let captionStyle = $state(intent.style ?? 'kids');
   let shots = $state<{ id: string; shot_order: number; prompt: string }[]>([]);
   let maxAssets = $state(4);
   let autoAssets = $state(true);
@@ -191,7 +187,6 @@
     audit_storyboard: 'Run visual audit',
     render_scene: 'Update storyboard & render',
     render_shot: 'Render shot',
-    caption: 'Burn saved captions',
     retry_render: 'Fix & re-render',
     generate_assets: 'Generate assets',
     refine_scene: 'AI refine scene',
@@ -260,8 +255,6 @@
         return !!sceneId && !!shotId && idea.trim().length > 0;
       case 'style_ingest':
         return true;
-      case 'caption':
-        return !!outputId && !!captionStyle;
       case 'retry_render':
         return !!outputId;
       default:
@@ -385,16 +378,6 @@
           { instruction: idea.trim(), max_assets: maxAssets },
           'Asset generation',
           (op) => op.result_json?.asset_ids?.[0],
-          ctx
-        );
-      case 'caption':
-        return runInBackground(
-          `/outputs/${outputId}/caption`,
-          {
-            style: captionStyle
-          },
-          'Captioning',
-          (op) => op.result_json?.output_id ?? op.output_id ?? outputId,
           ctx
         );
     }
@@ -650,29 +633,15 @@
         </div>
       {/if}
 
-      {#if ['caption', 'retry_render'].includes(intent.action) && !options.outputs.length}
+      {#if intent.action === 'retry_render' && !options.outputs.length}
         <p role="status" class="text-sm text-muted-foreground">There is no finished video yet, so there is nothing to pick here. Make the scene's video first: ask "make the video for" and the scene name.</p>
-      {:else if ['caption', 'retry_render'].includes(intent.action)}
+      {:else if intent.action === 'retry_render'}
         <div>
           <label class={labelClass} for="output-{intent.action}">Output</label>
           <select id="output-{intent.action}" bind:value={outputId} class={selectClass}>
             <option value="">choose…</option>
             {#each options.outputs as o (o.id)}<option value={o.id}>{videoLabel(o)}</option>{/each}
           </select>
-        </div>
-      {/if}
-
-      {#if intent.action === 'caption'}
-        <p class="text-xs text-muted-foreground">This burns captions already saved on a video into a new video file. To caption a new video, open it in Edit video.</p>
-        {#if outputId}<a class="text-xs underline" href={editOutputHref(outputId)}>Open in video editor</a>{/if}
-        <div>
-          <div>
-            <label class={labelClass} for="style-{intent.action}">Style</label>
-            <select id="style-{intent.action}" bind:value={captionStyle} class={selectClass}>
-              {#each options.caption_styles as st (st)}<option value={st}>{st}</option>{/each}
-            </select>
-          </div>
-
         </div>
       {/if}
 

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,10 +10,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 )
-
-var defaultCaptionStyles = []string{
-	"kids", "cinematic", "neon", "minimal", "bold", "clean", "classic", "comic",
-}
 
 func (s *Server) handleStartRender(w http.ResponseWriter, r *http.Request) {
 	projectID, err := s.activeProjectID(r.Context())
@@ -287,52 +282,6 @@ func (s *Server) handleRetryOutput(w http.ResponseWriter, r *http.Request) {
 	route := chi.RouteContext(r.Context())
 	route.URLParams.Add("id", output.RenderJobID)
 	s.handleResubmitJob(w, r)
-}
-
-func (s *Server) handleCaptionConfig(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"styles":           defaultCaptionStyles,
-		"default_language": "auto",
-		"default_style":    "clean",
-	})
-}
-
-func (s *Server) handleCaptionOutput(w http.ResponseWriter, r *http.Request) {
-	outputID := chi.URLParam(r, "id")
-	output, err := s.database.GetRenderOutput(outputID)
-	if err != nil {
-		http.Error(w, "output not found", 404)
-		return
-	}
-	var body struct {
-		Style string `json:"style"`
-	}
-	if r.Body != nil && r.ContentLength != 0 {
-		if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, "invalid caption request", 400)
-			return
-		}
-	}
-	var captions struct {
-		Segments []models.CaptionSegment `json:"segments"`
-		Style    string                  `json:"style"`
-	}
-	if json.Unmarshal(output.CaptionsJSON, &captions) != nil {
-		json.Unmarshal(output.CaptionsJSON, &captions.Segments)
-	}
-	if len(captions.Segments) == 0 {
-		http.Error(w, "This video has no saved captions. Add captions in Edit video and export from there.", 400)
-		return
-	}
-	if body.Style != "" {
-		captions.Style = body.Style
-	}
-	if captions.Style == "" {
-		captions.Style = "clean"
-	}
-	s.operation(w, r, &models.Op{Kind: "caption", OutputID: &outputID}, func(ctx context.Context) (any, error) {
-		return s.saveBurnedCaptions(ctx, output, captions.Segments, captions.Style)
-	})
 }
 
 func (s *Server) handleDownloadOutput(w http.ResponseWriter, r *http.Request) {

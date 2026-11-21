@@ -20,12 +20,16 @@
   let { onopen }: { onopen?: (section: string) => void } = $props();
   let setup = $state<Setup | null>(null), catalog = $state<Record<string, { models: string[]; efforts: string[] }>>({}), services = $state<Services | null>(null);
   let error = $state(''), busy = $state('');
+  // The paid picture service saved in settings; 'openai' means an OpenAI key decides it.
+  let pictureService = $state('');
   const engineName: Record<string, string> = { claude: 'Claude Code', codex: 'Codex' };
   const select = 'h-9 min-w-0 max-w-full rounded-md border border-input bg-background px-2 text-sm';
 
   async function load() {
     try {
-      [setup, catalog] = await Promise.all([get('/ai/setup'), get('/director/models')]);
+      let app: { default_image_provider?: string } | null;
+      [setup, catalog, app] = await Promise.all([get('/ai/setup'), get('/director/models'), get('/settings/app').catch(() => null)]);
+      pictureService = app?.default_image_provider ?? '';
       services = await get('/video-services' + (setup?.video.family ? '?model=' + setup.video.family : ''));
       error = '';
     } catch (e) { error = (e as Error).message; }
@@ -40,6 +44,7 @@
   const video = (body: { mode: string; model: string; provider?: string }) => change('video', () => put('/video-services/routing', body));
   // Check again on an empty account: the service is asked when it can be, otherwise the next video decides.
   const checkVideoAgain = () => change('check', async () => { const r = await post(`/settings/providers/${setup!.video.provider}/test`); if (!r.ok && r.error) throw new Error(r.error); });
+  const pictures = (provider: string) => change('pictures', () => put('/settings/app', { default_image_provider: provider }));
   const voice = (provider: string) => change('voice', () => put('/voice/preferences', { primary_provider: provider }));
   onMount(() => void load());
   const usable = $derived(services?.services.filter((s) => s.usable) ?? []);
@@ -98,7 +103,14 @@
         <div class="grid gap-1">
           <p class="text-sm"><span class="font-medium">{setup.pictures.service}</span> <span class="text-muted-foreground">· {setup.pictures.model}</span></p>
           {#if setup.pictures.note}<p class="text-xs text-muted-foreground">{setup.pictures.note}</p>{/if}
-          <p class="text-xs text-muted-foreground">Picked automatically: Codex when the conversation runs on Codex, otherwise OpenAI when its key is saved.</p>
+          {#if pictureService && pictureService !== 'openai'}
+            <label class="grid gap-1 text-xs text-muted-foreground">{setup.pictures.service === 'Codex' ? 'Service when Codex is not used' : 'Service'}
+              <select class={select + ' w-64'} disabled={busy === 'pictures'} value={pictureService} onchange={(e) => pictures(e.currentTarget.value)}>
+                <option value="fal">fal.ai</option><option value="openrouter">OpenRouter</option>
+              </select>
+            </label>
+          {/if}
+          <p class="text-xs text-muted-foreground">Codex makes the pictures when the conversation runs on Codex, and OpenAI whenever its key is saved. Otherwise the service chosen here is used.</p>
         </div>
       </li>
 
@@ -159,7 +171,7 @@
     </ul>
     <div class="flex flex-wrap gap-2">
       <Button variant="outline" size="sm" onclick={() => onopen?.('connections')}>Add or change keys</Button>
-      <Button variant="ghost" size="sm" onclick={() => onopen?.('models')}>Exact model names</Button>
+      <Button variant="ghost" size="sm" onclick={() => onopen?.('advanced')}>Exact model names</Button>
     </div>
   {/if}
 </section>

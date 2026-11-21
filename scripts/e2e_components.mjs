@@ -48,7 +48,6 @@ for(const mode of ['desktop','mobile']){
   else if(p==='/graph')body={nodes:[],edges:[]};
   else if(p==='/events')return route.fulfill({contentType:'text/event-stream',body:': fixture\n\n'});
   else if(p==='/generation-requests')body=[];
-  else if(p==='/caption-config')body={};
   else if(p==='/videos/preflight')body={effective_style:'cinematic',effective_routes:{},missing:['Fixture has no inference provider'],warnings:[]};
   else if(p.includes('missing-output'))return route.fulfill({status:404,json:{error:'Output not found'}});
   else {report.unknownEndpoints.push({path:p,method:req.method()});return route.fulfill({status:404,json:{error:'Unmocked fixture endpoint: '+p}});}

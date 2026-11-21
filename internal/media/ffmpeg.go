@@ -6,21 +6,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
-	"sync"
 	"time"
-	"videoflow-go/internal/models"
 )
 
 type MediaEngine struct {
-	ffmpegPath    string
-	transcode     chan struct{}
-	transcodeOnce sync.Once
+	ffmpegPath string
 }
 
 func NewMediaEngine() *MediaEngine {
 	path, _ := exec.LookPath("ffmpeg")
-	return &MediaEngine{ffmpegPath: path, transcode: make(chan struct{}, 1)}
+	return &MediaEngine{ffmpegPath: path}
 }
 
 func (m *MediaEngine) Available() bool {
@@ -82,96 +77,4 @@ func (m *MediaEngine) ExtractAudio(ctx context.Context, videoPath, destPath stri
 		return fmt.Errorf("extract audio: %w: %s", err, out)
 	}
 	return nil
-}
-
-func subtitleTime(seconds float64) string {
-	ms := int64(seconds * 1000)
-	return fmt.Sprintf("%02d:%02d:%02d,%03d", ms/3600000, (ms/60000)%60, (ms/1000)%60, ms%1000)
-}
-func (m *MediaEngine) BurnCaptions(ctx context.Context, videoPath, destPath string, segments []models.CaptionSegment, styles ...string) error {
-	if !m.Available() {
-		return fmt.Errorf("FFmpeg with libass is required to burn captions")
-	}
-	if len(segments) == 0 {
-		return fmt.Errorf("transcribe or write captions before burning them")
-	}
-	release, err := m.acquire(ctx)
-	if err != nil {
-		return err
-	}
-	defer release()
-	dir, err := os.MkdirTemp("", "videoflow-subtitles-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(dir)
-	var content strings.Builder
-	for index, segment := range segments {
-		if segment.Start < 0 || segment.End <= segment.Start {
-			return fmt.Errorf("invalid caption timestamps")
-		}
-		fmt.Fprintf(&content, "%d\n%s --> %s\n%s\n\n", index+1, subtitleTime(segment.Start), subtitleTime(segment.End), strings.ReplaceAll(segment.Text, "\r", ""))
-	}
-	subtitles := filepath.Join(dir, "captions.srt")
-	if err = os.WriteFile(subtitles, []byte(content.String()), 0600); err != nil {
-		return err
-	}
-	style := "clean"
-	if len(styles) > 0 && styles[0] != "" {
-		style = styles[0]
-	}
-	if style == "default" {
-		style = "clean"
-	}
-	styleMap := map[string]string{
-		"clean":     "FontName=DejaVu Sans,FontSize=20,Outline=2,Shadow=0,MarginV=20",
-		"bold":      "FontName=DejaVu Sans,Bold=1,FontSize=26,Outline=3,Shadow=1,MarginV=20",
-		"minimal":   "FontName=DejaVu Sans,FontSize=18,Outline=1,Shadow=0,MarginV=14",
-		"cinematic": "FontName=DejaVu Serif,FontSize=22,Spacing=1,Outline=2,Shadow=0,MarginV=24",
-		"neon":      "FontName=DejaVu Sans,Bold=1,FontSize=24,PrimaryColour=&H00FFFF00,OutlineColour=&H00FF00FF,Outline=3,Shadow=0",
-		"kids":      "FontName=DejaVu Sans,Bold=1,FontSize=26,PrimaryColour=&H0000FFFF,Outline=3,Shadow=1",
-		"classic":   "FontName=DejaVu Serif,FontSize=20,Outline=1,Shadow=1",
-		"comic":     "FontName=DejaVu Sans,Bold=1,FontSize=24,Outline=4,Shadow=2",
-	}
-	formatting, ok := styleMap[style]
-	if !ok {
-		return fmt.Errorf("caption style %q is unsupported; choose clean, bold, minimal, cinematic, neon, kids, classic or comic", style)
-	}
-	escaped := strings.NewReplacer("\\", "\\\\", ":", "\\:", "'", "\\'").Replace(subtitles)
-	filter := "subtitles='" + escaped + "'"
-	// Bundled FFmpeg has no dependency on a system font provider. Supply the
-	// packaged font directory explicitly so captions work on a clean computer.
-	fontDir := filepath.Join(filepath.Dir(m.ffmpegPath), "fonts")
-	if info, err := os.Stat(filepath.Join(fontDir, "NotoSans-Regular.ttf")); err == nil && !info.IsDir() {
-		escapedFontDir := strings.NewReplacer("\\", "\\\\", ":", "\\:", "'", "\\'").Replace(fontDir)
-		filter += ":fontsdir='" + escapedFontDir + "'"
-		fontName := "Noto Sans"
-		// The CJK family includes Latin glyphs as well. Select it directly because
-		// a build without a system font provider cannot discover fallback families.
-		if info, err := os.Stat(filepath.Join(fontDir, "NotoSansCJKsc-Regular.otf")); err == nil && !info.IsDir() {
-			fontName = "Noto Sans CJK SC"
-		}
-		formatting = strings.ReplaceAll(formatting, "FontName=DejaVu Sans", "FontName="+fontName)
-		formatting = strings.ReplaceAll(formatting, "FontName=DejaVu Serif", "FontName="+fontName)
-	}
-	filter += ":force_style='" + formatting + "'"
-	cmd := exec.CommandContext(ctx, m.ffmpegPath, "-y", "-i", videoPath, "-vf", filter, "-c:v", "libx264", "-c:a", "copy", destPath)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("burn captions: %w: %s", err, out)
-	}
-	return nil
-}
-
-func (m *MediaEngine) acquire(ctx context.Context) (func(), error) {
-	m.transcodeOnce.Do(func() {
-		if m.transcode == nil {
-			m.transcode = make(chan struct{}, 1)
-		}
-	})
-	select {
-	case m.transcode <- struct{}{}:
-		return func() { <-m.transcode }, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
 }

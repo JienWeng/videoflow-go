@@ -89,7 +89,7 @@ func selectedChatActionAllowed(kind, action string) bool {
 	case "shot":
 		return action == "refine_shot" || action == "render_shot"
 	case "output":
-		return action == "caption" || action == "retry_render"
+		return action == "retry_render"
 	case "character":
 		return action == "generate_script" || action == "generate_character_reference" || action == "update_character"
 	}

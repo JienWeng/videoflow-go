@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { editOutputHref, editSceneHref } from '$lib/editor/links';
+  import { editHref, editOutputHref, editSceneHref } from '$lib/editor/links';
  import {editChanges,applyEditProposal} from "$lib/composition/proposals.mjs";
  import StyleReference from '$lib/brief/StyleReference.svelte';
  import * as Dialog from '$lib/components/ui/dialog';
@@ -150,7 +150,7 @@
     focusId?:string;
   }
 
-  /** In-chat progress row for a background op (storyboard/assets/shots/caption). */
+  /** In-chat progress row for a background op (storyboard/assets/shots). */
   interface OpProgress {
     id: string;
     label: string;
@@ -435,7 +435,7 @@
           if (next) out.push(next);
         }
       } else if (sel.kind === 'output') {
-        out.push({ label: 'Add captions to this video', send: 'Add captions to this video' });
+        out.push({ label: 'Add captions to this video', href: `${editOutputHref(sel.id)}&panel=text` });
       } else if (sel.kind === 'character') {
         out.push({
           label: `Write a story featuring ${sel.label}`,
@@ -472,10 +472,10 @@
       if (notRendered)
         out.push({ label: `Render “${notRendered.label}”`, send: `Render scene “${notRendered.label}”` });
 
-      // Latest output is missing burned-in captions.
+      // Captions are added in the editor; link the latest video there.
       const latest = outputs[outputs.length - 1];
       if (latest && !latest.data?.captioned_path) {
-        out.push({ label: 'Add captions to the latest video', send: 'Add captions to the latest video' });
+        out.push({ label: 'Add captions to the latest video', href: `${editOutputHref(latest.id)}&panel=text` });
       }
       if (scenes.every((s) => renderedScenes.has(s.id))) {
         out.push({ label: 'Start another story', fill: 'Write a new story: ' });
@@ -534,14 +534,14 @@
     outputId?: string;
   }
 
-  const captionsChip: Chip = { label: 'Add captions to the latest video', send: 'Add captions to the latest video' };
+  const captionsChip: Chip = { label: 'Add captions in Edit video', href: `${editHref}&panel=text` };
 
   // ---------------------------------------------------------------------
   // Background-op progress: when an ActionCard launches a background op we
   // append a Task progress row that flips to done/failed on the op result.
   //
   // Navigation policy: we NEVER goto() on the user's behalf mid-conversation
-  // (a chip click like Add captions to this video must not yank them off the page).
+  // (sending a chip's message must not yank them off the page).
   // Instead completed ops get prominent href chips — "Open in editor",
   // "View in Assets", "Track in Render" — which navigate normally when the
   // user clicks them (the one sanctioned navigation).
@@ -595,11 +595,7 @@
     if(ctx.action==='generate_character_reference'){
       m.text='Character reference generated and ready to use.';m.chips=[{label:'View character image',href:`/characters/${encodeURIComponent(ctx.characterId??'')}#np-character-references`,focusId:ctx.characterId}];return;
     }
-    if (ctx.action === 'caption') {
-      const outputId = rj.output_id ?? result?.output_id ?? ctx.outputId;
-      if (outputId)
-        m.chips = [{ label: 'Edit video', href: editOutputHref(outputId) }];
-    } else if (ctx.action === 'storyboard' || ctx.action === 'generate_assets' || ctx.action==='generate_image') {
+    if (ctx.action === 'storyboard' || ctx.action === 'generate_assets' || ctx.action==='generate_image') {
       const ids: string[] = rj.asset_ids ?? (rj.asset_id ? [rj.asset_id] : []);
       const thumbs = await assetThumbs(ids);
       if (thumbs.length) m.thumbs = thumbs;
@@ -702,17 +698,11 @@
       case 'retry_render':
         return {
           role: 'assistant',
-          text: 'Render submitted — when it succeeds, captions are one click:',
+          text: 'Render submitted. When it succeeds, add captions in Edit video:',
           chips: [
             { label: 'Track in Render — 查看渲染', href: '/render' },
             captionsChip
           ]
-        };
-      case 'caption':
-        return {
-          role: 'assistant',
-          text: 'Captions added.',
-          chips: computeChips(graphData, styleData, null).slice(0, 2)
         };
       case 'plan_assets':
         return {
