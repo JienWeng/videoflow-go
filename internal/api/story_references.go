@@ -138,7 +138,10 @@ func (s *Server) storyCharacterReferences(ctx context.Context, project string, c
 	return ids, approved, nil
 }
 
-func (s *Server) generateStoryboards(ctx context.Context, scenes []models.Scene) error {
+// storyboardStory makes each scene's storyboard with the generator a scene render uses.
+// The scene's brief is first brought up to date with its cast's notes and reference
+// pictures, which exist only now; it is saved together with the new storyboard.
+func (s *Server) storyboardStory(ctx context.Context, scenes []models.Scene) error {
 	for i := range scenes {
 		scene := &scenes[i]
 		var cast []string
@@ -162,29 +165,7 @@ func (s *Server) generateStoryboards(ctx context.Context, scenes []models.Scene)
 		if err != nil {
 			return err
 		}
-		// Local generation gets images exclusively from the current validated
-		// director snapshot, never detached references from an older scene brief.
-		sceneCtx := brief.context(guidedStoryContext(ctx, *scene.ProjectID, brief.CharacterIDs))
-		sceneCtx, err = s.bindSceneInputs(sceneCtx, scene)
-		if err != nil {
-			return err
-		}
-		shotNotes, shotErr := s.storyboardShotNotes(scene.ID)
-		if shotErr != nil {
-			return shotErr
-		}
-		sceneCtx = context.WithValue(sceneCtx, storyboardShotsKey{}, shotNotes)
-		images, err := s.generateAssets(sceneCtx, scene.ProjectID, nil, scene.ID, scene.Title+" keyframe", "storyboard", scene.Title+". "+scene.Summary+"\n"+brief.prompt(), scene.AspectRatio, nil)
-		if err != nil {
-			return err
-		}
-		var ids []string
-		json.Unmarshal(scene.AssetIDsJSON, &ids)
-		for _, image := range images {
-			ids = append(ids, image.ID)
-		}
-		scene.AssetIDsJSON, _ = json.Marshal(ids)
-		if err = s.database.UpdateScene(scene); err != nil {
+		if _, err = s.generateMatchingStoryboard(guidedStoryContext(ctx, *scene.ProjectID, nil), scene); err != nil {
 			return err
 		}
 	}
@@ -329,7 +310,7 @@ func (s *Server) handleContinueStory(w http.ResponseWriter, r *http.Request) {
 		workCtx = context.WithValue(workCtx, directorBindingKey{}, binding)
 		workCtx = state.Brief.context(guidedStoryContext(workCtx, project, state.Cast))
 		workCtx = context.WithValue(workCtx, mediaRoutesKey{}, state.Routes)
-		if e := s.generateStoryboards(workCtx, scenes); e != nil {
+		if e := s.storyboardStory(workCtx, scenes); e != nil {
 			state.Status = "failed"
 			raw, _ := json.Marshal(state)
 			message := e.Error()

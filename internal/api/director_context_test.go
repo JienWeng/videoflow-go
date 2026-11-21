@@ -99,11 +99,11 @@ func TestAssetIdentityLocksRequireCurrentProjectAndRevision(t *testing.T) {
 	asset := &models.Asset{ProjectID: &project, Name: "Car", Type: "prop", FilePath: "storage/car.png"}
 	s.database.CreateAsset(asset)
 	payload := fmt.Sprintf(`{"expected_updated_at":%q,"locked_traits":{"kind":"car","color":"red"}}`, asset.UpdatedAt.Format(time.RFC3339Nano))
-	saved := call(t, s, "PUT", "/assets/"+asset.ID+"/identity", payload)
+	saved := call(t, s, "PATCH", "/assets/"+asset.ID, payload)
 	if saved.Code != 200 {
 		t.Fatalf("%d %s", saved.Code, saved.Body.String())
 	}
-	again := call(t, s, "PUT", "/assets/"+asset.ID+"/identity", payload)
+	again := call(t, s, "PATCH", "/assets/"+asset.ID, payload)
 	if again.Code != 409 {
 		t.Fatal("stale traits overwrote current identity", again.Code)
 	}

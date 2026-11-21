@@ -415,7 +415,7 @@ func (d *DB) DeleteProject(id string) error {
 	if busy {
 		return ErrProjectBusy
 	}
-	for _, query := range []string{"DELETE FROM ops WHERE project_id=?", "DELETE FROM agent_settings WHERE project_id=?", "DELETE FROM projects WHERE id=?"} {
+	for _, query := range []string{"DELETE FROM ops WHERE project_id=?", "DELETE FROM projects WHERE id=?"} {
 		if _, err = tx.Exec(query, id); err != nil {
 			return err
 		}
@@ -1652,46 +1652,6 @@ func (d *DB) ListProviderSecrets() (map[string]models.ProviderSecret, error) {
 		res[ps.Provider] = ps
 	}
 	return res, nil
-}
-
-func (d *DB) GetAgentSettings() (map[string]models.AgentSetting, error) {
-	rows, err := d.conn.Query("SELECT agent, provider, model FROM agent_settings")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	res := make(map[string]models.AgentSetting)
-	for rows.Next() {
-		var a models.AgentSetting
-		if err := rows.Scan(&a.Agent, &a.Provider, &a.Model); err != nil {
-			return nil, err
-		}
-		res[a.Agent] = a
-	}
-	return res, nil
-}
-
-func (d *DB) SetAgentSetting(agent, provider, model string) error {
-	// Global rows have NULL project_id, which SQLite does not conflict on.
-	tx, err := d.conn.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if _, err = tx.Exec("DELETE FROM agent_settings WHERE agent = ? AND project_id IS NULL", agent); err != nil {
-		return err
-	}
-	if _, err = tx.Exec("INSERT INTO agent_settings (agent, provider, model) VALUES (?, ?, ?)", agent, provider, model); err != nil {
-		return err
-	}
-	err = tx.Commit()
-	return err
-}
-
-func (d *DB) ResetAgentSetting(agent string) error {
-	_, err := d.conn.Exec("DELETE FROM agent_settings WHERE agent = ?", agent)
-	return err
 }
 
 // --- Connections ---

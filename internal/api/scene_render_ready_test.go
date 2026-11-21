@@ -92,8 +92,15 @@ print(json.dumps({'type':'turn.completed'}))
 					s.database.UpdateScene(current)
 				}
 			}
-			blocked := call(t, s, "POST", "/scenes/"+scene.ID+"/render", `{}`)
-			if blocked.Code != 400 || images.Load() != 0 {
+			// A stale storyboard is never used as a clip's first frame: the clip request
+			// itself is refused, and a render that was not shown the storyboard update
+			// is refused before anything is spent.
+			stale := sceneRenderJob(project, scene)
+			if e := s.prepareDirectorVideoJob(context.Background(), stale); e == nil || !strings.Contains(e.Error(), "regenerate a matching storyboard") {
+				t.Fatal("stale reference protection bypassed", e)
+			}
+			blocked := call(t, s, "POST", "/scenes/"+scene.ID+"/render", `{"confirmed_storyboard_calls":0}`)
+			if jobs, _ := s.database.ListRenderJobs(project); blocked.Code != 409 || images.Load() != 0 || len(jobs) != 0 {
 				t.Fatal("stale reference protection bypassed", blocked.Code, blocked.Body.String())
 			}
 			if testCase == "saved_audio" {
@@ -152,5 +159,47 @@ print(json.dumps({'type':'turn.completed'}))
 			}
 
 		})
+	}
+}
+
+// A clip made from one shot has no written prompt of its own: its prompt is the shot's
+// text followed by the story's standing directions, language included.
+func TestShotRenderPromptCarriesTheBrief(t *testing.T) {
+	sent := make(chan string, 1)
+	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/videos/models":
+			w.Write([]byte(`{"data":[{"id":"google/veo-3.1-lite","supported_durations":[1],"supported_aspect_ratios":["16:9"],"supported_frame_images":["first_frame"]}]}`))
+		case "/videos":
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			prompt, _ := body["prompt"].(string)
+			sent <- prompt
+			w.Write([]byte(`{"id":"shot-upstream"}`))
+		case "/videos/shot-upstream":
+			w.Write([]byte(`{"status":"failed"}`))
+		default:
+			t.Error("unexpected provider", r.URL.Path)
+			w.WriteHeader(500)
+		}
+	})
+	project, _ := s.database.GetActiveProjectID()
+	scene := &models.Scene{ProjectID: &project, Title: "Home", Summary: "Mimi arrives", Duration: 1, AspectRatio: "16:9", CharacterIDsJSON: []byte(`[]`), SceneJSON: []byte(`{"generation_brief":{"language":"Chinese","instruction":"Warm playful direction"}}`)}
+	s.database.CreateScene(scene)
+	shot := &models.Shot{SceneID: scene.ID, ShotOrder: 1, Duration: 1, Prompt: "Mimi steps through the door"}
+	s.database.CreateShot(shot)
+	s.workers.Start()
+	defer s.workers.Stop()
+	if r := call(t, s, "POST", "/render/from-shot", `{"shot_id":"`+shot.ID+`"}`); r.Code != 202 {
+		t.Fatal(r.Code, r.Body.String())
+	}
+	select {
+	case prompt := <-sent:
+		if !strings.Contains(prompt, shot.Prompt) || !strings.Contains(prompt, "Chinese") || !strings.Contains(prompt, "Warm playful direction") {
+			t.Fatal("brief lost from the shot clip's prompt: ", prompt)
+		}
+	case <-time.After(5 * time.Second):
+		jobs, _ := s.database.ListRenderJobs(project)
+		t.Fatalf("shot clip was not sent: %+v", jobs)
 	}
 }

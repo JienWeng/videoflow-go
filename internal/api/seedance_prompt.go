@@ -6,11 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log/slog"
-	"net/http"
 	"strings"
 	"time"
-
-	"github.com/go-chi/chi/v5"
 
 	"videoflow-go/internal/costs"
 	"videoflow-go/internal/models"
@@ -174,49 +171,4 @@ func (s *Server) writeScenePrompt(ctx context.Context, job *models.RenderJob, wr
 		payload[finalPromptKey], payload["prompt_writer"] = written, "ai"
 	}
 	job.RequestJSON = voiceJSON(payload)
-}
-
-// handleScenePromptPreview shows, without making or sending any video, the prompt each
-// clip of a scene would be sent with right now. With ?write=1 the AI prompt writer writes
-// it now (free of video credits) so it can be read before any video is made.
-func (s *Server) handleScenePromptPreview(w http.ResponseWriter, r *http.Request) {
-	project, err := s.activeProjectID(r.Context())
-	scene, e := s.database.GetScene(chi.URLParam(r, "id"))
-	if err != nil || e != nil || scene.ProjectID == nil || *scene.ProjectID != project {
-		http.Error(w, "that scene is not in the open project", 404)
-		return
-	}
-	plan, e := s.sceneProductionPlan(r.Context(), scene)
-	if e != nil {
-		http.Error(w, e.Error(), 409)
-		return
-	}
-	clips := []map[string]any{}
-	for _, unit := range plan.Units {
-		job := sceneRenderJob(project, scene)
-		job.Provider, job.Model = plan.Provider, plan.Model
-		request := map[string]any{"render_unit": unit, "music_prompt": plan.Settings.MusicPrompt, "voice_policy": map[string]any{"mode": plan.Settings.AudioMode}, "video_input": plan.VideoInput}
-		job.RequestJSON = voiceJSON(request)
-		if plan.VideoInput == inputReferences {
-			if model, e := s.productionModelLimit(r.Context()); e == nil {
-				_ = s.attachReferencePictures(job, request, model)
-				job.RequestJSON = voiceJSON(request)
-			}
-		}
-		s.writeScenePrompt(r.Context(), job, r.URL.Query().Get("write") == "1")
-		var written map[string]any
-		_ = json.Unmarshal(job.RequestJSON, &written)
-		prompt, _ := written[finalPromptKey].(string)
-		clips = append(clips, map[string]any{"clip": unit.Index + 1, "seconds": unit.Duration, "prompt": prompt, "characters": len(prompt), "written_by": written["prompt_writer"], "playbook": written["prompt_playbook"], "pictures": written["reference_pictures"]})
-	}
-	writeJSON(w, 200, map[string]any{"scene_id": scene.ID, "model": plan.Model, "audio": plan.Settings.AudioMode, "video_input": plan.VideoInput, "clips": clips})
-}
-
-// productionModelLimit is how many reference pictures the chosen video model takes.
-func (s *Server) productionModelLimit(ctx context.Context) (int, error) {
-	_, model, err := s.productionVideoModel(ctx)
-	if err != nil {
-		return 0, err
-	}
-	return model.ReferenceImages, nil
 }

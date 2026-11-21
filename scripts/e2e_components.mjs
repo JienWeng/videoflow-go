@@ -9,7 +9,7 @@ const out=process.env.E2E_OUTPUT || '/tmp/videoflow-component-e2e';
 await mkdir(out,{recursive:true});
 const browser=await chromium.launch({executablePath:process.env.CHROME_PATH || '/usr/bin/google-chrome',headless:true,args:['--no-sandbox']});
 const report={base,started:new Date().toISOString(),checks:[],inventories:[],errors:[],unknownEndpoints:[]};
-const routes=['/','/create','/projects','/scenes','/characters','/assets','/render','/settings','/director','/voices','/compositions'];
+const routes=['/','/projects','/library','/render','/settings','/voices','/costs'];
 const assert=(v,m)=>{if(!v)throw Error(m)};
 async function check(name,fn){try{await fn();report.checks.push({name,status:'pass'});console.error('PASS',name)}catch(e){report.checks.push({name,status:'fail',error:e.message});console.error('FAIL',name,e.message)}}
 async function inventory(page,route,mode,state){
@@ -35,7 +35,7 @@ for(const mode of ['desktop','mobile']){
   else if(p==='/projects')body=projects;
   else if(p.startsWith('/projects/')&&req.method()==='PATCH'){const value=req.postDataJSON();projects=projects.map(x=>x.id===p.split('/')[2]?{...x,...value}:x);body={};}
   else if(p.startsWith('/projects/')&&req.method()==='DELETE'){projects=projects.filter(x=>x.id!==p.split('/')[2]);body={};}
-  else if(['/characters','/scenes','/assets','/scripts','/render-jobs','/ops','/settings/agents','/settings/providers','/settings/connection-presets','/compositions'].includes(p))body=[];
+  else if(['/characters','/scenes','/assets','/scripts','/render-jobs','/ops','/settings/providers','/settings/connection-presets','/compositions'].includes(p))body=[];
   else if(p==='/health')body={status:'ok'};
   else if(p==='/settings/app')body={default_video_provider:'openrouter',default_image_provider:'openrouter',render_negatives:[],default_negatives:[],default_aspect_ratio:'16:9',engines:{}};
   else if(p==='/assets/types')body={types:[]};
@@ -75,16 +75,6 @@ for(const mode of ['desktop','mobile']){
  await check(`${mode} settings: each tab inventory`,async()=>{
   await page.goto(base+'/settings',{waitUntil:'domcontentloaded'});await page.getByRole('button',{name:'General',exact:true}).waitFor();
   for(const name of ['General','AI connections','Advanced']){await page.getByRole('button',{name,exact:true}).click();await inventory(page,'/settings',mode,name);}
- });
- await check(`${mode} scene generator: validation, numeric constraints, cancel`,async()=>{
-  await page.goto(base+'/scenes',{waitUntil:'domcontentloaded'});await page.getByRole('button',{name:'New story',exact:true}).first().click();
-  const dialog=page.getByRole('dialog');await dialog.waitFor();assert(await dialog.getByRole('button',{name:'Generate script',exact:true}).isDisabled(),'Empty story allowed');
-  await dialog.getByLabel('Story idea',{exact:true}).fill('Fixture story');await dialog.getByLabel('Scenes',{exact:true}).fill('21');assert(!await dialog.getByLabel('Scenes',{exact:true}).evaluate(n=>n.checkValidity()),'Scene maximum missing');
-  await inventory(page,'/scenes',mode,'story-generator');await dialog.getByRole('button',{name:'Cancel',exact:true}).click();await dialog.waitFor({state:'hidden'});
- });
- await check(`${mode} create and character: empty validation`,async()=>{
-  await page.goto(base+'/create',{waitUntil:'domcontentloaded'});await page.getByRole('button',{name:'Create video',exact:true}).waitFor();assert(await page.getByRole('button',{name:'Create video',exact:true}).isDisabled(),'Empty video allowed');
-  await page.goto(base+'/characters',{waitUntil:'domcontentloaded'});await page.getByRole('button',{name:'Create character',exact:true}).click();const characterDialog=page.getByRole('dialog',{name:'Create character',exact:true});assert(await characterDialog.getByRole('button',{name:'Create character',exact:true}).isDisabled(),'Empty character allowed');await page.keyboard.press('Escape');
  });
  await check(`${mode} theme: light, dark, system and persistence`,async()=>{
   await page.goto(base+'/settings',{waitUntil:'domcontentloaded'});await page.getByRole('button',{name:'General',exact:true}).click();

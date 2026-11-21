@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"videoflow-go/internal/jobs"
 	"videoflow-go/internal/models"
 	"videoflow-go/internal/providers"
 )
@@ -204,13 +205,15 @@ func (s *Server) freezeDirectorVideo(ctx context.Context, job *models.RenderJob)
 			}
 			payload["prompt"] = shot.Prompt
 		} else if sceneID != "" {
-			scene, _ := s.database.GetScene(sceneID)
-			prompt := scene.Title + ". " + scene.Summary
-			shots, _ := s.database.ListShots(sceneID)
-			for _, shot := range shots {
-				prompt += fmt.Sprintf("\nShot %d (%ds): %s", shot.ShotOrder, shot.Duration, shot.Prompt)
+			// Only a request saved before clips carried their own text gets here, when
+			// it is retried.
+			scene, e := s.database.GetScene(sceneID)
+			if e != nil {
+				return e
 			}
-			payload["prompt"] = prompt
+			if payload["prompt"], e = jobs.ScenePrompt(s.database, scene); e != nil {
+				return e
+			}
 		}
 	}
 	payload["director_context"] = snapshot

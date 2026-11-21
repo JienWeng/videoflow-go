@@ -374,100 +374,52 @@ func (s *Server) handleRenderScene(w http.ResponseWriter, r *http.Request) {
 		ConfirmedSeconds         *int   `json:"confirmed_seconds"`
 		ConfirmedPlanID          string `json:"confirmed_plan_id"`
 		NewVersion               bool   `json:"new_version"`
-		UseSceneCast             bool   `json:"use_scene_cast"`
-		PrepareStoryboard        bool   `json:"prepare_storyboard"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&options); err != nil && err != io.EOF {
 		http.Error(w, "invalid render options", 400)
 		return
 	}
 	// Plan validation happens synchronously before creating a background operation.
-	if options.PrepareStoryboard {
-		plan, e := s.sceneProductionPlan(r.Context(), scene)
-		if e != nil {
-			http.Error(w, e.Error(), 422)
-			return
-		}
-		if options.ConfirmedPlanID != "" && options.ConfirmedPlanID != plan.ID {
-			http.Error(w, "render plan changed; reload before generating", 409)
-			return
-		}
-		if (len(plan.Units) > 1 || options.NewVersion) && (options.ConfirmedCalls == nil || options.ConfirmedSeconds == nil) {
-			http.Error(w, "recheck and confirm the displayed paid-call count before generating", 409)
-			return
-		}
-		spend := productionSpend(plan, options.NewVersion)
-		if (options.ConfirmedCalls != nil && spend.Calls > *options.ConfirmedCalls) || (options.ConfirmedSeconds != nil && spend.Seconds > *options.ConfirmedSeconds) || (options.ConfirmedStoryboardCalls != nil && spend.Storyboards > *options.ConfirmedStoryboardCalls) {
-			http.Error(w, "paid-call count increased; recheck the render plan before generating", 409)
-			return
-		}
-		if len(plan.Units) > 1 && options.ConfirmedPlanID == "" {
-			http.Error(w, "multiple paid clips require the displayed render plan confirmation", 409)
-			return
-		}
-		if plan.Blocked != "" {
-			http.Error(w, plan.Blocked, 409)
-			return
-		}
-
-		s.operation(w, r, &models.Op{Kind: "scene_render", SceneID: &sceneID, ProjectID: &projectID}, func(ctx context.Context) (any, error) {
-			approved := spend
-			if options.ConfirmedCalls != nil {
-				approved.Calls = *options.ConfirmedCalls
-			}
-			if options.ConfirmedSeconds != nil {
-				approved.Seconds = *options.ConfirmedSeconds
-			}
-			if options.ConfirmedStoryboardCalls != nil {
-				approved.Storyboards = *options.ConfirmedStoryboardCalls
-			}
-			ctx = context.WithValue(ctx, confirmedRenderSpendKey{}, approved)
-			return s.prepareAndRenderScene(context.WithValue(ctx, confirmedRenderPlanKey{}, plan.ID), projectID, sceneID, options.NewVersion)
-		})
-		return
-	}
-	unlock, e := s.lockSceneRender(sceneID)
+	plan, e := s.sceneProductionPlan(r.Context(), scene)
 	if e != nil {
-		http.Error(w, e.Error(), 409)
+		http.Error(w, e.Error(), 422)
 		return
 	}
-	defer unlock()
-	ctx := r.Context()
-	if options.UseSceneCast {
-		ctx = guidedStoryContext(ctx, projectID, nil)
-	}
-	stage := "submitted"
-	progress := "Whole scene render queued"
-	job := &models.RenderJob{
-		ProjectID:   &projectID,
-		SceneID:     &scene.ID,
-		Provider:    "",
-		Model:       "",
-		Status:      "pending",
-		Stage:       &stage,
-		Progress:    &progress,
-		RequestJSON: []byte(fmt.Sprintf(`{"scene_id":"%s"}`, scene.ID)),
-	}
-	if err := s.prepareDirectorVideoJob(ctx, job); err != nil {
-		http.Error(w, err.Error(), 400)
+	if options.ConfirmedPlanID != "" && options.ConfirmedPlanID != plan.ID {
+		http.Error(w, "render plan changed; reload before generating", 409)
 		return
 	}
-	if existing, e := s.existingSceneRender(job, options.NewVersion); e != nil {
-		http.Error(w, e.Error(), 409)
-		return
-	} else if existing != nil {
-		writeJSON(w, 202, map[string]any{"job_id": existing.ID, "status": existing.Status, "reused": true})
+	if (len(plan.Units) > 1 || options.NewVersion) && (options.ConfirmedCalls == nil || options.ConfirmedSeconds == nil) {
+		http.Error(w, "recheck and confirm the displayed paid-call count before generating", 409)
 		return
 	}
-	if err := s.database.CreateRenderJob(job); err != nil {
-		http.Error(w, "failed to save render job", 500)
+	spend := productionSpend(plan, options.NewVersion)
+	if (options.ConfirmedCalls != nil && spend.Calls > *options.ConfirmedCalls) || (options.ConfirmedSeconds != nil && spend.Seconds > *options.ConfirmedSeconds) || (options.ConfirmedStoryboardCalls != nil && spend.Storyboards > *options.ConfirmedStoryboardCalls) {
+		http.Error(w, "paid-call count increased; recheck the render plan before generating", 409)
 		return
 	}
-	s.workers.Enqueue(job.ID)
+	if len(plan.Units) > 1 && options.ConfirmedPlanID == "" {
+		http.Error(w, "multiple paid clips require the displayed render plan confirmation", 409)
+		return
+	}
+	if plan.Blocked != "" {
+		http.Error(w, plan.Blocked, 409)
+		return
+	}
 
-	writeJSON(w, http.StatusAccepted, map[string]interface{}{
-		"job_id": job.ID,
-		"status": job.Status,
+	s.operation(w, r, &models.Op{Kind: "scene_render", SceneID: &sceneID, ProjectID: &projectID}, func(ctx context.Context) (any, error) {
+		approved := spend
+		if options.ConfirmedCalls != nil {
+			approved.Calls = *options.ConfirmedCalls
+		}
+		if options.ConfirmedSeconds != nil {
+			approved.Seconds = *options.ConfirmedSeconds
+		}
+		if options.ConfirmedStoryboardCalls != nil {
+			approved.Storyboards = *options.ConfirmedStoryboardCalls
+		}
+		ctx = context.WithValue(ctx, confirmedRenderSpendKey{}, approved)
+		return s.prepareAndRenderScene(context.WithValue(ctx, confirmedRenderPlanKey{}, plan.ID), projectID, sceneID, options.NewVersion)
 	})
 }
 
@@ -772,40 +724,6 @@ func (s *Server) handleDevelopIdea(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
-}
-
-func (s *Server) handleGenerateScript(w http.ResponseWriter, r *http.Request) {
-	projectID, err := s.activeProjectID(r.Context())
-	if err != nil {
-		http.Error(w, "no active project", http.StatusInternalServerError)
-		return
-	}
-
-	var body generationBrief
-	if json.NewDecoder(r.Body).Decode(&body) != nil {
-		http.Error(w, "invalid request", 400)
-		return
-	}
-	if err = s.prepareBrief(projectID, &body); err != nil {
-		http.Error(w, err.Error(), 400)
-		return
-	}
-	draft, err := s.agents.GenerateScript(body.context(r.Context()), body.prompt(), body.SceneCount, body.TargetDuration, body.AspectRatio)
-	if err != nil {
-		http.Error(w, err.Error(), 502)
-		return
-	}
-	script, createdScenes, err := s.persistDraft(projectID, body, draft)
-	if err != nil {
-		http.Error(w, "failed to save generated script", 500)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"script": script,
-		"draft":  draft,
-		"scenes": createdScenes,
-	})
 }
 
 func (s *Server) handleListScripts(w http.ResponseWriter, r *http.Request) {

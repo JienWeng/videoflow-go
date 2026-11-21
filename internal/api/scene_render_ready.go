@@ -16,7 +16,7 @@ func sceneRenderJob(project string, scene *models.Scene) *models.RenderJob {
 	return &models.RenderJob{ProjectID: &project, SceneID: &scene.ID, Status: "pending", Stage: &stage, Progress: &progress, RequestJSON: []byte(fmt.Sprintf(`{"scene_id":%q}`, scene.ID))}
 }
 
-// Called only by an explicit prepare_storyboard render request. Never on read.
+// Called only by an explicit scene render request. Never on read.
 func (s *Server) prepareAndRenderScene(ctx context.Context, project, id string, newVersion ...bool) (any, error) {
 	unlock, err := s.lockSceneRender(id)
 	if err != nil {

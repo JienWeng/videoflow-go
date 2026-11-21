@@ -155,20 +155,40 @@ func awaitReadyStory(t *testing.T, s *Server, opID string) []string {
 	return ready.Scenes
 }
 
+// confirmedSceneRender is the request the owner sends for a scene's video after reading
+// its render plan: the plan as displayed, with its paid calls confirmed.
+func confirmedSceneRender(t *testing.T, s *Server, scene string) string {
+	t.Helper()
+	w := call(t, s, "GET", "/scenes/"+scene+"/production", "")
+	var plan productionPlan
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &plan) != nil || plan.ID == "" {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	spend := productionSpend(plan, false)
+	return string(voiceJSON(map[string]any{"confirmed_plan_id": plan.ID, "confirmed_calls": spend.Calls, "confirmed_seconds": spend.Seconds, "confirmed_storyboard_calls": spend.Storyboards}))
+}
+
+// requestSceneVideo asks for one scene's video the way the owner does after review, and
+// returns the video requests it made.
+func requestSceneVideo(t *testing.T, s *Server, scene string) []string {
+	t.Helper()
+	w := call(t, s, "POST", "/scenes/"+scene+"/render", confirmedSceneRender(t, s, scene))
+	var started struct {
+		IDs []string `json:"job_ids"`
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &started) != nil || len(started.IDs) == 0 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	return started.IDs
+}
+
 // renderReadyStory waits for a guided story, then asks for each scene's video the way the
 // owner does after review, and returns the video requests.
 func renderReadyStory(t *testing.T, s *Server, opID string) []string {
 	t.Helper()
 	ids := []string{}
 	for _, scene := range awaitReadyStory(t, s, opID) {
-		w := call(t, s, "POST", "/scenes/"+scene+"/render", `{}`)
-		var started struct {
-			ID string `json:"job_id"`
-		}
-		if w.Code != 202 || json.Unmarshal(w.Body.Bytes(), &started) != nil || started.ID == "" {
-			t.Fatal(w.Code, w.Body.String())
-		}
-		ids = append(ids, started.ID)
+		ids = append(ids, requestSceneVideo(t, s, scene)...)
 	}
 	return ids
 }

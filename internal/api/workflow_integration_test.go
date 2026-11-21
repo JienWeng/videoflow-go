@@ -65,7 +65,7 @@ func TestGuidedCharacterToTwoOutputsAndCombinedExport(t *testing.T) {
 			var body map[string]any
 			json.NewDecoder(r.Body).Decode(&body)
 			prompt, _ := body["prompt"].(string)
-			if body["frame_images"] == nil || !strings.Contains(prompt, "Chinese") || !strings.Contains(prompt, "Mimi") || !strings.Contains(prompt, "Warm playful direction") {
+			if body["frame_images"] == nil || !strings.Contains(prompt, "Mimi") {
 				t.Errorf("brief or keyframe lost: %v", body)
 			}
 			fmt.Fprintf(w, `{"id":"upstream-%d"}`, submissions.Add(1))

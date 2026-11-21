@@ -55,8 +55,8 @@ func main() {
 	}
 
 	openrouter := providers.NewOpenRouterClient(cfg.OpenRouterAPIKey)
-	// The API routes writing through the selected local session; OpenRouter handles vision/transcription.
-	agentsEngine := agents.NewAgentEngine(openrouter, "openai/gpt-4o-mini")
+	// All writing goes through the selected local session; OpenRouter reads pictures.
+	agentsEngine := agents.NewAgentEngine()
 
 	workers := jobs.NewWorkerPool(cfg, database, broker, mediaEngine)
 	workers.Start()

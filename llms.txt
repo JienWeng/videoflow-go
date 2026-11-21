@@ -77,7 +77,7 @@ Only when ready to spend a small test budget:
 5. Configure the provider keys required by the version you installed in Settings. Current source defaults media to fal.ai; older v0.3.2 packages use OpenRouter. Media configuration/catalog checks do not verify real account access. Set a small provider-side spending limit before generation.
 6. Start with one scene, one character and a duration/aspect supported by the configured model. Review the preflight before submitting. The local studio's configured models are distinct from SaaS server-controlled model policy.
 7. In current local Create story runs, missing character reference sheets generate automatically first and can incur image charges. Approve them in Library, then choose Continue storyboarding to generate scene images using those references. Existing sheets are reused. Essential props and locations are identified against the project Library; suitable existing images are reused and missing images are generated. Review each reference and its reuse reason before continuing; Remove from story detaches an unsuitable prop/location without deleting the library asset. Image generation can incur charges. Voice setup is separate. Confirm shots, reference-conditioned keyframes, clip status and playback. One scene render is one generated clip; model output is not guaranteed to match exact camera cuts or character identity.
-8. Open the output editor, add/transcribe captions, save, and play/download the captioned export. Transcription is also a provider request.
+8. Open Studio → Edit video, choose Captions from script, adjust the captions on the timeline, then save and export. Timing captions by listening to a clip is also a provider request.
 9. When ready for a second paid clip, generate it, select both outputs in playback order in My videos, assemble them, and check the combined download including audio and captions.
 10. Restart and confirm saved work persists. If a request becomes uncertain, check Activity, saved outputs and provider activity. Reconcile the existing provider job or follow Settings recovery; do not repeatedly submit paid work because a response was lost.
 
@@ -85,8 +85,7 @@ The repair was verified with local provider mocks, real FFmpeg, automated tests 
 
 ## Detailed repository documentation
 
-- docs/LOCAL-DIRECTOR.md — local engine setup, exact saved sessions, selected identity constraints, voices/captions and local composition editing.
-- docs/voice-and-script-captions.md — approved script, saved/native voices, paid-stage Run gates and recovery.
+- docs/LOCAL-DIRECTOR.md — local engine setup, exact saved sessions, selected identity constraints and editing.
 - docs/audits/component-e2e-coverage.md — reproducible mocked E2E coverage and limits.
 
 - [Provider setup and supported routes](https://github.com/JienWeng/videoflow-go/blob/main/docs/PROVIDERS.md)
@@ -103,7 +102,7 @@ For maintainers, build/package commands are in ELECTRON-AND-WEB.md. Do not run r
 
 ## Scene studios and shared assets
 
-Open a scene from Studio or /scenes?scene_id=<id>. Its Scene references section uses the project's shared character sheets, props and locations. Choose props/locations from Library; removing a binding does not delete the asset. Library scene filters include reused references and cast sheets. Asset details show usage and allow manual identity edits. In-use assets cannot be deleted. New story runs generate missing references and storyboards automatically without image-approval stops. Images are ready to use when saved; optionally exclude an image in Details or Image options. Generate new version preserves existing scene bindings; replace a version explicitly in the desired scene. Scene/shot/style changes can invalidate a storyboard; regenerate matching images before rendering. Video rendering remains an explicit action and may incur provider charges. Ordinary library management does not start generation.
+Open a scene from Studio (Story view). Its Scene references section uses the project's shared character sheets, props and locations. Choose props/locations from Library; removing a binding does not delete the asset. Library scene filters include reused references and cast sheets. Asset details show usage and allow manual identity edits. In-use assets cannot be deleted. New story runs generate missing references and storyboards automatically without image-approval stops. Images are ready to use when saved; optionally exclude an image in Details or Image options. Generate new version preserves existing scene bindings; replace a version explicitly in the desired scene. Scene/shot/style changes can invalidate a storyboard; regenerate matching images before rendering. Video rendering remains an explicit action and may incur provider charges. Ordinary library management does not start generation.
 
 ## Connected video, sound and music
 
@@ -114,7 +113,7 @@ See docs/CONNECTED-VIDEO-WORKFLOW.md. Video & sound in chat and Scene Studio sel
 
 Open Studio → Edit video, or an Assemble / Trim & arrange handoff. The same workspace contains preview, playhead, visual/audio tracks, editable settings and the main Codex/Claude chat. Mobile switches between Editor and Assistant without changing the draft. Drag clips to move them with snapping; arrow keys nudge by one frame and Shift by one second. AI edits are proposals with changed fields: Apply checks that the draft has not changed, then Undo remains available. Unsaved drafts recover per project and source. Saving and local rendering remain explicit.
 
-Finish your video provides final-mix transcription, music/mix and Save & export. Transcription uses the actual trimmed, placed and mixed audio through the configured transcription API; it can consume credits. Captions remain editable. Export retries do not rerun transcription or video generation. Caption language variants preserve timings; translation uses the selected local session and does not dub speech or alter lips. Layouts & brand adds four title layouts, bounded logo overlays, project colors/font family and safe version-1 community layout JSON import/export.
+Finish your video provides captions from the script, music/mix and Save & export. Captions take their words from each scene's script and their timing from listening to each clip (shot timing when a clip cannot be listened to); listening can consume credits. Captions remain editable. Export retries do not rerun video generation. Caption language variants preserve timings; translation uses the selected local session and does not dub speech or alter lips. Layouts & brand adds four title layouts, bounded logo overlays, project colors/font family and safe version-1 community layout JSON import/export.
 
 Generate from references uses the supported fal Seedance Fast reference endpoint with actual image, video and audio files and numbered roles. Check its plan before Generate; changed inputs need another check, existing matching jobs are reused, and uncertain results require reconciliation. A completed reference clip can be added to the current edit. This is separate from style extraction and strict first/last-frame scene rendering. See docs/INTEGRATED-EDITING-STUDIO.md for input limits, APIs, verification and remaining capability boundaries.
 

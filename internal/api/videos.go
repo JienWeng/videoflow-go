@@ -224,7 +224,7 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 			fail(fmt.Errorf("story references are unavailable or excluded"))
 			return
 		}
-		if err = s.generateStoryboards(ctx, scenes); err != nil {
+		if err = s.storyboardStory(ctx, scenes); err != nil {
 			fail(err)
 			return
 		}

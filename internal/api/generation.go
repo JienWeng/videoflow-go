@@ -72,14 +72,12 @@ func (s *Server) agentJSON(ctx context.Context, agent, system, prompt string, im
 	if len(images) == 0 {
 		return s.localTextJSON(ctx, agent, system, prompt, target)
 	}
-	client, model, err := s.routes().Agent(ctx, agent)
+	client, model, err := s.routes().Vision(ctx, agent)
 	if err != nil {
 		return err
 	}
-	if len(images) > 0 {
-		if _, err = client.Model(ctx, model, "vision"); err != nil {
-			return err
-		}
+	if _, err = client.Model(ctx, model, "vision"); err != nil {
+		return err
 	}
 	return client.StructuredVision(ctx, model, system, prompt, images, target)
 }

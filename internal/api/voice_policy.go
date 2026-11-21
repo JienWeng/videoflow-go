@@ -61,35 +61,6 @@ func (s *Server) voicePolicy(ctx context.Context, job *models.RenderJob) error {
 		}
 		spoken = snapshot.Lines
 	}
-	// Preserve the worker's deferred scene/shot prompt before adding policy text.
-	if strings.TrimSpace(stringPrompt(payload["prompt"])) == "" {
-		if job.ShotID != nil {
-			shot, err := s.database.GetShot(*job.ShotID)
-			if err != nil {
-				return err
-			}
-			scene, err := s.database.GetScene(shot.SceneID)
-			if err != nil || scene.ProjectID == nil || *scene.ProjectID != *job.ProjectID || (job.SceneID != nil && *job.SceneID != scene.ID) {
-				return fmt.Errorf("shot voice context belongs to another scene/project")
-			}
-			payload["prompt"] = shot.Prompt
-		}
-		if strings.TrimSpace(stringPrompt(payload["prompt"])) == "" && job.SceneID != nil {
-			scene, err := s.database.GetScene(*job.SceneID)
-			if err != nil {
-				return err
-			}
-			prompt := scene.Title + ". " + scene.Summary
-			shots, err := s.database.ListShots(scene.ID)
-			if err != nil {
-				return err
-			}
-			for _, shot := range shots {
-				prompt += "\n" + shot.Prompt
-			}
-			payload["prompt"] = prompt
-		}
-	}
 	// Scenes saved by earlier versions may still ask for "saved" voices added
 	// afterwards; that stage is gone, so such a clip is simply made without sound.
 	audioMode = currentAudioMode(audioMode)

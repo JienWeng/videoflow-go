@@ -34,7 +34,7 @@ func TestGenerateShotsNormalizesNumericTiming(t *testing.T) {
 				raw += fmt.Sprintf(`{"shot_order":%d,"duration":%s,"prompt":"Puppy finds mother","camera":"wide","movement":"still"}`, i+1, v)
 			}
 			raw += "]}"
-			engine := NewAgentEngine(nil, "")
+			engine := NewAgentEngine()
 			calls := 0
 			engine.SetStructuredRunner(func(_ context.Context, _, _, _ string, target any) error {
 				calls++
@@ -61,7 +61,7 @@ func TestGenerateShotsNormalizesNumericTiming(t *testing.T) {
 func TestGenerateShotsRejectsInvalidTiming(t *testing.T) {
 	for _, duration := range []string{`0`, `-1`, `null`, `"1.2"`, `1e999`} {
 		t.Run(duration, func(t *testing.T) {
-			e := NewAgentEngine(nil, "")
+			e := NewAgentEngine()
 			e.SetStructuredRunner(func(_ context.Context, _, _, _ string, target any) error {
 				return json.Unmarshal([]byte(fmt.Sprintf(`{"shots":[{"shot_order":1,"duration":%s,"prompt":"Dog"}]}`, duration)), target)
 			})
@@ -73,7 +73,7 @@ func TestGenerateShotsRejectsInvalidTiming(t *testing.T) {
 }
 
 func TestGenerateShotsRejectsImpossibleTimeline(t *testing.T) {
-	e := NewAgentEngine(nil, "")
+	e := NewAgentEngine()
 	calls := 0
 	e.SetStructuredRunner(func(_ context.Context, _, _, _ string, target any) error {
 		calls++
@@ -91,7 +91,7 @@ func TestGenerateShotsRejectsImpossibleTimeline(t *testing.T) {
 }
 
 func TestGenerateShotsRejectsOverflowingProposedTotal(t *testing.T) {
-	e := NewAgentEngine(nil, "")
+	e := NewAgentEngine()
 	e.SetStructuredRunner(func(_ context.Context, _, _, _ string, target any) error {
 		return json.Unmarshal([]byte(`{"shots":[{"shot_order":1,"duration":1e308,"prompt":"Dog"},{"shot_order":2,"duration":1e308,"prompt":"Mother"}]}`), target)
 	})
@@ -105,7 +105,7 @@ func TestGenerateShotsAcceptsMissingModelOrder(t *testing.T) {
 		`{"shots":[{"duration":2,"prompt":"Shopkeeper points to pawprints"},{"duration":1.2,"prompt":"Pip follows the trail"},{"duration":1.8,"prompt":"Pip finds Mama"}]}`,
 		`{"shots":[{"duration":2,"prompt":"Shopkeeper points to pawprints"},{"duration":1,"prompt":"Pip follows the trail"},{"shot_order":3,"duration":2,"prompt":"Pip finds Mama"}]}`,
 	} {
-		e := NewAgentEngine(nil, "")
+		e := NewAgentEngine()
 		calls := 0
 		e.SetStructuredRunner(func(_ context.Context, _, _, _ string, target any) error {
 			calls++

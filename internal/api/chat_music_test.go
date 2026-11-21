@@ -28,15 +28,12 @@ func TestAssistantAddsMusicToAnEpisodeAndOffersToRemakeItsVideos(t *testing.T) {
 		t.Fatalf("action %q scenes %v reply %q", out.Intent.Action, out.Intent.SceneIDs, out.Intent.Reply)
 	}
 	for _, id := range []string{one.ID, two.ID} {
-		var preview struct {
-			Clips []struct{ Prompt string }
+		preview := sceneClipPrompts(t, s, id, false)
+		if len(preview) == 0 {
+			t.Fatal("no clips for ", id)
 		}
-		w := call(t, s, "GET", "/scenes/"+id+"/video-prompt", "")
-		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &preview) != nil || len(preview.Clips) == 0 {
-			t.Fatal(w.Code, w.Body.String())
-		}
-		if !strings.Contains(preview.Clips[0].Prompt, "(slow sparse piano plays quietly in the background") {
-			t.Errorf("the next video of %s would not have the music:\n%s", id, preview.Clips[0].Prompt)
+		if !strings.Contains(preview[0].Prompt, "(slow sparse piano plays quietly in the background") {
+			t.Errorf("the next video of %s would not have the music:\n%s", id, preview[0].Prompt)
 		}
 	}
 
@@ -44,11 +41,8 @@ func TestAssistantAddsMusicToAnEpisodeAndOffersToRemakeItsVideos(t *testing.T) {
 	if out = sendChat(t, s, "actually no music"); !strings.Contains(out.Intent.Reply, "Music is now off for episode 1") {
 		t.Fatalf("reply %q", out.Intent.Reply)
 	}
-	var preview struct {
-		Clips []struct{ Prompt string }
-	}
-	json.Unmarshal(call(t, s, "GET", "/scenes/"+one.ID+"/video-prompt", "").Body.Bytes(), &preview)
-	if len(preview.Clips) == 0 || !strings.Contains(preview.Clips[0].Prompt, "No BGM.") {
+	preview := sceneClipPrompts(t, s, one.ID, false)
+	if len(preview) == 0 || !strings.Contains(preview[0].Prompt, "No BGM.") {
 		t.Fatalf("music was not removed: %+v", preview)
 	}
 }
@@ -73,8 +67,7 @@ func TestMusicChosenWithTheStoryReachesTheVideoPrompt(t *testing.T) {
 			s.database.UpdateAsset(&assets[i])
 		}
 	}
-	w := call(t, s, "GET", "/scenes/"+scene.ID+"/video-prompt", "")
-	if w.Code != 200 || !strings.Contains(w.Body.String(), "(warm acoustic guitar plays quietly") {
-		t.Fatal(w.Code, w.Body.String())
+	if preview := sceneClipPrompts(t, s, scene.ID, false); len(preview) == 0 || !strings.Contains(preview[0].Prompt, "(warm acoustic guitar plays quietly") {
+		t.Fatal(preview)
 	}
 }

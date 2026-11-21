@@ -168,15 +168,6 @@ type AppSetting struct {
 	Value json.RawMessage `json:"value"`
 }
 
-// AgentSetting table
-type AgentSetting struct {
-	Agent          string  `json:"agent"`
-	ProjectID      *string `json:"project_id"`
-	Provider       string  `json:"provider"`
-	Model          string  `json:"model"`
-	PromptTemplate string  `json:"prompt_template"`
-}
-
 // ProviderSecret table
 type ProviderSecret struct {
 	Provider  string    `json:"provider"`

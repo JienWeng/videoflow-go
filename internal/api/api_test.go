@@ -41,7 +41,7 @@ func setupTestServer(t *testing.T) (*api.Server, func()) {
 	broker := events.NewBroker()
 	mediaEngine := media.NewMediaEngine()
 	openrouter := providers.NewOpenRouterClient(cfg.OpenRouterAPIKey)
-	agentsEngine := agents.NewAgentEngine(openrouter, "openai/gpt-4o-mini")
+	agentsEngine := agents.NewAgentEngine()
 
 	workers := jobs.NewWorkerPool(cfg, database, broker, mediaEngine)
 	workers.Start()
@@ -153,18 +153,6 @@ func TestMissingEndpointsResolution(t *testing.T) {
 		t.Fatalf("expected 200 for /settings/providers, got %d", rr.Code)
 	}
 
-	// 4. GET /settings/agents
-	req = httptest.NewRequest("GET", "/settings/agents", nil)
-	rr = httptest.NewRecorder()
-	server.Router().ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200 for /settings/agents, got %d", rr.Code)
-	}
-	var agents []map[string]interface{}
-	if err := json.Unmarshal(rr.Body.Bytes(), &agents); err != nil || len(agents) < 10 {
-		t.Fatalf("expected full agent list, got %v", agents)
-	}
-
 	// 5. GET /assets/types
 	req = httptest.NewRequest("GET", "/assets/types", nil)
 	rr = httptest.NewRecorder()
@@ -194,8 +182,11 @@ func TestMissingEndpointsResolution(t *testing.T) {
 	req = httptest.NewRequest("POST", "/scenes/"+sceneID+"/render", nil)
 	rr = httptest.NewRecorder()
 	server.Router().ServeHTTP(rr, req)
-	if rr.Code != http.StatusBadRequest {
+	if rr.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected missing media credentials to reject scene render before enqueue, got %d", rr.Code)
+	}
+	if jobs, _ := server.Database().ListRenderJobs(sc["project_id"].(string)); len(jobs) != 0 {
+		t.Fatalf("a scene render was queued without media credentials: %d", len(jobs))
 	}
 
 	// POST /scenes/{id}/shots/generate?background=true

@@ -61,7 +61,7 @@ func TestGuidedFalImagesWithSelectableFalOrBytePlusVideo(t *testing.T) {
 					falVideos.Add(1)
 					var p map[string]any
 					json.NewDecoder(r.Body).Decode(&p)
-					if p["image_url"] == nil || p["duration"] != "5" || !strings.Contains(stringValueAPI(p["prompt"]), "Chinese") {
+					if p["image_url"] == nil || p["duration"] != "5" || !strings.Contains(stringValueAPI(p["prompt"]), "Mimi") {
 						t.Error("fal first frame/brief lost", p)
 					}
 					w.Write([]byte(`{"request_id":"video-job"}`))
@@ -172,9 +172,7 @@ func TestGuidedFalImagesWithSelectableFalOrBytePlusVideo(t *testing.T) {
 			}
 			// The scene video is asked for after review, with the video service chosen then.
 			s.database.SetAppSettings(map[string]any{"default_video_provider": videoProvider, "video_model": model})
-			if w := call(t, s, "POST", "/scenes/"+scenes[0]+"/render", `{}`); w.Code != 202 {
-				t.Fatal(w.Code, w.Body.String())
-			}
+			requestSceneVideo(t, s, scenes[0])
 			deadline := time.Now().Add(10 * time.Second)
 			var finished *models.RenderJob
 			for time.Now().Before(deadline) {

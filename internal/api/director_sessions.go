@@ -195,7 +195,6 @@ func (s *Server) registerDirectorRoutes() {
 	s.registerAISetupRoute()
 	s.router.Post("/director/sessions/{id}/repair-context", s.handleRepairChatContext)
 	s.router.Post("/director/composition-plan", s.handleDirectorCompositionPlan)
-	s.router.Put("/assets/{id}/identity", s.handleAssetIdentity)
 	s.router.Post("/assets/{id}/review", s.handleAssetReview)
 	s.router.Put("/director/sessions/{id}/selection", func(w http.ResponseWriter, r *http.Request) {
 		binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)

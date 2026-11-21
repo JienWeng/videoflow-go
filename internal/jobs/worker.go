@@ -516,13 +516,9 @@ func (w *WorkerPool) assembledPrompt(job *models.RenderJob, payload map[string]a
 		if scene == nil {
 			return "", fmt.Errorf("scene not found")
 		}
-		prompt = scene.Title + ". " + scene.Summary
-		shots, err := w.database.ListShots(scene.ID)
-		if err != nil {
+		var err error
+		if prompt, err = ScenePrompt(w.database, scene); err != nil {
 			return "", err
-		}
-		for _, shot := range shots {
-			prompt += fmt.Sprintf("\nShot %d (%ds): %s", shot.ShotOrder, shot.Duration, shot.Prompt)
 		}
 	}
 	if strings.TrimSpace(prompt) == "" {
@@ -557,6 +553,20 @@ func (w *WorkerPool) assembledPrompt(job *models.RenderJob, payload map[string]a
 		prompt += "\nFinal audio requirement: generate synchronized native audio as specified above."
 	} else if payload["voice_policy"] != nil {
 		prompt += "\nFinal audio requirement: silent clip. No dialogue, narration or other generated sound."
+	}
+	return prompt, nil
+}
+
+// ScenePrompt is the text of a scene clip whose request came with none: the scene's
+// title and summary, then its shots in order.
+func ScenePrompt(database *db.DB, scene *models.Scene) (string, error) {
+	prompt := scene.Title + ". " + scene.Summary
+	shots, err := database.ListShots(scene.ID)
+	if err != nil {
+		return "", err
+	}
+	for _, shot := range shots {
+		prompt += fmt.Sprintf("\nShot %d (%ds): %s", shot.ShotOrder, shot.Duration, shot.Prompt)
 	}
 	return prompt, nil
 }

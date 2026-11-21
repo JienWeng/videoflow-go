@@ -27,7 +27,6 @@ func (s *Server) registerCompositionRoutes() {
 	s.router.Post("/compositions/localize", s.handleLocalizeComposition)
 	s.router.Post("/compositions/captions/from-script", s.handleCompositionScriptCaptions)
 	s.router.Post("/compositions/voiceover", s.handleCompositionVoiceover)
-	s.router.Get("/scenes/{id}/composition-sources", s.handleSceneCompositionSources)
 	s.router.Get("/scenes/{id}/composition-draft", s.handleSceneCompositionDraft)
 	s.router.Get("/scripts/{id}/composition-draft", s.handleScriptCompositionDraft)
 	s.router.Get("/compositions/sources", s.handleCompositionSources)
@@ -363,43 +362,4 @@ func (s *Server) handleCompositionSource(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-}
-
-func (s *Server) handleSceneCompositionSources(w http.ResponseWriter, r *http.Request) {
-	project, err := s.activeProjectID(r.Context())
-	if err != nil {
-		http.Error(w, "no active project", 400)
-		return
-	}
-	scene, err := s.database.GetScene(chi.URLParam(r, "id"))
-	if err != nil || scene.ProjectID == nil || *scene.ProjectID != project {
-		http.Error(w, "scene not found in this project", 404)
-		return
-	}
-	paths, _, err := s.compositionSources(project)
-	if err != nil {
-		http.Error(w, "could not load sources", 500)
-		return
-	}
-	jobs, err := s.database.ListRenderJobs(project)
-	if err != nil {
-		http.Error(w, "could not load renders", 500)
-		return
-	}
-	ids := []string{}
-	for _, job := range jobs {
-		if job.SceneID != nil && *job.SceneID == scene.ID && job.Status == "succeeded" {
-			outputs, e := s.database.ListOutputsForJob(job.ID)
-			if e != nil {
-				http.Error(w, "could not load outputs", 500)
-				return
-			}
-			for _, out := range outputs {
-				if _, ok := paths["output-"+out.ID]; ok {
-					ids = append(ids, "output-"+out.ID)
-				}
-			}
-		}
-	}
-	writeJSON(w, 200, ids)
 }

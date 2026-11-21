@@ -173,7 +173,4 @@ func TestCompositionSourceMetadataScopesToProject(t *testing.T) {
 	if r := call(t, s, "GET", "/compositions/sources/not-owned", ""); r.Code != 404 {
 		t.Fatal(r.Code, r.Body.String())
 	}
-	if r := call(t, s, "GET", "/scenes/not-owned/composition-sources", ""); r.Code != 404 {
-		t.Fatal(r.Code, r.Body.String())
-	}
 }

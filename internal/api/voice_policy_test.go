@@ -42,7 +42,8 @@ func TestSavedAudioModeRendersSilentWithoutSavedVoices(t *testing.T) {
 		}
 	}
 	sceneJob := &models.RenderJob{ProjectID: &project, SceneID: &scene.ID}
-	if err := s.applyDirectorVoicePolicy(ctx, sceneJob); err != nil || !strings.Contains(string(sceneJob.RequestJSON), "Keep scene action") {
+	// A scene request saved with no text of its own gets the scene's before policy text is added.
+	if err := s.freezeDirectorVideo(ctx, sceneJob); err != nil || !strings.Contains(string(sceneJob.RequestJSON), "Keep scene action") || !strings.Contains(string(sceneJob.RequestJSON), "SILENT visual pass") {
 		t.Fatal("voice policy dropped deferred scene prompt", err, string(sceneJob.RequestJSON))
 	}
 	unknown := &models.RenderJob{ProjectID: &project, RequestJSON: json.RawMessage(`{"prompt":"x","audio_mode":"dubbed"}`)}

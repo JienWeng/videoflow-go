@@ -105,47 +105,18 @@ func (r Resolver) Setting(key, fallback string) string {
 	return fallback
 }
 
-func (r Resolver) Selection(name string) (connection, model, modality string, err error) {
-	connection, model = "openrouter", r.Config.OpenRouterTextModel
-	modality = "text"
-	if name == "qa_agent" || name == "asset_recogniser" {
-		modality = "vision"
-		model = r.Setting("vl_model", r.Config.OpenRouterVisionModel)
-	}
-	settings, err := r.DB.GetAgentSettings()
-	if err != nil {
-		return "", "", "", err
-	}
-	if setting, ok := settings[name]; ok {
-		if setting.Provider != "" {
-			connection = setting.Provider
-		}
-		if setting.Model != "" {
-			model = setting.Model
-		}
+// Vision is the OpenRouter client and model that read pictures for one job. Describing an
+// uploaded picture uses the vision model chosen in Settings; reviewing a style or a
+// storyboard uses the configured text model, which must itself read pictures.
+func (r Resolver) Vision(ctx context.Context, job string) (*providers.OpenRouterClient, string, error) {
+	model, modality := r.Config.OpenRouterTextModel, "text"
+	if job == "asset_recogniser" {
+		model, modality = r.Setting("vl_model", r.Config.OpenRouterVisionModel), "vision"
 	}
 	if model == "" {
 		model = "openai/gpt-4o-mini"
 	}
-	if connection != "openrouter" {
-		conns, e := r.DB.ListConnections()
-		if e != nil {
-			return "", "", "", e
-		}
-		for _, c := range conns {
-			if c.Name == connection && (settings[name].Model == "") {
-				model = c.Model
-			}
-		}
-	}
-	return connection, model, modality, nil
-}
-func (r Resolver) Agent(ctx context.Context, name string) (*providers.OpenRouterClient, string, error) {
-	connection, model, modality, err := r.Selection(name)
-	if err != nil {
-		return nil, "", err
-	}
-	client, err := r.Client(connection)
+	client, err := r.Client("openrouter")
 	if err != nil {
 		return nil, "", err
 	}

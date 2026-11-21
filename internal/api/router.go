@@ -67,7 +67,6 @@ func NewServer(
 		media:      mediaEngine,
 		router:     chi.NewRouter(),
 	}
-	s.agents.SetResolver(s.routes().Agent)
 	s.agents.SetLanguageResolver(func() string { return s.routes().Setting("dialogue_language", "English") })
 	s.agents.SetStructuredRunner(func(ctx context.Context, name, system, prompt string, target any) error {
 		return s.localTextJSON(ctx, name, system, prompt, target)
@@ -166,7 +165,6 @@ func (s *Server) setupRoutes() {
 	s.router.Patch("/projects/{id}", s.handleUpdateProject)
 	s.router.Delete("/projects/{id}", s.handleDeleteProject)
 	s.router.Get("/projects/{id}/export", s.handleExportProject)
-	s.router.Post("/projects/{id}/export", s.handleExportProject)
 	s.router.Post("/projects/import", s.handleImportProject)
 
 	// Characters
@@ -216,7 +214,6 @@ func (s *Server) setupRoutes() {
 	s.router.Post("/revisions/{id}/revert", s.handleRevertRevision)
 
 	s.router.Post("/ideas/develop", s.handleDevelopIdea)
-	s.router.Post("/scripts/generate", s.handleGenerateScript)
 	s.router.Get("/scripts", s.handleListScripts)
 
 	// Assets
@@ -250,15 +247,12 @@ func (s *Server) setupRoutes() {
 	s.router.Get("/preset-packs/{id}/export", s.handleExportPresetPack)
 	s.router.Get("/style", s.handleGetStyle)
 	s.router.Patch("/style", s.handleUpdateStyle)
-	s.router.Put("/style", s.handleUpdateStyle)
 	s.router.Post("/style/ingest", s.handleIngestStyle)
 	s.router.Post("/style/reference", s.handleAnalyzeStyleReference)
 
 	// Settings
 	s.router.Get("/settings/app", s.handleGetAppSettings)
 	s.router.Put("/settings/app", s.handlePutAppSettings)
-	s.router.Get("/settings/agents", s.handleListAgents)
-	s.router.Put("/settings/agents/{agent}", s.handlePutAgent)
 	s.router.Get("/settings/providers", s.handleListProviders)
 	s.router.Get("/settings/providers/{name}", s.handleGetProviderConfig)
 	s.router.Put("/settings/providers/{name}", s.handlePutProviderConfig)

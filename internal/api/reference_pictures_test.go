@@ -83,14 +83,9 @@ func TestSceneClipsAreMadeFromTheirConnectedPictures(t *testing.T) {
 	if spend := productionSpend(plan, false); spend.Storyboards != 0 {
 		t.Fatalf("reference mode still pays for a storyboard: %+v", spend)
 	}
-	var preview struct {
-		Clips []struct {
-			Prompt   string
-			Pictures []referencePicture
-		}
-	}
-	if w := call(t, s, "GET", "/scenes/"+scene.ID+"/video-prompt", ""); w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &preview) != nil || len(preview.Clips) != 1 {
-		t.Fatal(w.Code, w.Body.String())
+	preview := sceneClipPrompts(t, s, scene.ID, false)
+	if len(preview) != 1 {
+		t.Fatal(preview)
 	}
 	if w := call(t, s, "POST", "/autopilot/finish?background=true", fmt.Sprintf(`{"scene_ids":[%q],"videos_only":true}`, scene.ID)); w.Code != 202 {
 		t.Fatal(w.Code, w.Body.String())
@@ -115,8 +110,8 @@ func TestSceneClipsAreMadeFromTheirConnectedPictures(t *testing.T) {
 			t.Errorf("prompt lacks %q:\n%s", want, request.Final)
 		}
 	}
-	if strings.Contains(request.Final, "@Image 3") || request.Final != preview.Clips[0].Prompt || len(preview.Clips[0].Pictures) != 2 {
-		t.Errorf("preview and request differ, or a third picture is named:\n%s\n---\n%s", request.Final, preview.Clips[0].Prompt)
+	if strings.Contains(request.Final, "@Image 3") || request.Final != preview[0].Prompt || len(preview[0].Pictures) != 2 {
+		t.Errorf("preview and request differ, or a third picture is named:\n%s\n---\n%s", request.Final, preview[0].Prompt)
 	}
 }
 

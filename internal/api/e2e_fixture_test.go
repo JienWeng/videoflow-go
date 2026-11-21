@@ -222,7 +222,7 @@ func e2eRouterServer(t *testing.T, root string, h http.HandlerFunc) *Server {
 	broker := events.NewBroker()
 	engine := media.NewMediaEngine()
 	client := providers.NewOpenRouterClientAt("", remote.URL)
-	server := NewServer(cfg, database, broker, jobs.NewWorkerPool(cfg, database, broker, engine), agents.NewAgentEngine(client, "openai/gpt-4o-mini"), client, engine)
+	server := NewServer(cfg, database, broker, jobs.NewWorkerPool(cfg, database, broker, engine), agents.NewAgentEngine(), client, engine)
 	t.Cleanup(server.Close)
 	return server
 }

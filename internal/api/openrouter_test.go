@@ -51,7 +51,7 @@ func bareServer(t *testing.T, h http.HandlerFunc) (*Server, string) {
 	broker := events.NewBroker()
 	engine := media.NewMediaEngine()
 	client := providers.NewOpenRouterClientAt("", remote.URL)
-	server := NewServer(cfg, database, broker, jobs.NewWorkerPool(cfg, database, broker, engine), agents.NewAgentEngine(client, "openai/gpt-4o-mini"), client, engine)
+	server := NewServer(cfg, database, broker, jobs.NewWorkerPool(cfg, database, broker, engine), agents.NewAgentEngine(), client, engine)
 	t.Cleanup(server.Close)
 	server.directorRunner.Codex = filepath.Join(t.TempDir(), "codex-is-not-installed")
 	server.directorRunner.Claude = filepath.Join(t.TempDir(), "claude-is-not-installed")
@@ -96,7 +96,7 @@ func TestDiscoveryUsesLiveCatalog(t *testing.T) {
 		t.Fatal(w.Body.String())
 	}
 }
-func TestPlannerIsToldTheDialogueLanguageAndAgentSelectionIsSaved(t *testing.T) {
+func TestPlannerIsToldTheDialogueLanguage(t *testing.T) {
 	var systemPrompt string
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
@@ -105,21 +105,12 @@ func TestPlannerIsToldTheDialogueLanguageAndAgentSelectionIsSaved(t *testing.T) 
 		w.Write([]byte(`{"choices":[{"message":{"content":"{\"reply\":\"hello\",\"action\":\"none\"}"}}]}`))
 	})
 	s.database.SetAppSetting("dialogue_language", `"Malay"`)
-	for _, model := range []string{"first/model", "selected/model"} {
-		if err := s.database.SetAgentSetting("intent_agent", "openrouter", model); err != nil {
-			t.Fatal(err)
-		}
-	}
 	w := call(t, s, "POST", "/chat", `{"message":"hello"}`)
 	if w.Code != 200 {
 		t.Fatalf("status %d body %s", w.Code, w.Body.String())
 	}
 	if !strings.Contains(systemPrompt, "Malay") {
 		t.Fatal("dialogue language ignored", systemPrompt)
-	}
-	settings, err := s.database.GetAgentSettings()
-	if err != nil || settings["intent_agent"].Model != "selected/model" {
-		t.Fatal(settings, err)
 	}
 }
 func TestSavingURLPreservesKey(t *testing.T) {
@@ -134,7 +125,6 @@ func TestRejectOtherProviders(t *testing.T) {
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Fatal("should not contact upstream") })
 	for _, test := range []struct{ path, body string }{
 		{"/settings/app", `{"default_video_provider":"atlascloud"}`},
-		{"/settings/agents/script_agent", `{"provider":"openai","model":"gpt-4o"}`},
 		{"/settings/connections", `{"label":"Other","preset":"openai","protocol":"chat","base_url":"https://api.openai.com/v1"}`},
 	} {
 		method := "PUT"

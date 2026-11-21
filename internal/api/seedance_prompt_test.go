@@ -42,11 +42,9 @@ func TestSceneClipIsSentAGuideShapedPrompt(t *testing.T) {
 		}
 	}
 
-	var preview struct {
-		Clips []struct{ Prompt string }
-	}
-	if w := call(t, s, "GET", "/scenes/"+scene.ID+"/video-prompt", ""); w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &preview) != nil || len(preview.Clips) != 1 {
-		t.Fatal(w.Code, w.Body.String())
+	preview := sceneClipPrompts(t, s, scene.ID, false)
+	if len(preview) != 1 {
+		t.Fatal(preview)
 	}
 	if w := call(t, s, "POST", "/autopilot/finish?background=true", fmt.Sprintf(`{"scene_ids":[%q],"videos_only":true}`, scene.ID)); w.Code != 202 {
 		t.Fatal(w.Code, w.Body.String())
@@ -61,8 +59,8 @@ func TestSceneClipIsSentAGuideShapedPrompt(t *testing.T) {
 		t.Fatalf("jobs: %d", len(jobs))
 	}
 	sent := request.Final
-	if sent != preview.Clips[0].Prompt {
-		t.Fatalf("the preview and the request differ.\nrequest:\n%s\npreview:\n%s", sent, preview.Clips[0].Prompt)
+	if sent != preview[0].Prompt {
+		t.Fatalf("the preview and the request differ.\nrequest:\n%s\npreview:\n%s", sent, preview[0].Prompt)
 	}
 	for _, want := range []string{"Chen Wei watches the city go quiet", "Chen Wei: East Asian man", "Shot 1: Action 1", "Shot 3: Action 3", "Voice-over: {人类的终结，没有爆炸。}", "one unseen narrator", "(slow sparse piano plays quietly", "No subtitles"} {
 		if !strings.Contains(sent, want) {
@@ -99,16 +97,11 @@ func TestAIWrittenPromptIsUsedOnlyWhenItKeepsTheFacts(t *testing.T) {
 	}
 	read := func(query string) (prompt, by string) {
 		t.Helper()
-		var out struct {
-			Clips []struct {
-				Prompt string
-				By     string `json:"written_by"`
-			}
+		out := sceneClipPrompts(t, s, scene.ID, query == "?write=1")
+		if len(out) != 1 {
+			t.Fatal(out)
 		}
-		if w := call(t, s, "GET", "/scenes/"+scene.ID+"/video-prompt"+query, ""); w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &out) != nil || len(out.Clips) != 1 {
-			t.Fatal(w.Code, w.Body.String())
-		}
-		return out.Clips[0].Prompt, out.Clips[0].By
+		return out[0].Prompt, out[0].By
 	}
 
 	if _, by := read(""); by != "template" || asked != 0 {
@@ -151,4 +144,51 @@ func TestAIWrittenPromptIsUsedOnlyWhenItKeepsTheFacts(t *testing.T) {
 	if prompt, by := read(""); by != "ai" || prompt != answer || asked != before {
 		t.Fatalf("the written prompt was not remembered: by=%s asked %d times more", by, asked-before)
 	}
+}
+
+// clipPrompt is the prompt one clip of a scene would be sent with right now.
+type clipPrompt struct {
+	Prompt   string
+	By       string
+	Pictures []referencePicture
+}
+
+// sceneClipPrompts writes, without making or sending any video, the prompt of each clip
+// in a scene's render plan, the way a render writes it. With write on, the AI prompt
+// writer is asked; otherwise only a remembered prompt or the plain draft is used.
+func sceneClipPrompts(t *testing.T, s *Server, sceneID string, write bool) []clipPrompt {
+	t.Helper()
+	ctx := context.Background()
+	scene, err := s.database.GetScene(sceneID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := s.sceneProductionPlan(ctx, scene)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clips := []clipPrompt{}
+	for _, unit := range plan.Units {
+		job := sceneRenderJob(*scene.ProjectID, scene)
+		job.Provider, job.Model = plan.Provider, plan.Model
+		request := map[string]any{"render_unit": unit, "music_prompt": plan.Settings.MusicPrompt, "voice_policy": map[string]any{"mode": plan.Settings.AudioMode}, "video_input": plan.VideoInput}
+		job.RequestJSON = voiceJSON(request)
+		if plan.VideoInput == inputReferences {
+			if _, model, e := s.productionVideoModel(ctx); e == nil {
+				_ = s.attachReferencePictures(job, request, model.ReferenceImages)
+				job.RequestJSON = voiceJSON(request)
+			}
+		}
+		s.writeScenePrompt(ctx, job, write)
+		var written struct {
+			Prompt   string             `json:"final_prompt"`
+			By       string             `json:"prompt_writer"`
+			Pictures []referencePicture `json:"reference_pictures"`
+		}
+		if json.Unmarshal(job.RequestJSON, &written) != nil {
+			t.Fatal(string(job.RequestJSON))
+		}
+		clips = append(clips, clipPrompt{written.Prompt, written.By, written.Pictures})
+	}
+	return clips
 }

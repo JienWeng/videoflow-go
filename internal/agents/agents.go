@@ -8,27 +8,16 @@ import (
 	"strings"
 	"videoflow-go/internal/presets"
 	"videoflow-go/internal/seedance"
-
-	"videoflow-go/internal/providers"
 )
 
+// AgentEngine writes the app's text: every call is answered by the selected local
+// session through the runner the server supplies.
 type AgentEngine struct {
 	structuredRunner func(context.Context, string, string, string, any) error
-	openrouter       *providers.OpenRouterClient
-	model            string
 	language         func() string
-	resolve          func(context.Context, string) (*providers.OpenRouterClient, string, error)
 }
 
-func NewAgentEngine(openrouter *providers.OpenRouterClient, defaultModel string) *AgentEngine {
-	if defaultModel == "" {
-		defaultModel = "openai/gpt-4o-mini"
-	}
-	return &AgentEngine{
-		openrouter: openrouter,
-		model:      defaultModel,
-	}
-}
+func NewAgentEngine() *AgentEngine { return &AgentEngine{} }
 
 type dialogueLanguageKey struct{}
 type storyCharactersKey struct{}
@@ -42,10 +31,6 @@ func WithDialogueLanguage(ctx context.Context, language string) context.Context 
 }
 func (a *AgentEngine) SetLanguageResolver(resolve func() string) { a.language = resolve }
 
-// SetResolver supplies credentials and model settings for every agent call.
-func (a *AgentEngine) SetResolver(resolve func(context.Context, string) (*providers.OpenRouterClient, string, error)) {
-	a.resolve = resolve
-}
 func (a *AgentEngine) SetStructuredRunner(runner func(context.Context, string, string, string, any) error) {
 	a.structuredRunner = runner
 }
@@ -63,23 +48,8 @@ func (a *AgentEngine) structured(ctx context.Context, name, system, prompt strin
 	if stage != "" {
 		prompt += presets.Prompt(presets.From(ctx), stage)
 	}
-	if a.structuredRunner != nil {
-		language := "English"
-		if a.language != nil {
-			language = a.language()
-		}
-		if value, _ := ctx.Value(dialogueLanguageKey{}).(string); value != "" {
-			language = value
-		}
-		return a.structuredRunner(ctx, name, system+"\nWrite all character dialogue in "+language+".", prompt, target)
-	}
-	client, model := a.openrouter, a.model
-	if a.resolve != nil {
-		var err error
-		client, model, err = a.resolve(ctx, name)
-		if err != nil {
-			return err
-		}
+	if a.structuredRunner == nil {
+		return fmt.Errorf("no local AI session is available to write this")
 	}
 	language := "English"
 	if a.language != nil {
@@ -88,8 +58,7 @@ func (a *AgentEngine) structured(ctx context.Context, name, system, prompt strin
 	if value, _ := ctx.Value(dialogueLanguageKey{}).(string); value != "" {
 		language = value
 	}
-	system += "\nWrite all character dialogue in " + language + "."
-	return client.StructuredJSON(ctx, model, system, prompt, target)
+	return a.structuredRunner(ctx, name, system+"\nWrite all character dialogue in "+language+".", prompt, target)
 }
 
 // --- Develop Idea ---

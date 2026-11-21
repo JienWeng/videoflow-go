@@ -8,7 +8,7 @@ try {
 for (const width of [1440,390]) {
  const context=await browser.newContext({viewport:{width,height:900}});
  const page=await context.newPage(); let failLoad=false,failSave=false; const mutations=[]; const errors=[]; page.on('pageerror',e=>errors.push(e.message));
- let app={all_text_local:true,default_aspect_ratio:'16:9',default_scene_duration:5,dialogue_language:'English',whisper_model:'saved-transcription-model',render_negatives:['blurry'],default_image_provider:'fal',default_video_provider:'fal',image_model:'image',ref_image_model:'image',video_model:'video',vl_model:'vision',media_model_preferences:{}};
+ let app={all_text_local:true,default_aspect_ratio:'16:9',default_scene_duration:5,dialogue_language:'English',render_negatives:['blurry'],default_image_provider:'fal',default_video_provider:'fal',image_model:'image',ref_image_model:'image',video_model:'video',vl_model:'vision',media_model_preferences:{}};
  await page.route('**/api/**',async r=>{
   const u=new URL(r.request().url()).pathname,method=r.request().method(); let body={};
   if(method!=='GET')mutations.push({u,body:r.request().postDataJSON()});
@@ -25,7 +25,6 @@ for (const width of [1440,390]) {
  await page.getByRole('radio',{name:'Light',exact:true}).click(); await page.keyboard.press('ArrowRight'); assert.equal(await page.getByRole('radio',{name:'Dark',exact:true}).getAttribute('aria-checked'),'true');
  await page.getByLabel('Default aspect ratio',{exact:true}).selectOption('9:16'); await page.getByRole('status').filter({hasText:'Preferences saved'}).waitFor();
  failSave=true;await page.getByLabel('Default aspect ratio',{exact:true}).selectOption('1:1');await page.getByRole('status').filter({hasText:'Could not save'}).waitFor();assert.equal(await page.getByLabel('Default aspect ratio',{exact:true}).inputValue(),'9:16');failSave=false;
- assert.equal(await page.getByLabel('OpenRouter transcription model').inputValue(),'saved-transcription-model');
  assert.equal(await page.getByLabel('Dialogue language',{exact:true}).inputValue(),'English');
  await page.getByRole('button',{name:'AI connections',exact:true}).click();assert.equal(await page.getByRole('heading',{name:'Media models',exact:true}).count(),0);
  const before=mutations.length;await page.getByRole('button',{name:'Clear key',exact:true}).click();await page.getByRole('group',{name:'Remove fal.ai key'}).waitFor();assert.equal(mutations.length,before);await page.getByRole('button',{name:'Keep key',exact:true}).click();assert.equal(mutations.length,before);
