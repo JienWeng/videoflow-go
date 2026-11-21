@@ -217,15 +217,33 @@ func (r *Runner) Run(ctx context.Context, request Request, saveNative func(strin
 	if !completed || native == "" || strings.TrimSpace(result) == "" {
 		return nil, fmt.Errorf("%s turn was interrupted or returned no result; it will not be replayed automatically", request.Engine)
 	}
-	result = strings.TrimSpace(result)
-	result = strings.TrimPrefix(result, "```json")
-	result = strings.TrimPrefix(result, "```")
-	result = strings.TrimSuffix(result, "```")
-	result = strings.TrimSpace(result)
-	if !json.Valid([]byte(result)) {
+	structured, ok := structuredJSON(result)
+	if !ok {
 		return nil, fmt.Errorf("%s returned invalid structured JSON; review the session before retrying", request.Engine)
 	}
-	return json.RawMessage(result), nil
+	return structured, nil
+}
+
+// structuredJSON finds the JSON answer in an agent's reply. Agents are told to answer
+// with JSON alone, but now and then one wraps it in a code fence or adds a sentence
+// before or after it; the first complete object or array in the reply is the answer.
+func structuredJSON(reply string) (json.RawMessage, bool) {
+	reply = strings.TrimSpace(reply)
+	if json.Valid([]byte(reply)) {
+		return json.RawMessage(reply), reply != ""
+	}
+	for start := strings.IndexAny(reply, "{["); start >= 0; {
+		var value json.RawMessage
+		if json.NewDecoder(strings.NewReader(reply[start:])).Decode(&value) == nil {
+			return value, true
+		}
+		next := strings.IndexAny(reply[start+1:], "{[")
+		if next < 0 {
+			break
+		}
+		start += next + 1
+	}
+	return nil, false
 }
 
 // Shape supplies field names and slice element shapes without coupling native agents to a provider SDK.

@@ -161,7 +161,12 @@ func (s *Server) writeScenePrompt(ctx context.Context, job *models.RenderJob, wr
 		if target != "" && place[target] == 0 {
 			continue
 		}
-		clip.Lines = append(clip.Lines, seedance.Line{Speaker: names[line.CharacterID], Text: line.Text, Language: line.Language, Shot: place[target]})
+		// Script writers sometimes save a code ("en"); the video model is told the language's name.
+		language := line.Language
+		if len(language) <= 3 && brief.Language != "" {
+			language = brief.Language
+		}
+		clip.Lines = append(clip.Lines, seedance.Line{Speaker: names[line.CharacterID], Text: line.Text, Language: language, Shot: place[target]})
 	}
 	payload[finalPromptKey], payload["prompt_writer"] = seedance.Compose(clip), "template"
 	payload["prompt_playbook"] = seedance.Sections(clip)
