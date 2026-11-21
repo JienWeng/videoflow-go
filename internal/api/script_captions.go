@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,8 +14,9 @@ import (
 )
 
 // Captions from the script: the scene already knows what is said and in which shot,
-// so captions can be placed without paying for speech-to-text. Timing is an estimate
-// at shot level (exact word timing still needs transcription or saved-voice alignment).
+// so the words never come from speech-to-text. Their times start as an estimate at shot
+// level; a clip made with its own sound is then listened to (speech_timing.go) and each
+// line moves to when it is really spoken.
 
 type shotSpan struct {
 	ID         string
@@ -96,7 +98,7 @@ func placeScriptLines(lines []SpokenLine, assign map[string]string, shots []shot
 func round3(v float64) float64 { return float64(int64(v*1000+0.5)) / 1000 }
 
 // outputScriptLines returns script captions in the rendered video's own time.
-func (s *Server) outputScriptLines(project, outputID string) ([]timedLine, error) {
+func (s *Server) outputScriptLines(ctx context.Context, project, outputID string) ([]timedLine, error) {
 	out, err := s.database.GetRenderOutput(outputID)
 	if err != nil {
 		return nil, fmt.Errorf("video not found")
@@ -169,15 +171,15 @@ func (s *Server) outputScriptLines(project, outputID string) ([]timedLine, error
 	if len(lines) == 0 {
 		return nil, fmt.Errorf("“%s” has no script lines for this clip", scene.Title)
 	}
-	return lines, nil
+	return s.heardLines(ctx, out, job, lines, length), nil
 }
 
 // scriptCuesForClip maps a rendered clip's script lines onto the edit timeline.
-func (s *Server) scriptCuesForClip(project string, clip composition.Clip) ([]composition.Cue, error) {
+func (s *Server) scriptCuesForClip(ctx context.Context, project string, clip composition.Clip) ([]composition.Cue, error) {
 	if !strings.HasPrefix(clip.AssetID, "output-") {
 		return nil, fmt.Errorf("not a rendered scene video")
 	}
-	lines, err := s.outputScriptLines(project, strings.TrimPrefix(clip.AssetID, "output-"))
+	lines, err := s.outputScriptLines(ctx, project, strings.TrimPrefix(clip.AssetID, "output-"))
 	if err != nil {
 		return nil, err
 	}
@@ -219,7 +221,7 @@ func (s *Server) handleCompositionScriptCaptions(w http.ResponseWriter, r *http.
 		if !strings.HasPrefix(clip.AssetID, "output-") {
 			continue // Images and uploaded media have no script.
 		}
-		cues, err := s.scriptCuesForClip(project, clip)
+		cues, err := s.scriptCuesForClip(r.Context(), project, clip)
 		if err != nil {
 			skipped = append(skipped, map[string]string{"clip_id": clip.ID, "reason": err.Error()})
 			continue
@@ -269,7 +271,7 @@ func (s *Server) handleOutputScriptCaptions(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "no active project", 400)
 		return
 	}
-	lines, err := s.outputScriptLines(project, chi.URLParam(r, "id"))
+	lines, err := s.outputScriptLines(r.Context(), project, chi.URLParam(r, "id"))
 	if err != nil {
 		http.Error(w, err.Error(), 409)
 		return

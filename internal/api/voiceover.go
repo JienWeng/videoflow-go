@@ -76,7 +76,7 @@ func (s *Server) handleCompositionVoiceover(w http.ResponseWriter, r *http.Reque
 		if !strings.HasPrefix(clip.AssetID, "output-") {
 			continue // Images and uploaded media have no script.
 		}
-		c, err := s.scriptCuesForClip(project, clip)
+		c, err := s.scriptCuesForClip(r.Context(), project, clip)
 		if err != nil {
 			skipped = append(skipped, map[string]string{"reason": err.Error()})
 			continue

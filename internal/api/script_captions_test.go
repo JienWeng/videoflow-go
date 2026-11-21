@@ -63,7 +63,7 @@ func TestScriptCaptionsFollowClipOnTimeline(t *testing.T) {
 
 	// Clip placed at 10s on the timeline with the first second trimmed off.
 	clip := composition.Clip{ID: "clip-1", AssetID: "output-" + out.ID, Start: 10, Trim: 1, Duration: 5, Speed: 1}
-	cues, err := s.scriptCuesForClip(project, clip)
+	cues, err := s.scriptCuesForClip(t.Context(), project, clip)
 	if err != nil || len(cues) != 2 {
 		t.Fatal(err, cues)
 	}
