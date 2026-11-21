@@ -65,17 +65,17 @@ func TestCaptionFailurePreservesPreviousOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := "storage/old-captioned.mp4"
-	out := &models.RenderOutput{RenderJobID: job.ID, VideoPath: "storage/raw.mp4", CaptionedPath: &path}
+	out := &models.RenderOutput{RenderJobID: job.ID, VideoPath: "storage/raw.mp4", CaptionedPath: &path, CaptionsJSON: []byte(`{"segments":[{"start":0,"end":1,"text":"Hi"}],"style":"clean"}`)}
 	if err := s.database.CreateRenderOutput(out); err != nil {
 		t.Fatal(err)
 	}
-	r := call(t, s, "PUT", "/outputs/"+out.ID+"/captions", `{"segments":[{"start":0,"end":1,"text":"Hi"}],"style":"clean"}`)
+	r := call(t, s, "POST", "/outputs/"+out.ID+"/caption", `{"style":"bold"}`)
 	if r.Code < 400 {
 		t.Fatalf("caption save falsely succeeded: %d", r.Code)
 	}
 	updated, _ := s.database.GetRenderOutput(out.ID)
 	if updated.CaptionedPath == nil || *updated.CaptionedPath != path {
-		t.Fatalf("editor promises re-burn, endpoint only saves segments and removes captioned output: %s", r.Body.String())
+		t.Fatalf("a failed re-burn removed the previous captioned output: %s", r.Body.String())
 	}
 }
 

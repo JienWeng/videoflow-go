@@ -1,9 +1,6 @@
 package composition
 
 import (
-	"context"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -33,34 +30,5 @@ func TestStudioTextOverlayRoundTripAndSafety(t *testing.T) {
 	}
 	if (OverlayBox{X: 90, Y: 0, Width: 20, Height: 20}).Valid() {
 		t.Fatal("out of bounds overlay")
-	}
-}
-func TestEditedAudioMixRespectsTimeline(t *testing.T) {
-	binary, e := exec.LookPath("ffmpeg")
-	if e != nil {
-		t.Skip("FFmpeg required")
-	}
-	dir := t.TempDir()
-	source := filepath.Join(dir, "source.wav")
-	if out, e := exec.Command(binary, "-v", "error", "-f", "lavfi", "-i", "sine=frequency=400:duration=3", source).CombinedOutput(); e != nil {
-		t.Fatal(e, string(out))
-	}
-	gain := .15
-	m := Manifest{Version: 1, Duration: 2, Audio: []Clip{{ID: "sound", AssetID: "owned", Start: .5, Trim: 1, Duration: 1, Speed: 1, Volume: &gain, FadeIn: .2, FadeOut: .2}}}
-	dest := filepath.Join(dir, "mix.wav")
-	if e = MixAudio(context.Background(), m, map[string]string{"owned": source}, dest); e != nil {
-		t.Fatal(e)
-	}
-	duration, _, _, audio, e := Probe(context.Background(), dest)
-	if e != nil || duration < 1.99 || duration > 2.01 || !audio {
-		t.Fatal(duration, audio, e)
-	}
-	data, _ := os.ReadFile(dest)
-	if len(data) < 50000 {
-		t.Fatal("no actual mix produced")
-	}
-	m.Audio[0].Trim = 3
-	if e = MixAudio(context.Background(), m, map[string]string{"owned": source}, dest); e == nil {
-		t.Fatal("invalid source trim accepted")
 	}
 }

@@ -130,11 +130,16 @@ func TestGuidedCharacterToTwoOutputsAndCombinedExport(t *testing.T) {
 		}
 	}
 	// Captions must produce a real replacement file, not just save segments.
-	response = call(t, s, "PUT", "/outputs/"+outputIDs[0]+"/captions", `{"segments":[{"start":0,"end":0.8,"text":"Mimi"}],"style":"clean"}`)
+	out, _ := s.database.GetRenderOutput(outputIDs[0])
+	out.CaptionsJSON = []byte(`{"segments":[{"start":0,"end":0.8,"text":"Mimi"}],"style":"clean"}`)
+	if err := s.database.UpdateRenderOutput(out); err != nil {
+		t.Fatal(err)
+	}
+	response = call(t, s, "POST", "/outputs/"+outputIDs[0]+"/caption", `{"style":"clean"}`)
 	if response.Code != 200 {
 		t.Fatalf("caption burn: %d %s", response.Code, response.Body.String())
 	}
-	out, _ := s.database.GetRenderOutput(outputIDs[0])
+	out, _ = s.database.GetRenderOutput(outputIDs[0])
 	if out.CaptionedPath == nil {
 		t.Fatal("captioned file missing")
 	}

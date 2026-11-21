@@ -9,7 +9,7 @@ const out=process.env.E2E_OUTPUT || '/tmp/videoflow-component-e2e';
 await mkdir(out,{recursive:true});
 const browser=await chromium.launch({executablePath:process.env.CHROME_PATH || '/usr/bin/google-chrome',headless:true,args:['--no-sandbox']});
 const report={base,started:new Date().toISOString(),checks:[],inventories:[],errors:[],unknownEndpoints:[]};
-const routes=['/','/create','/projects','/scenes','/characters','/assets','/render','/settings','/director','/voices','/compositions','/editor/missing-output'];
+const routes=['/','/create','/projects','/scenes','/characters','/assets','/render','/settings','/director','/voices','/compositions'];
 const assert=(v,m)=>{if(!v)throw Error(m)};
 async function check(name,fn){try{await fn();report.checks.push({name,status:'pass'});console.error('PASS',name)}catch(e){report.checks.push({name,status:'fail',error:e.message});console.error('FAIL',name,e.message)}}
 async function inventory(page,route,mode,state){

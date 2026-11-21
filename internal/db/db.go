@@ -1805,24 +1805,6 @@ func (d *DB) UpdateRenderOutput(o *models.RenderOutput) error {
 	return nil
 }
 
-func (d *DB) SelectRenderOutput(id string, selected bool) error {
-	tx, err := d.conn.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	now := time.Now().UTC()
-	if selected {
-		if _, err = tx.Exec(`UPDATE render_outputs SET selected=0,updated_at=? WHERE render_job_id=(SELECT render_job_id FROM render_outputs WHERE id=?)`, now, id); err != nil {
-			return err
-		}
-	}
-	if _, err = tx.Exec(`UPDATE render_outputs SET selected=?,updated_at=? WHERE id=?`, selected, now, id); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
 // --- Shots Reorder & Scene/Shot Associations ---
 
 func (d *DB) ReorderShots(sceneID string, orderedIDs []string) error {

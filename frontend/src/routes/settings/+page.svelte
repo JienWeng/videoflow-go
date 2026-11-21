@@ -68,7 +68,6 @@
     default_scene_duration: number;
     caption_style: string;
     caption_language: string;
-    whisper_model: string;
     dialogue_language: string;
     image_model: string;
     ref_image_model: string;
@@ -192,7 +191,6 @@ media_model_preferences:Record<string,Record<string,string>>;
 
   // -------------------------------------------------------------- options
   const ASPECT_RATIOS = ['9:16', '16:9', '1:1', '21:9', '4:3', '3:4'];
-  const WHISPER_MODELS = ['openai/whisper-1', 'openai/whisper-large-v3', 'openai/whisper-large-v3-turbo'];
   const CAPTION_STYLES = ['clean', 'bold', 'minimal', 'cinematic', 'neon', 'kids', 'classic', 'comic'];
   const CAPTION_LANGUAGES = [
     { value: 'auto', label: 'Auto-detect' },
@@ -518,7 +516,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
   type VideoCapability = { id: string; supported_frame_images?: string[]; supported_durations?: number[]; supported_resolutions?: string[]; supported_aspect_ratios?: string[] };
   let engineCatalogs = $state<Record<string, string[]>>({
     image: ['openai/gpt-image-2'], video: ['google/veo-3.1-lite'],
-    vision: ['qwen/qwen3-vl-30b-a3b-instruct'], transcription: WHISPER_MODELS
+    vision: ['qwen/qwen3-vl-30b-a3b-instruct']
   });
   let videoCapabilities = $state<VideoCapability[]>([]);
   let catalogError = $state('');
@@ -531,7 +529,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
     const videoProvider=app.default_video_provider;
     catalogBusy=true;
     const failures:string[]=[];
-    await Promise.all(['image','video','vision','transcription'].map(async modality=>{
+    await Promise.all(['image','video','vision'].map(async modality=>{
       const provider=modality==='image'?imageProvider:modality==='video'?videoProvider:'openrouter';
       if(provider==='openrouter'&&!provCfg.openrouter?.configured){if(sequence===catalogSequence)engineCatalogs={...engineCatalogs,[modality]:[]};return}
       try{
@@ -1057,7 +1055,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
         <Card class="mt-4">
           <CardHeader>
             <CardTitle role="heading" aria-level={2} class="text-base">Captions</CardTitle>
-            <CardDescription>Auto-caption style, language and transcription model.</CardDescription>
+            <CardDescription>Caption style and language.</CardDescription>
           </CardHeader>
           <CardContent class="settings-section">
             {#if app}
@@ -1089,23 +1087,6 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                 >
                   {#each CAPTION_LANGUAGES as l (l.value)}
                     <option value={l.value}>{l.label}</option>
-                  {/each}
-                </select>
-              </div>
-
-              <div class="flex flex-wrap items-center gap-3">
-                <div class="min-w-[180px] flex-1 text-sm font-medium">OpenRouter transcription model</div>
-                <select
-                  aria-label="OpenRouter transcription model"
-                  class="w-48 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                  disabled={busy === 'app'}
-                  value={app.whisper_model}
-                  onchange={(e) =>
-                    saveApp({ whisper_model: (e.currentTarget as HTMLSelectElement).value })}
-                >
-                  {#if !engineCatalogs.transcription.includes(app.whisper_model)}<option value={app.whisper_model}>{app.whisper_model}</option>{/if}
-                  {#each engineCatalogs.transcription as m (m)}
-                    <option value={m}>{m}</option>
                   {/each}
                 </select>
               </div>

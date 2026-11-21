@@ -139,7 +139,7 @@
      <div class="space-y-2 rounded-md border border-border p-3">
       <p class="font-medium">Captions</p>
       <Button class="w-full" disabled={busy||!draft.clips.length} onclick={captionsFromScript}><Type class="size-4"/>Captions from script</Button>
-      <p class="text-xs text-muted-foreground">Free. Uses what each scene's script says and when each shot plays. For exact word timing, use “Transcribe audio” below (uses credits).</p>
+      <p class="text-xs text-muted-foreground">Free. Uses what each scene's script says and when each shot plays.</p>
       {#if scriptNote}<p role="status" class="text-xs">{scriptNote}</p>{/if}
       <Button class="w-full" variant="outline" onclick={addCaptionAt}><Plus class="size-4"/>Add caption at playhead</Button>
      </div>

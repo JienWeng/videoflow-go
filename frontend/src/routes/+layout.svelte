@@ -66,7 +66,7 @@
   function isActive(href: string, pathname: string): boolean {
     if (href === '/') return pathname === '/' || pathname === '/director';
     if(href==='/library')return ['/library','/characters','/assets','/voices'].some(path=>pathname===path);
-    if (href === '/render') return pathname.startsWith('/render') || pathname.startsWith('/editor') || pathname === '/compositions';
+    if (href === '/render') return pathname.startsWith('/render') || pathname === '/compositions';
     return pathname.startsWith(href);
   }
 

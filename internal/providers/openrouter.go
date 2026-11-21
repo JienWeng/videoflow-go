@@ -133,8 +133,6 @@ func (c *OpenRouterClient) Models(ctx context.Context, modality string) ([]Model
 		path = "/images/models"
 	case "video":
 		path = "/videos/models"
-	case "transcription":
-		path = "/models?output_modalities=transcription"
 	case "text", "vision", "":
 	default:
 		return nil, fmt.Errorf("unsupported modality %q", modality)
@@ -483,46 +481,6 @@ func (c *OpenRouterClient) VideoContent(ctx context.Context, jobID string, index
 		}
 	}
 	return data, err
-}
-
-type TranscriptSegment struct {
-	Start float64 `json:"start"`
-	End   float64 `json:"end"`
-	Text  string  `json:"text"`
-}
-type Transcript struct {
-	Text     string              `json:"text"`
-	Segments []TranscriptSegment `json:"segments"`
-}
-
-func (c *OpenRouterClient) Transcribe(ctx context.Context, model string, audio []byte, format, language string) (*Transcript, error) {
-	if len(audio) == 0 {
-		return nil, fmt.Errorf("audio is empty")
-	}
-	if _, err := c.Model(ctx, model, "transcription"); err != nil {
-		return nil, err
-	}
-	payload := map[string]any{"model": model, "input_audio": map[string]string{"data": base64.StdEncoding.EncodeToString(audio), "format": format}, "response_format": "verbose_json", "timestamp_granularities": []string{"segment"}}
-	if language != "" && language != "auto" {
-		payload["language"] = language
-	}
-	data, err := c.request(ctx, "POST", "/audio/transcriptions", payload)
-	if err != nil {
-		return nil, err
-	}
-	var transcript Transcript
-	if err = json.Unmarshal(data, &transcript); err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(transcript.Text) != "" && len(transcript.Segments) == 0 {
-		return nil, fmt.Errorf("selected OpenRouter transcription model did not return timestamps; use a Whisper model with verbose_json support")
-	}
-	for _, segment := range transcript.Segments {
-		if segment.Start < 0 || segment.End <= segment.Start {
-			return nil, fmt.Errorf("invalid transcription timestamps")
-		}
-	}
-	return &transcript, nil
 }
 
 // exampleShape gives slice element fields as well as object fields to prompt-only JSON models.

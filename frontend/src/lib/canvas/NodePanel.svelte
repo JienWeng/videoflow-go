@@ -3,8 +3,6 @@
   // the first output-node selection, and share across panel instances.
   type CaptionConfig = {
     styles: string[];
-    models: string[];
-    default_model: string;
     default_language: string;
     default_style: string;
   };
@@ -12,6 +10,7 @@
 </script>
 
 <script lang="ts">
+  import { editOutputHref } from '$lib/editor/links';
   import NodeTools from './NodeTools.svelte';
   import RenderProgress from './RenderProgress.svelte';
   import AssetDescriptionEditor from '$lib/assets/AssetDescriptionEditor.svelte';
@@ -67,12 +66,10 @@
   let revisions = $state<any[]>([]);
   let reverting = $state('');
 
-  // Output node actions (QA retry + captions). Captioning uses the project
-  // defaults from /caption-config — fine-tuning lives in /editor/{id}.
+  // Output node actions (QA retry + re-burning saved captions in the /caption-config default style).
   let retrying = $state(false);
   let captioning = $state(false);
   let captionStyle = $state('');
-  let captionModel = $state('');
   let captionLanguage = $state('zh');
 
   export function canLeave(){if(saving||refining||reverting||deleting)return false;return !formDirty || confirm('Discard unsaved changes?');}
@@ -154,7 +151,6 @@
     try {
       const cfg = await captionConfigPromise;
       captionStyle = cfg.default_style || cfg.styles?.[0] || 'kids';
-      captionModel = cfg.default_model || cfg.models?.[0] || '';
       captionLanguage = cfg.default_language || 'zh';
     } catch {
       captionConfigPromise = null; // allow retry on next selection
@@ -183,7 +179,6 @@
         `/outputs/${shown.id}/caption`,
         {
           style: captionStyle || undefined,
-          model: captionModel || undefined,
           language: captionLanguage === 'auto' ? null : captionLanguage
         },
         {
@@ -478,18 +473,24 @@
 
         <div class="grid gap-1.5">
           <Label>Captions</Label>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={captioning}
-            title="Burn captions with the project defaults — fine-tune in the editor"
-            onclick={addCaptions}
-          >
+          {#if data.captioned_path}
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={captioning}
+              title="Burn this video's saved captions again in the default style"
+              onclick={addCaptions}
+            >
+              <Captions class="size-4 mr-1" />
+              {captioning ? 'Captioning…' : 'Re-caption'}
+            </Button>
+          {/if}
+          <Button variant="outline" size="sm" href={editOutputHref(shown.id)}>
             <Captions class="size-4 mr-1" />
-            {captioning ? 'Transcribing…' : data.captioned_path ? 'Re-caption' : 'Auto captions'}
+            Add captions in Edit video
           </Button>
           <p class="text-xs text-muted-foreground">
-            Uses the project defaults — open the editor to fine-tune text, timing and style.
+            Edit video makes captions from the script, timed to the clip's sound.
           </p>
         </div>
       {:else if kind === 'asset'}

@@ -3,80 +3,10 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"videoflow-go/internal/composition"
-	"videoflow-go/internal/models"
 )
-
-func (s *Server) handleCompositionTranscribe(w http.ResponseWriter, r *http.Request) {
-	project, e := s.activeProjectID(r.Context())
-	if e != nil {
-		http.Error(w, e.Error(), 400)
-		return
-	}
-	var body struct {
-		Manifest composition.Manifest `json:"manifest"`
-		Language string               `json:"language"`
-	}
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20)).Decode(&body) != nil || body.Manifest.Version != 1 {
-		http.Error(w, "provide the current edit", 400)
-		return
-	}
-	sources, _, e := s.compositionSources(project)
-	if e != nil {
-		http.Error(w, e.Error(), 400)
-		return
-	}
-	s.operation(w, r, &models.Op{Kind: "edit_transcription", ProjectID: &project}, func(ctx context.Context) (any, error) {
-		dir, e := os.MkdirTemp("", "videoflow-mix-*")
-		if e != nil {
-			return nil, e
-		}
-		defer os.RemoveAll(dir)
-		path := filepath.Join(dir, "mix.wav")
-		if e = composition.MixAudio(ctx, body.Manifest, sources, path); e != nil {
-			return nil, e
-		}
-		data, e := os.ReadFile(path)
-		if e != nil {
-			return nil, e
-		}
-		if len(data) > 25<<20 {
-			return nil, fmt.Errorf("edited audio exceeds transcription limit")
-		}
-		client, e := s.routes().Client("openrouter")
-		if e != nil {
-			return nil, e
-		}
-		language := body.Language
-		if language == "" {
-			language = "auto"
-		}
-		result, e := client.Transcribe(ctx, s.routes().Setting("whisper_model", "openai/whisper-1"), data, "wav", language)
-		if e != nil {
-			return nil, e
-		}
-		cues := []composition.Cue{}
-		for i, segment := range result.Segments {
-			if !(segment.Start >= 0 && segment.End > segment.Start && segment.End <= body.Manifest.Duration+.05) || strings.TrimSpace(segment.Text) == "" {
-				return nil, fmt.Errorf("transcription returned invalid cue timings")
-			}
-			end := segment.End
-			if end > body.Manifest.Duration {
-				end = body.Manifest.Duration
-			}
-			cues = append(cues, composition.Cue{ID: fmt.Sprintf("transcript-%d", i+1), Start: segment.Start, End: end, Text: segment.Text, Language: language})
-		}
-		if len(cues) == 0 {
-			return nil, fmt.Errorf("no spoken captions found in this edit")
-		}
-		return map[string]any{"captions": cues, "source_hash": compositionHash(voiceJSON(body.Manifest)), "language": language}, nil
-	})
-}
 
 func (s *Server) handleLocalizeComposition(w http.ResponseWriter, r *http.Request) {
 	var body struct {

@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"videoflow-go/internal/composition"
 	"videoflow-go/internal/models"
 )
@@ -263,22 +262,4 @@ func (s *Server) alignCaptionsToVoice(project string, captions []composition.Cue
 		}
 	}
 	return followed
-}
-
-func (s *Server) handleOutputScriptCaptions(w http.ResponseWriter, r *http.Request) {
-	project, err := s.activeProjectID(r.Context())
-	if err != nil {
-		http.Error(w, "no active project", 400)
-		return
-	}
-	lines, err := s.outputScriptLines(r.Context(), project, chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, err.Error(), 409)
-		return
-	}
-	segments := []models.CaptionSegment{}
-	for _, l := range lines {
-		segments = append(segments, models.CaptionSegment{ID: l.ID, CharacterID: l.CharacterID, Language: l.Language, Start: l.Start, End: l.End, Text: l.Text})
-	}
-	writeJSON(w, 200, map[string]any{"segments": segments})
 }

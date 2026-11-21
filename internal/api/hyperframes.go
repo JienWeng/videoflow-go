@@ -24,7 +24,6 @@ func (s *Server) registerCompositionRoutes() {
 	s.router.Post("/reference-videos/render", s.handleReferenceVideo)
 	s.router.Get("/studio/brand", s.handleStudioBrand)
 	s.router.Put("/studio/brand", s.handleStudioBrand)
-	s.router.Post("/compositions/transcribe", s.handleCompositionTranscribe)
 	s.router.Post("/compositions/localize", s.handleLocalizeComposition)
 	s.router.Post("/compositions/captions/from-script", s.handleCompositionScriptCaptions)
 	s.router.Post("/compositions/voiceover", s.handleCompositionVoiceover)

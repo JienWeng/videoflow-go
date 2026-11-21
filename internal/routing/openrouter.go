@@ -85,7 +85,7 @@ func (r Resolver) Credentials(name string) (key, endpoint string, fromDB bool, e
 
 func (r Resolver) Client(name string) (*providers.OpenRouterClient, error) {
 	if name == "fal" || name == "byteplus" || name == "fish" || name == "elevenlabs" {
-		return nil, fmt.Errorf("%s is a media provider; text/vision/transcription use OpenRouter", name)
+		return nil, fmt.Errorf("%s is a media provider; text and vision use OpenRouter", name)
 	}
 	key, endpoint, _, err := r.Credentials(name)
 	if err != nil {

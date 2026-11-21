@@ -207,7 +207,7 @@ func TestMediaFailurePropagates(t *testing.T) {
 
 func TestMissingOutputNeverReturnsSample(t *testing.T) {
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) {})
-	for _, path := range []string{"/outputs/missing/editor", "/outputs/missing/download"} {
+	for _, path := range []string{"/outputs/missing/download"} {
 		w := call(t, s, "GET", path, "")
 		if w.Code != 404 {
 			t.Fatal(path, w.Code, w.Body.String())

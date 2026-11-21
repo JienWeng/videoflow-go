@@ -247,14 +247,8 @@ func (s *Server) setupRoutes() {
 	s.router.Post("/render-jobs/{id}/resubmit", s.handleResubmitJob)
 	s.registerRenderRecoveryRoutes()
 
-	s.router.Get("/outputs/{id}/editor", s.handleGetEditorData)
 	s.router.Post("/outputs/{id}/retry", s.handleRetryOutput)
-	s.router.Patch("/outputs/{id}/select", s.handleSelectOutput)
 	s.router.Get("/outputs/{id}/download", s.handleDownloadOutput)
-	s.router.Get("/outputs/{id}/captions", s.handleGetCaptions)
-	s.router.Put("/outputs/{id}/captions", s.handleUpdateCaptions)
-	s.router.Post("/outputs/{id}/captions/transcribe", s.handleTranscribeCaptions)
-	s.router.Get("/outputs/{id}/captions/from-script", s.handleOutputScriptCaptions)
 	s.router.Post("/outputs/{id}/caption", s.handleCaptionOutput)
 	s.router.Get("/caption-config", s.handleCaptionConfig)
 

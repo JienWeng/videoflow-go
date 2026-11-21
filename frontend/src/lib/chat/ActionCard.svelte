@@ -175,7 +175,7 @@
   const editorPanels: Record<string,{label:string;help:string;panel:string}> = {
     voice:{label:'Open Voice from script',help:'In Edit video → Audio, Voice from script speaks your scene lines with saved character voices or a narrator voice. Only new lines use speech credits.',panel:'audio'},
     music:{label:'Open Audio in the editor',help:'Add music from your Library or upload a track in Edit video → Audio, then set its volume and fades.',panel:'audio'},
-    captions:{label:'Open Captions in the editor',help:'Edit video → Text makes captions from the script or the actual audio, and can translate them.',panel:'text'},
+    captions:{label:'Open Captions in the editor',help:'Edit video → Text makes captions from the script, timed to the sound of each clip, and can translate them.',panel:'text'},
     export:{label:'Open Export',help:'Export renders your edit to an MP4 you can download.',panel:'export'},
     edit:{label:'Open Edit video',help:'Trim, reorder and combine scene videos on the timeline. Nothing is generated.',panel:''}
   };
@@ -663,7 +663,7 @@
       {/if}
 
       {#if intent.action === 'caption'}
-        <p class="text-xs text-muted-foreground">Transcribe or write captions in the editor first. This action burns saved captions into a new video file.</p>
+        <p class="text-xs text-muted-foreground">This burns captions already saved on a video into a new video file. To caption a new video, open it in Edit video.</p>
         {#if outputId}<a class="text-xs underline" href={editOutputHref(outputId)}>Open in video editor</a>{/if}
         <div>
           <div>

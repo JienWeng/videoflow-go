@@ -124,28 +124,6 @@ func TestCredentialRedaction(t *testing.T) {
 	}
 }
 
-func TestTranscriptionReturnsProviderTimestamps(t *testing.T) {
-	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/models" {
-			if r.URL.Query().Get("output_modalities") != "transcription" {
-				t.Error("missing STT catalog filter")
-			}
-			w.Write([]byte(`{"data":[{"id":"openai/whisper-1"}]}`))
-			return
-		}
-		var p map[string]any
-		json.NewDecoder(r.Body).Decode(&p)
-		if r.URL.Path != "/audio/transcriptions" || p["response_format"] != "verbose_json" {
-			t.Error(p, r.URL.Path)
-		}
-		w.Write([]byte(`{"text":"Hello","segments":[{"start":0.2,"end":1.3,"text":"Hello"}]}`))
-	})
-	transcript, err := c.Transcribe(context.Background(), "openai/whisper-1", []byte("audio"), "wav", "en")
-	if err != nil || len(transcript.Segments) != 1 || transcript.Segments[0].Start != 0.2 {
-		t.Fatal(transcript, err)
-	}
-}
-
 func TestVideoContentRejectsNonVideo(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("<html>Proxy error</html>")) })
 	if _, err := c.VideoContent(context.Background(), "job", 0); err == nil {

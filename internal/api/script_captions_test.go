@@ -90,8 +90,4 @@ func TestScriptCaptionsFollowClipOnTimeline(t *testing.T) {
 	if json.Unmarshal(w.Body.Bytes(), &timed) != nil || timed.VoiceTimed != 1 || timed.Captions[1].Start != 13.2 || timed.Captions[1].End != 14.7 || timed.Captions[0].Start != 10 {
 		t.Fatal(w.Code, w.Body.String())
 	}
-	w = call(t, s, "GET", "/outputs/"+out.ID+"/captions/from-script", "")
-	if w.Code != 200 || !strings.Contains(w.Body.String(), `"segments":[{`) {
-		t.Fatal(w.Code, w.Body.String())
-	}
 }

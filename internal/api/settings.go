@@ -84,7 +84,6 @@ func (s *Server) handleGetAppSettings(w http.ResponseWriter, r *http.Request) {
 		"default_scene_duration": 5.0,
 		"caption_style":          "clean",
 		"caption_language":       "auto",
-		"whisper_model":          "openai/whisper-1",
 		"dialogue_language":      "English",
 		"image_model":            s.cfg.OpenRouterImageModel,
 		"ref_image_model":        s.cfg.OpenRouterImageModel,
@@ -133,7 +132,7 @@ func (s *Server) handlePutAppSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 400)
 		return
 	}
-	for key, modality := range map[string]string{"vl_model": "vision", "whisper_model": "transcription"} {
+	for key, modality := range map[string]string{"vl_model": "vision"} {
 		if value, ok := body[key]; ok {
 			model, valid := value.(string)
 			if !valid || strings.TrimSpace(model) == "" {

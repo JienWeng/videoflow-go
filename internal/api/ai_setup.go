@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"videoflow-go/internal/costs"
 	"videoflow-go/internal/providers"
@@ -87,15 +88,20 @@ func (s *Server) handleAISetup(w http.ResponseWriter, r *http.Request) {
 	}
 	voice := map[string]any{"provider": primary, "service": label(primary), "ready": connected(primary), "options": voices}
 
-	// Looking at pictures and listening to audio both go through OpenRouter.
+	// Looking at pictures goes through OpenRouter; listening to clips to time captions uses OpenAI.
 	openrouter := connected("openrouter")
 	note := ""
 	if !openrouter {
 		note = "Add an OpenRouter key in AI connections."
 	}
+	listenKey, _, _, _ := routes.Credentials("openai")
+	listening := aiChoice{Service: "OpenAI", Model: providers.OpenAISpeechModel, Ready: strings.TrimSpace(listenKey) != "" && connected("openai")}
+	if !listening.Ready {
+		listening.Note = "Add an OpenAI key in AI connections. Without one, captions keep their estimated times."
+	}
 	writeJSON(w, 200, map[string]any{
 		"assistant": assistant, "pictures": pictures, "video": video, "voice": voice,
 		"vision":    aiChoice{Service: "OpenRouter", Model: routes.Setting("vl_model", s.cfg.OpenRouterVisionModel), Ready: openrouter, Note: note},
-		"listening": aiChoice{Service: "OpenRouter", Model: routes.Setting("whisper_model", "openai/whisper-1"), Ready: openrouter, Note: note},
+		"listening": listening,
 	})
 }

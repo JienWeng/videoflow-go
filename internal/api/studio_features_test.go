@@ -5,48 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"videoflow-go/internal/models"
 )
-
-func TestEditedMixTranscriptionReturnsTimedDraftOnly(t *testing.T) {
-	binary, e := exec.LookPath("ffmpeg")
-	if e != nil {
-		t.Skip("FFmpeg required")
-	}
-	calls := 0
-	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/models":
-			w.Write([]byte(`{"data":[{"id":"openai/whisper-1","architecture":{"input_modalities":["audio"],"output_modalities":["text"]}}]}`))
-		case "/audio/transcriptions":
-			calls++
-			w.Write([]byte(`{"text":"Hello Mama","segments":[{"start":0.2,"end":0.9,"text":"Hello Mama"}]}`))
-		default:
-			t.Errorf("unexpected paid request %s", r.URL.Path)
-			w.WriteHeader(500)
-		}
-	})
-	path := filepath.Join(s.cfg.StorageRoot, "voice.wav")
-	if out, e := exec.Command(binary, "-v", "error", "-f", "lavfi", "-i", "sine=frequency=400:duration=1", path).CombinedOutput(); e != nil {
-		t.Fatal(e, string(out))
-	}
-	project, _ := s.database.GetActiveProjectID()
-	asset := &models.Asset{ProjectID: &project, Name: "Voice", Type: "audio_reference", FilePath: "storage/voice.wav"}
-	s.database.CreateAsset(asset)
-	body := `{"manifest":{"version":1,"duration":1,"clips":[],"audio":[{"id":"voice","asset_id":"` + asset.ID + `","start":0,"trim":0,"duration":1,"speed":1}],"captions":[]}}`
-	r := call(t, s, "POST", "/compositions/transcribe", body)
-	if r.Code != 200 || calls != 1 || !strings.Contains(r.Body.String(), `"start":0.2`) {
-		t.Fatal(r.Code, r.Body.String(), calls)
-	}
-	jobs, _ := s.database.ListRenderJobs(project)
-	if len(jobs) != 0 {
-		t.Fatal("transcription queued video generation")
-	}
-}
 
 func TestStudioBrandCASAndProjectScope(t *testing.T) {
 	s := routerServer(t, nil)
