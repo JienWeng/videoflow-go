@@ -45,7 +45,7 @@ func (s *Server) directorImageInputs(ctx context.Context, project *string, refer
 			return nil, "", e
 		}
 		if !models.ReferenceApproved(assetState.MetadataJSON) {
-			return nil, "", fmt.Errorf("reference %s requires consistency review in Assets", item.Name)
+			return nil, "", fmt.Errorf("reference %s is excluded from generation; replace it in Library", item.Name)
 		}
 		if !item.Available {
 			return nil, "", fmt.Errorf("approved reference %s is unavailable; repair selection before generation", item.Name)
@@ -108,6 +108,19 @@ func (s *Server) handleAssetIdentity(w http.ResponseWriter, r *http.Request) {
 	if meta == nil {
 		meta = map[string]any{}
 	}
+	old, _ := meta["locked_traits"].(map[string]any)
+	changed := len(old) != len(body.LockedTraits)
+	for key, value := range body.LockedTraits {
+		if old[key] != value {
+			changed = true
+		}
+	}
+	if changed {
+		if meta["consistency_review"] != "rejected" {
+			meta["consistency_review"] = "ready"
+		}
+		delete(meta, "consistency_reviewed_at")
+	}
 	meta["locked_traits"] = body.LockedTraits
 	asset.MetadataJSON, _ = json.Marshal(meta)
 	if err = s.database.UpdateAssetReview(binding.ProjectID, asset.ID, body.ExpectedUpdatedAt, asset.MetadataJSON); err != nil {
@@ -115,5 +128,6 @@ func (s *Server) handleAssetIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	saved, _ := s.database.GetAsset(asset.ID)
+	s.broker.Publish(map[string]any{"type": "asset_changed", "asset_id": asset.ID})
 	writeJSON(w, 200, saved)
 }

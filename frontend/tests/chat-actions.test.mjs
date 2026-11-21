@@ -8,6 +8,6 @@ test('legacy saved scene cards become runnable script cards without losing their
  assert.equal(normalizeChatIntent({action:'create_script'}).action,'generate_script');
 });
 test('unsupported actions use the help card instead of a disabled Run button',()=>{
- for(const action of ['none','invented_action','',null])assert.equal(normalizeChatIntent({action}).action,'unknown');
+ for(const action of ['none','invented_action','caption','',null])assert.equal(normalizeChatIntent({action}).action,'unknown');
  assert.equal(normalizeChatIntent({action:'generate_shots'}).action,'generate_shots');
 });

@@ -3,17 +3,23 @@ package api
 import (
 	"context"
 	"fmt"
+	"videoflow-go/internal/costs"
 	"videoflow-go/internal/providers"
 	"videoflow-go/internal/routing"
 )
 
 func (s *Server) mediaCatalogClient(provider, model string) (providers.MediaClient, error) {
 	switch provider {
+	case "openai":
+		return providers.NewOpenAIImages("", providers.OpenAIURL, s.routes().DefaultMediaModel("openai", "image")), nil
 	case "fal":
 		return providers.NewFalClientAt("", providers.FalURL, model), nil
 	case "byteplus":
 		return providers.NewBytePlusClientAt("", providers.BytePlusURL), nil
 	default:
+		if providers.VideoHost(provider) {
+			return providers.NewHostClient(provider, "", costs.HostByName(provider).URL), nil
+		}
 		return s.routes().Client(provider)
 	}
 }
@@ -25,7 +31,7 @@ func (s *Server) prepareMediaSettings(ctx context.Context, body map[string]any) 
 		if raw, ok := body[providerKey]; ok {
 			var valid bool
 			provider, valid = raw.(string)
-			if !valid || (provider != "openrouter" && provider != "fal" && provider != "byteplus") || (kind == "image" && provider == "byteplus") {
+			if !valid || (provider != "openrouter" && provider != "fal" && provider != "byteplus" && !providers.VideoHost(provider)) || (kind == "image" && (provider == "byteplus" || providers.VideoHost(provider))) {
 				return fmt.Errorf("unsupported %s provider", kind)
 			}
 		}

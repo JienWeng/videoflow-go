@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	"videoflow-go/internal/models"
@@ -210,7 +211,7 @@ func (s *Server) handleGenerateShots(w http.ResponseWriter, r *http.Request) {
 			if brief.Idea == "" {
 				brief.Idea = scene.Summary
 			}
-			if err = s.prepareBrief(*scene.ProjectID, &brief); err != nil {
+			if err = s.prepareSavedBrief(*scene.ProjectID, &brief); err != nil {
 				http.Error(w, err.Error(), 400)
 				return
 			}
@@ -232,7 +233,9 @@ func (s *Server) handleGenerateShots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.operation(w, r, &models.Op{Kind: "shots", SceneID: &sceneID, ProjectID: scene.ProjectID}, func(ctx context.Context) (any, error) {
-		drafts, err := s.agents.GenerateShots(sceneBrief(scene).context(ctx), scene.Title, scene.Summary+"\n"+sceneBrief(scene).prompt()+notes, scene.Duration)
+		brief := sceneBrief(scene)
+		brief.Style = s.sceneVisualStyle(scene)
+		drafts, err := s.agents.GenerateShots(brief.context(ctx), scene.Title, scene.Summary+"\n"+brief.prompt()+notes, scene.Duration)
 		if err != nil {
 			return nil, err
 		}
@@ -365,6 +368,74 @@ func (s *Server) handleRenderScene(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "scene not in active project", 400)
 		return
 	}
+	var options struct {
+		ConfirmedStoryboardCalls *int   `json:"confirmed_storyboard_calls"`
+		ConfirmedCalls           *int   `json:"confirmed_calls"`
+		ConfirmedSeconds         *int   `json:"confirmed_seconds"`
+		ConfirmedPlanID          string `json:"confirmed_plan_id"`
+		NewVersion               bool   `json:"new_version"`
+		UseSceneCast             bool   `json:"use_scene_cast"`
+		PrepareStoryboard        bool   `json:"prepare_storyboard"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&options); err != nil && err != io.EOF {
+		http.Error(w, "invalid render options", 400)
+		return
+	}
+	// Plan validation happens synchronously before creating a background operation.
+	if options.PrepareStoryboard {
+		plan, e := s.sceneProductionPlan(r.Context(), scene)
+		if e != nil {
+			http.Error(w, e.Error(), 422)
+			return
+		}
+		if options.ConfirmedPlanID != "" && options.ConfirmedPlanID != plan.ID {
+			http.Error(w, "render plan changed; reload before generating", 409)
+			return
+		}
+		if (len(plan.Units) > 1 || options.NewVersion) && (options.ConfirmedCalls == nil || options.ConfirmedSeconds == nil) {
+			http.Error(w, "recheck and confirm the displayed paid-call count before generating", 409)
+			return
+		}
+		spend := productionSpend(plan, options.NewVersion)
+		if (options.ConfirmedCalls != nil && spend.Calls > *options.ConfirmedCalls) || (options.ConfirmedSeconds != nil && spend.Seconds > *options.ConfirmedSeconds) || (options.ConfirmedStoryboardCalls != nil && spend.Storyboards > *options.ConfirmedStoryboardCalls) {
+			http.Error(w, "paid-call count increased; recheck the render plan before generating", 409)
+			return
+		}
+		if len(plan.Units) > 1 && options.ConfirmedPlanID == "" {
+			http.Error(w, "multiple paid clips require the displayed render plan confirmation", 409)
+			return
+		}
+		if plan.Blocked != "" {
+			http.Error(w, plan.Blocked, 409)
+			return
+		}
+
+		s.operation(w, r, &models.Op{Kind: "scene_render", SceneID: &sceneID, ProjectID: &projectID}, func(ctx context.Context) (any, error) {
+			approved := spend
+			if options.ConfirmedCalls != nil {
+				approved.Calls = *options.ConfirmedCalls
+			}
+			if options.ConfirmedSeconds != nil {
+				approved.Seconds = *options.ConfirmedSeconds
+			}
+			if options.ConfirmedStoryboardCalls != nil {
+				approved.Storyboards = *options.ConfirmedStoryboardCalls
+			}
+			ctx = context.WithValue(ctx, confirmedRenderSpendKey{}, approved)
+			return s.prepareAndRenderScene(context.WithValue(ctx, confirmedRenderPlanKey{}, plan.ID), projectID, sceneID, options.NewVersion)
+		})
+		return
+	}
+	unlock, e := s.lockSceneRender(sceneID)
+	if e != nil {
+		http.Error(w, e.Error(), 409)
+		return
+	}
+	defer unlock()
+	ctx := r.Context()
+	if options.UseSceneCast {
+		ctx = guidedStoryContext(ctx, projectID, nil)
+	}
 	stage := "submitted"
 	progress := "Whole scene render queued"
 	job := &models.RenderJob{
@@ -377,8 +448,15 @@ func (s *Server) handleRenderScene(w http.ResponseWriter, r *http.Request) {
 		Progress:    &progress,
 		RequestJSON: []byte(fmt.Sprintf(`{"scene_id":"%s"}`, scene.ID)),
 	}
-	if err := s.prepareDirectorVideoJob(r.Context(), job); err != nil {
+	if err := s.prepareDirectorVideoJob(ctx, job); err != nil {
 		http.Error(w, err.Error(), 400)
+		return
+	}
+	if existing, e := s.existingSceneRender(job, options.NewVersion); e != nil {
+		http.Error(w, e.Error(), 409)
+		return
+	} else if existing != nil {
+		writeJSON(w, 202, map[string]any{"job_id": existing.ID, "status": existing.Status, "reused": true})
 		return
 	}
 	if err := s.database.CreateRenderJob(job); err != nil {
@@ -401,30 +479,18 @@ func (s *Server) handleStoryboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.operation(w, r, &models.Op{Kind: "storyboard", SceneID: &sceneID, ProjectID: scene.ProjectID}, func(ctx context.Context) (any, error) {
-		refs, err := s.sceneReferences(scene)
-		if err != nil {
-			return nil, err
-		}
-		assets, err := s.generateAssets(ctx, scene.ProjectID, nil, scene.ID, scene.Title+" storyboard", "storyboard", "Storyboard keyframe of "+scene.Title+". "+scene.Summary+"\n"+sceneBrief(scene).prompt(), scene.AspectRatio, refs)
-		if err != nil {
-			return nil, err
-		}
-		ids := []string{}
-		_ = json.Unmarshal(scene.AssetIDsJSON, &ids)
-		for _, asset := range assets {
-			ids = append(ids, asset.ID)
-		}
-		scene.AssetIDsJSON, _ = json.Marshal(ids)
-		if err = s.database.UpdateScene(scene); err != nil {
-			return nil, err
-		}
-		return map[string]any{"scene_id": scene.ID, "asset_id": assets[0].ID, "storyboard_url": "/" + assets[0].FilePath}, nil
+		return s.generateMatchingStoryboard(ctx, scene)
 	})
 }
 
 func (s *Server) handlePlanSceneAssets(w http.ResponseWriter, r *http.Request) {
 	scene, err := s.database.GetScene(chi.URLParam(r, "id"))
 	if err != nil {
+		http.Error(w, "scene not found", 404)
+		return
+	}
+	project, projectErr := s.activeProjectID(r.Context())
+	if projectErr != nil || scene.ProjectID == nil || *scene.ProjectID != project {
 		http.Error(w, "scene not found", 404)
 		return
 	}
@@ -447,42 +513,45 @@ func (s *Server) handleGenerateSceneAssets(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "scene not found", 404)
 		return
 	}
+	project, projectErr := s.activeProjectID(r.Context())
+	if projectErr != nil || scene.ProjectID == nil || *scene.ProjectID != project {
+		http.Error(w, "scene not found", 404)
+		return
+	}
 	var body struct {
-		Instruction string `json:"instruction"`
-		MaxAssets   int    `json:"max_assets"`
+		Instruction string         `json:"instruction"`
+		MaxAssets   int            `json:"max_assets"`
+		Items       []plannedAsset `json:"items"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	s.operation(w, r, &models.Op{Kind: "assets", SceneID: &sceneID, ProjectID: scene.ProjectID}, func(ctx context.Context) (any, error) {
-		plan, err := s.planAssets(ctx, scene, body.Instruction, body.MaxAssets)
+		plan := &assetPlan{Assets: body.Items}
+		var err error
+		if len(body.Items) == 0 {
+			plan, err = s.planAssets(ctx, scene, body.Instruction, body.MaxAssets)
+		}
 		if err != nil {
 			return nil, err
 		}
-		assets := []models.Asset{}
-		ids := []string{}
-		existing := []string{}
-		_ = json.Unmarshal(scene.AssetIDsJSON, &existing)
-		for _, item := range plan.Assets {
-			generated, err := s.generateAssets(ctx, scene.ProjectID, nil, scene.ID, item.Name, item.Type, item.Description, "1:1", nil)
-			if err != nil {
-				return nil, err
-			}
-			assets = append(assets, generated...)
-			for _, asset := range generated {
-				ids = append(ids, asset.ID)
-				existing = append(existing, asset.ID)
-			}
+		if len(plan.Assets) > 10 {
+			return nil, fmt.Errorf("too many asset requests")
 		}
-		scene.AssetIDsJSON, _ = json.Marshal(existing)
-		if err = s.database.UpdateScene(scene); err != nil {
+		assets, err := s.materializeStoryAssets(ctx, scene, plan)
+		if err != nil {
 			return nil, err
 		}
+		ids := []string{}
+		for _, asset := range assets {
+			ids = append(ids, asset.ID)
+		}
+
 		return map[string]any{"scene_id": scene.ID, "asset_ids": ids, "assets": assets}, nil
 	})
 }
 
 func (s *Server) sceneReferences(scene *models.Scene) ([]string, error) {
-	assetIDs := sceneBrief(scene).ReferenceAssetIDs
-	if len(assetIDs) == 0 {
+	assetIDs := []string{}
+	{
 		var characterIDs []string
 		json.Unmarshal(scene.CharacterIDsJSON, &characterIDs)
 		if _, err := s.characterNotes(scene.ProjectID, scene.CharacterIDsJSON); err != nil {
@@ -498,6 +567,7 @@ func (s *Server) sceneReferences(scene *models.Scene) ([]string, error) {
 			assetIDs = append(assetIDs, ids...)
 		}
 	}
+	assetIDs = append(assetIDs, s.sceneBoundAssets(scene)...)
 	refs := []string{}
 	seen := map[string]bool{}
 	for _, id := range assetIDs {

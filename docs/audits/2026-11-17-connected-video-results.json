@@ -1,0 +1,109 @@
+{
+  "connected": {
+    "checks": [
+      "1440: native audio bypasses saved voice setup and shows one eight-second paid call without generating on read",
+      "1440: saved-voice mode alone blocks missing voice setup; switching back neither clones nor replaces a voice",
+      "1440: separate shots disclose three paid calls, twelve generated seconds and four seconds of edit padding; option saves do not generate",
+      "1440: render submits the exact displayed plan once and links directly to assembly/music",
+      "1440: completed clips reuse without charge; explicit paid-version selection submits the displayed cap and resets after one action",
+      "1440: assembly retains portrait format, three clip positions and the eight-second edit instead of concatenating versions",
+      "1440: music gain/fades and preserved clip audio survive Save and local export handoff",
+      "390: native audio bypasses saved voice setup and shows one eight-second paid call without generating on read",
+      "390: saved-voice mode alone blocks missing voice setup; switching back neither clones nor replaces a voice",
+      "390: separate shots disclose three paid calls, twelve generated seconds and four seconds of edit padding; option saves do not generate",
+      "390: render submits the exact displayed plan once and links directly to assembly/music",
+      "390: completed clips reuse without charge; explicit paid-version selection submits the displayed cap and resets after one action",
+      "390: assembly retains portrait format, three clip positions and the eight-second edit instead of concatenating versions",
+      "390: music gain/fades and preserved clip audio survive Save and local export handoff"
+    ],
+    "errors": [],
+    "axe": [
+      {
+        "width": 1440,
+        "screen": "production",
+        "violations": []
+      },
+      {
+        "width": 1440,
+        "screen": "composition",
+        "violations": []
+      },
+      {
+        "width": 390,
+        "screen": "production",
+        "violations": []
+      },
+      {
+        "width": 390,
+        "screen": "composition",
+        "violations": []
+      }
+    ]
+  },
+  "saved_voices": {
+    "checks": [
+      "1440: historical voice error opens one all-speaker setup card in chat, keeping the existing Pip voice",
+      "1440: configure a private key and match both missing voices without synthesis, render or credential leakage",
+      "1440: one combined confirmation saves all missing voices and queues render in the same conversation",
+      "1440: saved setup and conversation survive reload without replaying generation",
+      "390: historical voice error opens one all-speaker setup card in chat, keeping the existing Pip voice",
+      "390: configure a private key and match both missing voices without synthesis, render or credential leakage",
+      "390: concurrent-change error keeps the entire batch unsaved and prevents render until rechecked",
+      "390: one combined confirmation saves all missing voices and queues render in the same conversation",
+      "390: saved setup and conversation survive reload without replaying generation"
+    ],
+    "errors": [],
+    "axe": [
+      {
+        "width": 1440,
+        "violations": []
+      },
+      {
+        "width": 390,
+        "violations": []
+      }
+    ]
+  },
+  "render_progress": {
+    "checks": [
+      "1440: queued preview skeleton and gentle animated waiting state",
+      "1440: live job events update generating/saving stages without invented percentages",
+      "1440: failed and uncertain jobs stop animation and retain actionable status",
+      "1440: read failure recovers without rerunning generation; completed state has no loading motion",
+      "1440: completed job replaces the skeleton with the real saved video preview",
+      "1440: closing the inspector removes its live subscription",
+      "390: queued preview skeleton and static reduced-motion waiting state",
+      "390: live job events update generating/saving stages without invented percentages",
+      "390: failed and uncertain jobs stop animation and retain actionable status",
+      "390: read failure recovers without rerunning generation; completed state has no loading motion",
+      "390: completed job replaces the skeleton with the real saved video preview",
+      "390: closing the inspector removes its live subscription"
+    ],
+    "errors": [],
+    "axe": [
+      {
+        "width": 1440,
+        "violations": []
+      },
+      {
+        "width": 390,
+        "violations": []
+      }
+    ]
+  },
+  "totals": {
+    "browser_checks": 35,
+    "accessibility_scans": 8
+  },
+  "offline_audio_export": {
+    "has_audio": true,
+    "source_mean_db": -21.1,
+    "export_middle_mean_db": -37.6,
+    "gain_delta_db": -16.5,
+    "fade_in_mean_db": -54.4,
+    "fade_out_mean_db": -62.4,
+    "duration": 4,
+    "network": "disabled",
+    "provider_calls": 0
+  }
+}

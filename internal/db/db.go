@@ -3,9 +3,11 @@ package db
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -54,6 +56,12 @@ func Open(databasePath string) (*DB, error) {
 		return nil, err
 	}
 	if err := d.ensureMediaProviders(); err != nil {
+		return nil, err
+	}
+	if err := d.ensureRenderCleanup(); err != nil {
+		return nil, err
+	}
+	if err := d.ensureCosts(); err != nil {
 		return nil, err
 	}
 	if err := d.ensureRequestReplay(); err != nil {
@@ -318,7 +326,16 @@ func (d *DB) GetActiveProject() (*models.Project, error) {
 }
 
 func (d *DB) ListProjects() ([]models.Project, error) {
-	rows, err := d.conn.Query("SELECT id, name, description, is_active, created_at, updated_at FROM projects ORDER BY created_at DESC")
+	rows, err := d.conn.Query(`
+ SELECT p.id, p.name, p.description, p.is_active, p.created_at, p.updated_at,
+ (SELECT COUNT(*) FROM scenes WHERE project_id = p.id),
+ (SELECT COUNT(*) FROM characters WHERE project_id = p.id),
+ (SELECT COUNT(*) FROM assets WHERE project_id = p.id),
+ COALESCE((SELECT file_path FROM assets WHERE project_id = p.id
+   AND (lower(file_path) LIKE '%.png' OR lower(file_path) LIKE '%.jpg' OR lower(file_path) LIKE '%.jpeg' OR lower(file_path) LIKE '%.webp')
+   ORDER BY CASE type WHEN 'storyboard' THEN 0 WHEN 'location' THEN 1 ELSE 2 END, created_at DESC LIMIT 1), '')
+ FROM projects p ORDER BY p.created_at DESC
+ `)
 	if err != nil {
 		return nil, err
 	}
@@ -328,13 +345,15 @@ func (d *DB) ListProjects() ([]models.Project, error) {
 	for rows.Next() {
 		var p models.Project
 		var isAct int
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &isAct, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		var counts models.ProjectCounts
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &isAct, &p.CreatedAt, &p.UpdatedAt, &counts.Scenes, &counts.Characters, &counts.Assets, &p.Cover); err != nil {
 			return nil, err
 		}
+		p.Counts = &counts
 		p.IsActive = isAct == 1
 		projects = append(projects, p)
 	}
-	return projects, nil
+	return projects, rows.Err()
 }
 
 func (d *DB) GetProject(id string) (*models.Project, error) {
@@ -375,9 +394,49 @@ func (d *DB) UpdateProject(id, name, description string) error {
 	return err
 }
 
+var ErrProjectBusy = errors.New("project has work in progress; wait for it to finish before deleting")
+
 func (d *DB) DeleteProject(id string) error {
-	_, err := d.conn.Exec("DELETE FROM projects WHERE id = ?", id)
-	return err
+	tx, err := d.conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var active, busy bool
+	err = tx.QueryRow(`SELECT is_active,
+ EXISTS(SELECT 1 FROM ops WHERE project_id=? AND status='running') OR
+ EXISTS(SELECT 1 FROM render_jobs WHERE project_id=? AND status IN ('pending','queued','submitted','running','reconciliation_required')) OR
+ EXISTS(SELECT 1 FROM voice_tasks WHERE project_id=? AND status IN ('submitting','queued','running','uncertain')) OR
+ EXISTS(SELECT 1 FROM director_sessions WHERE project_id=? AND status='running')
+ FROM projects WHERE id=?`, id, id, id, id, id).Scan(&active, &busy)
+	if err != nil {
+		return err
+	}
+	if busy {
+		return ErrProjectBusy
+	}
+	for _, query := range []string{"DELETE FROM ops WHERE project_id=?", "DELETE FROM agent_settings WHERE project_id=?", "DELETE FROM projects WHERE id=?"} {
+		if _, err = tx.Exec(query, id); err != nil {
+			return err
+		}
+	}
+	if active {
+		res, err := tx.Exec(`UPDATE projects SET is_active=1 WHERE id=(SELECT id FROM projects ORDER BY updated_at DESC,id LIMIT 1)`)
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			now := time.Now().UTC()
+			if _, err = tx.Exec(`INSERT INTO projects(id,name,description,is_active,created_at,updated_at) VALUES(?, 'Default Project','Default workspace',1,?,?)`, "project_"+uuid.New().String()[:8], now, now); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
 }
 
 func (d *DB) ActivateProject(id string) error {
@@ -456,7 +515,9 @@ func (d *DB) GetCharacter(id string) (*models.Character, error) {
 	return &c, nil
 }
 
-func (d *DB) CreateCharacter(c *models.Character) error {
+func (d *DB) CreateCharacter(c *models.Character) error { return insertCharacter(d.conn, c) }
+
+func insertCharacter(conn sqlExecutor, c *models.Character) error {
 	if c.ID == "" {
 		c.ID = "char_" + uuid.New().String()[:8]
 	}
@@ -477,7 +538,7 @@ func (d *DB) CreateCharacter(c *models.Character) error {
 		ra = "[]"
 	}
 
-	_, err := d.conn.Exec(`
+	_, err := conn.Exec(`
 		INSERT INTO characters (id, project_id, name, description, appearance, personality, visual_rules_json, voice_rules_json, sample_dialogue, reference_asset_ids_json, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, c.ID, c.ProjectID, c.Name, c.Description, c.Appearance, c.Personality, vr, vor, c.SampleDialogue, ra, now, now)
@@ -638,6 +699,7 @@ func (d *DB) UpdateScene(s *models.Scene) error {
 }
 
 func (d *DB) DeleteScene(id string) error {
+	d.syncCostsFor("scenes", id)
 	_, err := d.conn.Exec("DELETE FROM scenes WHERE id = ?", id)
 	return err
 }
@@ -908,6 +970,7 @@ func (d *DB) UpdateAsset(a *models.Asset) error {
 }
 
 func (d *DB) DeleteAsset(id string) error {
+	d.syncCostsFor("assets", id)
 	_, err := d.conn.Exec("DELETE FROM assets WHERE id = ?", id)
 	return err
 }
@@ -968,6 +1031,24 @@ func (d *DB) GetStyleGuide(projectID string) (*models.StyleGuide, error) {
 }
 
 func (d *DB) UpsertStyleGuide(s *models.StyleGuide) error {
+	if s.ProjectID == nil {
+		return fmt.Errorf("style project is required")
+	}
+	if s.ID != "" {
+		var owner string
+		err := d.conn.QueryRow(`SELECT project_id FROM style_guides WHERE id=?`, s.ID).Scan(&owner)
+		if err == nil && owner != *s.ProjectID {
+			return fmt.Errorf("style belongs to another project")
+		}
+	}
+	if existing, err := d.GetStyleGuide(*s.ProjectID); err == nil {
+		s.ID = existing.ID
+		s.CreatedAt = existing.CreatedAt
+	}
+	return upsertStyleGuide(d.conn, s)
+}
+
+func upsertStyleGuide(conn sqlExecutor, s *models.StyleGuide) error {
 	now := time.Now().UTC()
 	if s.ID == "" {
 		s.ID = "style_" + uuid.New().String()[:8]
@@ -975,7 +1056,7 @@ func (d *DB) UpsertStyleGuide(s *models.StyleGuide) error {
 	}
 	s.UpdatedAt = now
 
-	_, err := d.conn.Exec(`
+	_, err := conn.Exec(`
 		INSERT INTO style_guides (id, project_id, name, style_prompt, palette, lighting, audience, tone, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
@@ -1213,7 +1294,7 @@ func (d *DB) ListOps(projectID string, limit int) ([]models.Op, error) {
 }
 
 func (d *DB) ListOpsFiltered(projectID, kind string, limit int) ([]models.Op, error) {
-	if limit <= 0 {
+	if limit <= 0 && limit != -1 {
 		limit = 20
 	}
 	query := "SELECT id, kind, status, scene_id, output_id, project_id, error, result_json, created_at, updated_at FROM ops WHERE 1=1"
@@ -1271,13 +1352,21 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 	edges := []models.GraphEdge{}
 
 	// Characters
+	activeReferenceIDs := map[string]map[string]bool{}
 	chars, err := d.ListCharacters(projectID)
 	if err == nil {
 		for _, c := range chars {
+			refs := []string{}
+			json.Unmarshal(c.ReferenceAssetIDsJSON, &refs)
+			activeReferenceIDs[c.ID] = map[string]bool{}
+			for _, id := range refs {
+				activeReferenceIDs[c.ID][id] = true
+			}
 			nodes = append(nodes, models.GraphNode{
 				ID:    c.ID,
 				Type:  "character",
 				Label: c.Name,
+				Data:  map[string]interface{}{"reference_asset_ids_json": c.ReferenceAssetIDsJSON},
 			})
 		}
 	}
@@ -1286,16 +1375,26 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 	assets, err := d.ListAssets(projectID)
 	if err == nil {
 		for _, a := range assets {
+			// Finished edited exports are deliverables (Videos → Edited videos), not story building blocks.
+			if a.Type == "output_video" {
+				continue
+			}
+			var review struct {
+				Status string `json:"consistency_review"`
+			}
+			json.Unmarshal(a.MetadataJSON, &review)
 			nodes = append(nodes, models.GraphNode{
 				ID:    a.ID,
 				Type:  "asset",
 				Label: a.Name,
 				Data: map[string]interface{}{
-					"file_path":  a.FilePath,
-					"asset_type": a.Type,
+					"file_path":          a.FilePath,
+					"asset_type":         a.Type,
+					"consistency_review": review.Status,
 				},
 			})
-			if a.CharacterID != nil && *a.CharacterID != "" {
+			activeReference := a.CharacterID != nil && activeReferenceIDs[*a.CharacterID][a.ID]
+			if activeReference {
 				edges = append(edges, models.GraphEdge{
 					Source: *a.CharacterID,
 					Target: a.ID,
@@ -1358,7 +1457,7 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 				nodes = append(nodes, models.GraphNode{
 					ID:    sh.ID,
 					Type:  "shot",
-					Label: fmt.Sprintf("#%d %s", sh.ShotOrder+1, sh.Prompt),
+					Label: fmt.Sprintf("#%d %s", sh.ShotOrder, displayPrompt(sh.Prompt)),
 					Data: map[string]interface{}{
 						"scene_id":   sh.SceneID,
 						"shot_order": sh.ShotOrder,
@@ -1388,9 +1487,13 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 	}
 
 	// RenderJobs & RenderOutputs
-	jobs, err := d.ListRenderJobs(projectID)
+	jobs, err := d.ShownRenderJobs(projectID)
 	if err == nil {
 		for _, j := range jobs {
+			var request struct {
+				Unit json.RawMessage `json:"render_unit"`
+			}
+			_ = json.Unmarshal(j.RequestJSON, &request)
 			modelName := j.Model
 			if idx := strings.LastIndex(modelName, "/"); idx >= 0 {
 				modelName = modelName[idx+1:]
@@ -1400,7 +1503,10 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 				Type:  "render_job",
 				Label: fmt.Sprintf("%s (%s)", j.Status, modelName),
 				Data: map[string]interface{}{
-					"status": j.Status,
+					"status":      j.Status,
+					"render_unit": request.Unit,
+					"scene_id":    j.SceneID,
+					"shot_id":     j.ShotID,
 				},
 			})
 			parentID := ""
@@ -1466,8 +1572,20 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 		knownNodes[n.ID] = true
 	}
 	validEdges := []models.GraphEdge{}
+	used := map[string]bool{}
 	for _, e := range edges {
-		if knownNodes[e.Source] && knownNodes[e.Target] {
+		if e.Label == "uses" {
+			used[e.Source+"\x00"+e.Target] = true
+		}
+	}
+	seen := map[string]bool{}
+	for _, e := range edges {
+		pair := e.Source + "\x00" + e.Target
+		key := pair + "\x00" + e.Label
+		// A current usage supersedes generation provenance on the same pair.
+		provenance := e.Label == "storyboard" || e.Label == "prop" || e.Label == "location" || e.Label == "background" || e.Label == "other"
+		if knownNodes[e.Source] && knownNodes[e.Target] && !seen[key] && !(provenance && used[pair]) {
+			seen[key] = true
 			validEdges = append(validEdges, e)
 		}
 	}
@@ -1687,24 +1805,6 @@ func (d *DB) UpdateRenderOutput(o *models.RenderOutput) error {
 	return nil
 }
 
-func (d *DB) SelectRenderOutput(id string, selected bool) error {
-	tx, err := d.conn.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	now := time.Now().UTC()
-	if selected {
-		if _, err = tx.Exec(`UPDATE render_outputs SET selected=0,updated_at=? WHERE render_job_id=(SELECT render_job_id FROM render_outputs WHERE id=?)`, now, id); err != nil {
-			return err
-		}
-	}
-	if _, err = tx.Exec(`UPDATE render_outputs SET selected=?,updated_at=? WHERE id=?`, selected, now, id); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
 // --- Shots Reorder & Scene/Shot Associations ---
 
 func (d *DB) ReorderShots(sceneID string, orderedIDs []string) error {
@@ -1820,3 +1920,23 @@ func (d *DB) GetRevision(id string) (*models.Revision, error) {
 	r.SnapshotJSON = []byte(snap)
 	return &r, nil
 }
+
+// CreateRenderJobs commits a confirmed batch before any unit is enqueued.
+func (d *DB) CreateRenderJobs(jobs []*models.RenderJob) error {
+	tx, err := d.conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, j := range jobs {
+		if err = insertRenderJob(tx, j); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// Prompts keep internal IDs for generation; canvas labels show readable text only.
+var internalIDMention = regexp.MustCompile(`\s*\((?:char|asset|scene|shot)_[0-9a-f]{6,}\)`)
+
+func displayPrompt(prompt string) string { return internalIDMention.ReplaceAllString(prompt, "") }

@@ -1,0 +1,167 @@
+package api
+
+import (
+	"encoding/json"
+	"strings"
+
+	"videoflow-go/internal/models"
+	"videoflow-go/internal/seedance"
+)
+
+// How a scene's clips are given pictures. In reference mode the pictures connected to the
+// scene (its cast, places and props) go to the video model as references, the way
+// Seedance's own canvas connects them; in first-frame mode a storyboard picture of the
+// opening is made first and the clip starts from it.
+const (
+	inputReferences = "references"
+	inputFirstFrame = "first_frame"
+)
+
+// The guides advise against using a model's whole reference allowance: 4-5 pictures,
+// characters first, keep the model sure of what matters.
+const (
+	maxReferencePictures   = 6
+	maxReferenceCharacters = 3
+	maxReferencePlaces     = 2
+	maxReferenceProps      = 1
+)
+
+// referencePicture is one picture a clip is sent, in the order the prompt numbers them.
+type referencePicture struct {
+	AssetID string `json:"asset_id"`
+	Name    string `json:"name"`
+	Kind    string `json:"kind"` // character, place or prop
+	Sheet   bool   `json:"sheet,omitempty"`
+}
+
+// referencePictures are the pictures a clip of the scene is sent. With a unit, only the
+// characters named in that clip's shots or speaking in it are included, so nobody absent
+// from the clip is put into it. limit is the model's own maximum.
+func (s *Server) referencePictures(scene *models.Scene, unit *renderUnit, limit int) []referencePicture {
+	if limit > maxReferencePictures {
+		limit = maxReferencePictures
+	}
+	usable := func(id string) *models.Asset {
+		asset, err := s.database.GetAsset(id)
+		if err != nil || asset.ProjectID == nil || *asset.ProjectID != *scene.ProjectID || !imageAsset(asset.FilePath) || !models.ReferenceApproved(asset.MetadataJSON) {
+			return nil
+		}
+		return asset
+	}
+	inClip := func(string) bool { return true }
+	if unit != nil {
+		said := ""
+		mine := map[string]bool{}
+		for _, id := range unit.ShotIDs {
+			mine[id] = true
+			if shot, err := s.database.GetShot(id); err == nil {
+				said += " " + strings.ToLower(shot.Prompt)
+			}
+		}
+		var script struct {
+			Lines []SpokenLine `json:"spoken_lines"`
+		}
+		_ = json.Unmarshal(scene.SceneJSON, &script)
+		speakers := map[string]bool{}
+		for _, line := range script.Lines {
+			if mine[sceneProduction(scene).DialogueShots[line.ID]] {
+				speakers[line.CharacterID] = true
+			}
+		}
+		inClip = func(key string) bool {
+			id, name, _ := strings.Cut(key, "\x00")
+			return speakers[id] || strings.Contains(said, strings.ToLower(name))
+		}
+	}
+
+	out := []referencePicture{}
+	cast := []string{}
+	_ = json.Unmarshal(scene.CharacterIDsJSON, &cast)
+	cast = append(cast, sceneBrief(scene).CharacterIDs...)
+	seen := map[string]bool{}
+	characters := 0
+	for _, id := range cast {
+		character, err := s.database.GetCharacter(id)
+		if err != nil || character == nil || seen[id] || characters == maxReferenceCharacters || !inClip(id+"\x00"+character.Name) {
+			continue
+		}
+		seen[id] = true
+		refs := []string{}
+		_ = json.Unmarshal(character.ReferenceAssetIDsJSON, &refs)
+		for _, ref := range refs {
+			if asset := usable(ref); asset != nil {
+				out = append(out, referencePicture{AssetID: asset.ID, Name: character.Name, Kind: "character", Sheet: asset.Type == "character_reference"})
+				characters++
+				break
+			}
+		}
+	}
+	places, props := 0, 0
+	for _, id := range s.sceneBoundAssets(scene) {
+		asset := usable(id)
+		if asset == nil || seen[id] {
+			continue
+		}
+		seen[id] = true
+		switch {
+		case asset.Type == "location" && places < maxReferencePlaces:
+			out = append(out, referencePicture{AssetID: asset.ID, Name: asset.Name, Kind: "place"})
+			places++
+		case asset.Type == "prop" && props < maxReferenceProps:
+			out = append(out, referencePicture{AssetID: asset.ID, Name: asset.Name, Kind: "prop"})
+			props++
+		}
+	}
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}
+
+// clipReferences reads the pictures a frozen clip request is sent with.
+func clipReferences(payload map[string]any) []seedance.Reference {
+	raw, _ := json.Marshal(payload["reference_pictures"])
+	var pictures []referencePicture
+	_ = json.Unmarshal(raw, &pictures)
+	out := []seedance.Reference{}
+	for _, p := range pictures {
+		out = append(out, seedance.Reference{Kind: p.Kind, Name: p.Name, Sheet: p.Sheet})
+	}
+	return out
+}
+
+// attachReferencePictures puts a reference-mode clip's pictures into its request: the
+// files in image_urls, in order, and what each one is in reference_pictures, which the
+// prompt writer binds to @Image 1, @Image 2, ... Nothing is attached for other clips.
+func (s *Server) attachReferencePictures(job *models.RenderJob, payload map[string]any, limit int) error {
+	if payload["video_input"] != inputReferences || job.SceneID == nil {
+		return nil
+	}
+	scene, err := s.database.GetScene(*job.SceneID)
+	if err != nil {
+		return err
+	}
+	unit := renderRequestUnit(job.RequestJSON)
+	var pictures []referencePicture
+	if len(unit.ShotIDs) > 0 {
+		pictures = s.referencePictures(scene, &unit, limit)
+	} else {
+		pictures = s.referencePictures(scene, nil, limit)
+	}
+	if len(pictures) == 0 {
+		// Nothing connected shows in this clip: it is made from the words alone.
+		delete(payload, "image_urls")
+		delete(payload, "reference_pictures")
+		return nil
+	}
+	files := []string{}
+	for _, p := range pictures {
+		asset, err := s.database.GetAsset(p.AssetID)
+		if err != nil {
+			return err
+		}
+		files = append(files, asset.FilePath) // turned into the picture itself just before sending
+	}
+	payload["image_urls"], payload["reference_pictures"] = files, pictures
+	return nil
+}

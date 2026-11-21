@@ -1,0 +1,720 @@
+{
+  "scope": "Draggable and right-docked assistant, 2026-11-16",
+  "expected_browser_checks": 123,
+  "reported_browser_checks": 123,
+  "checks": [
+    {
+      "id": "DW-001",
+      "name": "starts docked with canvas space reserved",
+      "status": "pass"
+    },
+    {
+      "id": "DW-002",
+      "name": "dragging the docked titlebar automatically undocks without losing the draft",
+      "status": "pass"
+    },
+    {
+      "id": "DW-003",
+      "name": "Float creates a modeless overlay and frees the canvas column",
+      "status": "pass"
+    },
+    {
+      "id": "DW-004",
+      "name": "pointer drag changes horizontal and vertical position",
+      "status": "pass"
+    },
+    {
+      "id": "DW-005",
+      "name": "titlebar background also drags without interfering with controls",
+      "status": "pass"
+    },
+    {
+      "id": "DW-006",
+      "name": "conversation controls and composer do not drag the window",
+      "status": "pass"
+    },
+    {
+      "id": "DW-007",
+      "name": "keyboard movement supports arrows, Shift and corners",
+      "status": "pass"
+    },
+    {
+      "id": "DW-008",
+      "name": "pointer dragging is clamped at every workspace edge",
+      "status": "pass"
+    },
+    {
+      "id": "DW-009",
+      "name": "pointer cancellation releases drag listeners",
+      "status": "pass"
+    },
+    {
+      "id": "DW-010",
+      "name": "floating left-edge resize keeps its right edge anchored",
+      "status": "pass"
+    },
+    {
+      "id": "DW-011",
+      "name": "expand and restore retain a reachable window",
+      "status": "pass"
+    },
+    {
+      "id": "DW-012",
+      "name": "Dock restores the right side without losing chat draft",
+      "status": "pass"
+    },
+    {
+      "id": "DW-013",
+      "name": "floating location and mode survive docking and reload",
+      "status": "pass"
+    },
+    {
+      "id": "DW-014",
+      "name": "workspace shrink clamps the window and keeps its header reachable",
+      "status": "pass"
+    },
+    {
+      "id": "DW-015",
+      "name": "mobile uses the single-pane assistant and keeps desktop preference",
+      "status": "pass"
+    },
+    {
+      "id": "DW-016",
+      "name": "returning to desktop restores floating mode and draft",
+      "status": "pass"
+    },
+    {
+      "id": "DW-017",
+      "name": "invalid saved layouts recover to a usable docked panel",
+      "status": "pass"
+    },
+    {
+      "id": "DW-018",
+      "name": "out-of-range saved positions recover inside the workspace",
+      "status": "pass"
+    },
+    {
+      "id": "WS-001",
+      "mode": "desktop",
+      "name": "canvas is the default and obsolete view toggle is absent",
+      "status": "pass"
+    },
+    {
+      "id": "WS-002",
+      "mode": "desktop",
+      "name": "floating assistant closes and restores its draft without navigation",
+      "status": "pass"
+    },
+    {
+      "id": "WS-003",
+      "mode": "desktop",
+      "name": "reference welcome cards fill the composer without sending",
+      "status": "pass"
+    },
+    {
+      "id": "WS-004",
+      "mode": "desktop",
+      "name": "shared creator opens without navigation and protects typed draft",
+      "status": "pass"
+    },
+    {
+      "id": "WS-005",
+      "mode": "desktop",
+      "name": "Library is a drawer over the current workspace",
+      "status": "pass"
+    },
+    {
+      "id": "WS-006",
+      "mode": "desktop",
+      "name": "Library tabs and keyboard navigation preserve a character edit",
+      "status": "pass"
+    },
+    {
+      "id": "WS-007",
+      "mode": "desktop",
+      "name": "closing Library protects drafts and restores workspace",
+      "status": "pass"
+    },
+    {
+      "id": "WS-008",
+      "mode": "desktop",
+      "name": "Story uses saved scenes and hides future tools",
+      "status": "pass"
+    },
+    {
+      "id": "WS-009",
+      "mode": "desktop",
+      "name": "all stages can be inspected without running and video is blocked without shots",
+      "status": "pass"
+    },
+    {
+      "id": "WS-010",
+      "mode": "desktop",
+      "name": "scene draft survives view switch and stage collapse",
+      "status": "pass"
+    },
+    {
+      "id": "WS-011",
+      "mode": "desktop",
+      "name": "scene navigation still protects unsaved edits",
+      "status": "pass"
+    },
+    {
+      "id": "WS-012",
+      "mode": "desktop",
+      "name": "partial story reveals storyboard and keeps earlier stage recall",
+      "status": "pass"
+    },
+    {
+      "id": "WS-013",
+      "mode": "desktop",
+      "name": "saved storyboard is detected on first load, rendering still explicit",
+      "status": "pass"
+    },
+    {
+      "id": "WS-014",
+      "mode": "desktop",
+      "name": "stage page accessibility and mobile overflow",
+      "status": "pass"
+    },
+    {
+      "id": "WS-015",
+      "mode": "desktop",
+      "name": "finished scene keeps all earlier stages accessible",
+      "status": "pass"
+    },
+    {
+      "id": "WS-016",
+      "mode": "desktop",
+      "name": "canvas selection exposes only contextual toolbar",
+      "status": "pass"
+    },
+    {
+      "id": "WS-017",
+      "mode": "desktop",
+      "name": "project summary remains available without competing workspace tab",
+      "status": "pass"
+    },
+    {
+      "id": "WS-018",
+      "mode": "desktop",
+      "name": "canvas accessibility and empty workspace",
+      "status": "pass"
+    },
+    {
+      "id": "WS-019",
+      "mode": "desktop",
+      "name": "legacy routes and full Library deep links stay usable",
+      "status": "pass"
+    },
+    {
+      "id": "WS-020",
+      "mode": "desktop",
+      "name": "scene load failure offers recovery without mutation",
+      "status": "pass"
+    },
+    {
+      "id": "WS-021",
+      "mode": "desktop",
+      "name": "opening Library from full editors avoids duplicate IDs",
+      "status": "pass"
+    },
+    {
+      "id": "WS-022",
+      "mode": "desktop",
+      "name": "Create story palette does not duplicate full-page creator",
+      "status": "pass"
+    },
+    {
+      "id": "WS-023",
+      "mode": "desktop",
+      "name": "saved scene assets remain reachable before shots after reload",
+      "status": "pass"
+    },
+    {
+      "id": "WS-024",
+      "mode": "desktop",
+      "name": "Canvas and Story save only changed fields and preserve each others work",
+      "status": "pass"
+    },
+    {
+      "id": "WS-025",
+      "mode": "mobile",
+      "name": "canvas is the default and obsolete view toggle is absent",
+      "status": "pass"
+    },
+    {
+      "id": "WS-026",
+      "mode": "mobile",
+      "name": "floating assistant closes and restores its draft without navigation",
+      "status": "pass"
+    },
+    {
+      "id": "WS-027",
+      "mode": "mobile",
+      "name": "reference welcome cards fill the composer without sending",
+      "status": "pass"
+    },
+    {
+      "id": "WS-028",
+      "mode": "mobile",
+      "name": "shared creator opens without navigation and protects typed draft",
+      "status": "pass"
+    },
+    {
+      "id": "WS-029",
+      "mode": "mobile",
+      "name": "Library is a drawer over the current workspace",
+      "status": "pass"
+    },
+    {
+      "id": "WS-030",
+      "mode": "mobile",
+      "name": "Library tabs and keyboard navigation preserve a character edit",
+      "status": "pass"
+    },
+    {
+      "id": "WS-031",
+      "mode": "mobile",
+      "name": "closing Library protects drafts and restores workspace",
+      "status": "pass"
+    },
+    {
+      "id": "WS-032",
+      "mode": "mobile",
+      "name": "Story uses saved scenes and hides future tools",
+      "status": "pass"
+    },
+    {
+      "id": "WS-033",
+      "mode": "mobile",
+      "name": "all stages can be inspected without running and video is blocked without shots",
+      "status": "pass"
+    },
+    {
+      "id": "WS-034",
+      "mode": "mobile",
+      "name": "scene draft survives view switch and stage collapse",
+      "status": "pass"
+    },
+    {
+      "id": "WS-035",
+      "mode": "mobile",
+      "name": "scene navigation still protects unsaved edits",
+      "status": "pass"
+    },
+    {
+      "id": "WS-036",
+      "mode": "mobile",
+      "name": "partial story reveals storyboard and keeps earlier stage recall",
+      "status": "pass"
+    },
+    {
+      "id": "WS-037",
+      "mode": "mobile",
+      "name": "saved storyboard is detected on first load, rendering still explicit",
+      "status": "pass"
+    },
+    {
+      "id": "WS-038",
+      "mode": "mobile",
+      "name": "stage page accessibility and mobile overflow",
+      "status": "pass"
+    },
+    {
+      "id": "WS-039",
+      "mode": "mobile",
+      "name": "finished scene keeps all earlier stages accessible",
+      "status": "pass"
+    },
+    {
+      "id": "WS-040",
+      "mode": "mobile",
+      "name": "canvas selection exposes only contextual toolbar",
+      "status": "pass"
+    },
+    {
+      "id": "WS-041",
+      "mode": "mobile",
+      "name": "project summary remains available without competing workspace tab",
+      "status": "pass"
+    },
+    {
+      "id": "WS-042",
+      "mode": "mobile",
+      "name": "canvas accessibility and empty workspace",
+      "status": "pass"
+    },
+    {
+      "id": "WS-043",
+      "mode": "mobile",
+      "name": "legacy routes and full Library deep links stay usable",
+      "status": "pass"
+    },
+    {
+      "id": "WS-044",
+      "mode": "mobile",
+      "name": "scene load failure offers recovery without mutation",
+      "status": "pass"
+    },
+    {
+      "id": "WS-045",
+      "mode": "mobile",
+      "name": "opening Library from full editors avoids duplicate IDs",
+      "status": "pass"
+    },
+    {
+      "id": "WS-046",
+      "mode": "mobile",
+      "name": "Create story palette does not duplicate full-page creator",
+      "status": "pass"
+    },
+    {
+      "id": "WS-047",
+      "mode": "mobile",
+      "name": "saved scene assets remain reachable before shots after reload",
+      "status": "pass"
+    },
+    {
+      "id": "WS-048",
+      "mode": "mobile",
+      "name": "Canvas and Story save only changed fields and preserve each others work",
+      "status": "pass"
+    },
+    {
+      "id": "CH-001",
+      "name": "1440: missing-session guidance and disabled submission",
+      "status": "pass"
+    },
+    {
+      "id": "CH-002",
+      "name": "1440: history error distinguished from empty and retry works",
+      "status": "pass"
+    },
+    {
+      "id": "CH-003",
+      "name": "1440: multiline input, failed-send recovery and explicit resubmission",
+      "status": "pass"
+    },
+    {
+      "id": "CH-004",
+      "name": "1440: prompt checkpoint restores text with draft protection and no replay",
+      "status": "pass"
+    },
+    {
+      "id": "CH-005",
+      "name": "1440: history reading position preserved, including near bottom, and jump to latest works",
+      "status": "pass"
+    },
+    {
+      "id": "CH-006",
+      "name": "1440: actionable proposal retained and never runs automatically",
+      "status": "pass"
+    },
+    {
+      "id": "CH-007",
+      "name": "1440: explicit specialist mode, truthful partial failure and saved review restoration",
+      "status": "pass"
+    },
+    {
+      "id": "CH-008",
+      "name": "1440: Stop cancels the active local review without generation",
+      "status": "pass"
+    },
+    {
+      "id": "CH-009",
+      "name": "390: missing-session guidance and disabled submission",
+      "status": "pass"
+    },
+    {
+      "id": "CH-010",
+      "name": "390: history error distinguished from empty and retry works",
+      "status": "pass"
+    },
+    {
+      "id": "CH-011",
+      "name": "390: multiline input, failed-send recovery and explicit resubmission",
+      "status": "pass"
+    },
+    {
+      "id": "CH-012",
+      "name": "390: prompt checkpoint restores text with draft protection and no replay",
+      "status": "pass"
+    },
+    {
+      "id": "CH-013",
+      "name": "390: history reading position preserved, including near bottom, and jump to latest works",
+      "status": "pass"
+    },
+    {
+      "id": "CH-014",
+      "name": "390: actionable proposal retained and never runs automatically",
+      "status": "pass"
+    },
+    {
+      "id": "CH-015",
+      "name": "390: explicit specialist mode, truthful partial failure and saved review restoration",
+      "status": "pass"
+    },
+    {
+      "id": "CH-016",
+      "name": "390: Stop cancels the active local review without generation",
+      "status": "pass"
+    },
+    {
+      "id": "CV-001",
+      "name": "1440: shared creator, project menu, draft-safe layout controls",
+      "status": "pass"
+    },
+    {
+      "id": "CV-002",
+      "name": "1440: finder, type filter, empty search and undo arrange",
+      "status": "pass"
+    },
+    {
+      "id": "CV-003",
+      "name": "1440: cancelled selection preserves dirty draft",
+      "status": "pass"
+    },
+    {
+      "id": "CV-004",
+      "name": "1440: Cancel restores latest saved baseline",
+      "status": "pass"
+    },
+    {
+      "id": "CV-005",
+      "name": "1440: scene edit/save",
+      "status": "pass"
+    },
+    {
+      "id": "CV-006",
+      "name": "1440: shot editor opens",
+      "status": "pass"
+    },
+    {
+      "id": "CV-007",
+      "name": "1440: chat draft persists, chips fill only, selected ID sent",
+      "status": "pass"
+    },
+    {
+      "id": "CV-008",
+      "name": "1440: character edits inline with correct data",
+      "status": "pass"
+    },
+    {
+      "id": "CV-009",
+      "name": "1440: asset identity editor link",
+      "status": "pass"
+    },
+    {
+      "id": "CV-010",
+      "name": "1440: context menu visible and Escape closes",
+      "status": "pass"
+    },
+    {
+      "id": "CV-011",
+      "name": "1440: node drag persists position",
+      "status": "pass"
+    },
+    {
+      "id": "CV-012",
+      "name": "1440: canvas follows application theme",
+      "status": "pass"
+    },
+    {
+      "id": "CV-013",
+      "name": "1440: removable composer context clears canvas selection",
+      "status": "pass"
+    },
+    {
+      "id": "CV-014",
+      "name": "390: shared creator, project menu, draft-safe layout controls",
+      "status": "pass"
+    },
+    {
+      "id": "CV-015",
+      "name": "390: finder, type filter, empty search and undo arrange",
+      "status": "pass"
+    },
+    {
+      "id": "CV-016",
+      "name": "390: cancelled selection preserves dirty draft",
+      "status": "pass"
+    },
+    {
+      "id": "CV-017",
+      "name": "390: Cancel restores latest saved baseline",
+      "status": "pass"
+    },
+    {
+      "id": "CV-018",
+      "name": "390: scene edit/save",
+      "status": "pass"
+    },
+    {
+      "id": "CV-019",
+      "name": "390: shot editor opens",
+      "status": "pass"
+    },
+    {
+      "id": "CV-020",
+      "name": "390: chat draft persists, chips fill only, selected ID sent",
+      "status": "pass"
+    },
+    {
+      "id": "CV-021",
+      "name": "390: character edits inline with correct data",
+      "status": "pass"
+    },
+    {
+      "id": "CV-022",
+      "name": "390: asset identity editor link",
+      "status": "pass"
+    },
+    {
+      "id": "CV-023",
+      "name": "390: context menu visible and Escape closes",
+      "status": "pass"
+    },
+    {
+      "id": "CV-024",
+      "name": "390: node drag persists position",
+      "status": "pass"
+    },
+    {
+      "id": "CV-025",
+      "name": "390: canvas follows application theme",
+      "status": "pass"
+    },
+    {
+      "id": "CV-026",
+      "name": "390: removable composer context clears canvas selection",
+      "status": "pass"
+    },
+    {
+      "id": "CD-001",
+      "name": "1440: character form is dialog-only, Escape closes empty form, dirty dismissal preserves draft",
+      "status": "pass"
+    },
+    {
+      "id": "CD-002",
+      "name": "1440: character error stays editable and successful create closes into updated list",
+      "status": "pass"
+    },
+    {
+      "id": "CD-003",
+      "name": "1440: asset dialog preserves file/type/link through cancel and error, then closes on upload",
+      "status": "pass"
+    },
+    {
+      "id": "CD-004",
+      "name": "1440: empty chat has one starting action without repeated helper copy",
+      "status": "pass"
+    },
+    {
+      "id": "CD-005",
+      "name": "1440: custom brand SVG, matching favicon and responsive layout",
+      "status": "pass"
+    },
+    {
+      "id": "CD-006",
+      "name": "390: character form is dialog-only, Escape closes empty form, dirty dismissal preserves draft",
+      "status": "pass"
+    },
+    {
+      "id": "CD-007",
+      "name": "390: character error stays editable and successful create closes into updated list",
+      "status": "pass"
+    },
+    {
+      "id": "CD-008",
+      "name": "390: asset dialog preserves file/type/link through cancel and error, then closes on upload",
+      "status": "pass"
+    },
+    {
+      "id": "CD-009",
+      "name": "390: empty chat has one starting action without repeated helper copy",
+      "status": "pass"
+    },
+    {
+      "id": "CD-010",
+      "name": "390: custom brand SVG, matching favicon and responsive layout",
+      "status": "pass"
+    },
+    {
+      "id": "CD-011",
+      "name": "320: character form is dialog-only, Escape closes empty form, dirty dismissal preserves draft",
+      "status": "pass"
+    },
+    {
+      "id": "CD-012",
+      "name": "320: character error stays editable and successful create closes into updated list",
+      "status": "pass"
+    },
+    {
+      "id": "CD-013",
+      "name": "320: asset dialog preserves file/type/link through cancel and error, then closes on upload",
+      "status": "pass"
+    },
+    {
+      "id": "CD-014",
+      "name": "320: empty chat has one starting action without repeated helper copy",
+      "status": "pass"
+    },
+    {
+      "id": "CD-015",
+      "name": "320: custom brand SVG, matching favicon and responsive layout",
+      "status": "pass"
+    }
+  ],
+  "accessibility_scans": [
+    {
+      "name": "floating desktop",
+      "violations": []
+    },
+    {
+      "name": "docked desktop",
+      "violations": []
+    },
+    {
+      "name": "mobile assistant",
+      "violations": []
+    },
+    {
+      "mode": "desktop",
+      "name": "assistant welcome",
+      "violations": []
+    },
+    {
+      "mode": "desktop",
+      "name": "scene stages",
+      "violations": []
+    },
+    {
+      "mode": "desktop",
+      "name": "canvas",
+      "violations": []
+    },
+    {
+      "mode": "mobile",
+      "name": "assistant welcome",
+      "violations": []
+    },
+    {
+      "mode": "mobile",
+      "name": "scene stages",
+      "violations": []
+    },
+    {
+      "mode": "mobile",
+      "name": "canvas",
+      "violations": []
+    }
+  ],
+  "geometry_assertions": 10,
+  "remaining_ids": [],
+  "unverified": [
+    "Live paid provider generation and native AI inference",
+    "Real iOS/Safari and screen-reader operation"
+  ]
+}

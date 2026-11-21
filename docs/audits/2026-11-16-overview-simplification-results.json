@@ -1,0 +1,240 @@
+{
+  "browserChecks": 32,
+  "dashboardChecks": 20,
+  "accessibilityScans": 12,
+  "suites": [
+    {
+      "suite": "confirmed",
+      "checks": [
+        {
+          "name": "desktop: empty project is oriented with true totals and a first action",
+          "status": "pass"
+        },
+        {
+          "name": "desktop: populated project has correct counts, recent work and resume action",
+          "status": "pass"
+        },
+        {
+          "name": "desktop: returning to a visible tab updates totals automatically",
+          "status": "pass"
+        },
+        {
+          "name": "desktop: recovery and pending references are actionable without any resubmission",
+          "status": "pass"
+        },
+        {
+          "name": "desktop: older interrupted generation opens the exact saved request",
+          "status": "pass"
+        },
+        {
+          "name": "desktop: required failure retains stale data and retries without false zeros",
+          "status": "pass"
+        },
+        {
+          "name": "desktop: unknown setup is not presented as unconfigured or ready",
+          "status": "pass"
+        },
+        {
+          "name": "desktop: canvas and chat drafts survive overview switching",
+          "status": "pass"
+        },
+        {
+          "name": "desktop: node editing draft survives refresh on returning to canvas",
+          "status": "pass"
+        },
+        {
+          "name": "desktop: recent links, quick actions and responsive layout",
+          "status": "pass"
+        },
+        {
+          "name": "mobile: empty project is oriented with true totals and a first action",
+          "status": "pass"
+        },
+        {
+          "name": "mobile: populated project has correct counts, recent work and resume action",
+          "status": "pass"
+        },
+        {
+          "name": "mobile: returning to a visible tab updates totals automatically",
+          "status": "pass"
+        },
+        {
+          "name": "mobile: recovery and pending references are actionable without any resubmission",
+          "status": "pass"
+        },
+        {
+          "name": "mobile: older interrupted generation opens the exact saved request",
+          "status": "pass"
+        },
+        {
+          "name": "mobile: required failure retains stale data and retries without false zeros",
+          "status": "pass"
+        },
+        {
+          "name": "mobile: unknown setup is not presented as unconfigured or ready",
+          "status": "pass"
+        },
+        {
+          "name": "mobile: canvas and chat drafts survive overview switching",
+          "status": "pass"
+        },
+        {
+          "name": "mobile: node editing draft survives refresh on returning to canvas",
+          "status": "pass"
+        },
+        {
+          "name": "mobile: recent links, quick actions and responsive layout",
+          "status": "pass"
+        }
+      ],
+      "accessibility": [],
+      "errors": []
+    },
+    {
+      "suite": "a11y-dark",
+      "checks": [
+        {
+          "name": "1440: / responsive reflow",
+          "status": "pass"
+        },
+        {
+          "name": "1440: Scene and render button groups expose selection and preserve arrow navigation",
+          "status": "pass"
+        },
+        {
+          "name": "1440: Creation dialog focus trap, Escape and trigger focus restoration",
+          "status": "pass"
+        },
+        {
+          "name": "390: / responsive reflow",
+          "status": "pass"
+        },
+        {
+          "name": "390: Scene and render button groups expose selection and preserve arrow navigation",
+          "status": "pass"
+        },
+        {
+          "name": "390: Creation dialog focus trap, Escape and trigger focus restoration",
+          "status": "pass"
+        }
+      ],
+      "accessibility": [
+        {
+          "width": 1440,
+          "route": "/",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 1440,
+          "route": "/scenes populated",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 1440,
+          "route": "/render populated",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 390,
+          "route": "/",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 390,
+          "route": "/scenes populated",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "nodes": 4
+            }
+          ]
+        },
+        {
+          "width": 390,
+          "route": "/render populated",
+          "violations": [],
+          "incomplete": []
+        }
+      ],
+      "errors": []
+    },
+    {
+      "suite": "a11y-light",
+      "checks": [
+        {
+          "name": "1440: / responsive reflow",
+          "status": "pass"
+        },
+        {
+          "name": "1440: Scene and render button groups expose selection and preserve arrow navigation",
+          "status": "pass"
+        },
+        {
+          "name": "1440: Creation dialog focus trap, Escape and trigger focus restoration",
+          "status": "pass"
+        },
+        {
+          "name": "390: / responsive reflow",
+          "status": "pass"
+        },
+        {
+          "name": "390: Scene and render button groups expose selection and preserve arrow navigation",
+          "status": "pass"
+        },
+        {
+          "name": "390: Creation dialog focus trap, Escape and trigger focus restoration",
+          "status": "pass"
+        }
+      ],
+      "accessibility": [
+        {
+          "width": 1440,
+          "route": "/",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 1440,
+          "route": "/scenes populated",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 1440,
+          "route": "/render populated",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 390,
+          "route": "/",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 390,
+          "route": "/scenes populated",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "nodes": 4
+            }
+          ]
+        },
+        {
+          "width": 390,
+          "route": "/render populated",
+          "violations": [],
+          "incomplete": []
+        }
+      ],
+      "errors": []
+    }
+  ]
+}

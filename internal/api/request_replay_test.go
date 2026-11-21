@@ -42,16 +42,12 @@ func TestLostResponseReplayDoesNotRepeatPaidCall(t *testing.T) {
 func TestUncertainRenderCannotBeResubmitted(t *testing.T) {
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Fatal("provider should not be called") })
 	project, _ := s.database.GetActiveProjectID()
-	_ = project
-	var jobID string
-	// Create through the ordinary API without starting workers, then mark its durable submission intent.
-	r := call(t, s, "POST", "/render", `{"prompt":"A clip"}`)
-	var body map[string]any
-	json.Unmarshal(r.Body.Bytes(), &body)
-	jobID, _ = body["job_id"].(string)
-	job, _ := s.database.GetRenderJob(jobID)
-	job.Status = "reconciliation_required"
-	s.database.UpdateRenderJob(job)
+	// A saved job whose paid request may or may not have reached the service.
+	job := &models.RenderJob{ProjectID: &project, Provider: "fal", Model: "seedance-2.0", Status: "reconciliation_required", RequestJSON: []byte(`{"prompt":"A clip"}`)}
+	if err := s.database.CreateRenderJob(job); err != nil {
+		t.Fatal(err)
+	}
+	jobID := job.ID
 	if result := call(t, s, "POST", "/render-jobs/"+jobID+"/resubmit", `{}`); result.Code != 409 {
 		t.Fatalf("uncertain paid request was duplicated: %d", result.Code)
 	}

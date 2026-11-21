@@ -5,14 +5,24 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
+	"strings"
+	"videoflow-go/internal/agents"
+	"videoflow-go/internal/models"
+	"videoflow-go/internal/presets"
 )
 
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Message  string              `json:"message"`
-		History  []map[string]string `json:"history"`
-		Selected *chatSelection      `json:"selected"`
+		CreationBrief *agents.CreativeBrief `json:"creation_brief"`
+		Message       string                `json:"message"`
+		History       []map[string]string   `json:"history"`
+		Selected      *chatSelection        `json:"selected"`
+		Attachments   []string              `json:"attachments"`
+		Auto          bool                  `json:"auto"`
+		Full          bool                  `json:"full"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Message == "" {
 		http.Error(w, "message is required", http.StatusBadRequest)
@@ -20,10 +30,20 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	projectID, _ := s.activeProjectID(r.Context())
+	attachments, attachErr := s.chatAttachments(projectID, body.Attachments)
+	if attachErr != nil {
+		http.Error(w, attachErr.Error(), 400)
+		return
+	}
 	selectedContext, selectionErr := s.chatSelectionContext(projectID, body.Selected)
 	if selectionErr != nil {
 		http.Error(w, selectionErr.Error(), 409)
 		return
+	}
+	if selectedContext == nil || body.Selected != nil && body.Selected.Kind == "final_video" {
+		// A stale selection is dropped; a final video is only context, it never narrows
+		// what the assistant may do.
+		body.Selected = nil
 	}
 	scenes, _ := s.database.ListScenes(projectID)
 	chars, _ := s.database.ListCharacters(projectID)
@@ -44,7 +64,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	for _, sc := range scenes {
 		sceneOptions = append(sceneOptions, map[string]interface{}{
 			"id":    sc.ID,
-			"title": sc.Title,
+			"title": sc.Title, "summary": sc.Summary, "duration": sc.Duration, "character_ids": sc.CharacterIDsJSON,
 		})
 	}
 
@@ -52,11 +72,41 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	for _, c := range chars {
 		charOptions = append(charOptions, map[string]interface{}{
 			"id":   c.ID,
-			"name": c.Name,
+			"name": c.Name, "description": c.Description, "appearance": c.Appearance, "personality": c.Personality, "visual_rules": c.VisualRulesJSON, "voice_rules": c.VoiceRulesJSON, "reference_asset_ids": c.ReferenceAssetIDsJSON,
 		})
 	}
 
-	contextJSON, _ := json.Marshal(map[string]any{"scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext})
+	assets, _ := s.database.ListAssets(projectID)
+	assetContext := []map[string]any{}
+	for i, a := range assets {
+		if i >= 64 {
+			break
+		}
+		assetContext = append(assetContext, map[string]any{"id": a.ID, "name": a.Name, "type": a.Type, "character_id": a.CharacterID, "description": a.Description, "metadata": a.MetadataJSON, "reference_usable": models.ReferenceApproved(a.MetadataJSON)})
+	}
+	graph, graphErr := s.database.GetGraphData(projectID)
+	if graphErr != nil {
+		http.Error(w, "could not load project connections", 500)
+		return
+	}
+	style, _ := s.database.GetStyleGuide(projectID)
+	availableStyles := []map[string]string{}
+	if style != nil && strings.TrimSpace(style.StylePrompt) != "" {
+		availableStyles = append(availableStyles, map[string]string{"id": "project-style", "name": style.Name, "description": style.StylePrompt})
+	}
+	for _, p := range presets.Builtins().Presets {
+		availableStyles = append(availableStyles, map[string]string{"id": p.ID, "name": p.Name, "description": p.Description})
+	}
+	if packs, _, e := s.presetPacks(); e == nil {
+		for _, pack := range packs {
+			for _, p := range pack.Presets {
+				availableStyles = append(availableStyles, map[string]string{"id": "community:" + pack.ID + ":" + p.ID, "name": p.Name, "description": p.Description})
+			}
+		}
+	}
+	progress, _ := s.projectProgress(r.Context(), projectID)
+	failedShown, _ := s.database.FailedRendersShown(projectID)
+	contextJSON, _ := json.Marshal(map[string]any{"production_progress": progress, "recent_activity": s.chatActivity(projectID, jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "video_service": s.chatVideoService(), "episode_sound": s.episodeSound(projectID), "failed_video_attempts": failedShown, "assistant_mode": chatMode(body.Auto, body.Full), "attached_media": attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "render_audio_modes": []string{"native", "silent"}, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false}})
 	ctx := r.Context()
 	var plannedSnapshot *directorContext
 	if s.cfg.UseLocalText {
@@ -64,12 +114,16 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		var snapshotErr error
 		plannedSnapshot, snapshotErr = s.buildDirectorContext(projectID, binding.Selection)
 		if snapshotErr != nil {
-			http.Error(w, snapshotErr.Error(), 409)
+			chatContextError(w)
 			return
 		}
 		ctx = context.WithValue(ctx, directorSnapshotKey{}, plannedSnapshot)
 		body.History = nil
 		ctx = context.WithValue(ctx, directorUserMessageKey{}, body.Message)
+	}
+	if previews, dir, e := attachmentPreviews(ctx, attachments); e == nil && len(previews) > 0 {
+		defer os.RemoveAll(dir)
+		ctx = context.WithValue(ctx, directorImagesKey{}, previews)
 	}
 	res, err := s.agents.Chat(ctx, body.Message, body.History, string(contextJSON))
 	if err != nil {
@@ -89,10 +143,20 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	action := canonicalChatAction(res.Action)
-	if body.Selected != nil && !selectedChatActionAllowed(body.Selected.Kind, action) {
-		action = "unknown"
-		res.Reply = "That action does not match the selected item. Edit its fields in Details, or clear the selection to work on the project. No generation has been submitted."
+	// retry_render redoes a finished video. When there is no finished video to redo (the
+	// scene's video failed or was never made), "try again" means making the scene video.
+	if action == "retry_render" && !(body.Selected != nil && body.Selected.Kind == "output") {
+		finished := res.OutputID == "" && len(outputsList) == 1
+		for _, output := range outputsList {
+			finished = finished || output["id"] == res.OutputID
+		}
+		if !finished {
+			action = "render_scene"
+		}
 	}
+	// A selection is the default target, not a cage: when the user clearly asks for
+	// something else (another scene, or a project-level step), follow the request.
+	selectionApplies := body.Selected != nil && selectedChatActionAllowed(body.Selected.Kind, action)
 
 	intent := map[string]interface{}{
 		"action":      action,
@@ -101,12 +165,163 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		"scene_count": 1,
 	}
 
-	if res.SceneCount >= 1 && res.SceneCount <= 20 {
+	if action == "generate_script" {
+		brief := mergeCreativeBrief(body.CreationBrief, res.CreationBrief, body.Message)
+		if res.NextEpisode || (body.CreationBrief != nil && strings.Contains(body.CreationBrief.Instruction, "of a series. Story so far")) {
+			if cast, number := s.continueSeries(projectID, &brief, body.CreationBrief != nil); number > 0 {
+				intent["cast_ids"] = cast
+				intent["episode_number"] = number
+			}
+		}
+		fillCreativeBriefDefaults(&brief, style != nil && strings.TrimSpace(style.StylePrompt) != "")
+		if brief.PresetID == "project-style" {
+			if style != nil {
+				brief.StyleFingerprint = creativeStyleFingerprint(style)
+			}
+		} else if brief.PresetID != "" {
+			if p, e := s.findPreset(brief.PresetID); e == nil {
+				brief.StyleFingerprint = creativeStyleFingerprint(p)
+			}
+		}
+		intent["creation_brief"] = brief
+		intent["idea"] = brief.Idea
+		intent["scene_count"] = brief.SceneCount
+		intent["reply"] = creativeBriefQuestion(brief)
+		// The fixed question is English. When the user writes another language, keep the
+		// planner's own question, which it writes in the user's language.
+		if lang := strings.ToLower(strings.TrimSpace(res.UserLanguage)); lang != "" && !strings.HasPrefix(lang, "en") && strings.TrimSpace(res.Reply) != "" {
+			intent["reply"] = res.Reply
+		} else if number, ok := intent["episode_number"].(int); ok {
+			intent["reply"] = fmt.Sprintf("Episode %d: %s\n\n%s", number, brief.Idea, intent["reply"])
+		}
+	}
+	if v := strings.TrimSpace(res.Instruction); v != "" && len(v) <= 4000 && action != "generate_script" && action != "unknown" {
+		// The planner's own worked-out direction fills the button, not the user's raw words.
+		intent["idea"] = v
+	}
+	if action == "update_character" {
+		changes := map[string]string{}
+		if c := res.CharacterChanges; c != nil {
+			for key, value := range map[string]string{"appearance": c.Appearance, "description": c.Description, "personality": c.Personality} {
+				if v := strings.TrimSpace(value); v != "" && len(v) <= 4000 {
+					changes[key] = v
+				}
+			}
+		}
+		intent["character_changes"] = changes
+	}
+	episodes := s.seriesEpisodes(projectID)
+	if action == "finish_video" {
+		if script := chatEpisodeScript(scenes, episodes, res); script == "" {
+			action = "unknown"
+			intent["action"] = action
+			intent["reply"] = "There is no story to finish yet. Tell me your idea and I'll plan one."
+		} else {
+			intent["script_id"] = script
+		}
+	}
+	if action == "render_scenes" {
+		batch := chatSceneBatch(scenes, episodes, progress, res)
+		ids := []string{}
+		for _, scene := range batch {
+			ids = append(ids, scene["id"].(string))
+		}
+		if len(batch) == 0 {
+			action = "unknown"
+			intent["action"] = action
+			intent["reply"] = "Every scene there already has a video or is being made. Say “finish the video” and I'll join them and export it."
+		} else {
+			intent["scene_ids"], intent["scenes"] = ids, batch
+		}
+	}
+	if action == "check_video" || action == "stop_waiting" {
+		if waiting := chatWaitingScene(progress, scenes, res, body.Selected); waiting == nil {
+			action = "unknown"
+			intent["action"] = action
+			intent["reply"] = "No scene is waiting on an answer from the video service right now, so there is nothing to check."
+		} else {
+			intent["job_id"], intent["scene_id"], intent["scene_title"], intent["service"], intent["waiting_reason"] = waiting.Video.JobID, waiting.SceneID, waiting.Title, waiting.Video.Service, waiting.Video.Reason
+		}
+	}
+	if action == "set_music" {
+		// Saving the direction is free and done at once; making the videos again is the
+		// paid step, offered as one button with its price.
+		if batch, reply := s.chatSetMusic(r.Context(), scenes, s.seriesEpisodes(projectID), res); len(batch) == 0 {
+			action = "unknown"
+			intent["action"], intent["reply"] = action, reply
+		} else {
+			ids := []string{}
+			for _, scene := range batch {
+				ids = append(ids, scene["id"].(string))
+			}
+			action = "render_scenes"
+			intent["action"], intent["reply"], intent["scene_ids"], intent["scenes"] = action, reply, ids, batch
+		}
+	}
+	if action == "clear_failed_videos" {
+		// Free and nothing is deleted, so the assistant does it straight away.
+		switch n, e := s.database.ClearFailedRenders(projectID); {
+		case e != nil:
+			action = "unknown"
+			intent["action"], intent["reply"] = action, "I could not clear the failed videos just now. Ask me again in a moment."
+		case n == 0:
+			action = "unknown"
+			intent["action"], intent["reply"] = action, "There are no failed video attempts left to clear."
+		default:
+			intent["cleared"], intent["reply"] = n, clearedFailedReply(n)
+		}
+	}
+	if action == "switch_video_service" {
+		if choice, why := s.chatVideoSwitch(res.SwitchTo); choice == nil {
+			action = "unknown"
+			intent["action"] = action
+			intent["reply"] = why
+		} else {
+			intent["video_switch"] = choice
+		}
+	}
+	if action == "make_clip" {
+		clip := s.chatClip(projectID, res, attachments)
+		if clip == nil {
+			action = "unknown"
+			intent["action"] = action
+			if len(attachments) == 0 {
+				intent["reply"] = "I need a picture or clip to work from. Paste, drag in or attach a photo (the paperclip), then tell me what should happen in the video."
+			}
+		} else {
+			intent["clip"] = clip
+		}
+	}
+	if action == "open_editor" {
+		switch res.EditorPanel {
+		case "voice", "music", "captions", "export":
+			intent["editor_panel"] = res.EditorPanel
+		default:
+			intent["editor_panel"] = "edit"
+		}
+	}
+	switch res.AssetType {
+	case "prop", "location", "background", "other":
+		intent["asset_type"] = res.AssetType
+	}
+	if action != "generate_script" && res.SceneCount >= 1 && res.SceneCount <= 20 {
 		intent["scene_count"] = res.SceneCount
 	}
 	for _, scene := range scenes {
 		if scene.ID == res.SceneID || (res.SceneID == "" && len(scenes) == 1) {
 			intent["scene_id"] = scene.ID
+		}
+	}
+	if _, ok := intent["scene_id"]; !ok && sceneScopedAction(action) {
+		// Agents sometimes name the scene instead of its ID; fall back to the title, then
+		// to the scene the progress check already recommends for this same action.
+		for _, scene := range scenes {
+			if res.SceneID != "" && strings.EqualFold(strings.TrimSpace(res.SceneID), strings.TrimSpace(scene.Title)) {
+				intent["scene_id"] = scene.ID
+			}
+		}
+		if _, ok := intent["scene_id"]; !ok && progress.Next != nil && progress.Next.Next.Action == action {
+			intent["scene_id"] = progress.Next.SceneID
 		}
 	}
 	for _, character := range chars {
@@ -120,12 +335,39 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if body.Selected != nil {
+	if body.Selected != nil && !selectionApplies {
+		// Outside the selection only a clearly named target or a project-level step may run.
+		named := action == "generate_script" || action == "generate_image" || action == "style_ingest"
+		for _, scene := range scenes {
+			if sceneScopedAction(action) && res.SceneID != "" && (scene.ID == res.SceneID || strings.EqualFold(strings.TrimSpace(res.SceneID), strings.TrimSpace(scene.Title))) {
+				named = true
+			}
+		}
+		for _, character := range chars {
+			if (action == "generate_character_reference" || action == "update_character") && res.CharacterID == character.ID {
+				named = true
+			}
+		}
+		if !named {
+			action = "unknown"
+			intent["action"] = action
+			intent["reply"] = "I'm not sure which item you mean. Tell me the scene or character by name, or clear the selection above the message box to work on the whole project. Nothing was changed."
+		}
+	}
+	namedOtherScene := false
+	for _, scene := range scenes {
+		if body.Selected != nil && body.Selected.Kind == "scene" && scene.ID != body.Selected.ID && (scene.ID == res.SceneID || (res.SceneID != "" && strings.EqualFold(strings.TrimSpace(res.SceneID), strings.TrimSpace(scene.Title)))) {
+			namedOtherScene = true
+		}
+	}
+	if selectionApplies && !namedOtherScene {
 		switch body.Selected.Kind {
 		case "character":
-			intent["character_id"] = body.Selected.ID
+			if _, named := intent["character_id"]; !named || res.CharacterID == "" || action == "generate_character_reference" || action == "update_character" {
+				intent["character_id"] = body.Selected.ID
+			}
 		case "scene":
-			if action == "refine_scene" || action == "render_scene" || action == "storyboard" || action == "generate_shots" || action == "delete_scene" {
+			if action == "refine_scene" || action == "render_scene" || action == "audit_storyboard" || action == "storyboard" || action == "generate_shots" || action == "delete_scene" {
 				intent["scene_id"] = body.Selected.ID
 			}
 		case "shot":
@@ -135,16 +377,15 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 				intent["scene_id"] = shot.SceneID
 			}
 		case "output":
-			if action == "caption" || action == "retry_render" {
+			if action == "retry_render" {
 				intent["output_id"] = body.Selected.ID
 			}
 		}
 	}
 	options := map[string]interface{}{
-		"scenes":         sceneOptions,
-		"characters":     charOptions,
-		"outputs":        outputsList,
-		"caption_styles": defaultCaptionStyles,
+		"scenes":     sceneOptions,
+		"characters": charOptions,
+		"outputs":    outputsList,
 	}
 
 	state, err := s.projectState(projectID)
@@ -190,9 +431,68 @@ func canonicalChatAction(action string) string {
 	switch action {
 	case "create_script", "add_scene":
 		return "generate_script"
-	case "generate_script", "generate_scenes", "generate_shots", "storyboard", "render_scene", "render_shot", "caption", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
+	case "open_editor", "make_clip", "finish_video", "render_scenes", "check_video", "stop_waiting", "switch_video_service", "clear_failed_videos", "set_music", "update_character", "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
 		return action
 	default:
 		return "unknown"
 	}
+}
+
+func sceneScopedAction(action string) bool {
+	switch action {
+	case "storyboard", "audit_storyboard", "render_scene", "generate_shots", "refine_scene", "generate_assets", "plan_assets":
+		return true
+	}
+	return false
+}
+
+// chatClip turns the planner's make_clip answer into a checked request for one
+// reference clip. Only this project's usable media can be referenced.
+func (s *Server) chatClip(project string, res *agents.ChatIntentResponse, attachments []chatAttachment) map[string]any {
+	ids := res.ClipReferenceIDs
+	if len(ids) == 0 {
+		for _, a := range attachments {
+			ids = append(ids, a.ID)
+		}
+	}
+	references := []map[string]string{}
+	seen := map[string]bool{}
+	visual := false
+	for _, id := range ids {
+		asset, err := s.database.GetAsset(id)
+		if seen[id] || len(references) >= 12 || err != nil || asset.ProjectID == nil || *asset.ProjectID != project || !models.ReferenceApproved(asset.MetadataJSON) {
+			continue
+		}
+		seen[id] = true
+		kind := mediaKindForPath(asset.FilePath)
+		purpose := map[string]string{"image": "Who or what appears: keep this look", "video": "Movement and camera to follow", "audio": "Sound and rhythm"}[kind]
+		if kind == "" || kind == "audio" && !strings.HasSuffix(strings.ToLower(asset.FilePath), ".mp3") && !strings.HasSuffix(strings.ToLower(asset.FilePath), ".wav") {
+			continue
+		}
+		visual = visual || kind != "audio"
+		references = append(references, map[string]string{"asset_id": asset.ID, "kind": kind, "purpose": purpose, "name": asset.Name, "file_path": asset.FilePath})
+	}
+	prompt := strings.TrimSpace(res.ClipPrompt)
+	if !visual || prompt == "" || len(prompt) > 4000 {
+		return nil
+	}
+	duration := res.ClipDuration
+	if duration < 4 || duration > 15 {
+		duration = 8
+	}
+	aspect := res.ClipAspect
+	if aspect != "9:16" && aspect != "16:9" && aspect != "1:1" {
+		aspect = "9:16"
+	}
+	return map[string]any{"prompt": prompt, "duration": duration, "aspect_ratio": aspect, "generate_audio": res.ClipAudio, "references": references}
+}
+
+func chatMode(auto, full bool) string {
+	if full {
+		return "full auto: the user wants the finished video with as few clicks as possible. For a new story they confirm the plan once; the app then makes the pictures, renders every scene, joins them with captions and exports the final video by itself, using image and video credits. Say that confirming is the only click. Free planning steps and check_video start by themselves, and finish_video and render_scenes start immediately. Decide every detail yourself and never ask the user to press per-scene buttons."
+	}
+	if auto {
+		return "auto: free steps (refine_scene, refine_shot, generate_shots, plan_assets, check_video) start by themselves right after your reply, so write a complete instruction and say what you are doing now (\"I'm rewriting the scene so that…\"), not \"press the button\". Steps that use credits or delete things still wait for the user's click; say so. Decide details yourself and do not ask for confirmation of free steps."
+	}
+	return "manual: every step waits for the user to press its button."
 }

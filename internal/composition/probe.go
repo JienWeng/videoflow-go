@@ -13,7 +13,7 @@ import (
 func Probe(ctx context.Context, path string) (duration float64, width, height int, audio bool, err error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	out, e := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-show_entries", "format=duration:stream=codec_type,width,height", "-of", "json", path).Output()
+	out, e := exec.CommandContext(ctx, "ffprobe", "-v", "error", "-protocol_whitelist", "file,pipe", "-show_entries", "format=duration:stream=codec_type,width,height", "-of", "json", path).Output()
 	if e != nil {
 		err = fmt.Errorf("local ffprobe required to inspect source: %w", e)
 		return

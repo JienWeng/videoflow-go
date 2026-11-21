@@ -54,7 +54,7 @@ func TestE2EBrowserFixture(t *testing.T) {
 		case r.URL.Path == "/audio/transcriptions":
 			w.Write([]byte(`{"text":"Mimi plays.","segments":[{"start":0,"end":0.8,"text":"Mimi plays."}]}`))
 		case r.URL.Path == "/images/models":
-			w.Write([]byte(`{"data":[{"id":"openai/gpt-image-2","supported_parameters":{"aspect_ratio":{"type":"enum","values":["16:9"]},"input_references":{"type":"array","min":0,"max":8}}}]}`))
+			w.Write([]byte(`{"data":[{"id":"openai/gpt-image-2","supported_parameters":{"aspect_ratio":{"type":"enum","values":["16:9","1:1"]},"input_references":{"type":"array","min":0,"max":8}}}]}`))
 		case r.URL.Path == "/images":
 			var body map[string]any
 			json.NewDecoder(r.Body).Decode(&body)
@@ -129,13 +129,28 @@ prompt=sys.stdin.read()
 if 'Plan an editable VideoFlow version-1 composition manifest only' in prompt:
  result=json.loads(prompt.rsplit('Current manifest: ',1)[1].split('\nRequested edit:',1)[0])
 elif 'VideoFlow Studio assistant' in prompt:
- result={'action':'generate_script','reply':'Review this two-scene story proposal, then run it.','scene_count':2}
+ message=prompt.split('User message: ',1)[-1].split('\nProject context: ',1)[0]
+ if 'Generate a full-body character reference image for' in message:
+  result={'action':'generate_character_reference','reply':'Review this character reference request.'}
+ elif 'Generate an image of a red collar' in message:
+  result={'action':'generate_image','asset_type':'prop','reply':'Review this image request.'}
+ else:
+  result={'action':'generate_script','reply':'Review this two-scene story proposal, then run it.','scene_count':2}
 elif 'scriptwriter' in prompt:
- result={'title':'Mimi','summary':'Cat story','scenes':[{'title':'One','summary':'Mimi arrives','duration':1,'aspect_ratio':'16:9'},{'title':'Two','summary':'Mimi plays','duration':1,'aspect_ratio':'16:9'}]}
+ if 'lost puppy' in prompt:
+  result={'title':'Home','summary':'Pip finds his mother','characters':[],'scenes':[{'title':'Reunion','summary':'A lost puppy returns home','duration':1,'aspect_ratio':'16:9','character_ids':[],'spoken_lines':[]}]}
+  if 'Create character profiles only' in prompt:
+   result['characters']=[{'key':'pup','name':'Pip','description':'A lost puppy','appearance':'small golden puppy','personality':'curious'},{'key':'mother','name':'Mother dog','description':'Pip\u0027s mother','appearance':'large cream dog','personality':'gentle'}]
+   result['scenes'][0]['character_ids']=['new:pup','new:mother']
+   result['scenes'][0]['spoken_lines']=[{'id':'dog-line','character_id':'new:pup','language':'English','text':'Mama!','visible':True}]
+ else:
+  result={'title':'Mimi','summary':'Cat story','scenes':[{'title':'One','summary':'Mimi arrives','duration':1,'aspect_ratio':'16:9'},{'title':'Two','summary':'Mimi plays','duration':1,'aspect_ratio':'16:9'}]}
+elif 'Plan only essential visible props' in prompt:
+ result={'assets':[]}
 elif 'cinematographer' in prompt:
- result={'shots':[{'shot_order':1,'duration':1,'prompt':'Mimi plays','camera':'wide','movement':'still'}]}
+ result={'shots':[{'duration':1,'prompt':'Pip finds mother' if 'small golden puppy' in prompt else 'Mimi plays','camera':'wide','movement':'still'}]}
 else:
- result={'prompt':'Mimi the cat, cinematic framing'}
+ result={'prompt':'A small golden puppy finds his cream-colored mother' if 'small golden puppy' in prompt else ('A cream-colored mother dog' if 'large cream dog' in prompt else 'Mimi the cat, cinematic framing')}
 print(json.dumps({'type':'thread.started','thread_id':'native-browser-fixture'}))
 print(json.dumps({'type':'item.completed','item':{'type':'agent_message','text':json.dumps(result)}}))
 print(json.dumps({'type':'turn.completed'}))
@@ -147,7 +162,7 @@ print(json.dumps({'type':'turn.completed'}))
 	}
 	selected, _ := json.Marshal(map[string]any{"character_ids": []string{character.ID}, "asset_ids": []string{asset.ID}})
 	s.database.SetDirectorSelection(session.ID, project, selected)
-	if response := call(t, s, "PUT", "/voice/profiles/"+character.ID, `{"revision":0,"data":{"mode":"saved","voice_id":"fixture-saved-voice","approved":true}}`); response.Code != 200 {
+	if response := call(t, s, "PUT", "/voice/profiles/"+character.ID, `{"revision":0,"data":{"provider":"fish","model":"s2.1-pro","voice_id":"fixture-saved-voice","approved":true}}`); response.Code != 200 {
 		t.Fatalf("seed voice profile: %d %s", response.Code, response.Body.String())
 	}
 	// Isolated inspection endpoint exposes fixture counters, never production data.
@@ -175,7 +190,7 @@ print(json.dumps({'type':'turn.completed'}))
 	defer server.Close()
 	defer server.CloseClientConnections()
 	os.WriteFile("/tmp/videoflow-native-browser-fixture-ready", []byte("ready"), 0600)
-	for i := 0; i < 4800; i++ {
+	for i := 0; i < 18000; i++ {
 		if _, err := os.Stat("/tmp/videoflow-native-browser-fixture-stop"); err == nil {
 			return
 		}

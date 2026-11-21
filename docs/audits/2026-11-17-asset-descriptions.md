@@ -1,0 +1,11 @@
+# Structured asset descriptions
+
+Replaced raw prompt blocks with a shared parsed description model: narrative, visual style, spoken language, dialogue mode, direction and per-character description/appearance/personality/visual rules/voice rules/sample dialogue. The model accepts the current generated text and the canonical format emitted by the editor. Ordinary imported prose remains plain description text. Empty placeholders are omitted; meaningful dialogue ellipses remain intact. Character IDs remain in saved text/links, rather than visible prose.
+
+Library Simple view shows the narrative with collapsed Generation details and character sections. Details and the canvas asset editor share the same field editor; optional settings stay collapsed. Character sections are snapshots with links to the canonical character pages. Gallery excerpts show narrative rather than the entire prompt. Explicit edits serialize to consistent labelled text understood by the existing generation and asset APIs; no database migration or provider calls are needed to format existing assets.
+
+Fixed an undefined bindable prop during asynchronous canvas record loading, caught by the canvas regression. Also corrected the asset Delete button's hover text contrast; no accessibility findings were suppressed.
+
+Verification: five parser/formatter regressions (reported description, field round trips, ordinary prose, multiline fields and meaningful dialogue/rules); Svelte 0 errors/warnings; production frontend build. Eight desktop/mobile browser checks and six axe scans passed, covering collapsed/expanded display, empty-field suppression, typing, save/reopen, preserved character content, the canvas editor and Delete hover. Test API writes were intercepted. Readonly inspection of the actual storyboard parsed English dialogue, saved visual style, and Pip/Mama/Shopkeeper correctly.
+
+Storage compatibility: description remains the existing text API field, serialized into the supported labelled format by the UI. This is not a new database schema or a claim that arbitrary external descriptions must use these labels. No existing descriptions or character records are rewritten on read, and no images were generated for testing.

@@ -1,0 +1,1715 @@
+{
+  "date": "2026-11-14",
+  "expectedBrowserChecks": 80,
+  "passedBrowserChecks": 80,
+  "failedBrowserChecks": 0,
+  "expectedAccessibilityScans": 52,
+  "completedAccessibilityScans": 52,
+  "automatedViolations": 0,
+  "browserSuites": [
+    {
+      "name": "transfer-final",
+      "evidence": "/tmp/videoflow-risk-e2e/transfer-final/report.json",
+      "checks": [
+        {
+          "id": "transfer-final-01",
+          "name": "Export UI downloads valid project JSON with existing media references",
+          "status": "pass"
+        },
+        {
+          "id": "transfer-final-02",
+          "name": "Import UI round-trips data and remaps bindings without switching active project",
+          "status": "pass"
+        },
+        {
+          "id": "transfer-final-03",
+          "name": "ZIP and malformed JSON rejected without adding projects; input can retry",
+          "status": "pass"
+        },
+        {
+          "id": "transfer-final-04",
+          "name": "Missing media and external paths reject atomically with actionable error",
+          "status": "pass"
+        }
+      ],
+      "errors": [],
+      "accessibility": [],
+      "timings": []
+    },
+    {
+      "name": "webkit-final",
+      "evidence": "/tmp/videoflow-risk-e2e/webkit-final/report.json",
+      "checks": [
+        {
+          "id": "webkit-final-01",
+          "name": "1440: Project export downloads valid JSON in WebKit",
+          "status": "pass"
+        },
+        {
+          "id": "webkit-final-02",
+          "name": "1440: Dialog keyboard focus, Escape and mobile reflow",
+          "status": "pass"
+        },
+        {
+          "id": "webkit-final-03",
+          "name": "1440: H264/AAC video decodes, plays and seeks",
+          "status": "pass"
+        },
+        {
+          "id": "webkit-final-04",
+          "name": "390: Project export downloads valid JSON in WebKit",
+          "status": "pass"
+        },
+        {
+          "id": "webkit-final-05",
+          "name": "390: Dialog keyboard focus, Escape and mobile reflow",
+          "status": "pass"
+        },
+        {
+          "id": "webkit-final-06",
+          "name": "390: H264/AAC video decodes, plays and seeks",
+          "status": "pass"
+        }
+      ],
+      "errors": [],
+      "accessibility": [],
+      "timings": []
+    },
+    {
+      "name": "audit-regression",
+      "evidence": "/tmp/videoflow-risk-e2e/audit-regression/report.json",
+      "checks": [
+        {
+          "id": "audit-regression-01",
+          "name": "1440 existing caption keyboard and mobile toolbar",
+          "status": "pass"
+        },
+        {
+          "id": "audit-regression-02",
+          "name": "1440 palette new story and active result semantics",
+          "status": "pass"
+        },
+        {
+          "id": "audit-regression-03",
+          "name": "1440 failed character load is not empty",
+          "status": "pass"
+        },
+        {
+          "id": "audit-regression-04",
+          "name": "1440 Settings range, error association, pristine Save and dirty exit",
+          "status": "pass"
+        },
+        {
+          "id": "audit-regression-05",
+          "name": "1440 cancelled project switch does not activate backend",
+          "status": "pass"
+        },
+        {
+          "id": "audit-regression-06",
+          "name": "1440 voice draft dirty navigation",
+          "status": "pass"
+        },
+        {
+          "id": "audit-regression-07",
+          "name": "1440 composition saved index and dirty navigation",
+          "status": "pass"
+        },
+        {
+          "id": "audit-regression-08",
+          "name": "390 existing caption keyboard and mobile toolbar",
+          "status": "pass"
+        },
+        {
+          "id": "audit-regression-09",
+          "name": "390 palette new story and active result semantics",
+          "status": "pass"
+        },
+        {
+          "id": "audit-regression-10",
+          "name": "390 failed character load is not empty",
+          "status": "pass"
+        },
+        {
+          "id": "audit-regression-11",
+          "name": "390 Settings range, error association, pristine Save and dirty exit",
+          "status": "pass"
+        },
+        {
+          "id": "audit-regression-12",
+          "name": "390 cancelled project switch does not activate backend",
+          "status": "pass"
+        },
+        {
+          "id": "audit-regression-13",
+          "name": "390 voice draft dirty navigation",
+          "status": "pass"
+        },
+        {
+          "id": "audit-regression-14",
+          "name": "390 composition saved index and dirty navigation",
+          "status": "pass"
+        }
+      ],
+      "errors": [],
+      "accessibility": [],
+      "timings": []
+    },
+    {
+      "name": "shipped-dark",
+      "evidence": "/tmp/videoflow-risk-e2e/shipped-dark/report.json",
+      "checks": [
+        {
+          "id": "shipped-dark-01",
+          "name": "1440: 500-node canvas loads, finder selects final item and inspector opens",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-02",
+          "name": "1440: 500-turn chat renders latest history, retains reading position and accepts draft",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-03",
+          "name": "1440: /?view=studio responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-04",
+          "name": "1440: /create responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-05",
+          "name": "1440: /render responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-06",
+          "name": "1440: /projects responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-07",
+          "name": "1440: /characters responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-08",
+          "name": "1440: /assets responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-09",
+          "name": "1440: /scenes responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-10",
+          "name": "1440: /settings responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-11",
+          "name": "1440: /director responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-12",
+          "name": "1440: /voices responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-13",
+          "name": "1440: /compositions responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-14",
+          "name": "1440: Scene and render button groups expose selection and preserve arrow navigation",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-15",
+          "name": "1440: Creation dialog focus trap, Escape and trigger focus restoration",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-16",
+          "name": "390: 500-node canvas loads, finder selects final item and inspector opens",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-17",
+          "name": "390: 500-turn chat renders latest history, retains reading position and accepts draft",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-18",
+          "name": "390: /?view=studio responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-19",
+          "name": "390: /create responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-20",
+          "name": "390: /render responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-21",
+          "name": "390: /projects responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-22",
+          "name": "390: /characters responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-23",
+          "name": "390: /assets responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-24",
+          "name": "390: /scenes responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-25",
+          "name": "390: /settings responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-26",
+          "name": "390: /director responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-27",
+          "name": "390: /voices responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-28",
+          "name": "390: /compositions responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-29",
+          "name": "390: Scene and render button groups expose selection and preserve arrow navigation",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-dark-30",
+          "name": "390: Creation dialog focus trap, Escape and trigger focus restoration",
+          "status": "pass"
+        }
+      ],
+      "errors": [],
+      "accessibility": [
+        {
+          "width": 1440,
+          "route": "/?view=studio",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "aria-prohibited-attr",
+              "nodes": 3
+            },
+            {
+              "id": "color-contrast",
+              "nodes": 6
+            }
+          ]
+        },
+        {
+          "width": 1440,
+          "route": "/create",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "nodes": 1
+            }
+          ]
+        },
+        {
+          "width": 1440,
+          "route": "/render",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 1440,
+          "route": "/projects",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 1440,
+          "route": "/characters",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 1440,
+          "route": "/assets",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 1440,
+          "route": "/scenes",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 1440,
+          "route": "/settings",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 1440,
+          "route": "/director",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 1440,
+          "route": "/voices",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "nodes": 7
+            }
+          ]
+        },
+        {
+          "width": 1440,
+          "route": "/compositions",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "nodes": 10
+            }
+          ]
+        },
+        {
+          "width": 1440,
+          "route": "/scenes populated",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 1440,
+          "route": "/render populated",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 390,
+          "route": "/?view=studio",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "aria-prohibited-attr",
+              "nodes": 3
+            },
+            {
+              "id": "color-contrast",
+              "nodes": 4
+            }
+          ]
+        },
+        {
+          "width": 390,
+          "route": "/create",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "nodes": 4
+            }
+          ]
+        },
+        {
+          "width": 390,
+          "route": "/render",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 390,
+          "route": "/projects",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 390,
+          "route": "/characters",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 390,
+          "route": "/assets",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 390,
+          "route": "/scenes",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "nodes": 1
+            }
+          ]
+        },
+        {
+          "width": 390,
+          "route": "/settings",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "nodes": 3
+            }
+          ]
+        },
+        {
+          "width": 390,
+          "route": "/director",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 390,
+          "route": "/voices",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "nodes": 10
+            }
+          ]
+        },
+        {
+          "width": 390,
+          "route": "/compositions",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "nodes": 15
+            }
+          ]
+        },
+        {
+          "width": 390,
+          "route": "/scenes populated",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "nodes": 4
+            }
+          ]
+        },
+        {
+          "width": 390,
+          "route": "/render populated",
+          "violations": [],
+          "incomplete": []
+        }
+      ],
+      "timings": [
+        {
+          "width": 1440,
+          "kind": "500-node-load-ms",
+          "value": 5555
+        },
+        {
+          "width": 390,
+          "kind": "500-node-load-ms",
+          "value": 4178
+        }
+      ]
+    },
+    {
+      "name": "shipped-light-settled",
+      "evidence": "/tmp/videoflow-risk-e2e/shipped-light-settled/report.json",
+      "checks": [
+        {
+          "id": "shipped-light-settled-01",
+          "name": "1440: /?view=studio responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-02",
+          "name": "1440: /create responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-03",
+          "name": "1440: /render responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-04",
+          "name": "1440: /projects responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-05",
+          "name": "1440: /characters responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-06",
+          "name": "1440: /assets responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-07",
+          "name": "1440: /scenes responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-08",
+          "name": "1440: /settings responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-09",
+          "name": "1440: /director responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-10",
+          "name": "1440: /voices responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-11",
+          "name": "1440: /compositions responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-12",
+          "name": "1440: Scene and render button groups expose selection and preserve arrow navigation",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-13",
+          "name": "1440: Creation dialog focus trap, Escape and trigger focus restoration",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-14",
+          "name": "390: /?view=studio responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-15",
+          "name": "390: /create responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-16",
+          "name": "390: /render responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-17",
+          "name": "390: /projects responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-18",
+          "name": "390: /characters responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-19",
+          "name": "390: /assets responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-20",
+          "name": "390: /scenes responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-21",
+          "name": "390: /settings responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-22",
+          "name": "390: /director responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-23",
+          "name": "390: /voices responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-24",
+          "name": "390: /compositions responsive reflow",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-25",
+          "name": "390: Scene and render button groups expose selection and preserve arrow navigation",
+          "status": "pass"
+        },
+        {
+          "id": "shipped-light-settled-26",
+          "name": "390: Creation dialog focus trap, Escape and trigger focus restoration",
+          "status": "pass"
+        }
+      ],
+      "errors": [],
+      "accessibility": [
+        {
+          "width": 1440,
+          "route": "/?view=studio",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "aria-prohibited-attr",
+              "nodes": 3
+            },
+            {
+              "id": "color-contrast",
+              "nodes": 6
+            }
+          ]
+        },
+        {
+          "width": 1440,
+          "route": "/create",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "nodes": 1
+            }
+          ]
+        },
+        {
+          "width": 1440,
+          "route": "/render",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 1440,
+          "route": "/projects",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 1440,
+          "route": "/characters",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 1440,
+          "route": "/assets",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 1440,
+          "route": "/scenes",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 1440,
+          "route": "/settings",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 1440,
+          "route": "/director",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 1440,
+          "route": "/voices",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "nodes": 7
+            }
+          ]
+        },
+        {
+          "width": 1440,
+          "route": "/compositions",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "nodes": 10
+            }
+          ]
+        },
+        {
+          "width": 1440,
+          "route": "/scenes populated",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 1440,
+          "route": "/render populated",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 390,
+          "route": "/?view=studio",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "aria-prohibited-attr",
+              "nodes": 3
+            },
+            {
+              "id": "color-contrast",
+              "nodes": 4
+            }
+          ]
+        },
+        {
+          "width": 390,
+          "route": "/create",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "nodes": 4
+            }
+          ]
+        },
+        {
+          "width": 390,
+          "route": "/render",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 390,
+          "route": "/projects",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 390,
+          "route": "/characters",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 390,
+          "route": "/assets",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 390,
+          "route": "/scenes",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "nodes": 1
+            }
+          ]
+        },
+        {
+          "width": 390,
+          "route": "/settings",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "nodes": 3
+            }
+          ]
+        },
+        {
+          "width": 390,
+          "route": "/director",
+          "violations": [],
+          "incomplete": []
+        },
+        {
+          "width": 390,
+          "route": "/voices",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "nodes": 10
+            }
+          ]
+        },
+        {
+          "width": 390,
+          "route": "/compositions",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "nodes": 15
+            }
+          ]
+        },
+        {
+          "width": 390,
+          "route": "/scenes populated",
+          "violations": [],
+          "incomplete": [
+            {
+              "id": "color-contrast",
+              "nodes": 4
+            }
+          ]
+        },
+        {
+          "width": 390,
+          "route": "/render populated",
+          "violations": [],
+          "incomplete": []
+        }
+      ],
+      "timings": []
+    }
+  ],
+  "backend": {
+    "command": "go test -count=1 -json -p 2 ./internal/api ./internal/jobs ./internal/director ./internal/composition",
+    "passed": 122,
+    "initialSkips": 3,
+    "outcomes": [
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestAssetReviewRequiresOwnershipAndExactRevision",
+        "Action": "pass",
+        "Elapsed": 0.05
+      },
+      {
+        "Package": "videoflow-go/internal/jobs",
+        "Test": "TestFrozenRenderRequiresSubmissionValidator",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Package": "videoflow-go/internal/jobs",
+        "Test": "TestWorkerRefusesPendingGeneratedStoryboard",
+        "Action": "pass",
+        "Elapsed": 0.05
+      },
+      {
+        "Package": "videoflow-go/internal/jobs",
+        "Test": "TestWorkerUsesProviderAndDownloads",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/jobs",
+        "Test": "TestWorkerFailureProducesNoOutput",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/jobs",
+        "Test": "TestWorkerRestartDoesNotResubmit",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestLocalPipelineStopsForGeneratedReferenceReview",
+        "Action": "pass",
+        "Elapsed": 0.19
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestScriptAlignmentUsesExactApprovedWording",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestScriptAlignmentRejectsDriftAndInvalidTiming",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Package": "videoflow-go/internal/jobs",
+        "Test": "TestWorkerCancellationLeavesResumableJob",
+        "Action": "pass",
+        "Elapsed": 0.05
+      },
+      {
+        "Package": "videoflow-go/internal/jobs",
+        "Test": "TestWorkerUsesStoryboardFrameAndNegatives",
+        "Action": "pass",
+        "Elapsed": 0.06
+      },
+      {
+        "Package": "videoflow-go/internal/jobs",
+        "Test": "TestRecoveredSubmissionNeverPostsAgain",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestChatReviewIsolatedBoundedChildrenAndReplay",
+        "Action": "pass",
+        "Elapsed": 0.14
+      },
+      {
+        "Package": "videoflow-go/internal/jobs",
+        "Test": "TestBytePlusJobKeepsItsProviderAfterDefaultChanges",
+        "Action": "pass",
+        "Elapsed": 0.06
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestChatReviewCapabilitiesAndUnavailableSession",
+        "Action": "pass",
+        "Elapsed": 0.05
+      },
+      {
+        "Package": "videoflow-go/internal/jobs",
+        "Test": "TestCompletedProviderRetrievalFailureKeepsRetryFence/fal-401",
+        "Action": "pass",
+        "Elapsed": 0.05
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestChatReviewPartialFailureAndContextMutationRecorded/false",
+        "Action": "pass",
+        "Elapsed": 0.11
+      },
+      {
+        "Package": "videoflow-go/internal/jobs",
+        "Test": "TestCompletedProviderRetrievalFailureKeepsRetryFence/fal-403",
+        "Action": "pass",
+        "Elapsed": 0.06
+      },
+      {
+        "Package": "videoflow-go/internal/jobs",
+        "Test": "TestCompletedProviderRetrievalFailureKeepsRetryFence/fal-404",
+        "Action": "pass",
+        "Elapsed": 0.06
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestChatReviewPartialFailureAndContextMutationRecorded/true",
+        "Action": "pass",
+        "Elapsed": 0.14
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestChatReviewPartialFailureAndContextMutationRecorded",
+        "Action": "pass",
+        "Elapsed": 0.25
+      },
+      {
+        "Package": "videoflow-go/internal/jobs",
+        "Test": "TestCompletedProviderRetrievalFailureKeepsRetryFence/fal-malformed",
+        "Action": "pass",
+        "Elapsed": 0.08
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestChatReviewRejectsCrossProjectSelectionAndInputBounds",
+        "Action": "pass",
+        "Elapsed": 0.05
+      },
+      {
+        "Package": "videoflow-go/internal/jobs",
+        "Test": "TestCompletedProviderRetrievalFailureKeepsRetryFence/fal-missing-url",
+        "Action": "pass",
+        "Elapsed": 0.06
+      },
+      {
+        "Package": "videoflow-go/internal/jobs",
+        "Test": "TestCompletedProviderRetrievalFailureKeepsRetryFence/byteplus-missing-url",
+        "Action": "pass",
+        "Elapsed": 0.07
+      },
+      {
+        "Package": "videoflow-go/internal/jobs",
+        "Test": "TestCompletedProviderRetrievalFailureKeepsRetryFence",
+        "Action": "pass",
+        "Elapsed": 0.39
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestChatReviewCancelAndSessionLock",
+        "Action": "pass",
+        "Elapsed": 0.11
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestChatReviewRequiresSelectedSession",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestChatReviewPartialFailureRequiresAcknowledgement",
+        "Action": "pass",
+        "Elapsed": 0.07
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestChatReviewGlobalNarrativeReachesBothChildrenAndMutationInvalidates/false",
+        "Action": "pass",
+        "Elapsed": 0.07
+      },
+      {
+        "Package": "videoflow-go/internal/director",
+        "Test": "TestCodexResumesExactSessionAndRequiresCompletion",
+        "Action": "pass",
+        "Elapsed": 0.01
+      },
+      {
+        "Package": "videoflow-go/internal/director",
+        "Test": "TestClaudeRejectsFailureAndWrongNativeSession",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Package": "videoflow-go/internal/director",
+        "Test": "TestNativeEnvironmentRemovesMediaCredentials",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestChatReviewGlobalNarrativeReachesBothChildrenAndMutationInvalidates/true",
+        "Action": "pass",
+        "Elapsed": 0.1
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestChatReviewGlobalNarrativeReachesBothChildrenAndMutationInvalidates",
+        "Action": "pass",
+        "Elapsed": 0.18
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestChatReviewRejectsOversizedNarrativeBeforeStarting",
+        "Action": "pass",
+        "Elapsed": 0.05
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestLocalMainChatCancellationRecordsInterruptedTurn",
+        "Action": "pass",
+        "Elapsed": 0.07
+      },
+      {
+        "Package": "videoflow-go/internal/composition",
+        "Test": "TestRevisionAndTimeline",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Package": "videoflow-go/internal/composition",
+        "Test": "TestRejectsTraversalAndUnsupportedSpeed",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Package": "videoflow-go/internal/composition",
+        "Test": "TestVerifyRejectsEditedSource",
+        "Action": "pass",
+        "Elapsed": 0.01
+      },
+      {
+        "Package": "videoflow-go/internal/composition",
+        "Test": "TestRejectsUnsupportedCaptionStyle",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Package": "videoflow-go/internal/composition",
+        "Test": "TestRuntimeRejectsUnapprovedCommand",
+        "Action": "pass",
+        "Elapsed": 0
+      },
+      {
+        "Package": "videoflow-go/internal/composition",
+        "Test": "TestLocalRenderIntegration",
+        "Action": "skip",
+        "Elapsed": 0
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestChatReturnsRunnableCanonicalActions/add_scene",
+        "Action": "pass",
+        "Elapsed": 0.05
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestChatReturnsRunnableCanonicalActions/create_script",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/composition",
+        "Test": "TestInstallProjectSkills",
+        "Action": "pass",
+        "Elapsed": 0.05
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestChatReturnsRunnableCanonicalActions/generate_shots",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestChatReturnsRunnableCanonicalActions/none",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestChatReturnsRunnableCanonicalActions/invented_action",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestChatReturnsRunnableCanonicalActions",
+        "Action": "pass",
+        "Elapsed": 0.18
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestChatRejectsMissingSelectedNodeBeforeInference",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestChatUsesOwnedSelectionAndPinsCompatibleAction",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestScopedChatRefusesWrongKindAction",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestDashboardCanReadOlderUnresolvedOperations",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestDirectorContextContainsFullSelectedIdentityAndDetectsReferenceChanges",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestDirectorContextRejectsForeignSelection",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestSelectedImageReferencesAndLockedTraitsReachGenerationInputs",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestAssetIdentityLocksRequireCurrentProjectAndRevision",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestRecognitionPreservesIdentityLocksEditedDuringVisionCall",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestLocalDirectorTextNeverFallsBackAndPersistsNativeSession",
+        "Action": "pass",
+        "Elapsed": 0.05
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestDirectorProposalRejectsChangedReferencesBeforeExecution",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestDirectorCompositionPlannerUsesLocalSkillAndNeverExecutes",
+        "Action": "pass",
+        "Elapsed": 0.06
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestRequestProjectBindingSurvivesActiveProjectSwitch",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestIdentityEditDuringNativeTurnRejectsOldContextProposal",
+        "Action": "pass",
+        "Elapsed": 0.11
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestOrdinaryRenderCapturesIdentityAndRechecksBeforeSubmission",
+        "Action": "pass",
+        "Elapsed": 0.06
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestFrozenVideoRejectsUnreviewedReference",
+        "Action": "pass",
+        "Elapsed": 0.05
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestExplicitRetryRetainsFrozenFrameAndPolicy",
+        "Action": "pass",
+        "Elapsed": 0.05
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestFrozenContextRetainsExplicitSelectionWhenCharactersExpandReferences",
+        "Action": "pass",
+        "Elapsed": 0.05
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestE2EBrowserFixture",
+        "Action": "skip",
+        "Elapsed": 0
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestCompositionCaptionImportPreservesSourceAndRejectsEdits",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestCompositionRevisionOwnershipAndRunFence",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestCompositionSourcesResolvePublicPathsAndOwnedOutputs",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestCompositionPublicSourceRenderIntegration",
+        "Action": "skip",
+        "Elapsed": 0
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestCompositionListIsProjectScoped",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestGuidedFalImagesWithSelectableFalOrBytePlusVideo/fal",
+        "Action": "pass",
+        "Elapsed": 0.05
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestGuidedFalImagesWithSelectableFalOrBytePlusVideo/byteplus",
+        "Action": "pass",
+        "Elapsed": 0.05
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestGuidedFalImagesWithSelectableFalOrBytePlusVideo",
+        "Action": "pass",
+        "Elapsed": 0.28
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestOpenRouterChecksAreReal",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestDiscoveryUsesLiveCatalog",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestSavedKeyAndAgentSelectionUsed",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestSavingURLPreservesKey",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestRejectOtherProviders",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestImagesStoredAndCharacterLinked",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestMediaFailurePropagates",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestMissingOutputNeverReturnsSample",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestRefineUsesSelectedAgent",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestStoryboardHasFrontendAssetType",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestResubmitCreatesFreshProviderJob",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestSavedSceneDefaultsAreUsed",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestImagePromptAgentSelectionIsUsed",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestOpenRouterOnlyGuidedWorkflow",
+        "Action": "pass",
+        "Elapsed": 0.05
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestProjectJSONRoundTripKeepsDataAndRemapsIDs",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestProjectImportRollsBackWriteFailure",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestProjectRenamePreservesDescription",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestInvalidProjectImportDoesNotCreateEmptyWorkspace",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestLostResponseReplayDoesNotRepeatPaidCall",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestUncertainRenderCannotBeResubmitted",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestResubmitLineageReturnsTheActiveReplacement",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestMediaSettingsExposeSelectedProvider",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestMediaProviderSwitchRemembersModelsAndRejectsMismatch",
+        "Action": "pass",
+        "Elapsed": 0.05
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestMediaConfigurationCheckDoesNotClaimGeneration",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestNativeVoiceLocksSemanticAssetIdentityBeforeRun",
+        "Action": "pass",
+        "Elapsed": 0.17
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestDirectorVoicePolicyRequiresSavedVoiceAndForcesVisualPass",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestDirectorNativeVoicePolicyRejectsOrdinaryVideo",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestNativeVoiceRejectsPendingGeneratedReferenceBeforePreparation",
+        "Action": "pass",
+        "Elapsed": 0.26
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestOrdinaryUnboundVisualPassDoesNotInventVoice",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestVoiceRunDurableIDAndDuplicateFence",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestVoiceStaleApprovalAndCrossProjectSampleFailBeforePayment",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestVoiceUncertainSubmissionOnlyReconcilesNeverResubmits",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestVoiceActualSampleUploadCloneAndNativeReferenceCompatibility",
+        "Action": "pass",
+        "Elapsed": 0.33
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestScriptCaptionFinalAudioAlignmentApplyExportAndStaleness",
+        "Action": "pass",
+        "Elapsed": 0.54
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestSavedSpeechImportsLocalAudioAndLipSyncUsesMatchingLine",
+        "Action": "pass",
+        "Elapsed": 1.31
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestVoiceResultRejectsWrongMediaStream",
+        "Action": "pass",
+        "Elapsed": 0.85
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestGuidedCharacterToTwoOutputsAndCombinedExport",
+        "Action": "pass",
+        "Elapsed": 1.68
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestAuditDevelopIdeaContract",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestAuditChatStateOnEmptyProject",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestAuditSceneExpansionHonorsCast",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestCaptionFailurePreservesPreviousOutput",
+        "Action": "pass",
+        "Elapsed": 0.14
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestCastRemovalInvalidatesConditioningSnapshot",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestHealthEndpoint",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestProjectsAndScenesEndpoints",
+        "Action": "pass",
+        "Elapsed": 0.03
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestMissingEndpointsResolution",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestEditorAndPanelEndpoints",
+        "Action": "pass",
+        "Elapsed": 0.06
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestCharacterReferenceUploadAppearsOnCharacter",
+        "Action": "pass",
+        "Elapsed": 0.04
+      },
+      {
+        "Package": "videoflow-go/internal/api",
+        "Test": "TestReferenceUploadRejectsUnknownCharacterWithoutSavingAsset",
+        "Action": "pass",
+        "Elapsed": 0.03
+      }
+    ],
+    "separatelyEnabled": [
+      {
+        "id": "TestLocalRenderIntegration",
+        "status": "pass"
+      },
+      {
+        "id": "TestCompositionPublicSourceRenderIntegration",
+        "status": "pass"
+      },
+      {
+        "id": "TestE2EBrowserFixture",
+        "status": "pass"
+      }
+    ],
+    "evidence": [
+      "/tmp/videoflow-risk-e2e/backend.jsonl",
+      "/tmp/videoflow-risk-e2e/hyperframes-host.log",
+      "/tmp/videoflow-risk-e2e/router.log"
+    ]
+  },
+  "unverified": [
+    {
+      "id": "MANUAL-01",
+      "check": "Real Codex/Claude account-backed inference",
+      "reason": "Both CLIs absent on backend host"
+    },
+    {
+      "id": "MANUAL-02",
+      "check": "Real paid media/voice provider quality and billing",
+      "reason": "Provider calls mocked; no paid submissions"
+    },
+    {
+      "id": "MANUAL-03",
+      "check": "Physical Safari/iOS/Android touch, keyboard and downloads",
+      "reason": "Linux Chromium/WebKit and viewports only"
+    },
+    {
+      "id": "MANUAL-04",
+      "check": "Screen-reader and axe incomplete checks",
+      "reason": "Manual AT/contrast/ARIA review still required"
+    },
+    {
+      "id": "MANUAL-05",
+      "check": "Firefox and additional codecs",
+      "reason": "Not executed in this environment"
+    },
+    {
+      "id": "MANUAL-06",
+      "check": "Larger workloads and formal performance budgets",
+      "reason": "500 nodes/turns tested functionally; recorded timings are not benchmarks"
+    }
+  ]
+}

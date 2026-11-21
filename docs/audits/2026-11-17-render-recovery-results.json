@@ -1,0 +1,21 @@
+{
+  "checks": [
+    "1440: stale image is detected, recovery proposal does not auto-run",
+    "1440: one explicit chat action updates image then queues a matching video, retaining the old image",
+    "1440: later explicit render reuses the matching storyboard",
+    "390: stale image is detected, recovery proposal does not auto-run",
+    "390: one explicit chat action updates image then queues a matching video, retaining the old image",
+    "390: later explicit render reuses the matching storyboard"
+  ],
+  "axe": [
+    {
+      "width": 1440,
+      "violations": []
+    },
+    {
+      "width": 390,
+      "violations": []
+    }
+  ],
+  "errors": []
+}

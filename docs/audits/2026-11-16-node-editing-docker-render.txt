@@ -1,0 +1,3 @@
+=== RUN   TestLocalAdjustedRenderIntegration
+--- PASS: TestLocalAdjustedRenderIntegration (28.10s)
+PASS

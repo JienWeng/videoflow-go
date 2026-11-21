@@ -1,0 +1,147 @@
+{
+  "checks": [
+    {
+      "auditId": "SCENE-ASSETS-desktop-1",
+      "name": "shared prop usage names both scene studios",
+      "status": "pass"
+    },
+    {
+      "auditId": "SCENE-ASSETS-desktop-2",
+      "name": "asset details edit preserves locks and requires a fresh review",
+      "status": "pass"
+    },
+    {
+      "auditId": "SCENE-ASSETS-desktop-3",
+      "name": "scene studio includes shared prop and cast references",
+      "status": "pass"
+    },
+    {
+      "auditId": "SCENE-ASSETS-desktop-4",
+      "name": "reference changes preserve a typed scene draft",
+      "status": "pass"
+    },
+    {
+      "auditId": "SCENE-ASSETS-desktop-5",
+      "name": "reviewed storyboard is the render frame",
+      "status": "pass"
+    },
+    {
+      "auditId": "SCENE-ASSETS-desktop-6",
+      "name": "scene Library includes reused prop, cast sheet and storyboard",
+      "status": "pass"
+    },
+    {
+      "auditId": "SCENE-ASSETS-desktop-7",
+      "name": "regeneration creates a pending version without changing either scene",
+      "status": "pass"
+    },
+    {
+      "auditId": "SCENE-ASSETS-desktop-8",
+      "name": "explicit version replacement changes one scene and invalidates its frame",
+      "status": "pass"
+    },
+    {
+      "auditId": "SCENE-ASSETS-desktop-9",
+      "name": "candidate approval and new storyboard restore readiness",
+      "status": "pass"
+    },
+    {
+      "auditId": "SCENE-ASSETS-desktop-10",
+      "name": "no video render or duplicate asset generation was submitted",
+      "status": "pass"
+    },
+    {
+      "auditId": "SCENE-ASSETS-mobile-11",
+      "name": "shared prop usage names both scene studios",
+      "status": "pass"
+    },
+    {
+      "auditId": "SCENE-ASSETS-mobile-12",
+      "name": "asset details edit preserves locks and requires a fresh review",
+      "status": "pass"
+    },
+    {
+      "auditId": "SCENE-ASSETS-mobile-13",
+      "name": "scene studio includes shared prop and cast references",
+      "status": "pass"
+    },
+    {
+      "auditId": "SCENE-ASSETS-mobile-14",
+      "name": "reference changes preserve a typed scene draft",
+      "status": "pass"
+    },
+    {
+      "auditId": "SCENE-ASSETS-mobile-15",
+      "name": "reviewed storyboard is the render frame",
+      "status": "pass"
+    },
+    {
+      "auditId": "SCENE-ASSETS-mobile-16",
+      "name": "scene Library includes reused prop, cast sheet and storyboard",
+      "status": "pass"
+    },
+    {
+      "auditId": "SCENE-ASSETS-mobile-17",
+      "name": "regeneration creates a pending version without changing either scene",
+      "status": "pass"
+    },
+    {
+      "auditId": "SCENE-ASSETS-mobile-18",
+      "name": "explicit version replacement changes one scene and invalidates its frame",
+      "status": "pass"
+    },
+    {
+      "auditId": "SCENE-ASSETS-mobile-19",
+      "name": "candidate approval and new storyboard restore readiness",
+      "status": "pass"
+    },
+    {
+      "auditId": "SCENE-ASSETS-mobile-20",
+      "name": "no video render or duplicate asset generation was submitted",
+      "status": "pass"
+    }
+  ],
+  "errors": [],
+  "axe": [
+    {
+      "mode": "desktop",
+      "label": "asset details",
+      "violations": []
+    },
+    {
+      "mode": "desktop",
+      "label": "scene references",
+      "violations": []
+    },
+    {
+      "mode": "desktop",
+      "label": "scene library",
+      "violations": []
+    },
+    {
+      "mode": "desktop",
+      "label": "restored readiness",
+      "violations": []
+    },
+    {
+      "mode": "mobile",
+      "label": "asset details",
+      "violations": []
+    },
+    {
+      "mode": "mobile",
+      "label": "scene references",
+      "violations": []
+    },
+    {
+      "mode": "mobile",
+      "label": "scene library",
+      "violations": []
+    },
+    {
+      "mode": "mobile",
+      "label": "restored readiness",
+      "violations": []
+    }
+  ]
+}

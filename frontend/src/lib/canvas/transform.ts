@@ -8,7 +8,8 @@ export const KIND_COLORS: Record<string, string> = {
   scene: 'hsl(270, 70%, 65%)', // purple
   shot: 'hsl(35, 90%, 55%)', // orange
   render_job: 'hsl(330, 70%, 60%)', // pink
-  output: 'hsl(190, 80%, 55%)' // cyan
+  output: 'hsl(190, 80%, 55%)', // cyan
+  final_video: 'hsl(48, 95%, 58%)' // gold: the finished deliverable
 };
 
 export function kindColor(kind: string): string {
@@ -23,11 +24,12 @@ export const KIND_LABELS: Record<string, string> = {
   character: 'Character',
   asset: 'Asset',
   render_job: 'Render',
-  output: 'Output'
+  output: 'Scene video',
+  final_video: 'Final video'
 };
 
 /** Order the legend swatches follow the pipeline left→right. */
-export const LEGEND_KINDS = ['scene', 'shot', 'character', 'asset', 'render_job', 'output'];
+export const LEGEND_KINDS = ['scene', 'shot', 'character', 'asset', 'render_job', 'output', 'final_video'];
 
 /** Edge accent by relationship label — colors the lines by what they mean so a
  * "casts" link reads differently from a "render" link even when labels are
@@ -39,6 +41,7 @@ export const EDGE_COLORS: Record<string, string> = {
   shot: 'hsl(35, 90%, 55%)', // scene → shot (orange, matches shot)
   render: 'hsl(330, 70%, 60%)', // → render job (pink)
   output: 'hsl(190, 80%, 55%)', // render job → output (cyan)
+  joined: 'hsl(48, 95%, 58%)', // scene video → the final video it is joined into (gold)
   storyboard: 'hsl(270, 70%, 65%)' // scene → storyboard asset (purple)
 };
 
@@ -52,18 +55,21 @@ export type ApiGraph = {
 };
 
 export function toFlow(g: ApiGraph): { nodes: Node[]; edges: Edge[] } {
+  const assets=new Map(g.nodes.filter(n=>n.type==='asset').map(n=>[n.id,n]));
   const nodes: Node[] = g.nodes.map((n) => ({
     id: n.id,
     type: 'entity',
     position: { x: 0, y: 0 },
-    data: { kind: n.type, label: n.label, ...(n.data ?? {}) }
+    data: { kind: n.type, label: n.label, ...(n.data ?? {}), ...(n.type==='character'?(()=>{const refs=Array.isArray(n.data?.reference_asset_ids_json)?n.data.reference_asset_ids_json:[];const image=refs.slice().reverse().map((id:string)=>assets.get(id)).find((a:any)=>/\.(png|jpe?g|webp|gif)$/i.test(a?.data?.file_path??''));return {reference_preview_path:image?.data?.file_path,reference_review:image?.data?.consistency_review};})():{}) }
   }));
   const edges: Edge[] = g.edges.map((e) => {
     const color = edgeColor(e.label);
     return {
-      id: `${e.source}->${e.target}`,
+      id: `${e.source}->${e.target}:${e.label}`,
       source: e.source,
       target: e.target,
+      sourceHandle: 'r',
+      targetHandle: 'l',
       // Relationship label is kept in `data.rel` always; the visible `label`
       // is toggled on by EntityCanvas only on hover/selection to avoid clutter.
       data: { rel: e.label || '' },
@@ -86,9 +92,9 @@ export function loadPositions(): Record<string, { x: number; y: number }> {
 
 export function savePositions(nodes: Node[]) {
   const pos = Object.fromEntries(nodes.map((n) => [n.id, n.position]));
-  localStorage.setItem(POS_KEY, JSON.stringify(pos));
+  try { localStorage.setItem(POS_KEY, JSON.stringify(pos)); } catch { /* Layout still works when browser storage is unavailable. */ }
 }
 
 export function clearPositions() {
-  localStorage.removeItem(POS_KEY);
+  try { localStorage.removeItem(POS_KEY); } catch { /* Arrangement still works for this visit. */ }
 }

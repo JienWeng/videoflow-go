@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"videoflow-go/internal/presets"
 	"videoflow-go/internal/providers"
 	"videoflow-go/internal/routing"
 
@@ -129,7 +130,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 	}
 	if (job.ProviderJobID == nil || *job.ProviderJobID == "") && job.Stage != nil && *job.Stage == "submitting" {
 		job.Status = "reconciliation_required"
-		message := "Provider submission outcome is unknown. Reconcile the existing job before starting another paid generation."
+		message := "The video service may have received this request but never confirmed it. Press Check again, or Stop waiting to make the scene again."
 		job.Error = &message
 		return w.database.UpdateRenderJob(job)
 	}
@@ -143,9 +144,17 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 			return err
 		}
 		w.broker.Publish(map[string]any{"type": "job_updated", "job_id": job.ID, "status": status, "stage": stage, "progress": progress, "project_id": job.ProjectID})
+		if status == "succeeded" && job.ProjectID != nil {
+			_ = w.database.SyncCosts(*job.ProjectID)
+		}
 		return nil
 	}
 	defer func() {
+		// A service that refuses its key or says the account is empty stops counting as
+		// connected right away; a finished video shows it works again.
+		if resultErr != nil || job.Status == "succeeded" {
+			routing.Resolver{Config: w.cfg, DB: w.database}.NoteServiceAnswer(job.Provider, resultErr)
+		}
 		if resultErr != nil && !errors.Is(resultErr, context.Canceled) && w.ctx.Err() == nil && job.Status != "reconciliation_required" {
 			message := resultErr.Error()
 			job.Error = &message
@@ -190,63 +199,26 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 			}
 		}
 		// Only fields in the provider contract are forwarded. Local IDs never leave the app.
-		allowed := map[string]bool{"prompt": true, "duration": true, "aspect_ratio": true, "resolution": true, "generate_audio": true, "seed": true, "frame_images": true, "input_references": true, "provider": true, "director_context": true, "director_keyframe": true, "voice_policy": true}
+		allowed := map[string]bool{"final_prompt": true, "prompt": true, "duration": true, "aspect_ratio": true, "resolution": true, "generate_audio": true, "seed": true, "frame_images": true, "input_references": true, "provider": true, "director_context": true, "director_keyframe": true, "voice_policy": true, "request_fingerprint": true, "audio_mode": true, "music_prompt": true, "render_unit": true, "render_plan_id": true, "scene_input_revision": true, "reference_plan_id": true, "image_urls": true, "video_urls": true, "audio_urls": true, "video_input": true, "reference_pictures": true}
 		for key := range payload {
 			if !allowed[key] {
 				delete(payload, key)
 			}
 		}
-		prompt, _ := payload["prompt"].(string)
-		if strings.TrimSpace(prompt) == "" && job.ShotID != nil {
-			shot, e := w.database.GetShot(*job.ShotID)
-			if e != nil {
-				return e
-			}
-			prompt = shot.Prompt
+		nativeAudio := false
+		if policy, ok := payload["voice_policy"].(map[string]any); ok {
+			nativeAudio = policy["mode"] == "native"
+			payload["generate_audio"] = nativeAudio
 		}
-		if strings.TrimSpace(prompt) == "" && job.SceneID != nil {
-			scene, e := w.database.GetScene(*job.SceneID)
-			if e != nil {
-				return e
-			}
-			prompt = scene.Title + ". " + scene.Summary
-			shots, e := w.database.ListShots(scene.ID)
-			if e != nil {
-				return e
-			}
-			for _, shot := range shots {
-				prompt += fmt.Sprintf("\nShot %d (%ds): %s", shot.ShotOrder, shot.Duration, shot.Prompt)
-			}
-		}
+		// A planned scene clip carries its finished prompt, written for the video model
+		// from the scene's records. Any other clip gets its prompt assembled here.
+		prompt, _ := payload["final_prompt"].(string)
 		if strings.TrimSpace(prompt) == "" {
-			return fmt.Errorf("a video prompt or scene/shot is required")
-		}
-		negatives := resolver.StringListSetting("render_negatives", []string{"blurry", "low quality", "distorted", "watermark"})
-		if len(negatives) > 0 {
-			prompt += "\nAvoid: " + strings.Join(negatives, ", ")
-		}
-		language := resolver.Setting("dialogue_language", "English")
-		if job.SceneID != nil {
-			if scene, e := w.database.GetScene(*job.SceneID); e == nil {
-				// Explicit tags below preserve the persisted brief across later settings changes.
-				var raw map[string]map[string]any
-				json.Unmarshal(scene.SceneJSON, &raw)
-				brief := raw["generation_brief"]
-				if value, ok := brief["language"].(string); ok && value != "" {
-					language = value
-				}
-				for _, key := range []string{"style", "instruction", "conversation_mode", "character_notes"} {
-					if value, ok := brief[key].(string); ok && value != "" {
-						prompt += "\n" + key + ": " + value
-					}
-				}
+			if prompt, err = w.assembledPrompt(job, payload, resolver, nativeAudio); err != nil {
+				return err
 			}
 		}
-		prompt += "\nSpoken dialogue language: " + language
-		if payload["voice_policy"] != nil {
-			prompt += "\nFinal audio requirement: SILENT VISUAL PASS. No generated dialogue, narration or substitute voice; approved saved speech is a separate explicit stage."
-			payload["generate_audio"] = false
-		}
+		delete(payload, "final_prompt")
 		payload["prompt"] = prompt
 		if job.Model == "" {
 			job.Model = resolver.DefaultMediaModel(provider, "video")
@@ -292,7 +264,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 			payload["aspect_ratio"] = aspect
 		}
 		// Use a generated storyboard as the first frame only when the selected model supports it.
-		if _, explicit := payload["frame_images"]; !explicit && payload["input_references"] == nil && job.SceneID != nil && job.ProjectID != nil {
+		if _, explicit := payload["frame_images"]; !explicit && payload["input_references"] == nil && payload["video_input"] != "references" && job.SceneID != nil && job.ProjectID != nil {
 			model, e := client.Model(ctx, job.Model, "video")
 			if e != nil {
 				return e
@@ -347,7 +319,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 					}
 				}
 				if blockedReview && payload["frame_images"] == nil {
-					return fmt.Errorf("generated reference needs explicit consistency review before video generation")
+					return fmt.Errorf("generated reference is excluded; replace it before video generation")
 				}
 			}
 		}
@@ -376,6 +348,19 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 					}
 				}
 				payload[key] = refs
+			}
+		}
+		// Reference pictures are kept as files until now and sent as the pictures themselves.
+		if refs, ok := payload["image_urls"].([]any); ok {
+			for i, ref := range refs {
+				path, _ := ref.(string)
+				if path != "" && !strings.HasPrefix(path, "https://") && !strings.HasPrefix(path, "http://") && !strings.HasPrefix(path, "data:") {
+					encoded, e := media.ImageDataURL(w.cfg.StorageRoot, path)
+					if e != nil {
+						return e
+					}
+					refs[i] = encoded
+				}
 			}
 		}
 		job.RequestJSON, err = json.Marshal(payload)
@@ -407,7 +392,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 				return e
 			}
 			job.Status = "reconciliation_required"
-			message := "Submission outcome needs review: " + e.Error()
+			message := "The video service may have received this request but never confirmed it. Press Check again, or Stop waiting to make the scene again. (" + e.Error() + ")"
 			job.Error = &message
 			if saveErr := w.database.UpdateRenderJob(job); saveErr != nil {
 				return saveErr
@@ -509,4 +494,69 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 			return ctx.Err()
 		}
 	}
+}
+
+// assembledPrompt builds the prompt of a clip that has no finished prompt of its own:
+// the request's text, or the shot's or scene's, followed by the project's standing
+// directions.
+func (w *WorkerPool) assembledPrompt(job *models.RenderJob, payload map[string]any, resolver routing.Resolver, nativeAudio bool) (string, error) {
+	prompt, _ := payload["prompt"].(string)
+	if strings.TrimSpace(prompt) == "" && job.ShotID != nil {
+		shot, err := w.database.GetShot(*job.ShotID)
+		if err != nil {
+			return "", err
+		}
+		prompt = shot.Prompt
+	}
+	var scene *models.Scene
+	if job.SceneID != nil {
+		scene, _ = w.database.GetScene(*job.SceneID)
+	}
+	if strings.TrimSpace(prompt) == "" && job.SceneID != nil {
+		if scene == nil {
+			return "", fmt.Errorf("scene not found")
+		}
+		prompt = scene.Title + ". " + scene.Summary
+		shots, err := w.database.ListShots(scene.ID)
+		if err != nil {
+			return "", err
+		}
+		for _, shot := range shots {
+			prompt += fmt.Sprintf("\nShot %d (%ds): %s", shot.ShotOrder, shot.Duration, shot.Prompt)
+		}
+	}
+	if strings.TrimSpace(prompt) == "" {
+		return "", fmt.Errorf("a video prompt or scene/shot is required")
+	}
+	if negatives := resolver.StringListSetting("render_negatives", []string{"blurry", "low quality", "distorted", "watermark"}); len(negatives) > 0 {
+		prompt += "\nAvoid: " + strings.Join(negatives, ", ")
+	}
+	language := resolver.Setting("dialogue_language", "English")
+	if scene != nil {
+		// Explicit tags below preserve the persisted brief across later settings changes.
+		var raw map[string]map[string]any
+		json.Unmarshal(scene.SceneJSON, &raw)
+		brief := raw["generation_brief"]
+		if data, err := json.Marshal(brief["creative_preset"]); err == nil {
+			var preset *presets.Preset
+			if json.Unmarshal(data, &preset) == nil {
+				prompt += presets.Prompt(preset, "video")
+			}
+		}
+		if value, ok := brief["language"].(string); ok && value != "" {
+			language = value
+		}
+		for _, key := range []string{"style", "tone", "audience", "platform", "instruction", "conversation_mode", "character_notes"} {
+			if value, ok := brief[key].(string); ok && value != "" {
+				prompt += "\n" + key + ": " + value
+			}
+		}
+	}
+	prompt += "\nSpoken dialogue language: " + language
+	if nativeAudio {
+		prompt += "\nFinal audio requirement: generate synchronized native audio as specified above."
+	} else if payload["voice_policy"] != nil {
+		prompt += "\nFinal audio requirement: silent clip. No dialogue, narration or other generated sound."
+	}
+	return prompt, nil
 }

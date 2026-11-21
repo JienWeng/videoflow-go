@@ -20,7 +20,8 @@ const SourceCommit = "e596be16c901639ce6c18032e56924a9d8e1967d"
 var safeID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 
 type Manifest struct {
-	CaptionBindings []CaptionBinding `json:"caption_bindings,omitempty"`
+	CaptionVariants []CaptionVariant `json:"caption_variants,omitempty"`
+	Texts           []TextLayer      `json:"texts,omitempty"`
 	CaptionStyle    string           `json:"caption_style"`
 	Renderer        string           `json:"renderer"`
 	Version         int              `json:"version"`
@@ -33,30 +34,90 @@ type Manifest struct {
 	Captions        []Cue            `json:"captions"`
 	Revision        string           `json:"revision,omitempty"`
 }
+type CaptionVariant struct {
+	Language string `json:"language"`
+	Captions []Cue  `json:"captions"`
+}
+type TextLayer struct {
+	ID         string  `json:"id"`
+	Text       string  `json:"text"`
+	Start      float64 `json:"start"`
+	End        float64 `json:"end"`
+	Size       int     `json:"size"`
+	Color      string  `json:"color"`
+	Background string  `json:"background"`
+	Font       string  `json:"font"`
+	Position   string  `json:"position"`
+}
+
+var HexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+func (t TextLayer) Valid(duration float64) bool {
+	return ValidID(t.ID) && strings.TrimSpace(t.Text) != "" && len(t.Text) <= 2000 && t.Start >= 0 && t.End > t.Start && t.End <= duration && t.Size >= 12 && t.Size <= 160 && HexColor.MatchString(t.Color) && (t.Background == "transparent" || HexColor.MatchString(t.Background)) && (t.Font == "sans-serif" || t.Font == "serif" || t.Font == "monospace") && (t.Position == "top" || t.Position == "center" || t.Position == "bottom")
+}
+func (t TextLayer) CSS() string {
+	top := "50%"
+	if t.Position == "top" {
+		top = "15%"
+	}
+	if t.Position == "bottom" {
+		top = "80%"
+	}
+	return fmt.Sprintf("position:absolute;left:5%%;width:90%%;top:%s;transform:translateY(-50%%);text-align:center;white-space:pre-wrap;color:%s;background:%s;font:%dpx %s", top, t.Color, t.Background, t.Size, t.Font)
+}
+
+type Adjustments struct {
+	Fit        string  `json:"fit"`
+	Scale      float64 `json:"scale"`
+	X          float64 `json:"x"`
+	Y          float64 `json:"y"`
+	Brightness float64 `json:"brightness"`
+	Contrast   float64 `json:"contrast"`
+	Saturation float64 `json:"saturation"`
+	Opacity    float64 `json:"opacity"`
+}
+
+func (a Adjustments) Valid() bool {
+	return (a.Fit == "contain" || a.Fit == "cover") && a.Scale >= 1 && a.Scale <= 4 && a.X >= 0 && a.X <= 100 && a.Y >= 0 && a.Y <= 100 && a.Brightness >= 0 && a.Brightness <= 2 && a.Contrast >= 0 && a.Contrast <= 2 && a.Saturation >= 0 && a.Saturation <= 2 && a.Opacity >= 0 && a.Opacity <= 1
+}
+func (a Adjustments) CSS() string {
+	return fmt.Sprintf("object-fit:%s;object-position:%g%% %g%%;transform:scale(%g);transform-origin:%g%% %g%%;filter:brightness(%g) contrast(%g) saturate(%g);opacity:%g", a.Fit, a.X, a.Y, a.Scale, a.X, a.Y, a.Brightness, a.Contrast, a.Saturation, a.Opacity)
+}
+
 type Clip struct {
-	HasAudio         bool    `json:"has_audio"`
-	ID               string  `json:"id"`
-	AssetID          string  `json:"asset_id"`
-	SHA256           string  `json:"sha256,omitempty"`
-	Path             string  `json:"path,omitempty"`
-	Start            float64 `json:"start"`
-	Trim             float64 `json:"trim"`
-	Duration         float64 `json:"duration"`
-	OriginalDuration float64 `json:"original_duration"`
-	Speed            float64 `json:"speed"`
-	Width            int     `json:"width"`
-	Height           int     `json:"height"`
+	Overlay          *OverlayBox  `json:"overlay,omitempty"`
+	Volume           *float64     `json:"volume,omitempty"`
+	FadeIn           float64      `json:"fade_in,omitempty"`
+	FadeOut          float64      `json:"fade_out,omitempty"`
+	Muted            bool         `json:"muted,omitempty"`
+	Adjustments      *Adjustments `json:"adjustments,omitempty"`
+	HasAudio         bool         `json:"has_audio"`
+	ID               string       `json:"id"`
+	AssetID          string       `json:"asset_id"`
+	SHA256           string       `json:"sha256,omitempty"`
+	Path             string       `json:"path,omitempty"`
+	Start            float64      `json:"start"`
+	Trim             float64      `json:"trim"`
+	Duration         float64      `json:"duration"`
+	OriginalDuration float64      `json:"original_duration"`
+	Speed            float64      `json:"speed"`
+	Width            int          `json:"width"`
+	Height           int          `json:"height"`
 }
-type CaptionBinding struct {
-	ClipID         string          `json:"clip_id"`
-	OutputID       string          `json:"output_id"`
-	CaptionSHA256  string          `json:"caption_sha256"`
-	VideoSHA256    string          `json:"video_sha256"`
-	SourceBindings json.RawMessage `json:"source_bindings"`
-	Start          float64         `json:"start"`
-	Trim           float64         `json:"trim"`
-	Duration       float64         `json:"duration"`
+type OverlayBox struct {
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
 }
+
+func (b OverlayBox) Valid() bool {
+	return b.X >= 0 && b.Y >= 0 && b.Width > 0 && b.Height > 0 && b.X+b.Width <= 100 && b.Y+b.Height <= 100
+}
+func (b OverlayBox) CSS() string {
+	return fmt.Sprintf("left:%g%%;top:%g%%;right:auto;bottom:auto;width:%g%%;height:%g%%", b.X, b.Y, b.Width, b.Height)
+}
+
 type Cue struct {
 	SourceClipID string  `json:"source_clip_id,omitempty"`
 	CharacterID  string  `json:"character_id,omitempty"`
@@ -102,20 +163,34 @@ func Save(root, project string, m Manifest, sources map[string]string) (string, 
 			if !ValidID(c.ID) || seen[c.ID] || !ValidID(c.AssetID) || c.Speed != 1 || !(c.Start >= 0 && c.Trim >= 0 && c.Duration > 0 && c.Start+c.Duration <= m.Duration) {
 				return fmt.Errorf("invalid clip or unsupported speed (only 1 supported)")
 			}
+			if (c.Volume != nil && !(*c.Volume >= 0 && *c.Volume <= 1)) || !(c.FadeIn >= 0 && c.FadeOut >= 0 && c.FadeIn+c.FadeOut <= c.Duration) {
+				return fmt.Errorf("audio volume must be 0–1 and fades must fit within the clip")
+			}
+			if c.Adjustments != nil && !c.Adjustments.Valid() {
+				return fmt.Errorf("invalid framing or color adjustment")
+			}
+			if c.Overlay != nil && !c.Overlay.Valid() {
+				return fmt.Errorf("invalid overlay placement")
+			}
 			seen[c.ID] = true
 			if c.OriginalDuration == 0 {
 				c.OriginalDuration = c.Duration
-			}
-			if c.Trim+c.Duration > c.OriginalDuration {
-				return fmt.Errorf("trim exceeds original duration")
 			}
 			p, ok := sources[c.AssetID]
 			if !ok {
 				return fmt.Errorf("asset %s unavailable in project", c.AssetID)
 			}
 			ext := strings.ToLower(filepath.Ext(p))
+			if isStillImage(ext) {
+				// A still can be held for any length; its "original" length is whatever the edit asks.
+				c.Trim, c.OriginalDuration = 0, c.Duration
+			}
+			// Allow rounding: clip lengths are kept to milliseconds, probes are finer.
+			if c.Trim+c.Duration > c.OriginalDuration+0.02 {
+				return fmt.Errorf("trim exceeds original duration")
+			}
 			switch ext {
-			case ".mp4", ".webm", ".mov", ".png", ".jpg", ".jpeg", ".webp", ".wav", ".mp3", ".m4a", ".ogg":
+			case ".mp4", ".webm", ".mov", ".png", ".jpg", ".jpeg", ".webp", ".wav", ".mp3", ".m4a", ".ogg", ".aac", ".flac", ".opus":
 			default:
 				return fmt.Errorf("unsupported asset format")
 			}
@@ -150,6 +225,27 @@ func Save(root, project string, m Manifest, sources map[string]string) (string, 
 		}
 		seen[c.ID] = true
 	}
+	for _, t := range m.Texts {
+		if !t.Valid(m.Duration) || seen[t.ID] {
+			return "", fmt.Errorf("invalid text layer")
+		}
+		seen[t.ID] = true
+	}
+	if len(m.CaptionVariants) > 30 {
+		return "", fmt.Errorf("too many caption variants")
+	}
+	for _, variant := range m.CaptionVariants {
+		if strings.TrimSpace(variant.Language) == "" || len(variant.Language) > 80 || len(variant.Captions) > 500 {
+			return "", fmt.Errorf("invalid caption variant")
+		}
+		ids := map[string]bool{}
+		for _, cue := range variant.Captions {
+			if !ValidID(cue.ID) || ids[cue.ID] || !(cue.Start >= 0 && cue.End > cue.Start && cue.End <= m.Duration) || strings.TrimSpace(cue.Text) == "" {
+				return "", fmt.Errorf("invalid translated caption timings")
+			}
+			ids[cue.ID] = true
+		}
+	}
 	m.Renderer = "videoflow-hyperframes-v1:" + SourceCommit
 	m.Revision = ""
 	b, _ := json.Marshal(m)
@@ -162,25 +258,53 @@ func Save(root, project string, m Manifest, sources map[string]string) (string, 
 		return "", e
 	}
 	for p, data := range files {
-		if e := os.WriteFile(filepath.Join(dir, p), data, 0600); e != nil {
+		if e := replaceFile(filepath.Join(dir, p), data); e != nil {
 			return "", e
 		}
 	}
-	if e := os.WriteFile(filepath.Join(dir, "index.html"), []byte(Document(m)), 0600); e != nil {
+	if e := replaceFile(filepath.Join(dir, "index.html"), []byte(Document(m))); e != nil {
 		return "", e
 	}
-	return revision, os.WriteFile(filepath.Join(dir, "manifest.json"), b, 0600)
+	return revision, replaceFile(filepath.Join(dir, "manifest.json"), b)
+}
+
+// replaceFile swaps in a complete file. Saving an edit again rewrites its
+// revision, which a render may be reading; writing in place would show that
+// render a truncated clip, and it would freeze on the clip's last frame.
+func replaceFile(path string, data []byte) error {
+	f, e := os.CreateTemp(filepath.Dir(path), ".saving-*")
+	if e != nil {
+		return e
+	}
+	defer os.Remove(f.Name())
+	if _, e = f.Write(data); e == nil {
+		e = f.Chmod(0600)
+	}
+	if closeErr := f.Close(); e == nil {
+		e = closeErr
+	}
+	if e != nil {
+		return e
+	}
+	return os.Rename(f.Name(), path)
 }
 func Document(m Manifest) string {
 	var b strings.Builder
-	captionSize := 28
+	// Caption size follows the video's short side so text reads the same on a
+	// 640p preview and a 1080p export (about 5% of the short side by default).
+	short := m.Width
+	if m.Height < short {
+		short = m.Height
+	}
+	factor := 0.05
 	switch m.CaptionStyle {
 	case "compact":
-		captionSize = 20
+		factor = 0.036
 	case "large":
-		captionSize = 40
+		factor = 0.07
 	}
-	fmt.Fprintf(&b, `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src 'self' blob:; img-src 'self' blob: data:; script-src 'self' 'unsafe-inline' blob:; connect-src 'self'; worker-src blob:; font-src 'self'; style-src 'unsafe-inline'"><style>@font-face{font-family:VideoFlowCaptions;src:url(assets/captions.woff2)}html,body{margin:0;background:#111}#root{position:relative;overflow:hidden;width:%dpx;height:%dpx}.clip{position:absolute;inset:0;width:100%%;height:100%%;object-fit:contain}.caption{inset:auto 5%% 8%%;height:auto;width:90%%;color:white;text-align:center;font:%dpx VideoFlowCaptions,sans-serif;text-shadow:0 2px 4px black}</style></head><body><div id="root" data-composition-id="root" data-no-timeline data-width="%d" data-height="%d" data-duration="%g" data-fps="%d">`, m.Width, m.Height, captionSize, m.Width, m.Height, m.Duration, m.FPS)
+	captionSize := int(float64(short)*factor + 0.5)
+	fmt.Fprintf(&b, `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src 'self' blob:; img-src 'self' blob: data:; script-src 'self' 'unsafe-inline' blob:; connect-src 'self'; worker-src blob:; font-src 'self' data:; style-src 'unsafe-inline'"><style>@font-face{font-family:VideoFlowCaptions;src:url(assets/captions.woff2)}html,body{margin:0;background:#111}#root{position:relative;overflow:hidden;width:%dpx;height:%dpx}.clip{position:absolute;inset:0;width:100%%;height:100%%;object-fit:contain}.caption{inset:auto 5%% 8%%;height:auto;width:90%%;color:white;text-align:center;font:700 %dpx/1.25 VideoFlowCaptions,sans-serif;text-shadow:-2px -2px 0 #000,2px -2px 0 #000,-2px 2px 0 #000,2px 2px 0 #000,0 3px 8px rgba(0,0,0,.8)}</style></head><body><div id="root" data-composition-id="root" data-no-timeline data-width="%d" data-height="%d" data-duration="%g" data-fps="%d">`, m.Width, m.Height, captionSize, m.Width, m.Height, m.Duration, m.FPS)
 	for _, group := range []struct {
 		clips []Clip
 		audio bool
@@ -193,14 +317,35 @@ func Document(m Manifest) string {
 				tag = "img"
 			}
 			audioAttribute := "muted"
-			if c.HasAudio {
+			if c.HasAudio && !c.Muted {
 				audioAttribute = `data-has-audio="true"`
 			}
-			fmt.Fprintf(&b, `<%s id="%s" class="clip" src="%s" data-start="%g" data-duration="%g" data-media-start="%g" %s></%s>`, tag, c.ID, c.Path, c.Start, c.Duration, c.Trim, audioAttribute, tag)
+			if c.Volume != nil {
+				audioAttribute += fmt.Sprintf(` data-volume="%g"`, *c.Volume)
+			}
+			if c.FadeIn > 0 {
+				audioAttribute += fmt.Sprintf(` data-fade-in="%g"`, c.FadeIn)
+			}
+			if c.FadeOut > 0 {
+				audioAttribute += fmt.Sprintf(` data-fade-out="%g"`, c.FadeOut)
+			}
+			style := ""
+			if c.Adjustments != nil && c.Adjustments.Valid() {
+				style = ` style="` + c.Adjustments.CSS() + `"`
+			}
+			if c.Overlay != nil && c.Overlay.Valid() {
+				style = ` style="` + c.Overlay.CSS() + `;` + strings.TrimSuffix(strings.TrimPrefix(style, ` style="`), `"`) + `"`
+			}
+			fmt.Fprintf(&b, `<%s id="%s" class="clip"%s src="%s" data-start="%g" data-duration="%g" data-media-start="%g" %s></%s>`, tag, c.ID, style, c.Path, c.Start, c.Duration, c.Trim, audioAttribute, tag)
 		}
 	}
 	for _, c := range m.Captions {
 		fmt.Fprintf(&b, `<div id="%s" class="clip caption" data-start="%g" data-duration="%g">%s</div>`, c.ID, c.Start, c.End-c.Start, html.EscapeString(c.Text))
+	}
+	for _, t := range m.Texts {
+		if t.Valid(m.Duration) {
+			fmt.Fprintf(&b, `<div id="%s" style="%s" data-start="%g" data-duration="%g">%s</div>`, t.ID, t.CSS(), t.Start, t.End-t.Start, html.EscapeString(t.Text))
+		}
 	}
 	b.WriteString("</div></body></html>")
 	return b.String()
@@ -223,7 +368,9 @@ func Verify(dir string, m Manifest) error {
 	}
 	m.Revision = revision
 	b, e := os.ReadFile(filepath.Join(dir, "index.html"))
-	if e != nil || string(b) != Document(m) {
+	// Edits saved before the caption font was allowed inline carry the earlier policy.
+	current := Document(m)
+	if earlier := strings.Replace(current, "font-src 'self' data:", "font-src 'self'", 1); e != nil || (string(b) != current && string(b) != earlier) {
 		return fmt.Errorf("composition source changed; save a new manifest revision")
 	}
 	for _, c := range append(m.Clips, m.Audio...) {
@@ -246,4 +393,12 @@ func Verify(dir string, m Manifest) error {
 		}
 	}
 	return nil
+}
+
+func isStillImage(ext string) bool {
+	switch ext {
+	case ".png", ".jpg", ".jpeg", ".webp":
+		return true
+	}
+	return false
 }

@@ -5,9 +5,36 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"videoflow-go/internal/models"
 )
+
+func defaultStyleGuide(projectID string) models.StyleGuide {
+	return models.StyleGuide{
+		ProjectID:   &projectID,
+		Name:        "Natural",
+		StylePrompt: "Use the requested visual medium. When unspecified, use natural proportions, material textures and practical lighting.",
+	}
+}
+
+func styleDirection(style *models.StyleGuide) string {
+	parts := []string{strings.TrimSpace(style.StylePrompt)}
+	if palette := strings.TrimSpace(style.Palette); palette != "" {
+		parts = append(parts, "Palette: "+palette)
+	}
+	if lighting := strings.TrimSpace(style.Lighting); lighting != "" {
+		parts = append(parts, "Lighting: "+lighting)
+	}
+	return strings.Join(parts, "\n")
+}
+
+func (s *Server) sceneVisualStyle(scene *models.Scene) string {
+	if style := strings.TrimSpace(sceneBrief(scene).Style); style != "" {
+		return style
+	}
+	return s.stylePrompt(scene.ProjectID)
+}
 
 func (s *Server) handleGetStyle(w http.ResponseWriter, r *http.Request) {
 	projectID, err := s.activeProjectID(r.Context())
@@ -17,16 +44,8 @@ func (s *Server) handleGetStyle(w http.ResponseWriter, r *http.Request) {
 	}
 	style, err := s.database.GetStyleGuide(projectID)
 	if err != nil {
-		// Return default preset
-		style = &models.StyleGuide{
-			ProjectID:   &projectID,
-			Name:        "2D Picture Book",
-			StylePrompt: "warm 2D children's picture-book illustration, clean shapes, expressive faces",
-			Palette:     "soft pastel colors",
-			Lighting:    "gentle even lighting",
-			Audience:    "children aged 5 to 9",
-			Tone:        "warm and playful",
-		}
+		fallback := defaultStyleGuide(projectID)
+		style = &fallback
 	}
 	writeJSON(w, http.StatusOK, style)
 }
@@ -37,9 +56,20 @@ func (s *Server) handleUpdateStyle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no active project", http.StatusInternalServerError)
 		return
 	}
-	var style models.StyleGuide
-	if err := json.NewDecoder(r.Body).Decode(&style); err != nil {
+	current, loadErr := s.database.GetStyleGuide(projectID)
+	if loadErr != nil {
+		fallback := defaultStyleGuide(projectID)
+		current = &fallback
+	}
+	style := *current
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 65536))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&style); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if style.ProjectID != nil && *style.ProjectID != projectID {
+		http.Error(w, "project changed; reload before saving its style", 409)
 		return
 	}
 	style.ProjectID = &projectID

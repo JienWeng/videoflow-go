@@ -175,21 +175,6 @@ func TestMissingEndpointsResolution(t *testing.T) {
 		t.Fatalf("expected types object wrapper, got %v", typesRes)
 	}
 
-	// 6. GET /caption-styles and /caption-config
-	req = httptest.NewRequest("GET", "/caption-styles", nil)
-	rr = httptest.NewRecorder()
-	server.Router().ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200 for /caption-styles, got %d", rr.Code)
-	}
-
-	req = httptest.NewRequest("GET", "/caption-config", nil)
-	rr = httptest.NewRecorder()
-	server.Router().ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200 for /caption-config, got %d", rr.Code)
-	}
-
 	// 7. Create scene and test scene action endpoints
 	scenePayload := []byte(`{"title":"Act 2","summary":"Middle scene","duration":5,"aspect_ratio":"16:9"}`)
 	req = httptest.NewRequest("POST", "/scenes", bytes.NewReader(scenePayload))
@@ -283,67 +268,12 @@ func TestEditorAndPanelEndpoints(t *testing.T) {
 	}
 	_ = database.CreateRenderOutput(out)
 
-	// 2. Test GET /outputs/{id}/editor
-	req := httptest.NewRequest("GET", "/outputs/"+out.ID+"/editor", nil)
+	// 2. Test POST /outputs/{id}/retry
+	req := httptest.NewRequest("POST", "/outputs/"+out.ID+"/retry", nil)
 	rr := httptest.NewRecorder()
-	server.Router().ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200 for editor data, got %d", rr.Code)
-	}
-	var editorData map[string]interface{}
-	if err := json.Unmarshal(rr.Body.Bytes(), &editorData); err != nil {
-		t.Fatalf("failed to decode editor data: %v", err)
-	}
-	outputBlock := editorData["output"].(map[string]interface{})
-	if outputBlock["qa_issues"] == nil {
-		t.Fatalf("expected non-nil qa_issues array")
-	}
-	qaIssues := outputBlock["qa_issues"].([]interface{})
-	if len(qaIssues) != 1 || qaIssues[0] != "slight motion jitter" {
-		t.Fatalf("unexpected qa_issues: %v", qaIssues)
-	}
-	captionsBlock := editorData["captions"].(map[string]interface{})
-	if captionsBlock["available"] != true {
-		t.Fatalf("expected captions available=true")
-	}
-	shotsBlock := editorData["shots"].([]interface{})
-	if len(shotsBlock) != 1 {
-		t.Fatalf("expected 1 shot in shots block, got %d", len(shotsBlock))
-	}
-	sceneBlock := editorData["scene"].(map[string]interface{})
-	if sceneBlock["title"] != "Opening Scene" {
-		t.Fatalf("expected scene title 'Opening Scene', got %v", sceneBlock["title"])
-	}
-
-	// 3. Test POST /outputs/{id}/retry
-	req = httptest.NewRequest("POST", "/outputs/"+out.ID+"/retry", nil)
-	rr = httptest.NewRecorder()
 	server.Router().ServeHTTP(rr, req)
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected missing credentials to reject retry, got %d: %s", rr.Code, rr.Body.String())
-	}
-
-	// 4. Test POST /outputs/{id}/run-qa?background=true
-	req = httptest.NewRequest("POST", "/outputs/"+out.ID+"/run-qa?background=true", nil)
-	rr = httptest.NewRecorder()
-	server.Router().ServeHTTP(rr, req)
-	if rr.Code != http.StatusAccepted {
-		t.Fatalf("expected 202 for run-qa background, got %d", rr.Code)
-	}
-	var qaOpRes map[string]interface{}
-	_ = json.Unmarshal(rr.Body.Bytes(), &qaOpRes)
-	if qaOpRes["op_id"] == nil {
-		t.Fatalf("expected op_id for run-qa background, got %v", qaOpRes)
-	}
-
-	// 5. Test PUT /outputs/{id}/captions?background=true
-	capsPayload := []byte(`{"segments":[{"start":0,"end":3.0,"text":"Edited caption"}],"style":"cinematic"}`)
-	req = httptest.NewRequest("PUT", "/outputs/"+out.ID+"/captions?background=true", bytes.NewReader(capsPayload))
-	req.Header.Set("Content-Type", "application/json")
-	rr = httptest.NewRecorder()
-	server.Router().ServeHTTP(rr, req)
-	if rr.Code != http.StatusAccepted {
-		t.Fatalf("expected 202 for update captions background, got %d", rr.Code)
 	}
 
 	// 6. Test POST /style/ingest?background=true

@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "inter",
+        "files": [
+          "frontend/src/app.css"
+        ],
+        "createdAt": "2026-11-14T05:11:36.582Z",
+        "reason": "Agent decision: the repository explicitly documents Inter for Latin text with CJK fallbacks; retain the established typography under the user's preserve-visual-identity requirement during accessibility fixes."
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "frontend/src/lib/canvas/EntityNode.svelte"
+        ],
+        "createdAt": "2026-11-17T09:04:27.815Z",
+        "reason": "Agent retained existing semantic node-kind accents: scene, shot, character, asset, render and output share their colors with the minimap and connection lines."
+      }
+    ]
+  }
+}

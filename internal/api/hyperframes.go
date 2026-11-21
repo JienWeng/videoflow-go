@@ -2,12 +2,16 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
+	"time"
 	"videoflow-go/internal/composition"
 	"videoflow-go/internal/models"
 )
@@ -16,13 +20,25 @@ var compositionSlots = make(chan struct{}, 1)
 var compositionImportMu sync.Mutex
 
 func (s *Server) registerCompositionRoutes() {
-	s.router.Post("/compositions/captions/import", s.handleCompositionCaptionImport)
+	s.router.Post("/reference-videos/plan", s.handleReferenceVideo)
+	s.router.Post("/reference-videos/render", s.handleReferenceVideo)
+	s.router.Get("/studio/brand", s.handleStudioBrand)
+	s.router.Put("/studio/brand", s.handleStudioBrand)
+	s.router.Post("/compositions/localize", s.handleLocalizeComposition)
+	s.router.Post("/compositions/captions/from-script", s.handleCompositionScriptCaptions)
+	s.router.Post("/compositions/voiceover", s.handleCompositionVoiceover)
+	s.router.Get("/scenes/{id}/composition-sources", s.handleSceneCompositionSources)
+	s.router.Get("/scenes/{id}/composition-draft", s.handleSceneCompositionDraft)
+	s.router.Get("/scripts/{id}/composition-draft", s.handleScriptCompositionDraft)
 	s.router.Get("/compositions/sources", s.handleCompositionSources)
+	s.router.Get("/compositions/sources/{id}", s.handleCompositionSource)
 	s.router.Get("/compositions/runtime", s.handleCompositionRuntime)
+	s.router.Get("/compositions", s.handleCompositionList)
 	s.router.Post("/compositions", s.handleCompositionSave)
 	s.router.Get("/compositions/{revision}", s.handleCompositionGet)
 	s.router.Post("/compositions/{revision}/run", s.handleCompositionRun)
 }
+func compositionHash(data []byte) string  { return voiceHash(data) }
 func (s *Server) compositionRoot() string { return filepath.Join(s.cfg.StorageRoot, "compositions") }
 func (s *Server) handleCompositionRuntime(w http.ResponseWriter, r *http.Request) {
 	_, e := composition.Runtime()
@@ -32,6 +48,56 @@ func (s *Server) handleCompositionRuntime(w http.ResponseWriter, r *http.Request
 	}
 	writeJSON(w, 200, map[string]interface{}{"ready": e == nil, "version": composition.RuntimeVersion, "source_commit": composition.SourceCommit, "message": message, "opencut": "Not integrated: adapter round-trip validation required"})
 }
+
+// handleCompositionList exposes only the active project's revision metadata.
+func (s *Server) handleCompositionList(w http.ResponseWriter, r *http.Request) {
+	project, err := s.activeProjectID(r.Context())
+	if err != nil || !composition.ValidID(project) {
+		http.Error(w, "no active project", 400)
+		return
+	}
+	type entry struct {
+		Revision     string    `json:"revision"`
+		CreatedAt    time.Time `json:"created_at"`
+		Duration     float64   `json:"duration"`
+		ClipCount    int       `json:"clip_count"`
+		CaptionCount int       `json:"caption_count"`
+	}
+	result := []entry{}
+	directory := filepath.Join(s.compositionRoot(), project)
+	files, err := os.ReadDir(directory)
+	if os.IsNotExist(err) {
+		writeJSON(w, 200, result)
+		return
+	}
+	if err != nil {
+		http.Error(w, "could not list saved edits", 500)
+		return
+	}
+	for _, file := range files {
+		if !file.IsDir() || !composition.ValidID(file.Name()) || file.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		path := filepath.Join(directory, file.Name(), "manifest.json")
+		info, err := os.Lstat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		manifest, err := composition.Load(s.compositionRoot(), project, file.Name())
+		if err != nil {
+			continue
+		}
+		result = append(result, entry{file.Name(), info.ModTime().UTC(), manifest.Duration, len(manifest.Clips), len(manifest.Captions)})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].CreatedAt.Equal(result[j].CreatedAt) {
+			return result[i].Revision < result[j].Revision
+		}
+		return result[i].CreatedAt.After(result[j].CreatedAt)
+	})
+	writeJSON(w, 200, result)
+}
+
 func (s *Server) handleCompositionSave(w http.ResponseWriter, r *http.Request) {
 	project, e := s.activeProjectID(r.Context())
 	if e != nil {
@@ -41,10 +107,6 @@ func (s *Server) handleCompositionSave(w http.ResponseWriter, r *http.Request) {
 	var m composition.Manifest
 	if e = json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20)).Decode(&m); e != nil {
 		http.Error(w, "invalid manifest", 400)
-		return
-	}
-	if e = s.validateCompositionCaptions(project, m); e != nil {
-		http.Error(w, e.Error(), 409)
 		return
 	}
 	sources, _, e := s.compositionSources(project)
@@ -116,19 +178,16 @@ func (s *Server) handleCompositionRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "exact source revision required", 409)
 		return
 	}
+	// Exports run one at a time on this server; a second one waits its turn.
 	select {
 	case compositionSlots <- struct{}{}:
 		defer func() { <-compositionSlots }()
-	default:
-		http.Error(w, "another local composition operation is running", 409)
+	case <-r.Context().Done():
+		http.Error(w, "stopped while waiting for another export to finish", 409)
 		return
 	}
 	dir := filepath.Join(s.compositionRoot(), project, revision)
 	if e = composition.Verify(dir, m); e != nil {
-		http.Error(w, e.Error(), 409)
-		return
-	}
-	if e = s.validateCompositionCaptions(project, m); e != nil {
 		http.Error(w, e.Error(), 409)
 		return
 	}
@@ -169,8 +228,8 @@ func (s *Server) handleCompositionRun(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, e.Error(), 500)
 			return
 		}
-		meta, _ := json.Marshal(map[string]interface{}{"composition_revision": revision, "source_manifest": filepath.Join(dir, "manifest.json"), "hyperframes_version": composition.RuntimeVersion, "source_assets": append(m.Clips, m.Audio...), "caption_bindings": m.CaptionBindings})
-		a := &models.Asset{ID: derivedID, ProjectID: &project, Type: "output_video", Name: "Composition " + revision[:12] + ".mp4", FilePath: derivedPath, TagsJSON: []byte("[]"), MetadataJSON: meta}
+		meta, _ := json.Marshal(map[string]interface{}{"composition_revision": revision, "source_manifest": filepath.Join(dir, "manifest.json"), "hyperframes_version": composition.RuntimeVersion, "source_assets": append(m.Clips, m.Audio...)})
+		a := &models.Asset{ID: derivedID, ProjectID: &project, Type: "output_video", Name: "Edited video · " + time.Now().Format("Jan 2, 3:04 PM") + ".mp4", FilePath: derivedPath, TagsJSON: []byte("[]"), MetadataJSON: meta}
 		if e = s.database.CreateUploadedAsset(a); e != nil {
 			http.Error(w, e.Error(), 500)
 			return
@@ -184,9 +243,11 @@ func (s *Server) handleCompositionRun(w http.ResponseWriter, r *http.Request) {
 // compositionSources only resolves database-owned sources through the shared
 // storage resolver; client-supplied paths never enter the source map.
 type compositionSource struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Type string `json:"type"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Type      string `json:"type"`
+	MediaKind string `json:"media_kind"`
+	URL       string `json:"url"`
 }
 
 func (s *Server) compositionSources(project string) (map[string]string, []compositionSource, error) {
@@ -202,7 +263,16 @@ func (s *Server) compositionSources(project string) (map[string]string, []compos
 			return
 		}
 		paths[id] = full
-		items = append(items, compositionSource{ID: id, Name: name, Type: kind})
+		mediaKind := "unknown"
+		switch strings.ToLower(filepath.Ext(full)) {
+		case ".png", ".jpg", ".jpeg", ".webp", ".gif":
+			mediaKind = "image"
+		case ".mp4", ".webm", ".mov", ".mkv":
+			mediaKind = "video"
+		case ".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus":
+			mediaKind = "audio"
+		}
+		items = append(items, compositionSource{ID: id, Name: name, Type: kind, MediaKind: mediaKind, URL: path})
 	}
 	assets, e := s.database.ListAssets(project)
 	if e != nil {
@@ -217,6 +287,12 @@ func (s *Server) compositionSources(project string) (map[string]string, []compos
 	if e != nil {
 		return nil, nil, e
 	}
+	sceneTitles := map[string]string{}
+	if scenes, err := s.database.ListScenes(project); err == nil {
+		for _, sc := range scenes {
+			sceneTitles[sc.ID] = sc.Title
+		}
+	}
 	for _, job := range jobs {
 		if job.ProjectID == nil || *job.ProjectID != project || job.Status != "succeeded" {
 			continue
@@ -225,8 +301,21 @@ func (s *Server) compositionSources(project string) (map[string]string, []compos
 		if e != nil {
 			return nil, nil, e
 		}
-		for _, out := range outputs {
-			add("output-"+out.ID, "Rendered output "+out.ID, "output_video", out.VideoPath)
+		name := "Scene video"
+		if job.SceneID != nil {
+			if title, ok := sceneTitles[*job.SceneID]; ok && title != "" {
+				name = title
+			}
+		}
+		if u := renderRequestUnit(job.RequestJSON); u.Count > 1 {
+			name = fmt.Sprintf("%s · part %d of %d", name, u.Index+1, u.Count)
+		}
+		for i, out := range outputs {
+			label := name
+			if i > 0 {
+				label = fmt.Sprintf("%s (take %d)", name, i+1)
+			}
+			add("output-"+out.ID, label, "output_video", out.VideoPath)
 		}
 	}
 	return paths, items, nil
@@ -243,4 +332,74 @@ func (s *Server) handleCompositionSources(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, 200, items)
+}
+
+// Resolve and probe a single project-owned source for non-destructive editing.
+func (s *Server) handleCompositionSource(w http.ResponseWriter, r *http.Request) {
+	project, err := s.activeProjectID(r.Context())
+	if err != nil {
+		http.Error(w, "no active project", 400)
+		return
+	}
+	paths, items, err := s.compositionSources(project)
+	if err != nil {
+		http.Error(w, "could not load media sources", 500)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	path, ok := paths[id]
+	if !ok {
+		http.Error(w, "source not found in this project", 404)
+		return
+	}
+	duration, width, height, audio, err := composition.Probe(r.Context(), path)
+	if err != nil {
+		http.Error(w, err.Error(), 422)
+		return
+	}
+	for _, item := range items {
+		if item.ID == id {
+			writeJSON(w, 200, map[string]any{"source": item, "duration": duration, "width": width, "height": height, "has_audio": audio})
+			return
+		}
+	}
+}
+
+func (s *Server) handleSceneCompositionSources(w http.ResponseWriter, r *http.Request) {
+	project, err := s.activeProjectID(r.Context())
+	if err != nil {
+		http.Error(w, "no active project", 400)
+		return
+	}
+	scene, err := s.database.GetScene(chi.URLParam(r, "id"))
+	if err != nil || scene.ProjectID == nil || *scene.ProjectID != project {
+		http.Error(w, "scene not found in this project", 404)
+		return
+	}
+	paths, _, err := s.compositionSources(project)
+	if err != nil {
+		http.Error(w, "could not load sources", 500)
+		return
+	}
+	jobs, err := s.database.ListRenderJobs(project)
+	if err != nil {
+		http.Error(w, "could not load renders", 500)
+		return
+	}
+	ids := []string{}
+	for _, job := range jobs {
+		if job.SceneID != nil && *job.SceneID == scene.ID && job.Status == "succeeded" {
+			outputs, e := s.database.ListOutputsForJob(job.ID)
+			if e != nil {
+				http.Error(w, "could not load outputs", 500)
+				return
+			}
+			for _, out := range outputs {
+				if _, ok := paths["output-"+out.ID]; ok {
+					ids = append(ids, "output-"+out.ID)
+				}
+			}
+		}
+	}
+	writeJSON(w, 200, ids)
 }

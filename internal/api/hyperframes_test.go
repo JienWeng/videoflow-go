@@ -13,7 +13,7 @@ import (
 
 func TestCompositionRevisionOwnershipAndRunFence(t *testing.T) {
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("unexpected provider call") })
-	saved := call(t, s, "POST", "/compositions", `{"version":1,"width":640,"height":360,"fps":24,"duration":2,"clips":[],"audio":[],"captions":[{"id":"cue-1","utterance_id":"line-1","start":0.2,"end":1.5,"text":"Approved text"}]}`)
+	saved := call(t, s, "POST", "/compositions", `{"version":1,"width":640,"height":360,"fps":24,"duration":2,"clips":[],"audio":[],"caption_bindings":[],"captions":[{"id":"cue-1","utterance_id":"line-1","start":0.2,"end":1.5,"text":"Approved text"}]}`)
 	if saved.Code != 201 {
 		t.Fatal(saved.Code, saved.Body.String())
 	}
@@ -63,6 +63,16 @@ func TestCompositionSourcesResolvePublicPathsAndOwnedOutputs(t *testing.T) {
 	if paths[a.ID] != filepath.Join(s.cfg.StorageRoot, "assets", "existing.mp4") || paths["output-"+out.ID] == "" || len(items) != 2 {
 		t.Fatalf("sources: %#v %#v", paths, items)
 	}
+	response := call(t, s, "GET", "/compositions/sources", "")
+	var sources []map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &sources); err != nil {
+		t.Fatal(err)
+	}
+	for _, source := range sources {
+		if source["media_kind"] != "video" {
+			t.Fatalf("UI cannot distinguish visual and audio sources: %v", source)
+		}
+	}
 	other, _ := s.database.CreateProject("Other", "isolation")
 	paths, items, e = s.compositionSources(other.ID)
 	if e != nil || len(paths) != 0 || len(items) != 0 {
@@ -88,7 +98,7 @@ func TestCompositionPublicSourceRenderIntegration(t *testing.T) {
 	if e = s.database.SaveLocalOutput(job, out); e != nil {
 		t.Fatal(e)
 	}
-	body := fmt.Sprintf(`{"version":1,"width":640,"height":360,"fps":24,"duration":2,"clips":[{"id":"source","asset_id":%q,"start":0,"trim":0,"duration":2,"speed":1}],"audio":[],"captions":[{"id":"cue-1","utterance_id":"line-1","start":0.2,"end":1.5,"text":"Approved script"}]}`, "output-"+out.ID)
+	body := fmt.Sprintf(`{"version":1,"width":640,"height":360,"fps":24,"duration":2,"clips":[{"id":"source","asset_id":%q,"start":0,"trim":0,"duration":2,"speed":1}],"audio":[],"caption_bindings":[],"captions":[{"id":"cue-1","utterance_id":"line-1","start":0.2,"end":1.5,"text":"Approved script"}],"texts":[{"id":"title-card","text":"Pawprints to Mama","start":0,"end":2,"size":48,"color":"#FFFFFF","background":"#112233","font":"serif","position":"center"}]}`, "output-"+out.ID)
 	saved := call(t, s, "POST", "/compositions", body)
 	if saved.Code != 201 {
 		t.Fatal(saved.Code, saved.Body.String())
@@ -116,5 +126,54 @@ func TestCompositionPublicSourceRenderIntegration(t *testing.T) {
 				t.Fatal("no derived media", e)
 			}
 		}
+	}
+}
+
+func TestCompositionListIsProjectScoped(t *testing.T) {
+	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("unexpected provider call") })
+	for _, duration := range []int{2, 3} {
+		saved := call(t, s, "POST", "/compositions", fmt.Sprintf(`{"version":1,"width":640,"height":360,"fps":24,"duration":%d,"clips":[],"audio":[],"captions":[]}`, duration))
+		if saved.Code != http.StatusCreated {
+			t.Fatal(saved.Code, saved.Body.String())
+		}
+	}
+	response := call(t, s, "GET", "/compositions", "")
+	if response.Code != http.StatusOK {
+		t.Fatal(response.Code, response.Body.String())
+	}
+	var entries []struct {
+		Revision  string `json:"revision"`
+		CreatedAt string `json:"created_at"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &entries); err != nil || len(entries) != 2 {
+		t.Fatalf("list: %s, %v", response.Body.String(), err)
+	}
+	for _, entry := range entries {
+		if entry.Revision == "" || entry.CreatedAt == "" {
+			t.Fatal("missing revision/time", entry)
+		}
+		loaded := call(t, s, "GET", "/compositions/"+entry.Revision, "")
+		if loaded.Code != 200 {
+			t.Fatal(loaded.Body.String())
+		}
+	}
+	other, err := s.database.CreateProject("Separate edits", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.database.ActivateProject(other.ID)
+	isolated := call(t, s, "GET", "/compositions", "")
+	if isolated.Code != 200 || strings.TrimSpace(isolated.Body.String()) != "[]" {
+		t.Fatal(isolated.Code, isolated.Body.String())
+	}
+}
+
+func TestCompositionSourceMetadataScopesToProject(t *testing.T) {
+	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("unexpected provider call") })
+	if r := call(t, s, "GET", "/compositions/sources/not-owned", ""); r.Code != 404 {
+		t.Fatal(r.Code, r.Body.String())
+	}
+	if r := call(t, s, "GET", "/scenes/not-owned/composition-sources", ""); r.Code != 404 {
+		t.Fatal(r.Code, r.Body.String())
 	}
 }

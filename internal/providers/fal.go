@@ -12,6 +12,9 @@ import (
 	"time"
 )
 
+// FalNativeVoiceModel makes a video from reference pictures, clips and sound.
+const FalNativeVoiceModel = "bytedance/seedance-2.0/fast/reference-to-video"
+
 type FalClient struct {
 	mediaHTTP
 	model        string
@@ -110,6 +113,13 @@ func (c *FalClient) CreateVideo(ctx context.Context, p map[string]any) (string, 
 		return "", err
 	}
 	out := map[string]any{"prompt": p["prompt"]}
+	if stringValue(p["model"]) == FalNativeVoiceModel {
+		for _, key := range []string{"image_urls", "video_urls", "audio_urls"} {
+			if p[key] != nil {
+				out[key] = p[key]
+			}
+		}
+	}
 	for _, k := range []string{"aspect_ratio", "resolution", "generate_audio", "seed"} {
 		if v, ok := p[k]; ok {
 			out[k] = v

@@ -2,6 +2,7 @@ package routing
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 	"videoflow-go/internal/config"
 	"videoflow-go/internal/db"
@@ -64,5 +65,39 @@ func TestLegacyReferenceModelOverridePreservesOpenRouter(t *testing.T) {
 	p, m := (Resolver{Config: config.Load(), DB: d}).MediaSelection("reference")
 	if p != "openrouter" || m != "legacy/reference" {
 		t.Fatal(p, m)
+	}
+}
+
+// A saved choice of a service the app no longer uses falls back to the automatic pick:
+// the cheapest connected service, or fal.ai when none is connected.
+func TestRetiredVideoServiceFallsBackToAutomaticChoice(t *testing.T) {
+	d, err := db.Open(filepath.Join(t.TempDir(), "db.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	r := Resolver{Config: config.Load(), DB: d}
+	for _, name := range []string{"replicate", "kie", "wavespeed", "runway", "loopling"} {
+		d.SetProviderSecret(name, "old-key", nil)
+		d.SetAppSetting("default_video_provider", `"`+name+`"`)
+		d.SetAppSetting("video_model", `"seedance2_fast"`)
+		if p, m := r.MediaSelection("video"); p != "fal" || m != providers.FalVideoModel {
+			t.Fatalf("%s with nothing connected = %s %s, want fal.ai", name, p, m)
+		}
+		if r.Connected(name) {
+			t.Fatalf("%s still counts as connected", name)
+		}
+		_, _, err := r.Media(name, "seedance2_fast", "")
+		if err == nil || !strings.Contains(err.Error(), "no longer available in VideoFlow; choose another video service") {
+			t.Fatalf("an old %s job: %v", name, err)
+		}
+	}
+	d.SetProviderSecret("openrouter", "key", nil)
+	if p, m := r.MediaSelection("video"); p != "openrouter" || m != "bytedance/seedance-2.0" {
+		t.Fatalf("with OpenRouter connected = %s %s", p, m)
+	}
+	d.SetProviderSecret("argolink", "key", nil)
+	if p, m := r.MediaSelection("video"); p != "argolink" || m != "seedance-2.0" {
+		t.Fatalf("with ArgoLink connected = %s %s, want the cheapest", p, m)
 	}
 }

@@ -1,0 +1,104 @@
+{
+  "checks": [
+    {
+      "name": "starts docked with canvas space reserved",
+      "status": "pass"
+    },
+    {
+      "name": "chat starters and mode menu stay compact",
+      "status": "pass"
+    },
+    {
+      "name": "dragging the docked titlebar automatically undocks without losing the draft",
+      "status": "pass"
+    },
+    {
+      "name": "Float creates a modeless overlay and frees the canvas column",
+      "status": "pass"
+    },
+    {
+      "name": "pointer drag changes horizontal and vertical position",
+      "status": "pass"
+    },
+    {
+      "name": "titlebar background also drags without interfering with controls",
+      "status": "pass"
+    },
+    {
+      "name": "conversation controls and composer do not drag the window",
+      "status": "pass"
+    },
+    {
+      "name": "keyboard movement supports arrows, Shift and corners",
+      "status": "pass"
+    },
+    {
+      "name": "pointer dragging is clamped at every workspace edge",
+      "status": "pass"
+    },
+    {
+      "name": "pointer cancellation releases drag listeners",
+      "status": "pass"
+    },
+    {
+      "name": "floating left-edge resize keeps its right edge anchored",
+      "status": "pass"
+    },
+    {
+      "name": "bottom-edge pointer resize keeps the top fixed and remembers height",
+      "status": "pass"
+    },
+    {
+      "name": "height separator supports keyboard limits and cancellation",
+      "status": "pass"
+    },
+    {
+      "name": "expand and restore retain a reachable window",
+      "status": "pass"
+    },
+    {
+      "name": "Dock restores the right side without losing chat draft",
+      "status": "pass"
+    },
+    {
+      "name": "floating location and mode survive docking and reload",
+      "status": "pass"
+    },
+    {
+      "name": "workspace shrink clamps the window and keeps its header reachable",
+      "status": "pass"
+    },
+    {
+      "name": "mobile uses the single-pane assistant and keeps desktop preference",
+      "status": "pass"
+    },
+    {
+      "name": "returning to desktop restores floating mode and draft",
+      "status": "pass"
+    },
+    {
+      "name": "invalid saved layouts recover to a usable docked panel",
+      "status": "pass"
+    },
+    {
+      "name": "out-of-range saved positions recover inside the workspace",
+      "status": "pass"
+    }
+  ],
+  "errors": [],
+  "mutations": [],
+  "axe": [
+    {
+      "name": "floating desktop",
+      "violations": []
+    },
+    {
+      "name": "docked desktop",
+      "violations": []
+    },
+    {
+      "name": "mobile assistant",
+      "violations": []
+    }
+  ]
+}

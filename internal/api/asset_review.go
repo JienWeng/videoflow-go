@@ -39,6 +39,21 @@ func (s *Server) handleAssetReview(w http.ResponseWriter, r *http.Request) {
 	if *body.Approved {
 		status = "approved"
 	}
+	if *body.Approved && asset.Type == "storyboard" {
+		if sceneID, ok := meta["scene_id"].(string); ok {
+			scene, e := s.database.GetScene(sceneID)
+			if e != nil || scene.ProjectID == nil || *scene.ProjectID != project {
+				http.Error(w, "storyboard scene is unavailable", 409)
+				return
+			}
+			revision, e := s.sceneInputRevision(scene)
+			if e != nil {
+				http.Error(w, e.Error(), 409)
+				return
+			}
+			meta["scene_input_revision"] = revision
+		}
+	}
 	meta["consistency_review"] = status
 	meta["consistency_reviewed_at"] = time.Now().UTC().Format(time.RFC3339Nano)
 	data, _ := json.Marshal(meta)
@@ -51,5 +66,6 @@ func (s *Server) handleAssetReview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, e.Error(), 500)
 		return
 	}
+	s.broker.Publish(map[string]any{"type": "asset_changed", "asset_id": asset.ID})
 	writeJSON(w, 200, saved)
 }

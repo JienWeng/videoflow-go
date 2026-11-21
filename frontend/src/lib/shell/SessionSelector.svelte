@@ -1,28 +1,65 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import ConversationHistory from './ConversationHistory.svelte';
   import { get, post } from '$lib/api';
+  import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+  import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import { Button } from '$lib/components/ui/button';
+  let {compact=false,minimal=false}:{compact?:boolean;minimal?:boolean}=$props();
   let sessions:any[]=$state([]), engines:any[]=$state([]), selected=$state(''), engine=$state('codex'), busy=$state(false), error=$state(''), loaded=$state(false);
-  async function refresh(){const [list,status]=await Promise.all([get('/director/sessions'),get('/director/status')]);sessions=list;engines=status.engines??[];selected=list.find((s:any)=>s.selected)?.id??'';}
+  import { put } from '$lib/api';
+  let catalog=$state<Record<string,{models:string[];efforts:string[]}>>({});
+  const current=$derived(sessions.find(s=>s.id===selected));
+  const EFFORT:Record<string,string>={low:'Quick',medium:'Balanced',high:'Careful',xhigh:'Very careful',max:'Maximum'};
+  async function setModel(model:string,effort:string){if(!current)return;await run(async()=>{await put(`/director/sessions/${current.id}/model`,{model,effort});await refresh()})}
+  async function refresh(){get('/director/models').then(c=>catalog=c).catch(()=>{});const [list,status]=await Promise.all([get('/director/sessions'),get('/director/status')]);sessions=list;engines=status.engines??[];if(!engines.some(e=>e.engine===engine&&e.signed_in))engine=engines.find(e=>e.signed_in)?.engine??engine;selected=list.find((s:any)=>s.selected)?.id??'';}
   async function run(fn:()=>Promise<void>){busy=true;error='';try{await fn();window.dispatchEvent(new Event('videoflow-session-changed'));}catch(e){error=String(e);}finally{busy=false;}}
   onMount(()=>{refresh().catch(e=>error=String(e)).finally(()=>loaded=true)});
   const available=$derived(engines.some(e=>e.engine===engine&&e.installed));
+  const connected=$derived(engines.some(e=>e.engine===engine&&e.signed_in));
 </script>
 <div class="space-y-2" data-testid="session-selector">
   <div class="flex flex-wrap items-center gap-2">
-    <label for="workspace-session" class="text-xs font-medium text-muted-foreground">AI session</label>
-    <select id="workspace-session" aria-label="AI session" class="min-h-10 max-w-full flex-1 rounded-lg border border-input bg-background px-2 text-sm" value={selected} disabled={busy||!loaded} onchange={e=>run(async()=>{await post(`/director/sessions/${e.currentTarget.value}/select`,{});await refresh()})}>
-      <option value="" disabled>{loaded?'Choose a session':'Loading sessions…'}</option>
-      {#each sessions as s}<option value={s.id}>{s.title||'Untitled'} · {s.engine} · {s.status}</option>{/each}
-    </select>
-    <a href="/director" class="text-xs underline underline-offset-4">Manage</a>
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger class="flex min-h-10 min-w-0 flex-1 items-center justify-between gap-2 rounded-lg {minimal?'border border-transparent bg-transparent px-2 font-semibold':'border border-input bg-background px-3'} text-left text-sm focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50" aria-label="AI session" title="Switch conversation" disabled={busy||!loaded}>
+        <span class="truncate">{!loaded?'Loading sessions…':sessions.find(s=>s.id===selected)?minimal?(sessions.find(s=>s.id===selected).title||'Untitled'):`${sessions.find(s=>s.id===selected).title||'Untitled'} · ${sessions.find(s=>s.id===selected).engine}`:'Choose conversation'}</span><ChevronDown class="size-4 shrink-0" />
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Content align="start" class="w-80 max-w-[min(420px,90vw)]">
+        <DropdownMenu.RadioGroup value={selected} onValueChange={id=>{if(id!==selected)void run(async()=>{await post(`/director/sessions/${id}/select`,{});await refresh();});}}>
+          {#each sessions as session}<DropdownMenu.RadioItem value={session.id} closeOnSelect><span class="min-w-0"><span class="block truncate">{session.title||'Untitled'}</span><span class="block text-xs text-muted-foreground">{session.engine==='claude'?'Claude Code':'Codex'} · {({ready:'Ready',running:'Working…'} as Record<string,string>)[session.status]??session.status}</span></span></DropdownMenu.RadioItem>{/each}
+        </DropdownMenu.RadioGroup>
+        {#if !sessions.length}<p class="px-2 py-2 text-sm text-muted-foreground">No saved conversations</p>{/if}
+        {#if current}{@const options=catalog[current.engine]}
+        <DropdownMenu.Separator />
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="grid gap-2 px-2 py-2" onkeydown={e=>e.stopPropagation()}>
+          <p class="text-xs text-muted-foreground">How {current.engine==='claude'?'Claude Code':'Codex'} thinks in this conversation</p>
+          <label class="grid gap-1 text-xs font-medium">Model
+            <select class="min-h-9 rounded-md border border-input bg-background px-2 text-sm font-normal" value={current.model??''} disabled={busy} onchange={e=>setModel(e.currentTarget.value,current.effort??'')}>
+              <option value="">Default (recommended)</option>
+              {#each options?.models??[] as m}<option value={m}>{m}</option>{/each}
+              {#if current.model&&!(options?.models??[]).includes(current.model)}<option value={current.model}>{current.model}</option>{/if}
+            </select>
+          </label>
+          <label class="grid gap-1 text-xs font-medium">Thinking effort
+            <select class="min-h-9 rounded-md border border-input bg-background px-2 text-sm font-normal" value={current.effort??''} disabled={busy} onchange={e=>setModel(current.model??'',e.currentTarget.value)}>
+              <option value="">Default</option>
+              {#each options?.efforts??[] as level}<option value={level}>{EFFORT[level]??level}</option>{/each}
+            </select>
+          </label>
+          <p class="text-xs text-muted-foreground">More effort gives better plans but slower replies and uses more of your AI plan.</p>
+        </div>{/if}
+        <DropdownMenu.Separator /><DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/director">Manage AI sessions</a>{/snippet}</DropdownMenu.Item>
+      </DropdownMenu.Content>
+    </DropdownMenu.Root>
+    <ConversationHistory disabled={busy||!loaded} oncontinue={async id=>{await post(`/director/sessions/${encodeURIComponent(id)}/select`,{});await refresh();window.dispatchEvent(new Event('videoflow-session-changed'));}} />
   </div>
   {#if loaded&&!selected}
     <div class="flex flex-wrap items-center gap-2">
       <select aria-label="New session engine" bind:value={engine} class="min-h-10 rounded-lg border border-input bg-background px-2 text-sm" disabled={busy}><option value="codex">Codex</option><option value="claude">Claude Code</option></select>
       <Button size="sm" disabled={busy||!available} onclick={()=>run(async()=>{await post('/director/sessions',{engine,title:'Story planning'});await refresh()})}>{busy?'Creating…':'Start session'}</Button>
     </div>
-    <p class="text-xs text-muted-foreground">{available?'CLI detected. Account authentication is checked on your first message.':'Install and sign in to the selected CLI on the server to start planning.'}</p>
+    <p class="text-xs text-muted-foreground">{connected?'Connected and ready.':available?'Not connected yet.':'Not available on this server.'} {#if !connected}<a class="underline underline-offset-4" href="/director">Connect your AI</a>{/if}</p>
   {/if}
   {#if error}<p role="alert" class="text-xs text-destructive">{error} <button class="underline" onclick={()=>run(refresh)}>Retry</button></p>{/if}
 </div>

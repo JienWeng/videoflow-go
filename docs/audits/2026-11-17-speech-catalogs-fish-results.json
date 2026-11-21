@@ -1,0 +1,21 @@
+{
+  "checks": [
+    "1440: Fish key configuration saved, no paid model verification or generation",
+    "1440: character-specific Fish provider, voice ID and model saved without cloning",
+    "1440: speech prepares without payment, explicit Run completes with a reusable audio result",
+    "390: Fish key configuration saved, no paid model verification or generation",
+    "390: character-specific Fish provider, voice ID and model saved without cloning",
+    "390: speech prepares without payment, explicit Run completes with a reusable audio result"
+  ],
+  "errors": [],
+  "axe": [
+    {
+      "width": 1440,
+      "violations": []
+    },
+    {
+      "width": 390,
+      "violations": []
+    }
+  ]
+}

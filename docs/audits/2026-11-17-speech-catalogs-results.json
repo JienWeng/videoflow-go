@@ -1,0 +1,23 @@
+{
+  "checks": [
+    "1440: configure ElevenLabs and persist primary badge without replacing existing voices",
+    "1440: refresh official models, choose a new model, automatically match a voice with reason and page through voices without synthesis",
+    "1440: saved model and voice survive reload; changing primary preserves existing character bindings",
+    "1440: explicit ElevenLabs speech run uses the pinned prepared model",
+    "390: configure ElevenLabs and persist primary badge without replacing existing voices",
+    "390: refresh official models, choose a new model, automatically match a voice with reason and page through voices without synthesis",
+    "390: saved model and voice survive reload; changing primary preserves existing character bindings",
+    "390: explicit ElevenLabs speech run uses the pinned prepared model"
+  ],
+  "errors": [],
+  "axe": [
+    {
+      "width": 1440,
+      "violations": []
+    },
+    {
+      "width": 390,
+      "violations": []
+    }
+  ]
+}

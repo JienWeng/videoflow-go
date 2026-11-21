@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"videoflow-go/internal/config"
+	"videoflow-go/internal/costs"
 	"videoflow-go/internal/db"
 	"videoflow-go/internal/providers"
 )
@@ -24,7 +25,11 @@ func ValidBaseURL(raw string) bool {
 }
 
 func (r Resolver) Credentials(name string) (key, endpoint string, fromDB bool, err error) {
-	if name == "fal" || name == "byteplus" {
+	// Old video jobs may still name a service the app no longer uses.
+	if label := costs.Retired[name]; label != "" {
+		return "", "", false, fmt.Errorf("%s is no longer available in VideoFlow; choose another video service", label)
+	}
+	if name == "openai" || name == "fal" || name == "byteplus" || name == "fish" || name == "elevenlabs" || providers.VideoHost(name) {
 		return r.mediaCredentials(name)
 	}
 	endpoint = r.Config.OpenRouterBaseURL
@@ -79,8 +84,8 @@ func (r Resolver) Credentials(name string) (key, endpoint string, fromDB bool, e
 }
 
 func (r Resolver) Client(name string) (*providers.OpenRouterClient, error) {
-	if name == "fal" || name == "byteplus" {
-		return nil, fmt.Errorf("%s is a media provider; text/vision/transcription use OpenRouter", name)
+	if name == "fal" || name == "byteplus" || name == "fish" || name == "elevenlabs" {
+		return nil, fmt.Errorf("%s is a media provider; text and vision use OpenRouter", name)
 	}
 	key, endpoint, _, err := r.Credentials(name)
 	if err != nil {

@@ -1,9 +1,12 @@
 <script lang="ts">
+ import CreativePresetManager from '$lib/CreativePresetManager.svelte';
+ import { protectDraft } from '$lib/protect-draft';
  import GenerationRecovery from '$lib/GenerationRecovery.svelte';
   import { replaceState } from '$app/navigation';
   import { page } from '$app/state';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { get, put, post } from '$lib/api';
+  import AISetup from '$lib/settings/AISetup.svelte';
   import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '$lib/components/ui/card';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
@@ -47,12 +50,15 @@
     allow_custom: boolean;
     from_db: boolean;
   };
+  type KeyCheck = { state: 'accepted' | 'rejected' | 'unchecked' | 'no_credit'; message?: string; checked_at: string };
   type ProviderConfig = {
     name: string;
     configured: boolean;
     masked_key: string;
     base_url: string | null;
     from_db: boolean;
+    /** What a video service last said about the saved key. */
+    key_check?: KeyCheck | null;
   };
   type AppSettings = {
  all_text_local?: boolean;
@@ -60,22 +66,18 @@
     default_video_provider: string;
     default_image_provider: string;
     default_scene_duration: number;
-    caption_style: string;
-    caption_language: string;
-    whisper_model: string;
     dialogue_language: string;
     image_model: string;
     ref_image_model: string;
     video_model: string;
     vl_model: string;
-    max_video_refs: number;
 media_model_preferences:Record<string,Record<string,string>>;
     render_negatives: string[];
   };
-  type TestResult = { checked?:string;message?:string;ok: boolean; latency_ms: number | null; error: string | null };
+  type TestResult = { checked?:string;message?:string;credentials_verified?:boolean;ok: boolean; latency_ms: number | null; error: string | null };
   type ProviderPreset = {
     label: string;
-    protocol: 'chat' | 'responses' | 'anthropic' | 'codex' | 'media' | 'video';
+    protocol: 'chat' | 'responses' | 'anthropic' | 'codex' | 'media' | 'video' | 'speech';
     url: string;
     model: string;
     preset: string;
@@ -90,6 +92,13 @@ media_model_preferences:Record<string,Record<string,string>>;
   let loaded = $state(false);
   let error = $state('');
   let busy = $state('');
+  let saveStatus = $state('');
+  let confirmClear = $state('');
+  let confirmReset = $state(false);
+  let durationError = $state('');
+  const providerDirty = (name:string) => !!provKeyInput[name]?.trim() || (provUrlInput[name] ?? '').trim() !== (provCfg[name]?.base_url ?? '');
+  protectDraft(() => Object.keys(provKeyInput).some(providerDirty), 'You have unsaved provider credentials. Discard them and leave?');
+  async function retryLoad() { error = ''; loaded = false; try { await refresh(); } catch (e: any) { error = e.message; } finally { loaded = true; } }
   let presets = $state<Record<string, any>>({});
   let newLabel = $state('');
   let newPreset = $state('openrouter');
@@ -110,7 +119,7 @@ media_model_preferences:Record<string,Record<string,string>>;
         protocol: newProtocol, base_url: newUrl || null, model: newModel.trim(), mode: newMode, vision: newVision });
       newLabel = '';
       await refresh();
-      toast.success('Connection added. Configure its credentials below, then assign agents.');
+      toast.success('Connection added. Add its key in AI connections, then assign agents.');
     } catch (e: any) { toast.error(e.message); }
     finally { busy = ''; }
   }
@@ -150,12 +159,13 @@ media_model_preferences:Record<string,Record<string,string>>;
   let theme = $state<'light' | 'dark' | 'system'>('system');
 
   // Active settings tab (bound so clicking a trigger switches sections).
-  let tab = $state('general');
-  function settingsHash(){const h=window.location.hash.slice(1);tab=['providers','engines','connections'].includes(h)?'connections':['agents','advanced'].includes(h)?'advanced':'general';}
+  let tab = $state('ai');
+  function settingsHash(){const h=window.location.hash.slice(1);tab=h==='presets'?'presets':['providers','connections'].includes(h)?'connections':['agents','advanced'].includes(h)?'advanced':['general','appearance'].includes(h)?'general':'ai';}
+  // Links to the removed Media models tab (#models, #engines) land on AI setup.
   function chooseSection(value:string){tab=value;replaceState('#'+value,page.state);}
 
   // ------------------------------------------------------------- labels
-  const providerLabels: Record<string, string> = { fal:'fal.ai',byteplus:'BytePlus ModelArk',openrouter:'OpenRouter' };
+  const providerLabels: Record<string, string> = { openai:'OpenAI Images',elevenlabs:'ElevenLabs',fish:'Fish Audio',fal:'fal.ai',byteplus:'BytePlus ModelArk',openrouter:'OpenRouter' };
   const FALLBACK_PRESETS: Record<string, ProviderPreset> = {
     openrouter: { label: 'OpenRouter', protocol: 'chat', url: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini', preset: 'openrouter', mode: 'auto', vision: true }
   };
@@ -179,17 +189,12 @@ media_model_preferences:Record<string,Record<string,string>>;
 
   // -------------------------------------------------------------- options
   const ASPECT_RATIOS = ['9:16', '16:9', '1:1', '21:9', '4:3', '3:4'];
-  const WHISPER_MODELS = ['openai/whisper-1', 'openai/whisper-large-v3', 'openai/whisper-large-v3-turbo'];
-  const CAPTION_STYLES = ['clean', 'bold', 'minimal', 'cinematic', 'neon', 'kids', 'classic', 'comic'];
-  const CAPTION_LANGUAGES = [
-    { value: 'auto', label: 'Auto-detect' },
-    { value: 'zh', label: 'Chinese' },
-    { value: 'en', label: 'English' }
-  ];
+  // The backend writes the language name into prompts, so save names; `code` reads older saves.
   const DIALOGUE_LANGUAGES = [
-    { value: 'zh', label: 'Chinese' },
-    { value: 'en', label: 'English' }
+    { value: 'Chinese', code: 'zh', label: 'Chinese' },
+    { value: 'English', code: 'en', label: 'English' }
   ];
+  const dialogueValue = (v: string) => DIALOGUE_LANGUAGES.find(l => l.value.toLowerCase() === String(v ?? '').toLowerCase() || l.code === v)?.value ?? v;
   const CUSTOM = '__custom__';
   const LOAD_MODELS = '__load_models__';
 
@@ -211,6 +216,7 @@ media_model_preferences:Record<string,Record<string,string>>;
   const primaryTextProvider = $derived(
     agents.find((agent) => agent.agent === 'script_agent')?.provider ?? 'openrouter'
   );
+  let providerOpen=$state<Record<string,boolean>>({});
   const orderedProviders = $derived(
     providers
   );
@@ -219,16 +225,14 @@ media_model_preferences:Record<string,Record<string,string>>;
 
   // -------------------------------------------------------------- load
   async function refresh() {
-    try {
-      presets = await get('/settings/connection-presets');
-    } catch {
-      presets = FALLBACK_PRESETS;
-    }
-    const [ag, pv, ap] = await Promise.all([
+    // Everything the page needs is asked for at once, so it appears after one round trip.
+    const [pr, ag, pv, ap] = await Promise.all([
+      get('/settings/connection-presets').catch(() => FALLBACK_PRESETS),
       get('/settings/agents'),
       get('/settings/providers'),
       get('/settings/app')
     ]);
+    presets = pr;
     agents = ag;
     providers = pv;
     testModelInput = Object.fromEntries(
@@ -245,13 +249,14 @@ media_model_preferences:Record<string,Record<string,string>>;
     const urlMap: Record<string, string> = {};
     for (const c of cfgs) {
       cfgMap[c.name] = c;
-      keyMap[c.name] = '';
+      keyMap[c.name] = provKeyInput[c.name] ?? '';
       urlMap[c.name] = c.base_url ?? '';
     }
     provCfg = cfgMap;
     provKeyInput = keyMap;
     provUrlInput = urlMap;
-    await loadEngineCatalogs();
+    // Model lists come from outside services and can be slow; the page does not wait for them.
+    void loadEngineCatalogs();
   }
 
   onMount(() => {
@@ -417,7 +422,7 @@ media_model_preferences:Record<string,Record<string,string>>;
       // stored key untouched (so saving a base_url alone keeps the key).
       const k = provKeyInput[name] ?? '';
       if (k.trim()) body.api_key = k.trim();
-      body.base_url = (provUrlInput[name] ?? '').trim();
+      if (name !== 'openai') body.base_url = (provUrlInput[name] ?? '').trim();
       const updated: ProviderConfig = await put(providerEndpoint(name), body);
       provCfg[name] = updated;
       provKeyInput[name] = '';
@@ -427,7 +432,9 @@ media_model_preferences:Record<string,Record<string,string>>;
         p.name === name ? { ...p, configured: updated.configured, from_db: updated.from_db } : p
       );
       provTest[name] = undefined;
-      toast.success(`${providerLabels[name] ?? name} saved`);
+      if (name === 'openai') await refresh();
+      if (updated.key_check?.state === 'unchecked') toast(updated.key_check.message ?? `${providerLabels[name] ?? name} saved`);
+      else toast.success(`${providerLabels[name] ?? name} saved`);
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -445,6 +452,8 @@ media_model_preferences:Record<string,Record<string,string>>;
         p.name === name ? { ...p, configured: updated.configured, from_db: updated.from_db } : p
       );
       provTest[name] = undefined;
+      confirmClear = '';
+      if (name === 'openai') await refresh();
       toast.success(`${providerLabels[name] ?? name} key cleared`);
     } catch (e: any) {
       toast.error(e.message);
@@ -459,7 +468,8 @@ media_model_preferences:Record<string,Record<string,string>>;
     try {
       const res: TestResult = await post(providerEndpoint(name, 'test'));
       provTest[name] = res;
-      if (res.ok) toast.success(res.checked==='configuration'?res.message!:`${providerLabels[name] ?? name}: connected (${res.latency_ms}ms)`);
+      if (res.checked === 'key') provCfg[name] = await get(providerEndpoint(name));
+      if (res.ok) toast.success(res.checked==='configuration'||res.checked==='key'?res.message!:`${providerLabels[name] ?? name}: connected (${res.latency_ms}ms)`);
       else toast.error(`${providerLabels[name] ?? name}: ${res.error ?? 'failed'}`);
     } catch (e: any) {
       provTest[name] = { ok: false, latency_ms: null, error: e.message };
@@ -472,14 +482,20 @@ media_model_preferences:Record<string,Record<string,string>>;
   // -------------------------------------------------- app settings (engines/defaults)
   async function saveApp(patch: Partial<AppSettings>) {
     busy = 'app';
+    saveStatus = 'Saving preferences…';
     try {
       const updated: AppSettings = await put('/settings/app', patch);
       app = updated;
 if(patch.default_image_provider||patch.default_video_provider)await loadEngineCatalogs();
-      toast.success('Saved');
+      saveStatus = 'Preferences saved';
     } catch (e: any) {
+      saveStatus = 'Could not save preferences. Check your connection and try again.';
       toast.error(e.message);
-      await refresh().catch(() => {});
+      // Rebuild controls from the last confirmed values, including native selects.
+      const previous = app;
+      app = null;
+      await tick();
+      app = previous;
     } finally {
       busy = '';
     }
@@ -488,7 +504,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
   type VideoCapability = { id: string; supported_frame_images?: string[]; supported_durations?: number[]; supported_resolutions?: string[]; supported_aspect_ratios?: string[] };
   let engineCatalogs = $state<Record<string, string[]>>({
     image: ['openai/gpt-image-2'], video: ['google/veo-3.1-lite'],
-    vision: ['qwen/qwen3-vl-30b-a3b-instruct'], transcription: WHISPER_MODELS
+    vision: ['qwen/qwen3-vl-30b-a3b-instruct']
   });
   let videoCapabilities = $state<VideoCapability[]>([]);
   let catalogError = $state('');
@@ -501,7 +517,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
     const videoProvider=app.default_video_provider;
     catalogBusy=true;
     const failures:string[]=[];
-    await Promise.all(['image','video','vision','transcription'].map(async modality=>{
+    await Promise.all(['image','video','vision'].map(async modality=>{
       const provider=modality==='image'?imageProvider:modality==='video'?videoProvider:'openrouter';
       if(provider==='openrouter'&&!provCfg.openrouter?.configured){if(sequence===catalogSequence)engineCatalogs={...engineCatalogs,[modality]:[]};return}
       try{
@@ -513,18 +529,8 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
     }));
     if(sequence===catalogSequence){catalogError=failures.join('; ');catalogBusy=false}
   }
-  function mediaProviderChanged(kind:'image'|'video',provider:string){
-    void saveApp({[kind==='image'?'default_image_provider':'default_video_provider']:provider});
-  }
   function engineOptions(key: keyof AppSettings): string[] {
     return engineCatalogs[key === 'vl_model' ? 'vision' : key === 'video_model' ? 'video' : 'image'] ?? [];
-  }
-  function videoImageInputLimit(): number {
-    return videoCapabilities.find(model => model.id === app?.video_model)?.supported_frame_images?.length ?? 0;
-  }
-  function videoImageInputDescription(): string {
-    const model = videoCapabilities.find(model => model.id === app?.video_model);
-    return model ? `Supported frame anchors: ${model.supported_frame_images?.join(', ') || 'none'}.` : 'Load the catalog to check frame support.';
   }
   function videoModelHint(): string {
     const model = videoCapabilities.find(model => model.id === app?.video_model);
@@ -589,96 +595,98 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
   }
 </script>
 
-<div class="mx-auto max-w-6xl p-4 sm:p-8">
+<svelte:head><title>Settings · VideoFlow</title></svelte:head>
+
+<div class="settings-page mx-auto max-w-6xl p-4 sm:p-8">
   <div class="mb-4">
     <h1 class="text-2xl font-semibold tracking-tight">Settings</h1>
-    <p class="text-sm text-muted-foreground">
-      Manage your workspace preferences and AI connections in one place.
-    </p>
   </div>
 
   {#if error}
     <Card class="mb-4 border-destructive/40">
-      <CardContent class="p-4 text-sm text-destructive">{error}</CardContent>
+      <CardContent class="space-y-3 p-4"><p role="alert" class="text-sm text-destructive">Settings could not load: {error}</p><Button variant="outline" onclick={retryLoad}>Try again</Button></CardContent>
     </Card>
   {/if}
 
   {#if !loaded}
-    <div class="space-y-3">
-      {#each Array(6) as _, i (i)}
-        <Skeleton class="h-16 w-full" />
-      {/each}
+    <div role="status" aria-busy="true" aria-label="Loading settings" class="grid gap-6 md:grid-cols-[200px_minmax(0,1fr)]">
+
+      <div aria-hidden="true" class="grid grid-cols-2 gap-2 self-start md:block md:space-y-2">{#each Array(4) as _, i (i)}<Skeleton aria-hidden="true" class="h-12 motion-reduce:animate-none" />{/each}</div>
+      <div class="space-y-6"><Skeleton aria-hidden="true" class="h-8 w-36 motion-reduce:animate-none" /><Skeleton aria-hidden="true" class="h-24 w-full motion-reduce:animate-none" /><Skeleton aria-hidden="true" class="h-8 w-44 motion-reduce:animate-none" /><Skeleton aria-hidden="true" class="h-40 w-full motion-reduce:animate-none" /></div>
     </div>
-  {:else}
+  {:else if !error}
     <div class="grid gap-6 md:grid-cols-[200px_minmax(0,1fr)]">
-      <nav aria-label="Settings sections" class="flex gap-2 md:block md:space-y-2">
-        {#each [{id:'general',label:'General',hint:'Video defaults & appearance'},{id:'connections',label:'AI connections',hint:'Credentials & media models'},{id:'advanced',label:'Advanced',hint:'Routing & recovery'}] as section}
+      <nav aria-label="Settings sections" class="grid grid-cols-2 gap-2 self-start md:sticky md:top-8 md:block md:space-y-2">
+        {#each [{id:'ai',label:'AI setup',hint:'Which AI does each job'},{id:'general',label:'General',hint:'Video defaults & appearance'},{id:'connections',label:'AI connections',hint:'Service keys'},{id:'presets',label:'Creative presets',hint:'Styles & community packs'},{id:'advanced',label:'Advanced',hint:'Troubleshooting'}] as section}
           <button type="button" aria-label={section.label} aria-current={tab===section.id?'page':undefined} onclick={()=>chooseSection(section.id)} class="min-h-11 flex-1 rounded-lg px-3 py-2 text-left md:w-full {tab===section.id?'bg-accent font-semibold':'hover:bg-accent text-muted-foreground'}"><span class="block text-sm">{section.label}</span><span class="hidden text-xs font-normal md:block">{section.hint}</span></button>
         {/each}
       </nav>
       <div class="min-w-0 space-y-6" data-testid="settings-content">
-        <p class="text-xs text-muted-foreground">Preferences save when changed. Credentials use their own Save button; generation tests require an explicit action.</p>
-      <!-- ============================================ PROVIDERS -->
-      {#if tab === 'connections'}
-      <section id="providers" class="space-y-4">
+        <div class="space-y-1 text-sm text-muted-foreground"><p>{tab === 'ai' ? '' : tab === 'connections' ? 'Save each provider key before checking its connection.' : tab === 'presets' ? 'Preview a pack before installing it.' : tab === 'advanced' ? 'These are for troubleshooting. Most people never need them.' : 'Preferences save automatically when changed.'}</p><p role="status" aria-live="polite" class="min-h-5 text-foreground">{saveStatus}</p></div>
+      {#if tab === 'ai'}<AISetup onopen={chooseSection} />{/if}
+      {#if tab === 'presets'}<CreativePresetManager />{/if}
+      <!-- ============================================ APPEARANCE -->
+      {#if tab === 'general'}
+      <section id="appearance" class="settings-section">
         <Card>
           <CardHeader>
-            <CardTitle class="flex items-center gap-2 text-base">
+            <CardTitle role="heading" aria-level={2} class="flex items-center gap-2 text-base">
+              <Palette class="size-4" />Appearance
+            </CardTitle>
+            <CardDescription>Choose a theme for this device.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div role="radiogroup" aria-label="Theme" class="flex flex-wrap gap-2">
+              {#each [{ v: 'light', label: 'Light', icon: Sun }, { v: 'dark', label: 'Dark', icon: Moon }, { v: 'system', label: 'System', icon: Monitor }] as opt (opt.v)}
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={theme === opt.v}
+                  class="flex items-center gap-2 rounded-lg border px-4 py-2 text-sm transition-colors
+                         {theme === opt.v
+                    ? 'border-primary bg-accent font-medium'
+                    : 'border-border hover:bg-accent/50'}"
+                  onclick={() => setTheme(opt.v as 'light' | 'dark' | 'system')}
+                  tabindex={theme === opt.v ? 0 : -1}
+                  onkeydown={(e) => { if (['ArrowRight','ArrowDown','ArrowLeft','ArrowUp','Home','End'].includes(e.key)) { e.preventDefault(); const options = ['light','dark','system'] as const; const index = e.key === 'Home' ? 0 : e.key === 'End' ? 2 : (options.indexOf(theme) + (['ArrowRight','ArrowDown'].includes(e.key) ? 1 : 2)) % 3; setTheme(options[index]); ((e.currentTarget as HTMLElement).parentElement?.querySelectorAll('button')[index] as HTMLElement)?.focus(); } }}
+                >
+                  <opt.icon class="size-4" />
+                  {opt.label}
+                </button>
+              {/each}
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+      {/if}
+      <!-- ============================================ PROVIDERS -->
+      {#if tab === 'connections'}
+      <section id="providers" class="settings-section">
+        <Card>
+          <CardHeader>
+            <CardTitle role="heading" aria-level={2} class="flex items-center gap-2 text-base">
               <Plug class="size-4" />AI connections
             </CardTitle>
             <CardDescription>
-              Configure fal.ai for images/video, OpenRouter for text/vision/transcription, and optional direct BytePlus Seedance video. Keys stay on the local backend. Keys are stored on
-              this machine and never shown again after saving.
+              Add a key for each service you have an account with: fal.ai, OpenAI or OpenRouter for pictures and video, any of the video services (ArgoLink, BytePlus) to compare prices, and Fish Audio or ElevenLabs for voices. Planning and writing use your Claude or Codex session. Keys stay on the backend and are never shown again after saving.
             </CardDescription>
           </CardHeader>
           <CardContent class="space-y-5">
-            <details class="rounded-lg border p-4">
-              <summary class="cursor-pointer text-sm font-medium">Advanced · Add a named connection or custom protocol</summary>
-              <div class="mt-3 space-y-3">
-              <div class="grid gap-3 sm:grid-cols-2">
-                <label class="text-xs">Name<Input bind:value={newLabel} placeholder="My OpenRouter" /></label>
-                <label class="text-xs">Provider<select class="block w-full rounded border p-2 bg-background" bind:value={newPreset} onchange={choosePreset}>
-                  {#each selectablePresets as [id, p]}<option value={id}>{p.label}</option>{/each}
-                </select></label>
-                <label class="text-xs">Protocol<select class="block w-full rounded border p-2 bg-background" bind:value={newProtocol}>
-                  <option value="chat">OpenRouter Chat Completions</option>
-
-                </select></label>
-                <label class="text-xs">Default model<Input bind:value={newModel} placeholder="Model ID from your provider" /></label>
-                {#if newProtocol !== 'codex'}
-                  <label class="text-xs">Base URL<Input bind:value={newUrl} /></label>
-                  <label class="text-xs">Chat Completions output mode<select class="block w-full rounded border p-2 bg-background" bind:value={newMode} disabled={newProtocol !== 'chat'}>
-                    <option value="auto">Provider default</option><option value="prompt">JSON in prompt</option>
-                  </select></label>
-                {/if}
-              </div>
-              <label class="flex items-center gap-2 text-xs"><input type="checkbox" bind:checked={newVision} />Models on this connection accept images</label>
-              <Button size="sm" disabled={!newLabel.trim() || busy === 'add-connection'} onclick={addConnection}>Add connection</Button>
-              </div>
-            </details>
             {#each orderedProviders as p (p.name)}
               {@const cfg = provCfg[p.name]}
               {@const test = provTest[p.name]}
-              <details open={p.name === primaryTextProvider || p.name === app?.default_image_provider || p.name === app?.default_video_provider}>
+              <details open={providerOpen[p.name] ?? (p.name === primaryTextProvider || p.name === app?.default_image_provider || p.name === app?.default_video_provider)} ontoggle={e=>providerOpen[p.name]=e.currentTarget.open}>
                 <summary class="cursor-pointer rounded-md py-2 text-sm font-medium">
                   {providerLabels[p.name] ?? p.name}
-                  <span class="ml-2 text-xs font-normal text-muted-foreground">{cfg?.configured ? 'Configured' : 'Not configured'}</span>
+                  {#if cfg?.key_check?.state === 'rejected'}<span class="ml-2 text-xs font-normal text-destructive">Key rejected</span>{:else if cfg?.key_check?.state === 'no_credit'}<span class="ml-2 text-xs font-normal text-destructive">No balance</span>{:else}<span class="ml-2 text-xs font-normal text-muted-foreground">{cfg?.configured ? 'Configured' : 'Not configured'}</span>{/if}
                 </summary>
               <div data-provider={p.name}>
-                <div class="mb-2 flex items-center gap-2">
-                  {#if cfg?.configured}
-                    <Badge class="gap-1 text-[10px]">
-                      <CircleCheck class="size-3" />Configured
-                    </Badge>
-                    {#if cfg.from_db}
-                      <span class="text-[10px] text-muted-foreground">{cfg.masked_key}</span>
-                    {:else}
-                      <span class="text-[10px] text-muted-foreground">from environment</span>
-                    {/if}
-                  {:else}
-                    <Badge variant="outline" class="text-[10px]">Not configured</Badge>
-                  {/if}
-                </div>
+                {#if cfg?.configured}
+                  <p class="settings-help mb-2">{cfg.from_db ? cfg.masked_key : 'Provided by the server environment'}</p>
+                {/if}
+                {#if cfg?.key_check?.message}
+                  <p class="mb-2 text-xs {cfg.key_check.state === 'rejected' || cfg.key_check.state === 'no_credit' ? 'text-destructive' : 'text-muted-foreground'}" role="status">{cfg.key_check.message}</p>
+                {/if}
 
                 <div class="grid gap-2 sm:grid-cols-2">
                   <div>
@@ -700,13 +708,9 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                     </div>
                   </div>
                 </div>
-                <details class="mt-2">
-                  <summary class="cursor-pointer text-xs text-muted-foreground">Provider endpoint</summary>
-                  <label class="mt-2 block max-w-xl text-xs text-muted-foreground" for="url-{p.name}">Base URL</label>
-                  <Input id="url-{p.name}" readonly value={cfg?.base_url ?? ''} />
-                </details>
-
+                <p class="settings-help mt-2" role="status">{providerDirty(p.name) ? 'Unsaved credential changes' : 'No unsaved credential changes'}</p>
                 <div class="mt-2 flex flex-wrap items-center gap-2">
+                  {#if p.name === 'openai'}<p class="settings-help">Used for images when native Codex image generation is unavailable.</p>{:else if p.protocol === 'speech'}<p class="settings-help">Choose the voice service in AI setup and each character's voice in <a class="underline" href="/voices">Voices</a>. Configuration checks do not generate speech.</p>{:else}
                   {#if providerModelInput[p.name]}
                     <Input
                       class="max-w-64"
@@ -752,10 +756,10 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                       Verify
                     </Button>
                   {/if}
-                  <span class="text-xs text-muted-foreground">{p.protocol === 'chat' ? 'Text model tests consume provider usage.' : 'Catalog checks do not submit generation or verify account/model access.'}</span>
+                  <span class="settings-help">{p.protocol === 'chat' ? 'Text model tests consume provider usage.' : 'Catalog checks do not submit generation or verify account/model access.'}</span>{/if}
                   <Button
                     size="sm"
-                    disabled={busy === `prov-${p.name}`}
+                    disabled={!!busy || !providerDirty(p.name)}
                     onclick={() => saveProvider(p.name)}
                   >
                     {busy === `prov-${p.name}` ? 'Saving…' : 'Save'}
@@ -769,7 +773,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                     {#if busy === `test-${p.name}`}
                       <LoaderCircle class="size-3.5 mr-1 animate-spin" />Testing…
                     {:else}
-                      <Wifi class="size-3.5 mr-1" />{p.protocol === 'chat' ? 'Test connection' : 'Check configuration'}
+                      <Wifi class="size-3.5 mr-1" />{cfg?.key_check?.state === 'no_credit' ? 'Check again' : p.protocol === 'chat' ? 'Test connection' : p.protocol === 'video' && p.name !== 'byteplus' ? 'Check key' : 'Check configuration'}
                     {/if}
                   </Button>
                   {#if cfg?.from_db}
@@ -778,17 +782,24 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                       variant="ghost"
                       class="text-destructive hover:text-destructive"
                       disabled={busy === `prov-${p.name}`}
-                      onclick={() => clearProvider(p.name)}
+                      onclick={() => (confirmClear = p.name)}
                     >
                       Clear key
                     </Button>
                   {/if}
 
+                  {#if confirmClear === p.name}
+                    <div class="w-full space-y-2 border-t border-border pt-3" role="group" aria-label={`Remove ${providerLabels[p.name] ?? p.name} key`}>
+                      <p class="text-sm">Remove the saved {providerLabels[p.name] ?? p.name} key? Requests using it will stop working unless an environment key is available. Projects and outputs are kept.</p>
+                      <Button size="sm" variant="destructive" disabled={!!busy} onclick={() => clearProvider(p.name)}>Remove saved key</Button>
+                      <Button size="sm" variant="outline" onclick={() => (confirmClear = '')}>Keep key</Button>
+                    </div>
+                  {/if}
                   {#if test}
                     {#if test.ok}
                       <span class="flex items-center gap-1 text-xs text-emerald-500">
-                        <CircleCheck class="size-3.5" />{test.checked === 'configuration' ? 'Configuration checked' : 'Connected'}
-                        {#if test.checked !== 'configuration' && test.latency_ms != null}({test.latency_ms}ms){/if}
+                        <CircleCheck class="size-3.5" />{test.checked === 'configuration' ? 'Configuration checked' : test.checked === 'key' ? (test.credentials_verified ? 'Key accepted' : 'Key could not be checked') : 'Connected'}
+                        {#if test.checked !== 'configuration' && test.checked !== 'key' && test.latency_ms != null}({test.latency_ms}ms){/if}
                       </span>
                     {:else}
                       <span class="text-xs text-destructive">{test.error ?? 'Connection failed'}</span>
@@ -801,24 +812,83 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
               {/if}
               </details>
             {/each}
+
           </CardContent>
         </Card>
       </section>
       {/if}
 
-      <!-- ============================================ ENGINES -->
-      {#if tab === 'connections'}
-      <section id="engines" class="space-y-4">
+      <!-- ============================================ DEFAULTS -->
+      {#if tab === 'general'}
+      <section id="defaults" class="settings-section">
         <Card>
           <CardHeader>
-            <CardTitle class="flex items-center gap-2 text-base">
-              <Sparkles class="size-4" />Media models
+            <CardTitle role="heading" aria-level={2} class="text-base">Scene defaults</CardTitle>
+            <CardDescription>Applied to new scenes and renders.</CardDescription>
+          </CardHeader>
+          <CardContent class="settings-section">
+            {#if app}
+              <div class="flex flex-wrap items-center gap-3">
+                <div class="min-w-[180px] flex-1 text-sm font-medium">Default aspect ratio</div>
+                <select
+                  aria-label="Default aspect ratio"
+                  class="w-48 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                  disabled={busy === 'app'}
+                  value={app.default_aspect_ratio}
+                  onchange={(e) =>
+                    saveApp({ default_aspect_ratio: (e.currentTarget as HTMLSelectElement).value })}
+                >
+                  {#each ASPECT_RATIOS as r (r)}
+                    <option value={r}>{r}</option>
+                  {/each}
+                </select>
+              </div>
+
+              <div class="flex flex-wrap items-start gap-3">
+                <div class="min-w-[180px] flex-1"><label class="settings-label" for="scene-duration">Default scene duration (s)</label><p id="duration-hint" class="settings-help">1–120 whole seconds.</p></div>
+                <div><Input id="scene-duration" aria-label="Default scene duration (seconds)" aria-invalid={durationError ? 'true' : undefined} aria-describedby={durationError ? 'duration-hint duration-error' : 'duration-hint'} type="number" min="1" max="120" step="1" class="h-8 w-24 text-sm" disabled={busy === 'app'} value={app.default_scene_duration}
+                  onfocus={() => durationError = ''}
+                  oninput={() => durationError = ''}
+                  onchange={(e) => { const input=e.currentTarget as HTMLInputElement;const n=Number(input.value);if(!input.value || !Number.isInteger(n) || n<1 || n>120) {durationError='Enter a scene duration from 1 to 120 in whole seconds.';return;}durationError='';if(n!==app!.default_scene_duration)void saveApp({default_scene_duration:n}); }} />
+                {#if durationError}<p id="duration-error" role="alert" class="mt-2 max-w-xs text-sm text-destructive">{durationError}</p>{/if}</div>
+              </div>
+
+              <div class="flex flex-wrap items-center gap-3">
+                <div class="min-w-[180px] flex-1 text-sm font-medium">Dialogue language</div>
+                <select
+                  aria-label="Dialogue language"
+                  class="w-48 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                  disabled={busy === 'app'}
+                  value={dialogueValue(app.dialogue_language)}
+                  onchange={(e) =>
+                    saveApp({ dialogue_language: (e.currentTarget as HTMLSelectElement).value })}
+                >
+                  {#if !DIALOGUE_LANGUAGES.some(l => l.value === dialogueValue(app!.dialogue_language))}<option value={app.dialogue_language}>{app.dialogue_language}</option>{/if}
+                  {#each DIALOGUE_LANGUAGES as l (l.value)}
+                    <option value={l.value}>{l.label}</option>
+                  {/each}
+                </select>
+              </div>
+            {/if}
+          </CardContent>
+        </Card>
+
+      </section>
+      {/if}
+
+      <!-- ============================================ MODEL NAMES -->
+      {#if tab === 'advanced'}
+      <section id="engines" class="settings-section">
+        <Card>
+          <CardHeader>
+            <CardTitle role="heading" aria-level={2} class="flex items-center gap-2 text-base">
+              <Sparkles class="size-4" />Exact model names
             </CardTitle>
             <CardDescription>
-              fal.ai defaults for new image/video routes. Local Claude Code/Codex sessions handle text; OpenRouter handles vision/transcription; BytePlus supports direct Seedance video. Existing saved routes are preserved.
+              The exact model each service is asked for. The service itself is chosen in AI setup.
             </CardDescription>
           </CardHeader>
-          <CardContent class="space-y-4">
+          <CardContent class="settings-section">
             <Button size="sm" variant="outline" disabled={catalogBusy} onclick={loadEngineCatalogs}>{catalogBusy ? 'Loading catalogs…' : 'Refresh model catalogs'}</Button>
             {#if catalogError}<p class="text-sm text-destructive">{catalogError}</p>{/if}
             {#if app}
@@ -832,11 +902,13 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                 {@const cur = app[eng.key] as string}
                 <div class="flex flex-wrap items-center gap-3">
                   <div class="min-w-[180px] flex-1">
-                    <div class="text-sm font-medium">{eng.label}</div>
-                    <div class="text-[11px] text-muted-foreground">{eng.hint}</div>
+                    <div class="settings-label">{eng.label}</div>
+                    <div class="settings-help">{eng.hint}</div>
                   </div>
                   <div class="flex items-center gap-2">
-                    {#if engineCustomOpen[eng.key]}
+                    {#if app.default_image_provider === 'openai' && (eng.key === 'image_model' || eng.key === 'ref_image_model')}
+                      <span class="text-sm">{cur}</span>
+                    {:else if engineCustomOpen[eng.key]}
                       <Input
                         class="h-8 w-64 text-sm"
                         placeholder="Custom model id"
@@ -870,182 +942,16 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                 </div>
               {/each}
 
-              <Separator />
-
-              <div class="flex flex-wrap items-center gap-3">
-                <div class="min-w-[180px] flex-1">
-                  <div class="text-sm font-medium">Video provider</div>
-                  <div class="text-[11px] text-muted-foreground">Used by one-click renders.</div>
-                </div>
-                <select
-                  aria-label="Video provider"
-                  class="w-64 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                  disabled={busy === 'app'}
-                  value={app.default_video_provider}
-                  onchange={(e) => mediaProviderChanged('video', (e.currentTarget as HTMLSelectElement).value)}
-                >
-
-                  <option value="fal">fal.ai</option><option value="openrouter">OpenRouter</option><option value="byteplus">BytePlus ModelArk (Seedance)</option>
-                </select>
-              </div>
-
-              <div class="flex flex-wrap items-center gap-3">
-                <div class="min-w-[180px] flex-1">
-                  <div class="text-sm font-medium">Image provider</div>
-                  <div class="text-[11px] text-muted-foreground">Used for storyboard keyframes.</div>
-                </div>
-                <select
-                  aria-label="Image provider"
-                  class="w-64 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                  disabled={busy === 'app'}
-                  value={app.default_image_provider}
-                  onchange={(e) => mediaProviderChanged('image', (e.currentTarget as HTMLSelectElement).value)}
-                >
-
-                  <option value="fal">fal.ai</option><option value="openrouter">OpenRouter</option>
-                </select>
-              </div>
-
-              <Separator />
-
-              <div class="flex flex-wrap items-center gap-3">
-              <div class="min-w-[180px] flex-1">
-                  <div class="text-sm font-medium">Image references accepted by the selected video route</div>
-                  <div class="text-[11px] text-muted-foreground">
-                    {videoImageInputDescription()}
-                  </div>
-                </div>
-                <span class="rounded-md border border-border px-3 py-1.5 text-sm tabular-nums">{videoImageInputLimit()} image references</span>
-              </div>
             {/if}
           </CardContent>
         </Card>
       </section>
       {/if}
 
-      <!-- ============================================ DEFAULTS -->
-      {#if tab === 'general'}
-      <section id="defaults" class="space-y-4">
-        <Card>
-          <CardHeader>
-            <CardTitle class="text-base">Scene defaults</CardTitle>
-            <CardDescription>Applied to new scenes and renders.</CardDescription>
-          </CardHeader>
-          <CardContent class="space-y-4">
-            {#if app}
-              <div class="flex flex-wrap items-center gap-3">
-                <div class="min-w-[180px] flex-1 text-sm font-medium">Default aspect ratio</div>
-                <select
-                  aria-label="Default aspect ratio"
-                  class="w-48 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                  disabled={busy === 'app'}
-                  value={app.default_aspect_ratio}
-                  onchange={(e) =>
-                    saveApp({ default_aspect_ratio: (e.currentTarget as HTMLSelectElement).value })}
-                >
-                  {#each ASPECT_RATIOS as r (r)}
-                    <option value={r}>{r}</option>
-                  {/each}
-                </select>
-              </div>
-
-              <div class="flex flex-wrap items-center gap-3">
-                <div class="min-w-[180px] flex-1 text-sm font-medium">Default scene duration (s)</div>
-                <Input
-                  type="number"
-                  min="0.5"
-                  step="0.5"
-                  class="h-8 w-24 text-sm"
-                  disabled={busy === 'app'}
-                  value={app.default_scene_duration}
-                  onchange={(e) => {
-                    const n = parseFloat((e.currentTarget as HTMLInputElement).value);
-                    if (!Number.isNaN(n) && n !== app!.default_scene_duration)
-                      saveApp({ default_scene_duration: n });
-                  }}
-                />
-              </div>
-
-              <div class="flex flex-wrap items-center gap-3">
-                <div class="min-w-[180px] flex-1 text-sm font-medium">Dialogue language</div>
-                <select
-                  aria-label="Dialogue language"
-                  class="w-48 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                  disabled={busy === 'app'}
-                  value={app.dialogue_language}
-                  onchange={(e) =>
-                    saveApp({ dialogue_language: (e.currentTarget as HTMLSelectElement).value })}
-                >
-                  {#each DIALOGUE_LANGUAGES as l (l.value)}
-                    <option value={l.value}>{l.label}</option>
-                  {/each}
-                </select>
-              </div>
-            {/if}
-          </CardContent>
-        </Card>
-
+      {#if tab === 'advanced'}<section aria-label="Render preferences">
         <Card class="mt-4">
           <CardHeader>
-            <CardTitle class="text-base">Captions</CardTitle>
-            <CardDescription>Auto-caption style, language and transcription model.</CardDescription>
-          </CardHeader>
-          <CardContent class="space-y-4">
-            {#if app}
-              <div class="flex flex-wrap items-center gap-3">
-                <div class="min-w-[180px] flex-1 text-sm font-medium">Caption style</div>
-                <select
-                  aria-label="Caption style"
-                  class="w-48 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                  disabled={busy === 'app'}
-                  value={app.caption_style}
-                  onchange={(e) =>
-                    saveApp({ caption_style: (e.currentTarget as HTMLSelectElement).value })}
-                >
-                  {#each CAPTION_STYLES as s (s)}
-                    <option value={s}>{s}</option>
-                  {/each}
-                </select>
-              </div>
-
-              <div class="flex flex-wrap items-center gap-3">
-                <div class="min-w-[180px] flex-1 text-sm font-medium">Caption language</div>
-                <select
-                  aria-label="Caption language"
-                  class="w-48 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                  disabled={busy === 'app'}
-                  value={app.caption_language}
-                  onchange={(e) =>
-                    saveApp({ caption_language: (e.currentTarget as HTMLSelectElement).value })}
-                >
-                  {#each CAPTION_LANGUAGES as l (l.value)}
-                    <option value={l.value}>{l.label}</option>
-                  {/each}
-                </select>
-              </div>
-
-              <div class="flex flex-wrap items-center gap-3">
-                <div class="min-w-[180px] flex-1 text-sm font-medium">OpenRouter transcription model</div>
-                <select
-                  aria-label="OpenRouter transcription model"
-                  class="w-48 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                  disabled={busy === 'app'}
-                  value={app.whisper_model}
-                  onchange={(e) =>
-                    saveApp({ whisper_model: (e.currentTarget as HTMLSelectElement).value })}
-                >
-                  {#each engineCatalogs.transcription as m (m)}
-                    <option value={m}>{m}</option>
-                  {/each}
-                </select>
-              </div>
-            {/if}
-          </CardContent>
-        </Card>
-
-        <Card class="mt-4">
-          <CardHeader>
-            <CardTitle class="text-base">Render negative prompts</CardTitle>
+            <CardTitle role="heading" aria-level={2} class="text-base">Render negative prompts</CardTitle>
             <CardDescription>
               Fragments appended to every render to steer the model away from common artefacts.
             </CardDescription>
@@ -1073,7 +979,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                   {/each}
                 </div>
               {:else}
-                <p class="text-xs text-muted-foreground">No negative prompts yet.</p>
+                <p class="settings-help">No negative prompts yet.</p>
               {/if}
               <form
                 class="flex items-center gap-2"
@@ -1084,6 +990,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
               >
                 <Input
                   class="h-8 max-w-xs text-sm"
+                  aria-label="New negative prompt"
                   placeholder="e.g. blurry, extra fingers"
                   bind:value={newNegative}
                   disabled={busy === 'app'}
@@ -1095,15 +1002,14 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
             {/if}
           </CardContent>
         </Card>
-      </section>
-      {/if}
+      </section>{/if}
 
       <!-- ============================================ AGENTS -->
       {#if tab === 'advanced'}
-      <section id="agents" class="space-y-4">
+      <section id="agents" class="settings-section">
         <Card>
           <CardHeader>
-            <CardTitle class="text-base">Agent routing</CardTitle>
+            <CardTitle role="heading" aria-level={2} class="text-base">Agent routing</CardTitle>
             <CardDescription>
               Choose which provider and model powers each step. Only configured providers are
               selectable; model ids can be free-typed.
@@ -1135,12 +1041,13 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                 {busy === 'bulk-text' ? 'Applying…' : 'Apply'}
               </Button>
               <div class="flex-1"></div>
-              <Button size="sm" variant="ghost" disabled={!!busy} onclick={resetAllAgents}>
+              <Button size="sm" variant="ghost" disabled={!!busy} onclick={() => (confirmReset = true)}>
                 <RotateCcw class="size-3.5 mr-1" />
                 {busy === 'bulk-reset' ? 'Resetting…' : 'Reset all'}
               </Button>
             </div>
 
+            {#if confirmReset}<div role="group" aria-label="Reset agent routing" class="space-y-2"><p class="text-sm">Reset every agent to its default provider and model? Your custom routing will be replaced.</p><Button variant="destructive" disabled={!!busy} onclick={async () => { await resetAllAgents(); confirmReset = false; }}>Reset routing</Button><Button variant="outline" onclick={() => (confirmReset = false)}>Cancel</Button></div>{/if}
             {/if}
  {#snippet agentRow(a: Agent)}
               <div
@@ -1149,12 +1056,12 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
               >
                 <div class="min-w-[160px] flex-1">
                   <div class="flex items-center gap-2">
-                    <span class="text-sm font-medium" title={agentDesc[a.agent] ?? ''}>{a.label}</span>
+                    <span class="settings-label" title={agentDesc[a.agent] ?? ''}>{a.label}</span>
                     {#if isDefault(a)}
-                      <Badge variant="outline" class="text-[10px]">default</Badge>
+                      <Badge variant="outline" class="text-xs">default</Badge>
                     {/if}
                   </div>
-                  <div class="text-[11px] text-muted-foreground">
+                  <div class="settings-help">
                     {agentDesc[a.agent] ?? ''}
                     {#if !isDefault(a)}
                       <span class="block">
@@ -1164,10 +1071,10 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                   </div>
                 </div>
 
-                <div class="flex items-center gap-2">
+                <div class="flex w-full min-w-0 flex-wrap items-center gap-2 lg:w-auto">
                   <select
                     aria-label="{a.label} provider"
-                    class="rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                    class="w-full min-w-0 rounded-md border border-input bg-background px-2 py-1.5 text-sm sm:w-auto sm:max-w-full"
                     disabled={busy === `agent-${a.agent}` || !!busy}
                     value={a.provider}
                     onchange={(e) => onAgentProvider(a, (e.currentTarget as HTMLSelectElement).value)}
@@ -1182,7 +1089,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
 
                   {#if agentCustomOpen[a.agent]}
                     <Input
-                      class="h-8 w-48 text-sm"
+                      class="h-8 w-full min-w-0 text-sm sm:w-48"
                       placeholder="Custom model id"
                       bind:value={agentCustomVal[a.agent]}
                       onkeydown={(e) => e.key === 'Enter' && commitAgentCustom(a)}
@@ -1196,7 +1103,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                   {:else}
                     <select
                       aria-label="{a.label} model"
-                      class="w-48 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                      class="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm sm:w-48 sm:flex-none"
                       disabled={busy === `agent-${a.agent}` || !!busy}
                       value={a.model}
                       onchange={(e) => onAgentModelSelect(a, (e.currentTarget as HTMLSelectElement).value)}
@@ -1252,38 +1159,51 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
       </section>
       {/if}
 
-      <!-- ============================================ APPEARANCE -->
-      {#if tab === 'general'}
-      <section id="appearance" class="space-y-4">
+      <!-- ============================================ CONNECTION DETAILS -->
+      {#if tab === 'advanced'}
+      <section id="endpoints" class="settings-section">
         <Card>
           <CardHeader>
-            <CardTitle class="flex items-center gap-2 text-base">
-              <Palette class="size-4" />Appearance
-            </CardTitle>
-            <CardDescription>Choose how VideoFlow looks. Stored on this device.</CardDescription>
+            <CardTitle role="heading" aria-level={2} class="text-base">Connection details</CardTitle>
+            <CardDescription>The address each service is reached at, and extra named connections. Keys are saved in AI connections.</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div role="radiogroup" aria-label="Theme" class="flex flex-wrap gap-2">
-              {#each [{ v: 'light', label: 'Light', icon: Sun }, { v: 'dark', label: 'Dark', icon: Moon }, { v: 'system', label: 'System', icon: Monitor }] as opt (opt.v)}
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={theme === opt.v}
-                  class="flex items-center gap-2 rounded-lg border px-4 py-2 text-sm transition-colors
-                         {theme === opt.v
-                    ? 'border-primary bg-accent font-medium'
-                    : 'border-border hover:bg-accent/50'}"
-                  onclick={() => setTheme(opt.v as 'light' | 'dark' | 'system')}
-                >
-                  <opt.icon class="size-4" />
-                  {opt.label}
-                </button>
-              {/each}
-            </div>
+          <CardContent class="space-y-3">
+            {#each orderedProviders as p (p.name)}
+              <div class="flex flex-wrap items-center gap-3">
+                <label class="min-w-[180px] flex-1 text-sm font-medium" for="url-{p.name}">{providerLabels[p.name] ?? p.name} base URL</label>
+                <Input id="url-{p.name}" class="h-8 w-full text-sm sm:w-96" readonly value={provCfg[p.name]?.base_url ?? ''} />
+              </div>
+            {/each}
+            <details class="rounded-lg border p-4">
+              <summary class="cursor-pointer text-sm font-medium">Additional connections</summary>
+              <div class="mt-3 space-y-3">
+              <p class="settings-help">Only add a named OpenRouter connection if you need a separate account or configuration. To set up your primary account, use OpenRouter in AI connections.</p>
+              <div class="grid gap-3 sm:grid-cols-2">
+                <label class="text-xs">Name<Input bind:value={newLabel} placeholder="My OpenRouter" /></label>
+                <label class="text-xs">Provider<select class="block w-full rounded border p-2 bg-background" bind:value={newPreset} onchange={choosePreset}>
+                  {#each selectablePresets as [id, p]}<option value={id}>{p.label}</option>{/each}
+                </select></label>
+                <label class="text-xs">Protocol<select class="block w-full rounded border p-2 bg-background" bind:value={newProtocol}>
+                  <option value="chat">OpenRouter Chat Completions</option>
+
+                </select></label>
+                <label class="text-xs">Default model<Input bind:value={newModel} placeholder="Model ID from your provider" /></label>
+                {#if newProtocol !== 'codex'}
+                  <label class="text-xs">Base URL<Input bind:value={newUrl} /></label>
+                  <label class="text-xs">Chat Completions output mode<select class="block w-full rounded border p-2 bg-background" bind:value={newMode} disabled={newProtocol !== 'chat'}>
+                    <option value="auto">Provider default</option><option value="prompt">JSON in prompt</option>
+                  </select></label>
+                {/if}
+              </div>
+              <label class="flex items-center gap-2 text-xs"><input type="checkbox" bind:checked={newVision} />Models on this connection accept images</label>
+              <Button size="sm" disabled={!newLabel.trim() || busy === 'add-connection'} onclick={addConnection}>Add connection</Button>
+              </div>
+            </details>
           </CardContent>
         </Card>
       </section>
       {/if}
+
       </div>
     </div>
   {/if}
@@ -1291,3 +1211,16 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
 
 {#if tab==='advanced'}<GenerationRecovery/>{/if}
 <svelte:window onhashchange={settingsHash} />
+
+<style>
+  .settings-page { --settings-label-size: .875rem; --settings-help-size: .75rem; --settings-section-gap: 1rem; }
+  .settings-page :global(.settings-label) { font-size:var(--settings-label-size); line-height:1.25rem; font-weight:500; }
+  .settings-page :global(.settings-help) { font-size:var(--settings-help-size); line-height:1rem; color:var(--muted-foreground); }
+  .settings-page :global(.settings-section > :not(:last-child)) { margin-bottom:var(--settings-section-gap); }
+
+  .settings-page :global([data-slot="card"]) { border-radius: 0; box-shadow: none; border-width: 0 0 1px; border-color: var(--border); background: transparent; padding-bottom: 1.5rem; }
+  .settings-page :global([data-slot="card-header"]), .settings-page :global([data-slot="card-content"]) { padding-left: 0; padding-right: 0; }
+  .settings-page :global(select) { max-width: 100%; }
+  .settings-page :global(summary) { min-height: 2.75rem; align-content: center; }
+  @media (max-width: 639px) { .settings-page :global(select) { width: 100%; } }
+</style>

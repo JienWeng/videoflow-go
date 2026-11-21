@@ -1,0 +1,21 @@
+{
+  "checks": [
+    "1440: missing-session guidance and disabled submission",
+    "1440: history error distinguished from empty and retry works",
+    "1440: multiline input, failed-send recovery and explicit resubmission",
+    "1440: prompt checkpoint restores text with draft protection and no replay",
+    "1440: history reading position preserved, including near bottom, and jump to latest works",
+    "1440: actionable proposal retained and never runs automatically",
+    "1440: explicit specialist mode, truthful partial failure and saved review restoration",
+    "1440: Stop cancels the active local review without generation",
+    "390: missing-session guidance and disabled submission",
+    "390: history error distinguished from empty and retry works",
+    "390: multiline input, failed-send recovery and explicit resubmission",
+    "390: prompt checkpoint restores text with draft protection and no replay",
+    "390: history reading position preserved, including near bottom, and jump to latest works",
+    "390: actionable proposal retained and never runs automatically",
+    "390: explicit specialist mode, truthful partial failure and saved review restoration",
+    "390: Stop cancels the active local review without generation"
+  ],
+  "errors": []
+}

@@ -24,7 +24,8 @@
       "main.cjs",
       "engine.cjs",
       "package.json",
-      "validate-payload.cjs"
+      "validate-payload.cjs",
+      "assets/icon.png"
     ],
     "extraResources": [
       {
@@ -47,7 +48,8 @@
         "Contents/Resources/engine/videoflow",
         "Contents/Resources/engine/ffmpeg",
         "Contents/Resources/engine/ffprobe"
-      ]
+      ],
+      "icon": "build/icon.icns"
     },
     "linux": {
       "target": [
@@ -56,7 +58,8 @@
         "tar.gz"
       ],
       "category": "AudioVideo",
-      "maintainer": "VideoFlow contributors"
+      "maintainer": "VideoFlow contributors",
+      "icon": "build/icon.png"
     },
     "beforePack": "./validate-payload.cjs",
     "artifactName": "VideoFlow-${version}-${os}-${arch}.${ext}"

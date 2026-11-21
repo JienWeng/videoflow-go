@@ -1,0 +1,1073 @@
+{
+  "date": "2026-11-14",
+  "applicationRevision": "725c0fa",
+  "expected": 190,
+  "passed": 190,
+  "failed": 0,
+  "suites": [
+    {
+      "suite": "components-final",
+      "evidence": "/tmp/videoflow-deep-e2e/components-final/report.json",
+      "checks": [
+        {
+          "id": "components-final-01",
+          "name": "desktop /: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-02",
+          "name": "desktop /create: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-03",
+          "name": "desktop /projects: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-04",
+          "name": "desktop /scenes: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-05",
+          "name": "desktop /characters: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-06",
+          "name": "desktop /assets: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-07",
+          "name": "desktop /render: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-08",
+          "name": "desktop /settings: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-09",
+          "name": "desktop /director: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-10",
+          "name": "desktop /voices: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-11",
+          "name": "desktop /compositions: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-12",
+          "name": "desktop /editor/missing-output: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-13",
+          "name": "desktop projects: required name, rename cancel/save, delete cancel/confirm",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-14",
+          "name": "desktop settings: each tab inventory",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-15",
+          "name": "desktop scene generator: validation, numeric constraints, cancel",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-16",
+          "name": "desktop create and character: empty validation",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-17",
+          "name": "desktop theme: light, dark, system and persistence",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-18",
+          "name": "desktop backend unavailable: all routes stay rendered",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-19",
+          "name": "mobile /: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-20",
+          "name": "mobile /create: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-21",
+          "name": "mobile /projects: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-22",
+          "name": "mobile /scenes: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-23",
+          "name": "mobile /characters: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-24",
+          "name": "mobile /assets: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-25",
+          "name": "mobile /render: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-26",
+          "name": "mobile /settings: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-27",
+          "name": "mobile /director: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-28",
+          "name": "mobile /voices: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-29",
+          "name": "mobile /compositions: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-30",
+          "name": "mobile /editor/missing-output: load, inventory, palette",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-31",
+          "name": "mobile projects: required name, rename cancel/save, delete cancel/confirm",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-32",
+          "name": "mobile settings: each tab inventory",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-33",
+          "name": "mobile scene generator: validation, numeric constraints, cancel",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-34",
+          "name": "mobile create and character: empty validation",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-35",
+          "name": "mobile theme: light, dark, system and persistence",
+          "status": "pass"
+        },
+        {
+          "id": "components-final-36",
+          "name": "mobile backend unavailable: all routes stay rendered",
+          "status": "pass"
+        }
+      ],
+      "errors": [],
+      "unknownEndpoints": []
+    },
+    {
+      "suite": "audit_fixes",
+      "evidence": "/tmp/videoflow-deep-e2e/audit_fixes/report.json",
+      "checks": [
+        {
+          "id": "audit_fixes-01",
+          "name": "1440 existing caption keyboard and mobile toolbar",
+          "status": "pass"
+        },
+        {
+          "id": "audit_fixes-02",
+          "name": "1440 palette new story and active result semantics",
+          "status": "pass"
+        },
+        {
+          "id": "audit_fixes-03",
+          "name": "1440 failed character load is not empty",
+          "status": "pass"
+        },
+        {
+          "id": "audit_fixes-04",
+          "name": "1440 Settings range, error association, pristine Save and dirty exit",
+          "status": "pass"
+        },
+        {
+          "id": "audit_fixes-05",
+          "name": "1440 cancelled project switch does not activate backend",
+          "status": "pass"
+        },
+        {
+          "id": "audit_fixes-06",
+          "name": "1440 voice draft dirty navigation",
+          "status": "pass"
+        },
+        {
+          "id": "audit_fixes-07",
+          "name": "1440 composition saved index and dirty navigation",
+          "status": "pass"
+        },
+        {
+          "id": "audit_fixes-08",
+          "name": "390 existing caption keyboard and mobile toolbar",
+          "status": "pass"
+        },
+        {
+          "id": "audit_fixes-09",
+          "name": "390 palette new story and active result semantics",
+          "status": "pass"
+        },
+        {
+          "id": "audit_fixes-10",
+          "name": "390 failed character load is not empty",
+          "status": "pass"
+        },
+        {
+          "id": "audit_fixes-11",
+          "name": "390 Settings range, error association, pristine Save and dirty exit",
+          "status": "pass"
+        },
+        {
+          "id": "audit_fixes-12",
+          "name": "390 cancelled project switch does not activate backend",
+          "status": "pass"
+        },
+        {
+          "id": "audit_fixes-13",
+          "name": "390 voice draft dirty navigation",
+          "status": "pass"
+        },
+        {
+          "id": "audit_fixes-14",
+          "name": "390 composition saved index and dirty navigation",
+          "status": "pass"
+        }
+      ],
+      "errors": [],
+      "unknownEndpoints": []
+    },
+    {
+      "suite": "canvas_editing",
+      "evidence": "/tmp/videoflow-deep-e2e/canvas_editing/report.json",
+      "checks": [
+        {
+          "id": "canvas_editing-01",
+          "name": "1440: assistant empty action, tools menu, draft-safe layout controls",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-02",
+          "name": "1440: finder, type filter, empty search and undo arrange",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-03",
+          "name": "1440: cancelled selection preserves dirty draft",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-04",
+          "name": "1440: Cancel restores latest saved baseline",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-05",
+          "name": "1440: scene edit/save",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-06",
+          "name": "1440: shot editor opens",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-07",
+          "name": "1440: chat draft persists, chips fill only, selected ID sent",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-08",
+          "name": "1440: character edits inline with correct data",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-09",
+          "name": "1440: asset identity editor link",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-10",
+          "name": "1440: context menu visible and Escape closes",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-11",
+          "name": "1440: node drag persists position",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-12",
+          "name": "1440: canvas follows application theme",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-13",
+          "name": "1440: removable composer context clears canvas selection",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-14",
+          "name": "390: assistant empty action, tools menu, draft-safe layout controls",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-15",
+          "name": "390: finder, type filter, empty search and undo arrange",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-16",
+          "name": "390: cancelled selection preserves dirty draft",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-17",
+          "name": "390: Cancel restores latest saved baseline",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-18",
+          "name": "390: scene edit/save",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-19",
+          "name": "390: shot editor opens",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-20",
+          "name": "390: chat draft persists, chips fill only, selected ID sent",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-21",
+          "name": "390: character edits inline with correct data",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-22",
+          "name": "390: asset identity editor link",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-23",
+          "name": "390: context menu visible and Escape closes",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-24",
+          "name": "390: node drag persists position",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-25",
+          "name": "390: canvas follows application theme",
+          "status": "pass"
+        },
+        {
+          "id": "canvas_editing-26",
+          "name": "390: removable composer context clears canvas selection",
+          "status": "pass"
+        }
+      ],
+      "errors": [],
+      "unknownEndpoints": []
+    },
+    {
+      "suite": "chat_states",
+      "evidence": "/tmp/videoflow-deep-e2e/chat_states/report.json",
+      "checks": [
+        {
+          "id": "chat_states-01",
+          "name": "1440: missing-session guidance and disabled submission",
+          "status": "pass"
+        },
+        {
+          "id": "chat_states-02",
+          "name": "1440: history error distinguished from empty and retry works",
+          "status": "pass"
+        },
+        {
+          "id": "chat_states-03",
+          "name": "1440: multiline input, failed-send recovery and explicit resubmission",
+          "status": "pass"
+        },
+        {
+          "id": "chat_states-04",
+          "name": "1440: prompt checkpoint restores text with draft protection and no replay",
+          "status": "pass"
+        },
+        {
+          "id": "chat_states-05",
+          "name": "1440: history reading position preserved, including near bottom, and jump to latest works",
+          "status": "pass"
+        },
+        {
+          "id": "chat_states-06",
+          "name": "1440: actionable proposal retained and never runs automatically",
+          "status": "pass"
+        },
+        {
+          "id": "chat_states-07",
+          "name": "1440: explicit specialist mode, truthful partial failure and saved review restoration",
+          "status": "pass"
+        },
+        {
+          "id": "chat_states-08",
+          "name": "1440: Stop cancels the active local review without generation",
+          "status": "pass"
+        },
+        {
+          "id": "chat_states-09",
+          "name": "390: missing-session guidance and disabled submission",
+          "status": "pass"
+        },
+        {
+          "id": "chat_states-10",
+          "name": "390: history error distinguished from empty and retry works",
+          "status": "pass"
+        },
+        {
+          "id": "chat_states-11",
+          "name": "390: multiline input, failed-send recovery and explicit resubmission",
+          "status": "pass"
+        },
+        {
+          "id": "chat_states-12",
+          "name": "390: prompt checkpoint restores text with draft protection and no replay",
+          "status": "pass"
+        },
+        {
+          "id": "chat_states-13",
+          "name": "390: history reading position preserved, including near bottom, and jump to latest works",
+          "status": "pass"
+        },
+        {
+          "id": "chat_states-14",
+          "name": "390: actionable proposal retained and never runs automatically",
+          "status": "pass"
+        },
+        {
+          "id": "chat_states-15",
+          "name": "390: explicit specialist mode, truthful partial failure and saved review restoration",
+          "status": "pass"
+        },
+        {
+          "id": "chat_states-16",
+          "name": "390: Stop cancels the active local review without generation",
+          "status": "pass"
+        }
+      ],
+      "errors": [],
+      "unknownEndpoints": []
+    },
+    {
+      "suite": "ai_elements",
+      "evidence": "/tmp/videoflow-deep-e2e/ai_elements/report.json",
+      "checks": [
+        {
+          "id": "ai_elements-01",
+          "name": "1440: progress expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-02",
+          "name": "1440: reasoning expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-03",
+          "name": "1440: plan expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-04",
+          "name": "1440: queue expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-05",
+          "name": "1440: task expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-06",
+          "name": "1440: tool expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-07",
+          "name": "1440: terminal expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-08",
+          "name": "1440: stack-trace expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-09",
+          "name": "1440: test-results expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-10",
+          "name": "1440: subagent expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-11",
+          "name": "1440: sources expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-12",
+          "name": "1440: inline-citation expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-13",
+          "name": "1440: file-tree expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-14",
+          "name": "1440: context expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-15",
+          "name": "1440: escaped logs, safe source links, nested files and actual context usage",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-16",
+          "name": "390: progress expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-17",
+          "name": "390: reasoning expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-18",
+          "name": "390: plan expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-19",
+          "name": "390: queue expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-20",
+          "name": "390: task expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-21",
+          "name": "390: tool expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-22",
+          "name": "390: terminal expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-23",
+          "name": "390: stack-trace expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-24",
+          "name": "390: test-results expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-25",
+          "name": "390: subagent expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-26",
+          "name": "390: sources expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-27",
+          "name": "390: inline-citation expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-28",
+          "name": "390: file-tree expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-29",
+          "name": "390: context expands using supplied data",
+          "status": "pass"
+        },
+        {
+          "id": "ai_elements-30",
+          "name": "390: escaped logs, safe source links, nested files and actual context usage",
+          "status": "pass"
+        }
+      ],
+      "errors": [],
+      "unknownEndpoints": []
+    },
+    {
+      "suite": "sidebar",
+      "evidence": "/tmp/videoflow-deep-e2e/sidebar/report.json",
+      "checks": [
+        {
+          "id": "sidebar-01",
+          "name": "desktop: collapses to icon rail, grows workspace and preserves chat draft",
+          "status": "pass"
+        },
+        {
+          "id": "sidebar-02",
+          "name": "desktop: all primary links remain accessible by name",
+          "status": "pass"
+        },
+        {
+          "id": "sidebar-03",
+          "name": "desktop: More tools, Search and Activity remain usable",
+          "status": "pass"
+        },
+        {
+          "id": "sidebar-04",
+          "name": "desktop: keyboard expand restores labels and draft",
+          "status": "pass"
+        },
+        {
+          "id": "sidebar-05",
+          "name": "desktop: collapsed preference persists across reload and navigation",
+          "status": "pass"
+        },
+        {
+          "id": "sidebar-06",
+          "name": "mobile: full-label navigation works and closes after routing despite desktop preference",
+          "status": "pass"
+        },
+        {
+          "id": "sidebar-07",
+          "name": "responsive: desktop collapse preference survives mobile transition without overflow",
+          "status": "pass"
+        }
+      ],
+      "errors": [],
+      "unknownEndpoints": []
+    },
+    {
+      "suite": "creation_dialogs",
+      "evidence": "/tmp/videoflow-deep-e2e/creation_dialogs/report.json",
+      "checks": [
+        {
+          "id": "creation_dialogs-01",
+          "name": "1440: character form is dialog-only, Escape closes empty form, dirty dismissal preserves draft",
+          "status": "pass"
+        },
+        {
+          "id": "creation_dialogs-02",
+          "name": "1440: character error stays editable and successful create closes into updated list",
+          "status": "pass"
+        },
+        {
+          "id": "creation_dialogs-03",
+          "name": "1440: asset dialog preserves file/type/link through cancel and error, then closes on upload",
+          "status": "pass"
+        },
+        {
+          "id": "creation_dialogs-04",
+          "name": "1440: empty chat has one starting action without repeated helper copy",
+          "status": "pass"
+        },
+        {
+          "id": "creation_dialogs-05",
+          "name": "1440: custom brand SVG, matching favicon and responsive layout",
+          "status": "pass"
+        },
+        {
+          "id": "creation_dialogs-06",
+          "name": "390: character form is dialog-only, Escape closes empty form, dirty dismissal preserves draft",
+          "status": "pass"
+        },
+        {
+          "id": "creation_dialogs-07",
+          "name": "390: character error stays editable and successful create closes into updated list",
+          "status": "pass"
+        },
+        {
+          "id": "creation_dialogs-08",
+          "name": "390: asset dialog preserves file/type/link through cancel and error, then closes on upload",
+          "status": "pass"
+        },
+        {
+          "id": "creation_dialogs-09",
+          "name": "390: empty chat has one starting action without repeated helper copy",
+          "status": "pass"
+        },
+        {
+          "id": "creation_dialogs-10",
+          "name": "390: custom brand SVG, matching favicon and responsive layout",
+          "status": "pass"
+        },
+        {
+          "id": "creation_dialogs-11",
+          "name": "320: character form is dialog-only, Escape closes empty form, dirty dismissal preserves draft",
+          "status": "pass"
+        },
+        {
+          "id": "creation_dialogs-12",
+          "name": "320: character error stays editable and successful create closes into updated list",
+          "status": "pass"
+        },
+        {
+          "id": "creation_dialogs-13",
+          "name": "320: asset dialog preserves file/type/link through cancel and error, then closes on upload",
+          "status": "pass"
+        },
+        {
+          "id": "creation_dialogs-14",
+          "name": "320: empty chat has one starting action without repeated helper copy",
+          "status": "pass"
+        },
+        {
+          "id": "creation_dialogs-15",
+          "name": "320: custom brand SVG, matching favicon and responsive layout",
+          "status": "pass"
+        }
+      ],
+      "errors": [],
+      "unknownEndpoints": []
+    },
+    {
+      "suite": "director",
+      "evidence": "/tmp/videoflow-deep-e2e/director/report.json",
+      "checks": [
+        {
+          "id": "director-01",
+          "name": "desktop: first session and progressive disclosure",
+          "status": "pass"
+        },
+        {
+          "id": "director-02",
+          "name": "desktop: references save, unsaved guard and discard",
+          "status": "pass"
+        },
+        {
+          "id": "director-03",
+          "name": "desktop: running cancel and interrupted review gate",
+          "status": "pass"
+        },
+        {
+          "id": "director-04",
+          "name": "desktop: missing engine shows setup, never ready",
+          "status": "pass"
+        },
+        {
+          "id": "director-05",
+          "name": "desktop: failed details cannot save old references or continue",
+          "status": "pass"
+        },
+        {
+          "id": "director-06",
+          "name": "desktop: long session name, compact default and no overflow",
+          "status": "pass"
+        },
+        {
+          "id": "director-07",
+          "name": "desktop: backend error keeps refresh usable and blocks continuation",
+          "status": "pass"
+        },
+        {
+          "id": "director-08",
+          "name": "mobile: first session and progressive disclosure",
+          "status": "pass"
+        },
+        {
+          "id": "director-09",
+          "name": "mobile: references save, unsaved guard and discard",
+          "status": "pass"
+        },
+        {
+          "id": "director-10",
+          "name": "mobile: running cancel and interrupted review gate",
+          "status": "pass"
+        },
+        {
+          "id": "director-11",
+          "name": "mobile: missing engine shows setup, never ready",
+          "status": "pass"
+        },
+        {
+          "id": "director-12",
+          "name": "mobile: failed details cannot save old references or continue",
+          "status": "pass"
+        },
+        {
+          "id": "director-13",
+          "name": "mobile: long session name, compact default and no overflow",
+          "status": "pass"
+        },
+        {
+          "id": "director-14",
+          "name": "mobile: backend error keeps refresh usable and blocks continuation",
+          "status": "pass"
+        }
+      ],
+      "errors": [],
+      "unknownEndpoints": []
+    },
+    {
+      "suite": "compositions",
+      "evidence": "/tmp/videoflow-deep-e2e/compositions/report.json",
+      "checks": [
+        {
+          "id": "compositions-01",
+          "name": "desktop",
+          "status": "pass"
+        },
+        {
+          "id": "compositions-02",
+          "name": "mobile",
+          "status": "pass"
+        }
+      ],
+      "errors": [],
+      "unknownEndpoints": []
+    },
+    {
+      "suite": "dashboard-confirmed",
+      "evidence": "/tmp/videoflow-deep-e2e/dashboard-confirmed/report.json",
+      "checks": [
+        {
+          "id": "dashboard-confirmed-01",
+          "name": "desktop: empty project is oriented with true totals and a first action",
+          "status": "pass"
+        },
+        {
+          "id": "dashboard-confirmed-02",
+          "name": "desktop: populated project has correct counts, recent work and resume action",
+          "status": "pass"
+        },
+        {
+          "id": "dashboard-confirmed-03",
+          "name": "desktop: recovery and pending references are actionable without any resubmission",
+          "status": "pass"
+        },
+        {
+          "id": "dashboard-confirmed-04",
+          "name": "desktop: older interrupted generation opens the exact saved request",
+          "status": "pass"
+        },
+        {
+          "id": "dashboard-confirmed-05",
+          "name": "desktop: required failure retains stale data and retries without false zeros",
+          "status": "pass"
+        },
+        {
+          "id": "dashboard-confirmed-06",
+          "name": "desktop: unknown setup is not presented as unconfigured or ready",
+          "status": "pass"
+        },
+        {
+          "id": "dashboard-confirmed-07",
+          "name": "desktop: canvas and chat drafts survive overview switching",
+          "status": "pass"
+        },
+        {
+          "id": "dashboard-confirmed-08",
+          "name": "desktop: node editing draft survives refresh on returning to canvas",
+          "status": "pass"
+        },
+        {
+          "id": "dashboard-confirmed-09",
+          "name": "desktop: recent links, quick actions and responsive layout",
+          "status": "pass"
+        },
+        {
+          "id": "dashboard-confirmed-10",
+          "name": "mobile: empty project is oriented with true totals and a first action",
+          "status": "pass"
+        },
+        {
+          "id": "dashboard-confirmed-11",
+          "name": "mobile: populated project has correct counts, recent work and resume action",
+          "status": "pass"
+        },
+        {
+          "id": "dashboard-confirmed-12",
+          "name": "mobile: recovery and pending references are actionable without any resubmission",
+          "status": "pass"
+        },
+        {
+          "id": "dashboard-confirmed-13",
+          "name": "mobile: older interrupted generation opens the exact saved request",
+          "status": "pass"
+        },
+        {
+          "id": "dashboard-confirmed-14",
+          "name": "mobile: required failure retains stale data and retries without false zeros",
+          "status": "pass"
+        },
+        {
+          "id": "dashboard-confirmed-15",
+          "name": "mobile: unknown setup is not presented as unconfigured or ready",
+          "status": "pass"
+        },
+        {
+          "id": "dashboard-confirmed-16",
+          "name": "mobile: canvas and chat drafts survive overview switching",
+          "status": "pass"
+        },
+        {
+          "id": "dashboard-confirmed-17",
+          "name": "mobile: node editing draft survives refresh on returning to canvas",
+          "status": "pass"
+        },
+        {
+          "id": "dashboard-confirmed-18",
+          "name": "mobile: recent links, quick actions and responsive layout",
+          "status": "pass"
+        }
+      ],
+      "errors": [],
+      "unknownEndpoints": []
+    },
+    {
+      "suite": "reference_review",
+      "evidence": "/tmp/videoflow-deep-e2e/reference_review/report.json",
+      "checks": [
+        {
+          "id": "reference_review-01",
+          "name": "Create stops after keyframes with zero video submissions",
+          "status": "pass"
+        },
+        {
+          "id": "reference_review-02",
+          "name": "Pending and rejected references block backend rendering",
+          "status": "pass"
+        },
+        {
+          "id": "reference_review-03",
+          "name": "Assets review explicitly approves each generated reference",
+          "status": "pass"
+        },
+        {
+          "id": "reference_review-04",
+          "name": "Explicit Render after approval runs silent saved-voice visual passes",
+          "status": "pass"
+        }
+      ],
+      "errors": [],
+      "unknownEndpoints": []
+    },
+    {
+      "suite": "media_editor-final",
+      "evidence": "/tmp/videoflow-deep-e2e/media_editor-final/report.json",
+      "checks": [
+        {
+          "id": "media_editor-final-01",
+          "name": "Render gallery selection persists and ordered assembly opens editor",
+          "status": "pass"
+        },
+        {
+          "id": "media_editor-final-02",
+          "name": "Editor transcribes audio, burns captions, downloads original/captioned",
+          "status": "pass"
+        }
+      ],
+      "errors": [],
+      "unknownEndpoints": []
+    },
+    {
+      "suite": "session_isolation",
+      "evidence": "/tmp/videoflow-deep-e2e/session_isolation.log",
+      "checks": [
+        {
+          "id": "session_isolation-01",
+          "name": "delayed A response excluded from B",
+          "status": "pass"
+        },
+        {
+          "id": "session_isolation-02",
+          "name": "delayed history restore excluded",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "suite": "settings",
+      "evidence": "/tmp/videoflow-deep-e2e/settings.log",
+      "checks": [
+        {
+          "id": "settings-01",
+          "name": "Settings 1440: grouping, theme keyboard, save/failure, saved model, key confirmation, deep links, load retry, overflow",
+          "status": "pass"
+        },
+        {
+          "id": "settings-02",
+          "name": "Settings 390: grouping, theme keyboard, save/failure, saved model, key confirmation, deep links, load retry, overflow",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "suite": "workspace",
+      "evidence": "/tmp/videoflow-deep-e2e/workspace.log",
+      "checks": [
+        {
+          "id": "workspace-01",
+          "name": "workspace/settings 1440",
+          "status": "pass"
+        },
+        {
+          "id": "workspace-02",
+          "name": "workspace/settings 390",
+          "status": "pass"
+        }
+      ]
+    }
+  ]
+}

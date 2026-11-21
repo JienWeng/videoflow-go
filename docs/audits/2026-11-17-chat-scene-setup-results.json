@@ -1,0 +1,24 @@
+{
+  "checks": [
+    "1440: historical voice error opens one all-speaker setup card in chat, keeping the existing Pip voice",
+    "1440: configure a private key and match both missing voices without synthesis, render or credential leakage",
+    "1440: one combined confirmation saves all missing voices and queues render in the same conversation",
+    "1440: saved setup and conversation survive reload without replaying generation",
+    "390: historical voice error opens one all-speaker setup card in chat, keeping the existing Pip voice",
+    "390: configure a private key and match both missing voices without synthesis, render or credential leakage",
+    "390: concurrent-change error keeps the entire batch unsaved and prevents render until rechecked",
+    "390: one combined confirmation saves all missing voices and queues render in the same conversation",
+    "390: saved setup and conversation survive reload without replaying generation"
+  ],
+  "errors": [],
+  "axe": [
+    {
+      "width": 1440,
+      "violations": []
+    },
+    {
+      "width": 390,
+      "violations": []
+    }
+  ]
+}

@@ -12,10 +12,13 @@ import (
 	"time"
 
 	"videoflow-go/internal/config"
+	"videoflow-go/internal/costs"
 	"videoflow-go/internal/db"
 	"videoflow-go/internal/events"
 	"videoflow-go/internal/media"
 	"videoflow-go/internal/models"
+	"videoflow-go/internal/providers"
+	"videoflow-go/internal/routing"
 )
 
 func workerFixture(t *testing.T, h http.HandlerFunc) (*WorkerPool, *models.RenderJob) {
@@ -324,5 +327,117 @@ func TestCompletedProviderRetrievalFailureKeepsRetryFence(t *testing.T) {
 				t.Fatal("worker resubmitted existing task", posts)
 			}
 		})
+	}
+}
+
+func TestWorkerPreservesNativeAudioAndLocalRenderUnits(t *testing.T) {
+	var submitted map[string]any
+	worker, job := workerFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/videos/models":
+			w.Write([]byte(`{"data":[{"id":"test/video","supported_durations":[4],"supported_aspect_ratios":["16:9"],"generate_audio":true}]}`))
+		case "/videos":
+			json.NewDecoder(r.Body).Decode(&submitted)
+			w.Write([]byte(`{"id":"native"}`))
+		case "/videos/native":
+			w.Write([]byte(`{"status":"completed","unsigned_urls":["/videos/native/content"]}`))
+		case "/videos/native/content":
+			w.Write([]byte("\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom"))
+		default:
+			t.Error("unexpected fixture route", r.URL.Path)
+		}
+	})
+	worker.SetSubmissionValidator(func(context.Context, *models.RenderJob) error { return nil })
+	job.RequestJSON = []byte(`{"prompt":"A puppy speaks, with gentle music","duration":4,"aspect_ratio":"16:9","generate_audio":true,"audio_mode":"native","voice_policy":{"mode":"native"},"request_fingerprint":"frozen","render_plan_id":"plan","render_unit":{"key":"plan:0","index":0,"length":3}}`)
+	worker.database.UpdateRenderJob(job)
+	if err := worker.processJob(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if submitted["generate_audio"] != true {
+		t.Fatal("native audio switched off", submitted)
+	}
+	for _, key := range []string{"request_fingerprint", "audio_mode", "voice_policy", "render_plan_id", "render_unit"} {
+		if submitted[key] != nil {
+			t.Fatal("local metadata leaked to provider", key)
+		}
+	}
+	saved, _ := worker.database.GetRenderJob(job.ID)
+	var p map[string]any
+	json.Unmarshal(saved.RequestJSON, &p)
+	if p["request_fingerprint"] != "frozen" || p["render_plan_id"] != "plan" || p["render_unit"].(map[string]any)["key"] != "plan:0" {
+		t.Fatal("assembly/reuse metadata lost", p)
+	}
+}
+
+func TestRenderRefusedForItsKeyMarksTheKeyRejected(t *testing.T) {
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(401)
+		w.Write([]byte(`{"code":"INVALID_API_KEY","message":"Invalid API key"}`))
+	}))
+	defer remote.Close()
+	host := costs.HostByName("argolink")
+	official := host.URL
+	host.URL = remote.URL
+	defer func() { host.URL = official }()
+	cfg := config.Load()
+	cfg.StorageRoot = t.TempDir()
+	d, err := db.Open(filepath.Join(t.TempDir(), "db.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	if err = d.SetProviderSecret("argolink", "stale-key", nil); err != nil {
+		t.Fatal(err)
+	}
+	job := &models.RenderJob{Provider: "argolink", Model: "seedance-2.0", Status: "pending", RequestJSON: json.RawMessage(`{"prompt":"Cat","duration":5,"aspect_ratio":"16:9","resolution":"720p"}`)}
+	if err = d.CreateRenderJob(job); err != nil {
+		t.Fatal(err)
+	}
+	pool := NewWorkerPool(cfg, d, events.NewBroker(), media.NewMediaEngine())
+	defer pool.Stop()
+	if err = pool.processJob(job.ID); err == nil {
+		t.Fatal("refused render reported success")
+	}
+	routes := routing.Resolver{Config: cfg, DB: d}
+	if check, _ := routes.KeyCheck("argolink"); check.State != providers.KeyRejected || routes.Connected("argolink") {
+		t.Fatalf("after a 401 render the key check is %+v", check)
+	}
+}
+
+// A planned scene clip carries its finished prompt; the worker sends exactly that and
+// adds nothing of its own.
+func TestWorkerSendsAPlannedClipsFinishedPromptUnchanged(t *testing.T) {
+	sent := ""
+	worker, job := workerFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/videos/models" {
+			w.Write([]byte(`{"data":[{"id":"test/video","supported_durations":[4],"supported_aspect_ratios":["16:9"],"supported_frame_images":["first_frame"]}]}`))
+			return
+		}
+		if r.URL.Path == "/videos" {
+			var payload map[string]any
+			json.NewDecoder(r.Body).Decode(&payload)
+			sent, _ = payload["prompt"].(string)
+			if payload["final_prompt"] != nil {
+				t.Error("the internal field reached the video service")
+			}
+			w.Write([]byte(`{"id":"upstream"}`))
+			return
+		}
+		w.Write([]byte(`{"status":"failed","error":"mock stop after submission"}`))
+	})
+	pid, _ := worker.database.GetActiveProjectID()
+	scene := &models.Scene{ProjectID: &pid, Title: "Ocean", Summary: "Wave", Duration: 4, AspectRatio: "16:9", SceneJSON: json.RawMessage(`{"generation_brief":{"idea":"x","tone":"gloomy","instruction":"internal note"}}`)}
+	worker.database.CreateScene(scene)
+	var request map[string]any
+	json.Unmarshal(job.RequestJSON, &request)
+	request["prompt"], request["final_prompt"] = "everything gathered along the way", "Shot 1: a wave rolls in."
+	raw, _ := json.Marshal(request)
+	job = &models.RenderJob{ProjectID: &pid, SceneID: &scene.ID, Provider: "openrouter", Model: "test/video", Status: "pending", RequestJSON: raw}
+	if err := worker.database.CreateRenderJob(job); err != nil {
+		t.Fatal(err)
+	}
+	_ = worker.processJob(job.ID)
+	if sent != "Shot 1: a wave rolls in." {
+		t.Fatalf("sent %q", sent)
 	}
 }

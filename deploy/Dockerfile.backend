@@ -1,3 +1,14 @@
+FROM node:24-bookworm-slim AS agents
+ARG CODEX_VERSION=0.169.0
+ARG CLAUDE_CODE_VERSION=2.1.325
+RUN npm install --global --prefix /opt/agent-clis --no-audit --no-fund \
+    "@openai/codex@${CODEX_VERSION}" "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+    && npm cache clean --force
+
+FROM node:24-bookworm-slim AS video-runtime
+ENV PUPPETEER_SKIP_DOWNLOAD=true PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+RUN npm install --prefix /opt/videoflow-hyperframes --save-exact --no-audit --no-fund hyperframes@0.9.33 && npm cache clean --force
+
 FROM golang:1.26-bookworm AS build
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -6,10 +17,18 @@ COPY cmd ./cmd
 COPY internal ./internal
 RUN CGO_ENABLED=0 GOMAXPROCS=2 go build -p 2 -trimpath -o /videoflow ./cmd/server
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates fonts-noto-core fonts-noto-cjk && rm -rf /var/lib/apt/lists/* \
-    && useradd --uid 10001 --create-home videoflow && mkdir /data && chown videoflow /data
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg chromium ca-certificates fonts-noto-core fonts-noto-cjk && rm -rf /var/lib/apt/lists/* \
+    && useradd --uid 10001 --create-home videoflow && chmod 700 /home/videoflow \
+    && mkdir /data && chown videoflow /data
 COPY --from=build /videoflow /usr/local/bin/videoflow
+COPY --from=agents /usr/local/bin/node /usr/local/bin/node
+COPY --from=agents /opt/agent-clis /opt/agent-clis
+COPY --from=video-runtime /opt/videoflow-hyperframes /opt/videoflow-hyperframes
+ENV VIDEOFLOW_HYPERFRAMES_BIN=/opt/videoflow-hyperframes/node_modules/.bin/hyperframes HYPERFRAMES_BROWSER_PATH=/usr/bin/chromium HYPERFRAMES_NO_TELEMETRY=1 DO_NOT_TRACK=1
+ENV PATH="/opt/agent-clis/bin:${PATH}"
 USER videoflow
+RUN codex --version && claude --version \
+    && rm -rf /home/videoflow/.codex /home/videoflow/.claude /home/videoflow/.claude.json
 ENV DATABASE_PATH=/data/db.sqlite STORAGE_ROOT=/data/storage PORT=8000
 EXPOSE 8000
 CMD ["videoflow", "--host", "0.0.0.0"]

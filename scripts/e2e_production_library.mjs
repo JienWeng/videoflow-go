@@ -1,0 +1,19 @@
+// Offline browser checks: every API call is intercepted; no provider spending.
+import assert from 'node:assert/strict';
+import {pathToFileURL} from 'node:url';
+const {chromium}=await import(pathToFileURL('/tmp/videoflow-browser-runner/node_modules/playwright/index.mjs'));
+const {default:AxeBuilder}=await import(pathToFileURL('/tmp/videoflow-risk-tools/node_modules/@axe-core/playwright/dist/index.mjs'));
+const browser=await chromium.launch({executablePath:'/home/ubuntu/.cache/ms-playwright/chromium-1254/chrome-linux-arm64/chrome',args:['--no-sandbox'],headless:true});
+try{for(const width of [1440,390]){
+ const context=await browser.newContext({viewport:{width,height:1000}});await context.addInitScript(()=>localStorage.setItem('videoflow.onboarded','1'));
+ const assets=[{id:'a',name:'Old lantern',type:'prop',file_path:'a.png',created_at:'2026-01-01',metadata_json:{variant_group_id:'lantern'}},{id:'b',name:'New lantern',type:'prop',file_path:'b.png',created_at:'2026-02-01',metadata_json:{variant_group_id:'lantern'}},{id:'c',name:'Excluded bridge',type:'location',file_path:'c.png',metadata_json:{consistency_review:'rejected'}},{id:'d',name:'Missing bridge',type:'location',metadata_json:{}}];
+ let writes=0;await context.route('**/api/**',async route=>{const req=route.request(),path=new URL(req.url()).pathname.slice(4);if(req.method()!=='GET')writes++;let body={};if(path==='/events')return route.fulfill({contentType:'text/event-stream',body:': ok\n\n'});if(path==='/projects/active')body={id:'qa',name:'Production library'};else if(path==='/assets')body=assets;else if(['/characters','/scenes','/projects','/ops','/director/sessions'].includes(path))body=[];else if(path==='/assets/types')body={types:['prop','location','character_reference']};await route.fulfill({json:body});});
+ const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(String(e)));await page.goto('http://127.0.0.1:8091/library?tab=media');
+ const collection=page.getByRole('region',{name:'Media collection'});await collection.getByRole('button',{name:'Preview Old lantern'}).waitFor();
+ const details=page.locator('details').filter({has:page.locator('summary').filter({hasText:'Production filters'})});assert.equal(await details.getAttribute('open'),null);await details.locator('summary').click();
+ await page.getByLabel('Latest version per asset',{exact:true}).check();assert.equal(await collection.getByRole('button',{name:'Preview Old lantern'}).count(),0);assert.equal(await collection.getByRole('button',{name:'Preview New lantern'}).count(),1);
+ await page.getByLabel('Asset readiness',{exact:true}).selectOption('missing');await collection.getByRole('button',{name:'Preview Missing bridge'}).waitFor();assert.equal(await collection.getByRole('button',{name:/^Preview /}).count(),1);
+ await page.getByLabel('Asset readiness',{exact:true}).selectOption('excluded');await collection.getByRole('button',{name:'Preview Excluded bridge'}).waitFor();
+ await page.getByRole('searchbox',{name:'Search media'}).fill('no match');await page.getByRole('button',{name:'Clear filters',exact:true}).click();assert.equal(await page.getByLabel('Latest version per asset').isChecked(),false);assert.equal(await page.getByLabel('Asset readiness').inputValue(),'');assert.equal(await collection.getByRole('button',{name:/^Preview /}).count(),4);
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);const axe=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21aa']).analyze();assert.deepEqual(axe.violations,[]);assert.deepEqual(errors,[]);assert.equal(writes,0);await page.screenshot({path:`/tmp/production-library-${width}.png`,fullPage:true});console.log('PASS production filters, versions, reset, no writes, responsive, axe',width);await context.close();
+}}finally{await browser.close()}

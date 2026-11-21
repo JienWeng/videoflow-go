@@ -81,6 +81,24 @@ func TestDatabaseOperations(t *testing.T) {
 		t.Fatalf("expected 1 shot, got %d", len(shots))
 	}
 
+	asset := models.Asset{ProjectID: &p.ID, Type: "image", Name: "Opening image"}
+	if err := database.CreateAsset(&asset); err != nil {
+		t.Fatal(err)
+	}
+	projects, err := database.ListProjects()
+	if err != nil || len(projects) != 2 {
+		t.Fatalf("expected both workspaces: %v, %v", projects, err)
+	}
+	for _, project := range projects {
+		want := models.ProjectCounts{}
+		if project.ID == p.ID {
+			want = models.ProjectCounts{Scenes: 1, Characters: 1, Assets: 1}
+		}
+		if project.Counts == nil || *project.Counts != want {
+			t.Errorf("project %s counts = %+v, want %+v", project.ID, project.Counts, want)
+		}
+	}
+
 	// 4. Graph Data
 	graph, err := database.GetGraphData(p.ID)
 	if err != nil {

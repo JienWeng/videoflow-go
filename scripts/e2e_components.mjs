@@ -9,7 +9,7 @@ const out=process.env.E2E_OUTPUT || '/tmp/videoflow-component-e2e';
 await mkdir(out,{recursive:true});
 const browser=await chromium.launch({executablePath:process.env.CHROME_PATH || '/usr/bin/google-chrome',headless:true,args:['--no-sandbox']});
 const report={base,started:new Date().toISOString(),checks:[],inventories:[],errors:[],unknownEndpoints:[]};
-const routes=['/','/create','/projects','/scenes','/characters','/assets','/render','/settings','/director','/voices','/compositions','/editor/missing-output'];
+const routes=['/','/create','/projects','/scenes','/characters','/assets','/render','/settings','/director','/voices','/compositions'];
 const assert=(v,m)=>{if(!v)throw Error(m)};
 async function check(name,fn){try{await fn();report.checks.push({name,status:'pass'});console.error('PASS',name)}catch(e){report.checks.push({name,status:'fail',error:e.message});console.error('FAIL',name,e.message)}}
 async function inventory(page,route,mode,state){
@@ -35,7 +35,8 @@ for(const mode of ['desktop','mobile']){
   else if(p==='/projects')body=projects;
   else if(p.startsWith('/projects/')&&req.method()==='PATCH'){const value=req.postDataJSON();projects=projects.map(x=>x.id===p.split('/')[2]?{...x,...value}:x);body={};}
   else if(p.startsWith('/projects/')&&req.method()==='DELETE'){projects=projects.filter(x=>x.id!==p.split('/')[2]);body={};}
-  else if(['/characters','/scenes','/assets','/scripts','/render-jobs','/ops','/settings/agents','/settings/providers','/settings/connection-presets'].includes(p))body=[];
+  else if(['/characters','/scenes','/assets','/scripts','/render-jobs','/ops','/settings/agents','/settings/providers','/settings/connection-presets','/compositions'].includes(p))body=[];
+  else if(p==='/health')body={status:'ok'};
   else if(p==='/settings/app')body={default_video_provider:'openrouter',default_image_provider:'openrouter',render_negatives:[],default_negatives:[],default_aspect_ratio:'16:9',engines:{}};
   else if(p==='/assets/types')body={types:[]};
   else if(p==='/director/status')body={all_text_local:true,engines:[],host_requirement:'Fixture backend host'};
@@ -47,7 +48,6 @@ for(const mode of ['desktop','mobile']){
   else if(p==='/graph')body={nodes:[],edges:[]};
   else if(p==='/events')return route.fulfill({contentType:'text/event-stream',body:': fixture\n\n'});
   else if(p==='/generation-requests')body=[];
-  else if(p==='/caption-config')body={};
   else if(p==='/videos/preflight')body={effective_style:'cinematic',effective_routes:{},missing:['Fixture has no inference provider'],warnings:[]};
   else if(p.includes('missing-output'))return route.fulfill({status:404,json:{error:'Output not found'}});
   else {report.unknownEndpoints.push({path:p,method:req.method()});return route.fulfill({status:404,json:{error:'Unmocked fixture endpoint: '+p}});}
@@ -84,7 +84,7 @@ for(const mode of ['desktop','mobile']){
  });
  await check(`${mode} create and character: empty validation`,async()=>{
   await page.goto(base+'/create',{waitUntil:'domcontentloaded'});await page.getByRole('button',{name:'Create video',exact:true}).waitFor();assert(await page.getByRole('button',{name:'Create video',exact:true}).isDisabled(),'Empty video allowed');
-  await page.goto(base+'/characters',{waitUntil:'domcontentloaded'});await page.getByRole('button',{name:'Create character',exact:true}).waitFor();assert(await page.getByRole('button',{name:'Create character',exact:true}).isDisabled(),'Empty character allowed');
+  await page.goto(base+'/characters',{waitUntil:'domcontentloaded'});await page.getByRole('button',{name:'Create character',exact:true}).click();const characterDialog=page.getByRole('dialog',{name:'Create character',exact:true});assert(await characterDialog.getByRole('button',{name:'Create character',exact:true}).isDisabled(),'Empty character allowed');await page.keyboard.press('Escape');
  });
  await check(`${mode} theme: light, dark, system and persistence`,async()=>{
   await page.goto(base+'/settings',{waitUntil:'domcontentloaded'});await page.getByRole('button',{name:'General',exact:true}).click();

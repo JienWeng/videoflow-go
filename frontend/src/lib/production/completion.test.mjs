@@ -1,0 +1,3 @@
+import assert from 'node:assert/strict';import{completeSceneRenders}from'./completion.mjs';
+const jobs=[0,1,2].map(index=>({scene_id:'scene',status:'succeeded',request_json:{render_plan_id:'plan',render_unit:{key:`plan:${index}`,index,count:3}}}));
+assert(!completeSceneRenders(jobs.slice(0,1)).has('scene'));assert(!completeSceneRenders([jobs[0],jobs[0]]).has('scene'));assert(completeSceneRenders(jobs).has('scene'));assert(!completeSceneRenders([{...jobs[0],shot_id:'shot'}]).has('scene'));assert(completeSceneRenders([{scene_id:'scene',status:'succeeded'}]).has('scene'));console.log('Scene completion checks passed');

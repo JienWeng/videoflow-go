@@ -26,7 +26,7 @@ else {
           app.quit();
         }
       });
-      window = new BrowserWindow({width: 1280, height: 860, minWidth: 800, minHeight: 600, show: false,
+      window = new BrowserWindow({icon: path.join(__dirname, 'assets', 'icon.png'), width: 1280, height: 860, minWidth: 800, minHeight: 600, show: false,
         webPreferences: {nodeIntegration: false, contextIsolation: true, sandbox: true}});
       window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
       window.webContents.session.setPermissionCheckHandler(() => false);
