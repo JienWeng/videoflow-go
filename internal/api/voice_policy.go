@@ -25,9 +25,6 @@ func (s *Server) voicePolicy(ctx context.Context, job *models.RenderJob) error {
 			return fmt.Errorf("invalid video request for voice policy")
 		}
 	}
-	if !s.cfg.UseLocalText && payload["audio_mode"] == nil {
-		return nil
-	}
 	if job.ProjectID == nil {
 		return fmt.Errorf("video voice policy requires a project")
 	}

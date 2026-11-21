@@ -125,6 +125,8 @@ func TestGuidedFalImagesWithSelectableFalOrBytePlusVideo(t *testing.T) {
 						content = `{"title":"Mimi","summary":"Cat story","scenes":[{"title":"One","summary":"Mimi plays","duration":5,"aspect_ratio":"16:9"}]}`
 					} else if strings.Contains(p.Messages[0].Content, "cinematographer") {
 						content = `{"shots":[{"shot_order":1,"duration":5,"prompt":"Mimi plays","camera":"wide","movement":"still"}]}`
+					} else if asksForPlannedAssets(p.Messages[0].Content) {
+						content = plannedAssetsAnswer
 					}
 					json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": content}}}})
 				default:
@@ -160,6 +162,19 @@ func TestGuidedFalImagesWithSelectableFalOrBytePlusVideo(t *testing.T) {
 			}
 			// The pipeline must keep its captured route despite subsequent default edits.
 			s.database.SetAppSettings(map[string]any{"default_image_provider": "openrouter", "default_video_provider": "openrouter", "image_model": "changed-image", "video_model": "changed-video"})
+			var started struct {
+				ID string `json:"op_id"`
+			}
+			json.Unmarshal(r.Body.Bytes(), &started)
+			scenes := awaitReadyStory(t, s, started.ID)
+			if len(scenes) != 1 || images.Load() != 1 {
+				t.Fatalf("scenes %v images %d", scenes, images.Load())
+			}
+			// The scene video is asked for after review, with the video service chosen then.
+			s.database.SetAppSettings(map[string]any{"default_video_provider": videoProvider, "video_model": model})
+			if w := call(t, s, "POST", "/scenes/"+scenes[0]+"/render", `{}`); w.Code != 202 {
+				t.Fatal(w.Code, w.Body.String())
+			}
 			deadline := time.Now().Add(10 * time.Second)
 			var finished *models.RenderJob
 			for time.Now().Before(deadline) {

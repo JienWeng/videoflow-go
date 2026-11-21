@@ -13,7 +13,6 @@ import (
 // Such a request is now made silent, and a speaker without a saved voice blocks nothing.
 func TestSavedAudioModeRendersSilentWithoutSavedVoices(t *testing.T) {
 	s := voiceFixture(t, func(w http.ResponseWriter, r *http.Request) { t.Error("policy made provider call") })
-	s.cfg.UseLocalText = true
 	c := voiceCharacter(t, s)
 	project, _ := s.database.GetActiveProjectID()
 	scene := &models.Scene{ProjectID: &project, Title: "Keep scene title", Summary: "Keep scene action", CharacterIDsJSON: voiceJSON([]string{c}), SceneJSON: voiceJSON(map[string]any{
@@ -50,16 +49,10 @@ func TestSavedAudioModeRendersSilentWithoutSavedVoices(t *testing.T) {
 	if err := s.applyDirectorVoicePolicy(ctx, unknown); err == nil {
 		t.Fatal("unknown audio mode accepted")
 	}
-	s.cfg.UseLocalText = false
-	legacy := &models.RenderJob{ProjectID: &project, RequestJSON: json.RawMessage(`{"prompt":"Speaker says hello","generate_audio":true}`)}
-	if err := s.applyDirectorVoicePolicy(ctx, legacy); err != nil {
-		t.Fatal("legacy policy should skip", err)
-	}
 }
 
 func TestOrdinaryUnboundVisualPassDoesNotInventVoice(t *testing.T) {
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("no provider") })
-	s.cfg.UseLocalText = true
 	project, _ := s.database.GetActiveProjectID()
 	job := &models.RenderJob{ProjectID: &project, RequestJSON: []byte(`{"prompt":"A landscape"}`)}
 	if err := s.applyDirectorVoicePolicy(context.Background(), job); err != nil {

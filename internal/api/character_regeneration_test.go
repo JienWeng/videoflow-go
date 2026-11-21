@@ -45,7 +45,6 @@ func TestCharacterReferenceRegenerationFromRejectedDrafts(t *testing.T) {
 					w.WriteHeader(500)
 				}
 			})
-			s.cfg.UseLocalText = true
 			project, _ := s.database.GetActiveProjectID()
 			session, _ := s.database.CreateDirectorSession(project, "codex", "Reference regeneration")
 			unrelated := &models.Character{ProjectID: &project, Name: "Unrelated actor", Appearance: "blue skin"}

@@ -118,7 +118,7 @@ func TestMissingStoryAssetGeneratedOnceAcrossScenes(t *testing.T) {
 		scene := &models.Scene{ProjectID: &project, Title: "Collar scene"}
 		s.database.CreateScene(scene)
 		plan := &assetPlan{Assets: []plannedAsset{{Type: "prop", Name: "Collar", Description: "Red leather collar"}}}
-		got, err := s.materializeStoryAssets(context.Background(), scene, plan)
+		got, err := s.materializeStoryAssets(plannerContext(t, s), scene, plan)
 		if err != nil {
 			t.Fatal(err)
 		}

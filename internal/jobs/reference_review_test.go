@@ -20,7 +20,6 @@ func TestWorkerRefusesExcludedGeneratedStoryboard(t *testing.T) {
 		}
 		w.WriteHeader(500)
 	})
-	worker.cfg.UseLocalText = false
 	project, _ := worker.database.GetActiveProjectID()
 	scene := &models.Scene{ProjectID: &project, Title: "Review me", Duration: 4, AspectRatio: "16:9"}
 	worker.database.CreateScene(scene)

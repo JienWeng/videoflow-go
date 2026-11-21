@@ -24,12 +24,14 @@ import (
 func setupTestServer(t *testing.T) (*api.Server, func()) {
 	testDBPath := filepath.Join(t.TempDir(), "test_api.sqlite")
 	cfg := config.Load()
-	cfg.UseLocalText = false
 	cfg.DatabasePath = testDBPath
 	cfg.StorageRoot = t.TempDir()
 	cfg.OpenRouterAPIKey = ""
 	cfg.FalAPIKey = ""
 	cfg.BytePlusAPIKey = ""
+	// The real Codex and Claude Code CLIs stay out of reach of these tests.
+	cfg.CodexExecutable = filepath.Join(t.TempDir(), "codex-is-not-installed")
+	cfg.ClaudeExecutable = filepath.Join(t.TempDir(), "claude-is-not-installed")
 
 	database, err := db.Open(testDBPath)
 	if err != nil {

@@ -43,10 +43,8 @@ func (s *Server) requestReplay(next http.Handler) http.Handler {
 			return
 		}
 		scope := project
-		if s.cfg.UseLocalText {
-			if binding, ok := r.Context().Value(directorBindingKey{}).(directorBinding); ok {
-				scope += ":" + binding.SessionID
-			}
+		if binding, ok := r.Context().Value(directorBindingKey{}).(directorBinding); ok {
+			scope += ":" + binding.SessionID
 		}
 		digest := sha256.Sum256(append([]byte(scope+":"+r.Method+":"+r.URL.RequestURI()+":"), data...))
 		s.recoveryMu.Lock()

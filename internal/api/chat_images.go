@@ -9,8 +9,6 @@ import (
 	"videoflow-go/internal/models"
 )
 
-type imageReviewKey struct{}
-
 // Direct image creation uses the same tracked native-first image path as scene assets.
 func (s *Server) handleGenerateImage(w http.ResponseWriter, r *http.Request) {
 	project, err := s.activeProjectID(r.Context())
@@ -57,7 +55,7 @@ func (s *Server) handleGenerateImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.operation(w, r, &models.Op{Kind: "image_generation", ProjectID: &project}, func(ctx context.Context) (any, error) {
-		assets, err := s.generateAssets(context.WithValue(ctx, imageReviewKey{}, true), &project, nil, "", body.Name, body.Type, body.Prompt, body.Aspect, nil)
+		assets, err := s.generateAssets(ctx, &project, nil, "", body.Name, body.Type, body.Prompt, body.Aspect, nil)
 		if err != nil {
 			return nil, err
 		}

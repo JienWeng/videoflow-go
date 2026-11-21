@@ -108,19 +108,15 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	failedShown, _ := s.database.FailedRendersShown(projectID)
 	contextJSON, _ := json.Marshal(map[string]any{"production_progress": progress, "recent_activity": s.chatActivity(projectID, jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "video_service": s.chatVideoService(), "episode_sound": s.episodeSound(projectID), "failed_video_attempts": failedShown, "assistant_mode": chatMode(body.Auto, body.Full), "attached_media": attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "render_audio_modes": []string{"native", "silent"}, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false}})
 	ctx := r.Context()
-	var plannedSnapshot *directorContext
-	if s.cfg.UseLocalText {
-		binding, _ := ctx.Value(directorBindingKey{}).(directorBinding)
-		var snapshotErr error
-		plannedSnapshot, snapshotErr = s.buildDirectorContext(projectID, binding.Selection)
-		if snapshotErr != nil {
-			chatContextError(w)
-			return
-		}
-		ctx = context.WithValue(ctx, directorSnapshotKey{}, plannedSnapshot)
-		body.History = nil
-		ctx = context.WithValue(ctx, directorUserMessageKey{}, body.Message)
+	binding, _ := ctx.Value(directorBindingKey{}).(directorBinding)
+	snapshot, err := s.buildDirectorContext(projectID, binding.Selection)
+	if err != nil {
+		chatContextError(w)
+		return
 	}
+	ctx = context.WithValue(ctx, directorSnapshotKey{}, snapshot)
+	body.History = nil
+	ctx = context.WithValue(ctx, directorUserMessageKey{}, body.Message)
 	if previews, dir, e := attachmentPreviews(ctx, attachments); e == nil && len(previews) > 0 {
 		defer os.RemoveAll(dir)
 		ctx = context.WithValue(ctx, directorImagesKey{}, previews)
@@ -401,28 +397,24 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		"warnings": []string{},
 	}
 
-	if s.cfg.UseLocalText {
-		binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)
-		snapshot := plannedSnapshot
-		currentSelectionRaw, _ := s.database.GetDirectorSelection(binding.SessionID)
-		var currentSelection directorSelection
-		_ = json.Unmarshal(currentSelectionRaw, &currentSelection)
-		current, err := s.buildDirectorContext(projectID, currentSelection)
-		if err != nil || snapshot == nil || current.Revision != snapshot.Revision {
-			http.Error(w, errDirectorContextChanged.Error(), 409)
-			return
-		}
-		selection, _ := json.Marshal(binding.Selection)
-		id, err := s.database.CreateDirectorProposal(binding.SessionID, projectID, snapshot.Revision, selection)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		intent["director_proposal"] = id
-		response["session_id"] = binding.SessionID
-		response["context_revision"] = snapshot.Revision
-		response["warnings"] = snapshot.Warnings
+	currentSelectionRaw, _ := s.database.GetDirectorSelection(binding.SessionID)
+	var currentSelection directorSelection
+	_ = json.Unmarshal(currentSelectionRaw, &currentSelection)
+	current, err := s.buildDirectorContext(projectID, currentSelection)
+	if err != nil || current.Revision != snapshot.Revision {
+		http.Error(w, errDirectorContextChanged.Error(), 409)
+		return
 	}
+	selection, _ := json.Marshal(binding.Selection)
+	id, err := s.database.CreateDirectorProposal(binding.SessionID, projectID, snapshot.Revision, selection)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	intent["director_proposal"] = id
+	response["session_id"] = binding.SessionID
+	response["context_revision"] = snapshot.Revision
+	response["warnings"] = snapshot.Warnings
 	writeJSON(w, http.StatusOK, response)
 }
 

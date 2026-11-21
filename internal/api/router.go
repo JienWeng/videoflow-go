@@ -70,13 +70,6 @@ func NewServer(
 	s.agents.SetResolver(s.routes().Agent)
 	s.agents.SetLanguageResolver(func() string { return s.routes().Setting("dialogue_language", "English") })
 	s.agents.SetStructuredRunner(func(ctx context.Context, name, system, prompt string, target any) error {
-		if !s.cfg.UseLocalText {
-			client, model, err := s.routes().Agent(ctx, name)
-			if err != nil {
-				return err
-			}
-			return client.StructuredJSON(ctx, model, system, prompt, target)
-		}
 		return s.localTextJSON(ctx, name, system, prompt, target)
 	})
 	s.workers.SetSubmissionValidator(s.validateFrozenVideo)

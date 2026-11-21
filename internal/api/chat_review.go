@@ -43,9 +43,6 @@ func (s *Server) registerChatReviewRoutes() {
 	s.router.Post("/chat/review", s.handleChatReview)
 }
 func (s *Server) chatReviewAvailability(ctx context.Context) (string, string) {
-	if !s.cfg.UseLocalText {
-		return "", "Enable local text and select a local session to use specialist review."
-	}
 	session, err := s.directorSession(ctx)
 	if err != nil {
 		return "", err.Error()
@@ -60,7 +57,7 @@ func (s *Server) chatReviewAvailability(ctx context.Context) (string, string) {
 }
 func (s *Server) handleChatCapabilities(w http.ResponseWriter, r *http.Request) {
 	engine, reason := s.chatReviewAvailability(r.Context())
-	writeJSON(w, 200, map[string]any{"local": s.cfg.UseLocalText, "subagents": map[string]any{"supported": reason == "", "engine": engine, "mode": "application-managed", "roles": specialistRoles, "reason": reason, "native_delegation": false, "tools": false, "terminal": false}})
+	writeJSON(w, 200, map[string]any{"subagents": map[string]any{"supported": reason == "", "engine": engine, "mode": "application-managed", "roles": specialistRoles, "reason": reason, "native_delegation": false, "tools": false, "terminal": false}})
 }
 func (s *Server) handleChatReview(w http.ResponseWriter, r *http.Request) {
 	var body struct {

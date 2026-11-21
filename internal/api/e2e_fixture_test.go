@@ -121,7 +121,6 @@ func TestE2EBrowserFixture(t *testing.T) {
 	s.cfg.FalAPIKey = "fixture-only"
 	s.cfg.FalBaseURL = fal.URL
 	s.router.Post("/e2e/fal-fail-next", func(w http.ResponseWriter, r *http.Request) { failVoice.Store(true); w.Write([]byte(`{}`)) })
-	s.cfg.UseLocalText = true
 	fake := filepath.Join(dir, "codex-fixture")
 	os.WriteFile(fake, []byte(`#!/usr/bin/env python3
 import sys,json
@@ -204,7 +203,6 @@ func e2eRouterServer(t *testing.T, root string, h http.HandlerFunc) *Server {
 	remote := httptest.NewServer(h)
 	t.Cleanup(remote.Close)
 	cfg := config.Load()
-	cfg.UseLocalText = true
 	cfg.StorageRoot = root
 	cfg.DatabasePath = filepath.Join(t.TempDir(), "e2e.sqlite")
 	cfg.OpenRouterAPIKey = ""

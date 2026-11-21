@@ -13,9 +13,6 @@ import (
 )
 
 func (s *Server) directorImageInputs(ctx context.Context, project *string, references []string) ([]string, string, error) {
-	if !s.cfg.UseLocalText {
-		return references, "", nil
-	}
 	binding, _ := ctx.Value(directorBindingKey{}).(directorBinding)
 	if len(binding.Selection.CharacterIDs) == 0 && len(binding.Selection.AssetIDs) == 0 {
 		return references, "", nil

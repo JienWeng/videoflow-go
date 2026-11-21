@@ -42,6 +42,9 @@ func TestGuidedCharacterToTwoOutputsAndCombinedExport(t *testing.T) {
 			if strings.Contains(system, "cinematographer") {
 				content = `{"shots":[{"shot_order":1,"duration":1,"prompt":"Mimi plays","camera":"wide","movement":"still"}]}`
 			}
+			if asksForPlannedAssets(system) {
+				content = plannedAssetsAnswer
+			}
 			if !strings.Contains(body.Messages[1].Content, "Mimi") {
 				t.Error("character context did not reach text stage")
 			}
@@ -95,13 +98,12 @@ func TestGuidedCharacterToTwoOutputsAndCombinedExport(t *testing.T) {
 		ID string `json:"op_id"`
 	}
 	json.Unmarshal(response.Body.Bytes(), &started)
+	if requested := renderReadyStory(t, s, started.ID); len(requested) != 2 {
+		t.Fatal(requested)
+	}
 	var outputIDs []string
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		op, _ := s.database.GetOp(started.ID)
-		if op.Status == "failed" {
-			t.Fatalf("guided failed: %v", op.Error)
-		}
 		jobs, _ := s.database.ListRenderJobs(project)
 		outputIDs = nil
 		for _, job := range jobs {

@@ -70,25 +70,11 @@ func (s *Server) generateCharacterSheet(ctx context.Context, c *models.Character
 		if err != nil {
 			return nil, err
 		}
-	} else if s.cfg.UseLocalText {
+	} else {
 		ctx = guidedStoryContext(ctx, *c.ProjectID, []string{c.ID})
 		binding, _ := ctx.Value(directorBindingKey{}).(directorBinding)
 		binding.Selection.referenceCandidate = c.ID
 		ctx = context.WithValue(ctx, directorBindingKey{}, binding)
-	} else {
-		for _, id := range existing {
-			asset, e := s.database.GetAsset(id)
-			if e != nil || asset.ProjectID == nil || *asset.ProjectID != *c.ProjectID {
-				return nil, fmt.Errorf("character reference is not in this project")
-			}
-			if !models.ReferenceApproved(asset.MetadataJSON) {
-				continue
-			}
-			image, e := s.imageURL(asset)
-			if e == nil {
-				refs = append(refs, image)
-			}
-		}
 	}
 	prompt := fmt.Sprintf("Character reference sheet showing front, side and full body views of %s. Arrange a clear head close-up plus front, right-side and back full-body views of the same character in a simple reference board. Keep proportions, clothing, colors and identifying features identical across views. Show the entire character from head to feet/paws, including ears and tail; leave margins and never crop limbs. Adapt views to the actual species and anatomy; do not invent limbs. Use a neutral pose and uncluttered background, without story action, extra characters or labels. Appearance: %s. Description: %s. Visual rules: %s", c.Name, c.Appearance, c.Description, c.VisualRulesJSON)
 	if style != "" {
@@ -176,13 +162,6 @@ func (s *Server) generateStoryboards(ctx context.Context, scenes []models.Scene)
 		if err != nil {
 			return err
 		}
-		var refs []string
-		if !s.cfg.UseLocalText {
-			refs, err = s.sceneReferences(scene)
-			if err != nil {
-				return err
-			}
-		}
 		// Local generation gets images exclusively from the current validated
 		// director snapshot, never detached references from an older scene brief.
 		sceneCtx := brief.context(guidedStoryContext(ctx, *scene.ProjectID, brief.CharacterIDs))
@@ -195,7 +174,7 @@ func (s *Server) generateStoryboards(ctx context.Context, scenes []models.Scene)
 			return shotErr
 		}
 		sceneCtx = context.WithValue(sceneCtx, storyboardShotsKey{}, shotNotes)
-		images, err := s.generateAssets(sceneCtx, scene.ProjectID, nil, scene.ID, scene.Title+" keyframe", "storyboard", scene.Title+". "+scene.Summary+"\n"+brief.prompt(), scene.AspectRatio, refs)
+		images, err := s.generateAssets(sceneCtx, scene.ProjectID, nil, scene.ID, scene.Title+" keyframe", "storyboard", scene.Title+". "+scene.Summary+"\n"+brief.prompt(), scene.AspectRatio, nil)
 		if err != nil {
 			return err
 		}
@@ -224,7 +203,7 @@ func (s *Server) handleContinueStory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var state storyContinuation
-	if json.Unmarshal(op.ResultJSON, &state) != nil || op.Status != "succeeded" || state.Status != "awaiting_character_review" || !s.cfg.UseLocalText || state.ProjectID != project {
+	if json.Unmarshal(op.ResultJSON, &state) != nil || op.Status != "succeeded" || state.Status != "awaiting_character_review" || state.ProjectID != project {
 		http.Error(w, "this story is not paused before storyboarding", 409)
 		return
 	}
@@ -345,11 +324,7 @@ func (s *Server) handleContinueStory(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer s.tasks.Done()
 		defer func() { <-s.operationSlots }()
-		timeout := 10 * time.Minute
-		if s.cfg.UseLocalText {
-			timeout = 45 * time.Minute
-		}
-		workCtx, cancel := context.WithTimeout(s.ctx, timeout)
+		workCtx, cancel := context.WithTimeout(s.ctx, 45*time.Minute)
 		defer cancel()
 		workCtx = context.WithValue(workCtx, directorBindingKey{}, binding)
 		workCtx = state.Brief.context(guidedStoryContext(workCtx, project, state.Cast))

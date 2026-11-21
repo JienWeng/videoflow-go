@@ -16,7 +16,6 @@ import (
 	"github.com/google/uuid"
 	"videoflow-go/internal/media"
 	"videoflow-go/internal/models"
-	"videoflow-go/internal/providers"
 )
 
 // operation preserves the existing synchronous/background API contract and records failures.
@@ -46,11 +45,7 @@ func (s *Server) operation(w http.ResponseWriter, r *http.Request, op *models.Op
 	go func() {
 		defer s.tasks.Done()
 		defer func() { <-s.operationSlots }()
-		timeout := 10 * time.Minute
-		if s.cfg.UseLocalText {
-			timeout = 45 * time.Minute
-		}
-		ctx, cancel := context.WithTimeout(s.ctx, timeout)
+		ctx, cancel := context.WithTimeout(s.ctx, 45*time.Minute)
 		if binding := r.Context().Value(directorBindingKey{}); binding != nil {
 			ctx = context.WithValue(ctx, directorBindingKey{}, binding)
 		}
@@ -74,7 +69,7 @@ func (s *Server) operation(w http.ResponseWriter, r *http.Request, op *models.Op
 }
 
 func (s *Server) agentJSON(ctx context.Context, agent, system, prompt string, images []string, target any) error {
-	if len(images) == 0 && s.cfg.UseLocalText {
+	if len(images) == 0 {
 		return s.localTextJSON(ctx, agent, system, prompt, target)
 	}
 	client, model, err := s.routes().Agent(ctx, agent)
@@ -146,15 +141,10 @@ func (s *Server) generateAssets(ctx context.Context, projectID *string, characte
 		}
 		prompt += "\nVisual style: " + direction
 	}
-	var images []providers.GeneratedImage
 	provider, model := "codex", "native-image-generation"
-	fallbackReason := ""
-	fallback := true
-	if s.cfg.UseLocalText {
-		images, fallback, fallbackReason, err = s.codexImage(ctx, prompt, aspect, references)
-		if err != nil {
-			return nil, err
-		}
+	images, fallback, fallbackReason, err := s.codexImage(ctx, prompt, aspect, references)
+	if err != nil {
+		return nil, err
 	}
 	if fallback {
 		client, apiProvider, apiModel, routeErr := s.selectedMedia(ctx, modelKind)
@@ -162,9 +152,6 @@ func (s *Server) generateAssets(ctx context.Context, projectID *string, characte
 			return nil, routeErr
 		}
 		provider, model = apiProvider, apiModel
-		if err != nil {
-			return nil, err
-		}
 		payload := map[string]any{"model": model, "prompt": prompt}
 		if aspect != "" {
 			payload["aspect_ratio"] = aspect
@@ -232,19 +219,12 @@ func (s *Server) generateAssets(ctx context.Context, projectID *string, characte
 			fields["usage"] = image.Usage
 			metadata, _ = json.Marshal(fields)
 		}
-		if frozenIdentity != nil {
-			var fields map[string]any
-			_ = json.Unmarshal(metadata, &fields)
-			fields["director_context_revision"] = frozenIdentity.Revision
-			fields["director_context"] = frozenIdentity
-			metadata, _ = json.Marshal(fields)
-		}
-		if s.cfg.UseLocalText || ctx.Value(imageReviewKey{}) == true {
-			var reviewMeta map[string]any
-			_ = json.Unmarshal(metadata, &reviewMeta)
-			reviewMeta["consistency_review"] = "ready"
-			metadata, _ = json.Marshal(reviewMeta)
-		}
+		var fields map[string]any
+		_ = json.Unmarshal(metadata, &fields)
+		fields["director_context_revision"] = frozenIdentity.Revision
+		fields["director_context"] = frozenIdentity
+		fields["consistency_review"] = "ready"
+		metadata, _ = json.Marshal(fields)
 		asset := models.Asset{ID: id, ProjectID: projectID, CharacterID: characterID, Type: kind, Name: name, Description: descriptionPrompt, FilePath: filepath.ToSlash(filepath.Join("storage", "assets", id+ext)), TagsJSON: json.RawMessage(`[]`), MetadataJSON: metadata}
 		if err = s.database.CreateAsset(&asset); err != nil {
 			return nil, err

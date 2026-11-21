@@ -58,6 +58,9 @@ func TestRemoteGuidedReviewNeverQueuesVideo(t *testing.T) {
 			if strings.Contains(body.Messages[0].Content, "cinematographer") {
 				content = `{"shots":[{"shot_order":1,"duration":1,"prompt":"Ocean wave"}]}`
 			}
+			if asksForPlannedAssets(body.Messages[0].Content) {
+				content = plannedAssetsAnswer
+			}
 			json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": content}}}})
 		case "/images/models":
 			w.Write([]byte(`{"data":[{"id":"openai/gpt-image-2","supported_parameters":{"aspect_ratio":{"type":"enum","values":["16:9"]}}}]}`))
@@ -82,7 +85,7 @@ func TestRemoteGuidedReviewNeverQueuesVideo(t *testing.T) {
 	for time.Now().Before(deadline) {
 		op, _ := s.database.GetOp(start.ID)
 		if op.Status == "failed" {
-			t.Fatal(op.Error)
+			t.Fatal(*op.Error)
 		}
 		if op.Status == "succeeded" {
 			if !strings.Contains(string(op.ResultJSON), "ready_to_render") {

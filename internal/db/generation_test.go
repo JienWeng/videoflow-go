@@ -151,23 +151,6 @@ func TestRecoveryAcknowledgementRequiresInterruptedOperation(t *testing.T) {
 		t.Fatal("reviewed operation did not unlock", err)
 	}
 }
-func TestOperationJobBatchRollsBackOnFailure(t *testing.T) {
-	d, err := Open(filepath.Join(t.TempDir(), "test.sqlite"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer d.Close()
-	op := &models.Op{Kind: "video", Status: "running"}
-	d.CreateOp(op)
-	jobs := []models.RenderJob{{ID: "duplicate", Provider: "openrouter", Status: "pending"}, {ID: "duplicate", Provider: "openrouter", Status: "pending"}}
-	if err = d.SaveOperationJobs(op.ID, jobs, map[string]any{}); err == nil {
-		t.Fatal("invalid batch committed")
-	}
-	if _, err = d.GetRenderJob("duplicate"); err == nil {
-		t.Fatal("partial batch survived")
-	}
-}
-
 func TestEndpointPinPreservesSubmissionFence(t *testing.T) {
 	d, err := Open(filepath.Join(t.TempDir(), "db.sqlite"))
 	if err != nil {

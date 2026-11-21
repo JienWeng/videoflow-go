@@ -57,7 +57,6 @@ func TestLocalPipelinePreparesImagesWithoutAutoRendering(t *testing.T) {
 			w.WriteHeader(500)
 		}
 	})
-	s.cfg.UseLocalText = true
 	project, _ := s.database.GetActiveProjectID()
 	s.database.CreateDirectorSession(project, "codex", "Pipeline review")
 	fake := filepath.Join(t.TempDir(), "codex")

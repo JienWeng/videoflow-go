@@ -76,7 +76,6 @@ func TestReferenceVideoPlanConfirmAndDeduplicate(t *testing.T) {
 }
 func TestCaptionLocalizationKeepsIDsAndTiming(t *testing.T) {
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("local translation escaped to remote text") })
-	s.cfg.UseLocalText = true
 	project, _ := s.database.GetActiveProjectID()
 	s.database.CreateDirectorSession(project, "codex", "Editing")
 	fake := filepath.Join(t.TempDir(), "codex")

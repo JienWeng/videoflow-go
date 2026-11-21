@@ -15,11 +15,10 @@ import (
 // referenceScene is a scene whose video service takes reference pictures: Chen Wei (with
 // a reference sheet) is in the first shot, The Visitor (also with one) in none, and a
 // rooftop picture is connected to the scene.
-func referenceScene(t *testing.T, localText bool) (*Server, *models.Scene) {
+func referenceScene(t *testing.T) (*Server, *models.Scene) {
 	t.Helper()
 	fastAutopilot(t)
 	s, _ := falServer(t, "done")
-	s.cfg.UseLocalText = localText
 	argo := "https://argolink.io/v1"
 	if e := s.database.SetProviderSecret("argolink", "test-key", &argo); e != nil {
 		t.Fatal(e)
@@ -72,63 +71,59 @@ func referenceScene(t *testing.T, localText bool) (*Server, *models.Scene) {
 // Like Seedance's own canvas, the pictures connected to a scene go to the video model as
 // references, named @Image 1, @Image 2 in the prompt, with no storyboard picture made.
 func TestSceneClipsAreMadeFromTheirConnectedPictures(t *testing.T) {
-	for _, localText := range []bool{false, true} {
-		t.Run(fmt.Sprintf("local_text=%t", localText), func(t *testing.T) {
-			s, scene := referenceScene(t, localText)
-			project := *scene.ProjectID
-			var plan productionPlan
-			if w := call(t, s, "GET", "/scenes/"+scene.ID+"/production", ""); w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &plan) != nil {
-				t.Fatal(w.Code, w.Body.String())
-			}
-			if plan.VideoInput != inputReferences || len(plan.Pictures) != 3 || plan.Pictures[0].Name != "Chen Wei" || !plan.Pictures[0].Sheet || plan.Pictures[2].Kind != "place" {
-				t.Fatalf("plan pictures: %s %+v", plan.VideoInput, plan.Pictures)
-			}
-			if spend := productionSpend(plan, false); spend.Storyboards != 0 {
-				t.Fatalf("reference mode still pays for a storyboard: %+v", spend)
-			}
-			var preview struct {
-				Clips []struct {
-					Prompt   string
-					Pictures []referencePicture
-				}
-			}
-			if w := call(t, s, "GET", "/scenes/"+scene.ID+"/video-prompt", ""); w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &preview) != nil || len(preview.Clips) != 1 {
-				t.Fatal(w.Code, w.Body.String())
-			}
-			if w := call(t, s, "POST", "/autopilot/finish?background=true", fmt.Sprintf(`{"scene_ids":[%q],"videos_only":true}`, scene.ID)); w.Code != 202 {
-				t.Fatal(w.Code, w.Body.String())
-			}
-			<-finishPendingVideos(t, s, project, 1)
-			jobs, _ := s.database.ListRenderJobs(project)
-			var request struct {
-				Final    string             `json:"final_prompt"`
-				Images   []string           `json:"image_urls"`
-				Pictures []referencePicture `json:"reference_pictures"`
-				Frames   any                `json:"frame_images"`
-			}
-			if len(jobs) != 1 || json.Unmarshal(jobs[0].RequestJSON, &request) != nil {
-				t.Fatalf("jobs: %d", len(jobs))
-			}
-			// The Visitor is in no shot of this clip, so their picture is not sent.
-			if len(request.Images) != 2 || request.Frames != nil || len(request.Pictures) != 2 || request.Pictures[0].Name != "Chen Wei" || request.Pictures[1].Name != "Dusk City Rooftop" {
-				t.Fatalf("request pictures: %v %+v frames=%v", request.Images, request.Pictures, request.Frames)
-			}
-			for _, want := range []string{"Define the person in @Image 1 as Chen Wei", "@Image 2 is the place Dusk City Rooftop"} {
-				if !strings.Contains(request.Final, want) {
-					t.Errorf("prompt lacks %q:\n%s", want, request.Final)
-				}
-			}
-			if strings.Contains(request.Final, "@Image 3") || request.Final != preview.Clips[0].Prompt || len(preview.Clips[0].Pictures) != 2 {
-				t.Errorf("preview and request differ, or a third picture is named:\n%s\n---\n%s", request.Final, preview.Clips[0].Prompt)
-			}
-		})
+	s, scene := referenceScene(t)
+	project := *scene.ProjectID
+	var plan productionPlan
+	if w := call(t, s, "GET", "/scenes/"+scene.ID+"/production", ""); w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &plan) != nil {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if plan.VideoInput != inputReferences || len(plan.Pictures) != 3 || plan.Pictures[0].Name != "Chen Wei" || !plan.Pictures[0].Sheet || plan.Pictures[2].Kind != "place" {
+		t.Fatalf("plan pictures: %s %+v", plan.VideoInput, plan.Pictures)
+	}
+	if spend := productionSpend(plan, false); spend.Storyboards != 0 {
+		t.Fatalf("reference mode still pays for a storyboard: %+v", spend)
+	}
+	var preview struct {
+		Clips []struct {
+			Prompt   string
+			Pictures []referencePicture
+		}
+	}
+	if w := call(t, s, "GET", "/scenes/"+scene.ID+"/video-prompt", ""); w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &preview) != nil || len(preview.Clips) != 1 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if w := call(t, s, "POST", "/autopilot/finish?background=true", fmt.Sprintf(`{"scene_ids":[%q],"videos_only":true}`, scene.ID)); w.Code != 202 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	<-finishPendingVideos(t, s, project, 1)
+	jobs, _ := s.database.ListRenderJobs(project)
+	var request struct {
+		Final    string             `json:"final_prompt"`
+		Images   []string           `json:"image_urls"`
+		Pictures []referencePicture `json:"reference_pictures"`
+		Frames   any                `json:"frame_images"`
+	}
+	if len(jobs) != 1 || json.Unmarshal(jobs[0].RequestJSON, &request) != nil {
+		t.Fatalf("jobs: %d", len(jobs))
+	}
+	// The Visitor is in no shot of this clip, so their picture is not sent.
+	if len(request.Images) != 2 || request.Frames != nil || len(request.Pictures) != 2 || request.Pictures[0].Name != "Chen Wei" || request.Pictures[1].Name != "Dusk City Rooftop" {
+		t.Fatalf("request pictures: %v %+v frames=%v", request.Images, request.Pictures, request.Frames)
+	}
+	for _, want := range []string{"Define the person in @Image 1 as Chen Wei", "@Image 2 is the place Dusk City Rooftop"} {
+		if !strings.Contains(request.Final, want) {
+			t.Errorf("prompt lacks %q:\n%s", want, request.Final)
+		}
+	}
+	if strings.Contains(request.Final, "@Image 3") || request.Final != preview.Clips[0].Prompt || len(preview.Clips[0].Pictures) != 2 {
+		t.Errorf("preview and request differ, or a third picture is named:\n%s\n---\n%s", request.Final, preview.Clips[0].Prompt)
 	}
 }
 
 // The owner can keep a scene on first-frame mode, and a scene whose clips were already
 // made from a first frame keeps them instead of paying for new ones.
 func TestFirstFrameModeStaysWhereItIsChosenOrAlreadyUsed(t *testing.T) {
-	s, scene := referenceScene(t, false)
+	s, scene := referenceScene(t)
 	project := *scene.ProjectID
 	ctx := t.Context()
 	settings := sceneProduction(scene)

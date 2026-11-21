@@ -14,7 +14,6 @@ import (
 
 func TestOrdinaryRenderCapturesIdentityAndRechecksBeforeSubmission(t *testing.T) {
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("no paid request") })
-	s.cfg.UseLocalText = true
 	project, _ := s.database.GetActiveProjectID()
 	path := filepath.Join(s.cfg.StorageRoot, "car.png")
 	os.WriteFile(path, []byte("reference"), 0600)
@@ -42,7 +41,6 @@ func TestOrdinaryRenderCapturesIdentityAndRechecksBeforeSubmission(t *testing.T)
 }
 func TestFrozenVideoRejectsExcludedReference(t *testing.T) {
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("no provider") })
-	s.cfg.UseLocalText = true
 	project, _ := s.database.GetActiveProjectID()
 	path := filepath.Join(s.cfg.StorageRoot, "pending.png")
 	os.WriteFile(path, []byte("pending"), 0600)
@@ -56,7 +54,6 @@ func TestFrozenVideoRejectsExcludedReference(t *testing.T) {
 }
 func TestExplicitRetryRetainsFrozenFrameAndPolicy(t *testing.T) {
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("no paid call") })
-	s.cfg.UseLocalText = true
 	project, _ := s.database.GetActiveProjectID()
 	path := filepath.Join(s.cfg.StorageRoot, "approved.png")
 	os.WriteFile(path, []byte("source bytes"), 0600)

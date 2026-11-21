@@ -15,7 +15,6 @@ import (
 
 func TestSceneGenerationUsesOnlyItsSavedReferences(t *testing.T) {
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Fatal("no provider call") })
-	s.cfg.UseLocalText = true
 	project, _ := s.database.GetActiveProjectID()
 	path := filepath.Join(s.cfg.StorageRoot, "prop.png")
 	os.WriteFile(path, []byte{137, 80, 78, 71, 13, 10, 26, 10}, 0600)
@@ -35,7 +34,6 @@ func TestSceneGenerationUsesOnlyItsSavedReferences(t *testing.T) {
 
 func TestSceneRenderDoesNotUsePropAsKeyframe(t *testing.T) {
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Fatal("must reject before provider") })
-	s.cfg.UseLocalText = true
 	project, _ := s.database.GetActiveProjectID()
 	path := filepath.Join(s.cfg.StorageRoot, "prop.png")
 	os.WriteFile(path, []byte{137, 80, 78, 71, 13, 10, 26, 10}, 0600)
@@ -227,7 +225,6 @@ func TestSceneRenderUsesNewestReviewedMatchingStoryboard(t *testing.T) {
 		}
 		t.Fatalf("unexpected provider %s", r.URL.Path)
 	})
-	s.cfg.UseLocalText = true
 	project, _ := s.database.GetActiveProjectID()
 	scene := &models.Scene{ProjectID: &project, Title: "Home"}
 	s.database.CreateScene(scene)
@@ -266,7 +263,6 @@ func TestSceneContentChangesInvalidateReviewedStoryboardAndQueuedRender(t *testi
 		}
 		t.Fatal("no image or video generation")
 	})
-	s.cfg.UseLocalText = true
 	project, _ := s.database.GetActiveProjectID()
 	scene := &models.Scene{ProjectID: &project, Title: "Home", Summary: "Puppy arrives", Duration: 1, AspectRatio: "16:9"}
 	s.database.CreateScene(scene)

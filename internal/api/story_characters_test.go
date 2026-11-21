@@ -51,7 +51,6 @@ func TestStorySceneBriefContainsOnlyItsOwnActorsAndReferences(t *testing.T) {
 
 func TestGuidedRenderScopeAvoidsStaleCastButKeepsExcludedReferenceGuard(t *testing.T) {
 	s, project, _, _ := storyCharacterFixture(t, false, `{}`)
-	s.cfg.UseLocalText = true
 	asset := &models.Asset{ProjectID: &project, Type: "storyboard", MetadataJSON: []byte(`{"consistency_review":"rejected"}`)}
 	s.database.CreateAsset(asset)
 	refs, _ := json.Marshal([]string{asset.ID})
@@ -231,7 +230,6 @@ func runGuidedStoryCharacterPipeline(t *testing.T, imageFailure bool, options ..
 			w.WriteHeader(500)
 		}
 	})
-	s.cfg.UseLocalText = true
 	project, _ := s.database.GetActiveProjectID()
 	var prop *models.Asset
 	if opts.reuseProp {

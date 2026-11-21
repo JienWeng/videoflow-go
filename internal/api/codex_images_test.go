@@ -20,7 +20,6 @@ func TestNativeCodexImageSavesAssetWithoutImageAPI(t *testing.T) {
 		t.Errorf("native success contacted API: %s", r.URL.Path)
 		w.WriteHeader(500)
 	})
-	s.cfg.UseLocalText = true
 	project, _ := s.database.GetActiveProjectID()
 	session, _ := s.database.CreateDirectorSession(project, "codex", "Native images")
 	ctx := context.WithValue(context.Background(), directorBindingKey{}, directorBinding{ProjectID: project, SessionID: session.ID})
@@ -95,7 +94,6 @@ func TestCodexImageFallbackOnlyForUnsupported(t *testing.T) {
 					w.WriteHeader(500)
 				}
 			})
-			s.cfg.UseLocalText = true
 			project, _ := s.database.GetActiveProjectID()
 			session, _ := s.database.CreateDirectorSession(project, "codex", "Fallback test")
 			ctx := context.WithValue(context.Background(), directorBindingKey{}, directorBinding{ProjectID: project, SessionID: session.ID})
@@ -159,7 +157,6 @@ func TestCodexFirstPreflightDoesNotRequireImageAPI(t *testing.T) {
 		t.Errorf("native preflight contacted image provider: %s", r.URL.Path)
 		w.WriteHeader(500)
 	})
-	s.cfg.UseLocalText = true
 	project, _ := s.database.GetActiveProjectID()
 	s.database.CreateDirectorSession(project, "codex", "Native preflight")
 	cli := filepath.Join(t.TempDir(), "codex")
@@ -214,7 +211,6 @@ func TestNativeImageVirtualPathResolvesOnlyFreshContainedRaster(t *testing.T) {
 
 func TestConfiguredOpenAIImageFallbackRoutes(t *testing.T) {
 	s := routerServer(t, nil)
-	s.cfg.UseLocalText = true
 	project, err := s.database.GetActiveProjectID()
 	if err != nil {
 		t.Fatal(err)

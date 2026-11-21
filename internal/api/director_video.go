@@ -13,9 +13,6 @@ import (
 )
 
 func (s *Server) directorGenerationContext(ctx context.Context, project *string, sceneID string, character *string) (context.Context, *directorContext, error) {
-	if !s.cfg.UseLocalText {
-		return ctx, nil, nil
-	}
 	if project == nil {
 		return ctx, nil, fmt.Errorf("production project is required")
 	}
@@ -68,9 +65,6 @@ func imageAsset(path string) bool {
 
 // freezeDirectorVideo snapshots selected identity and voice policy before a job is durable/queued.
 func (s *Server) freezeDirectorVideo(ctx context.Context, job *models.RenderJob) error {
-	if !s.cfg.UseLocalText {
-		return nil
-	}
 	sceneID := ""
 	if job.SceneID != nil {
 		sceneID = *job.SceneID
@@ -257,13 +251,7 @@ func (s *Server) prepareDirectorVideoJob(ctx context.Context, job *models.Render
 	if err := s.freezeReferencePictures(ctx, job); err != nil {
 		return err
 	}
-	var err error
-	if !s.cfg.UseLocalText {
-		err = s.applyDirectorVoicePolicy(ctx, job)
-	} else {
-		err = s.freezeDirectorVideo(ctx, job)
-	}
-	if err != nil {
+	if err := s.freezeDirectorVideo(ctx, job); err != nil {
 		return err
 	}
 	var payload map[string]any

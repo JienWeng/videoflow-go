@@ -149,39 +149,6 @@ func (d *DB) AppendCharacterReferences(id, project string, assetIDs []string) er
 	return tx.Commit()
 }
 
-// SaveOperationJobs records the complete batch before any worker can submit paid work.
-func (d *DB) SaveOperationJobs(opID string, jobs []models.RenderJob, result map[string]any) error {
-	tx, err := d.conn.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	ids := []string{}
-	for i := range jobs {
-		if err = insertRenderJob(tx, &jobs[i]); err != nil {
-			return err
-		}
-		ids = append(ids, jobs[i].ID)
-	}
-	result["render_job_ids"] = ids
-	raw, err := json.Marshal(result)
-	if err != nil {
-		return err
-	}
-	res, err := tx.Exec(`UPDATE ops SET status='succeeded',result_json=?,updated_at=? WHERE id=? AND status='running'`, string(raw), time.Now().UTC(), opID)
-	if err != nil {
-		return err
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n != 1 {
-		return fmt.Errorf("operation is no longer running")
-	}
-	return tx.Commit()
-}
-
 // ClaimStoryContinuation fences concurrent/replayed continuation clicks before
 // any paid work; the exact saved snapshot must still be waiting for review.
 func (d *DB) ClaimStoryContinuation(id, project string, expected json.RawMessage) (bool, error) {

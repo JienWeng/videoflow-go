@@ -55,11 +55,8 @@ func (s *Server) sceneReferenceState(ctx context.Context, scene *models.Scene) (
 		missing = append(missing, id)
 	}
 	current := ""
-	if s.cfg.UseLocalText {
-		_, snapshot, e := s.directorGenerationContext(guidedStoryContext(ctx, *scene.ProjectID, nil), scene.ProjectID, scene.ID, nil)
-		if e == nil {
-			current = snapshot.Revision
-		}
+	if _, snapshot, e := s.directorGenerationContext(guidedStoryContext(ctx, *scene.ProjectID, nil), scene.ProjectID, scene.ID, nil); e == nil {
+		current = snapshot.Revision
 	}
 	ready := len(missing) == 0 && len(missingCharacters) == 0 && len(references) <= 8
 	for i := range references {
@@ -96,7 +93,7 @@ func (s *Server) sceneReferenceState(ctx context.Context, scene *models.Scene) (
 		if metadata.Inputs != "" && metadata.Inputs != inputRevision {
 			continue
 		}
-		if s.cfg.UseLocalText && metadata.Revision != current && !(metadata.Revision == "" && len(references) == 0) {
+		if metadata.Revision != current && !(metadata.Revision == "" && len(references) == 0) {
 			continue
 		}
 		if _, e := s.imageURL(a); e == nil {

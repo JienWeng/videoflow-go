@@ -15,8 +15,7 @@ import (
 
 func reviewServer(t *testing.T) *Server {
 	t.Helper()
-	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("review must never call a remote provider") })
-	s.cfg.UseLocalText = true
+	s, _ := bareServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("review must never call a remote provider") })
 	project, _ := s.database.GetActiveProjectID()
 	session, err := s.database.CreateDirectorSession(project, "codex", "Review")
 	if err != nil {
@@ -118,10 +117,6 @@ func TestChatReviewCapabilitiesAndUnavailableSession(t *testing.T) {
 	w = call(t, s, "GET", "/chat/capabilities", "")
 	if !strings.Contains(w.Body.String(), `"supported":true`) {
 		t.Fatal(w.Body.String())
-	}
-	s.cfg.UseLocalText = false
-	if w = call(t, s, "POST", "/chat/review", `{"message":"review"}`); w.Code != 409 {
-		t.Fatal(w.Code)
 	}
 }
 func TestChatReviewPartialFailureAndContextMutationRecorded(t *testing.T) {
@@ -236,8 +231,7 @@ func TestChatReviewCancelAndSessionLock(t *testing.T) {
 	}
 }
 func TestChatReviewRequiresSelectedSession(t *testing.T) {
-	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("no provider") })
-	s.cfg.UseLocalText = true
+	s, _ := bareServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("no provider") })
 	reviewCLI(t, s, "")
 	w := call(t, s, "POST", "/chat/review", `{"message":"review"}`)
 	if w.Code != 409 || !strings.Contains(w.Body.String(), "select a local") {

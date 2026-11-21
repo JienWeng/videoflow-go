@@ -15,39 +15,29 @@ func (s *Server) generationPrerequisites(ctx context.Context, brief generationBr
 		}
 		missing = append(missing, map[string]string{"route": route, "setting": setting, "reason": reason})
 	}
-	if s.cfg.UseLocalText {
-		session, err := s.directorSession(ctx)
-		if err != nil {
-			add("local_text", err.Error())
-		} else if _, err = s.directorRunner.Available(session.Engine); err != nil {
-			add("local_text", err.Error())
-		} else if s.authManager().Status(ctx, session.Engine).SignedOut {
-			name := "Codex"
-			if session.Engine == "claude" {
-				name = "Claude Code"
-			}
-			add("local_text", name+" is signed out, so it can't plan this story. Switch to a connected AI, or sign in again.")
-		} else if session.Status != "ready" {
-			add("local_text", "The AI session is busy with another request. Wait for it to finish, or stop it.")
+	session, err := s.directorSession(ctx)
+	if err != nil {
+		add("local_text", err.Error())
+	} else if _, err = s.directorRunner.Available(session.Engine); err != nil {
+		add("local_text", err.Error())
+	} else if s.authManager().Status(ctx, session.Engine).SignedOut {
+		name := "Codex"
+		if session.Engine == "claude" {
+			name = "Claude Code"
 		}
-	} else {
-		for _, agent := range []string{"script_agent", "shot_agent", "prompt_agent"} {
-			if _, _, err := s.routes().Agent(ctx, agent); err != nil {
-				add(agent, err.Error())
-			}
-		}
+		add("local_text", name+" is signed out, so it can't plan this story. Switch to a connected AI, or sign in again.")
+	} else if session.Status != "ready" {
+		add("local_text", "The AI session is busy with another request. Wait for it to finish, or stop it.")
 	}
-	needsSheets := s.cfg.UseLocalText && brief.CreateCharacters
-	if s.cfg.UseLocalText {
-		for _, id := range brief.CharacterIDs {
-			c, e := s.database.GetCharacter(id)
-			if e != nil {
-				continue
-			}
-			var refs []string
-			json.Unmarshal(c.ReferenceAssetIDsJSON, &refs)
-			needsSheets = needsSheets || len(refs) == 0
+	needsSheets := brief.CreateCharacters
+	for _, id := range brief.CharacterIDs {
+		c, e := s.database.GetCharacter(id)
+		if e != nil {
+			continue
 		}
+		var refs []string
+		json.Unmarshal(c.ReferenceAssetIDsJSON, &refs)
+		needsSheets = needsSheets || len(refs) == 0
 	}
 	nativeImages := s.preferCodexImages(ctx)
 	if needsSheets && !nativeImages {

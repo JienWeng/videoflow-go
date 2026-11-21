@@ -9,8 +9,7 @@ import (
 )
 
 func TestRepairChatContextPreservesOwnedIdentityAndNeedsNoReview(t *testing.T) {
-	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("repair must never invoke AI") })
-	s.cfg.UseLocalText = true
+	s, _ := bareServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("repair must never invoke AI") })
 	project, _ := s.database.GetActiveProjectID()
 	session, _ := s.database.CreateDirectorSession(project, "codex", "Story")
 	c := &models.Character{ProjectID: &project, Name: "Mama"}

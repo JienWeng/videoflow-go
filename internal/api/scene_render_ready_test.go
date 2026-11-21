@@ -44,7 +44,6 @@ func TestPrepareRenderRefreshesStaleStoryboardAndReusesMatching(t *testing.T) {
 					w.WriteHeader(500)
 				}
 			})
-			s.cfg.UseLocalText = true
 			project, _ := s.database.GetActiveProjectID()
 			s.database.CreateDirectorSession(project, "codex", "Render recovery")
 			fake := filepath.Join(t.TempDir(), "codex")

@@ -77,7 +77,6 @@ func TestDirectorContextRejectsForeignSelection(t *testing.T) {
 }
 func TestSelectedImageReferencesAndLockedTraitsReachGenerationInputs(t *testing.T) {
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("no inference") })
-	s.cfg.UseLocalText = true
 	project, _ := s.database.GetActiveProjectID()
 	path := filepath.Join(s.cfg.StorageRoot, "red.png")
 	photo, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aO1cAAAAASUVORK5CYII=")

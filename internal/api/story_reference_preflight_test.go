@@ -17,7 +17,6 @@ func TestCharacterSheetsPreflightRejectsUnsupportedSquareBeforePlanning(t *testi
 			w.WriteHeader(500)
 		}
 	})
-	s.cfg.UseLocalText = true
 	s.directorRunner.Codex = "/bin/true"
 	project, _ := s.database.GetActiveProjectID()
 	s.database.CreateDirectorSession(project, "codex", "Preflight")

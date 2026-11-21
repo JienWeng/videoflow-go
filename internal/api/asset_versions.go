@@ -67,10 +67,7 @@ func (s *Server) handleRegenerateAsset(w http.ResponseWriter, r *http.Request) {
 		ctx = presets.With(ctx, snapshot.Preset)
 		references := []string{}
 		if models.ReferenceApproved(source.MetadataJSON) {
-			if reference, e := s.imageURL(source); e == nil {
-				if !s.cfg.UseLocalText {
-					references = append(references, reference)
-				}
+			if _, e := s.imageURL(source); e == nil {
 				binding, _ := ctx.Value(directorBindingKey{}).(directorBinding)
 				binding.Selection.AssetIDs = []string{source.ID}
 				ctx = context.WithValue(ctx, directorBindingKey{}, binding)

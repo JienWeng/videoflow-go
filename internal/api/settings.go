@@ -115,7 +115,7 @@ func (s *Server) handleGetAppSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	appSettings["media_model_preferences"] = prefs
-	appSettings["all_text_local"] = s.cfg.UseLocalText
+	appSettings["all_text_local"] = true
 	writeJSON(w, http.StatusOK, appSettings)
 }
 
