@@ -240,7 +240,6 @@ func (s *Server) setupRoutes() {
 	s.router.Post("/assets/{id}/recognise", s.handleRecogniseAsset)
 
 	// Render & Outputs
-	s.router.Post("/render", s.handleStartRender)
 	s.router.Post("/render/from-shot", s.handleRenderFromShot)
 	s.router.Get("/render-jobs", s.handleListRenderJobs)
 	s.router.Get("/render-jobs/{id}", s.handleGetRenderJob)

@@ -119,7 +119,7 @@ func (s *Server) voicePolicy(ctx context.Context, job *models.RenderJob) error {
 		}
 		payload["generate_audio"] = true
 		payload["voice_policy"] = map[string]any{"mode": "native", "project_id": *job.ProjectID}
-		prompt := stringPrompt(payload["prompt"]) + "\nGenerate synchronized dialogue, ambience and sound effects. Native speaker identity and exact word/cut timing are best effort, not a saved-voice guarantee."
+		prompt := stringPrompt(payload["prompt"]) + "\nGenerate synchronized dialogue, ambience and sound effects. Speaker voices and exact word and cut timing are best effort."
 		if mode == "narration" {
 			prompt += "\nUse off-screen narration rather than on-screen character dialogue."
 		}
