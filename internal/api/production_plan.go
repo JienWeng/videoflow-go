@@ -78,11 +78,21 @@ func sceneProduction(scene *models.Scene) productionSettings {
 	if d.Production.Strategy == "" {
 		d.Production.Strategy = "auto"
 	}
+	d.Production.AudioMode = currentAudioMode(d.Production.AudioMode)
 	return d.Production
 }
+
+// currentAudioMode reads "saved" (voices added after the clip, no longer offered)
+// as "silent": such a clip was always made without sound.
+func currentAudioMode(mode string) string {
+	if mode == "saved" {
+		return "silent"
+	}
+	return mode
+}
 func validateProduction(p productionSettings) error {
-	if p.AudioMode != "" && p.AudioMode != "native" && p.AudioMode != "saved" && p.AudioMode != "silent" {
-		return fmt.Errorf("choose native, saved or silent audio")
+	if p.AudioMode != "" && p.AudioMode != "native" && p.AudioMode != "silent" {
+		return fmt.Errorf("choose native or silent audio")
 	}
 	if p.Strategy != "auto" && p.Strategy != "shots" {
 		return fmt.Errorf("choose automatic grouping or separate shots")
@@ -94,7 +104,7 @@ func validateProduction(p productionSettings) error {
 		return fmt.Errorf("choose references or first frame for the scene's pictures")
 	}
 	if p.AudioMode != "native" && strings.TrimSpace(p.MusicPrompt) != "" {
-		return fmt.Errorf("native music direction requires native audio; add a separate soundtrack in the editor for saved or silent mode")
+		return fmt.Errorf("native music direction requires native audio; add a separate soundtrack in the editor for a silent scene")
 	}
 	return nil
 }
@@ -225,7 +235,7 @@ func (s *Server) sceneProductionPlan(ctx context.Context, scene *models.Scene) (
 	}
 
 	if p.Settings.AudioMode == "" {
-		p.Settings.AudioMode = "saved"
+		p.Settings.AudioMode = "silent"
 		if model.GenerateAudio {
 			p.Settings.AudioMode = "native"
 		}
@@ -241,7 +251,7 @@ func (s *Server) sceneProductionPlan(ctx context.Context, scene *models.Scene) (
 		return p, err
 	}
 	if p.Settings.AudioMode == "native" && !model.GenerateAudio {
-		return p, fmt.Errorf("selected model does not support native audio; choose saved voices or silent")
+		return p, fmt.Errorf("selected model does not support native audio; choose silent")
 	}
 	shots, err := s.database.ListShots(scene.ID)
 	if err != nil {
@@ -382,6 +392,7 @@ func (s *Server) handleProductionPlan(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "scene changed; reload the production plan before saving", 409)
 			return
 		}
+		body.Settings.AudioMode = currentAudioMode(body.Settings.AudioMode)
 		if err := validateProduction(body.Settings); err != nil {
 			http.Error(w, err.Error(), 400)
 			return

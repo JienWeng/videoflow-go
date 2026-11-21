@@ -585,7 +585,7 @@
         <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={repairStoryboard} disabled={busy}/>Repair if needed</label>
         <p class="text-xs text-muted-foreground">Checks the image against the scene and its references. Repair can generate one replacement and check it. Provider charges may apply.</p>
       {/if}
-      {#if intent.action==='render_scene'}<p class="text-xs text-muted-foreground">Uses the saved clip and sound plan below. Automatic mode groups consecutive shots to reduce paid calls. Matching clips are reused. Image and video generation may use account quota or provider credits.</p>{#if sceneId}<ProductionControls scene={sceneId} bind:newVersion={newRenderVersion} onplan={(id,cost)=>{renderPlanId=id;renderQuote=cost}} disabled={busy} onstate={s=>sceneSetupBlocking=s.blocking||s.loading} oncontinue={run} onask={text=>onsuggest?.(text)}/>{/if}{/if}
+      {#if intent.action==='render_scene'}<p class="text-xs text-muted-foreground">Uses the saved clip and sound plan below. Automatic mode groups consecutive shots to reduce paid calls. Matching clips are reused. Image and video generation may use account quota or provider credits.</p>{#if sceneId}<ProductionControls scene={sceneId} bind:newVersion={newRenderVersion} onplan={(id,cost)=>{renderPlanId=id;renderQuote=cost}} disabled={busy} onstate={s=>sceneSetupBlocking=s.blocking||s.loading} onask={text=>onsuggest?.(text)}/>{/if}{/if}
       {#if intent.action === 'generate_shots'}
         <label class="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
           <input type="checkbox" class="w-auto" bind:checked={autoAssets} />

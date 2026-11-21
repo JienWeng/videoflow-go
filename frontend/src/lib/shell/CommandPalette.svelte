@@ -148,7 +148,7 @@
     });
 
     out.push({id:'nav-sessions',label:'Manage AI sessions',hint:'assistant setup and saved conversations',group:'Go to',icon:SlidersHorizontal,href:'/director'});
-    out.push({id:'nav-voices',label:'Voice & dialogue',hint:'character voices, speech and script captions',group:'Go to',icon:Users,href:'/voices'});
+    out.push({id:'nav-voices',label:'Voices',hint:'a voice for each character',group:'Go to',icon:Users,href:'/voices'});
     out.push({id:'nav-composition',label:'Edit video',hint:'timeline, captions, music and export',group:'Go to',icon:Film,href:'/?view=edit'});
 
     // --- Entities from the graph ----------------------------------------

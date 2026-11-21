@@ -169,7 +169,6 @@
     run?: VideoRun;
     attachments?: {id:string;name:string;kind:string;file_path:string}[];
     retry?: string;
-    setupSceneId?:string;
     storyOperationId?:string;storyStage?:string;storyReady?:boolean;referenceIds?:string[];castIds?:string[];
     repairContext?: boolean;
     activity?: unknown[];
@@ -269,8 +268,8 @@
   /** Drop the non-serializable / refetched parts (state, callbacks live in
    * the template anyway — cards re-render fine from intent + options). */
   function serializableMsg(m: Msg) {
-    const { role, text, intent, options, warnings, chips, op, thumbs, retry, activity,editProposal, dismissed,briefSuperseded,repairContext,storyOperationId,storyStage,storyReady,referenceIds,castIds,setupSceneId } = m;
-    return { role, text, intent, options, warnings, chips, op, thumbs, retry, activity:normalizeActivity(activity),editProposal, dismissed,briefSuperseded,repairContext,storyOperationId,storyStage,storyReady,referenceIds,castIds,setupSceneId };
+    const { role, text, intent, options, warnings, chips, op, thumbs, retry, activity,editProposal, dismissed,briefSuperseded,repairContext,storyOperationId,storyStage,storyReady,referenceIds,castIds } = m;
+    return { role, text, intent, options, warnings, chips, op, thumbs, retry, activity:normalizeActivity(activity),editProposal, dismissed,briefSuperseded,repairContext,storyOperationId,storyStage,storyReady,referenceIds,castIds };
   }
 
   let conversationGeneration=0;
@@ -628,15 +627,6 @@
     try{await runBackgroundOp(`/videos/generate/${m.storyOperationId}/continue`,{}, {label:'Storyboard images',onDone:async op=>{settle();if(generation!==conversationGeneration)return;if(m.op)m.op.status='done';await attachOpResults(m,{action:'generate_script'},op);await onmutate?.();await refreshChips()},onFail:op=>{settle();if(generation!==conversationGeneration)return;if(m.op){m.op.status='failed';m.op.detail=op.error??'Storyboarding needs attention.'}m.text=op.error??'Storyboarding needs attention. Review the existing work before retrying.'}})}catch(e){settle();if(generation===conversationGeneration){if(m.op)m.op.status='failed';m.text=String(e)}}
   }
 
-  const missingVoiceCharacter=(text:string)=>text.match(/\/voices\?character_id=([a-zA-Z0-9_-]+)/)?.[1]??text.match(/\bspeaker\s+(char_[a-zA-Z0-9_-]+)\b.*voice/i)?.[1];
-  async function openSceneSetup(m:Msg){
-    try{
-      const scenes=await get('/scenes');const char=missingVoiceCharacter(m.text);
-      const choices=m.setupSceneId?scenes.filter((s:any)=>s.id===m.setupSceneId):char?scenes.filter((s:any)=>{let cast=s.character_ids_json??[];if(typeof cast==='string'){try{cast=JSON.parse(cast)}catch{cast=[]}}return cast.includes(char)}):scenes;
-      if(!choices.length){messages.push({role:'assistant',text:'That scene or speaker is no longer in this project. Select the current scene to prepare its setup.'});return}
-      messages.push({role:'assistant',text:'Choose native sound, saved character voices or silence below. Existing ready voices are kept. Saving options does not generate media; the render action follows the displayed paid-call plan.',intent:{action:'render_scene',scene_id:choices.length===1?choices[0].id:''},options:{scenes:choices.map((s:any)=>({id:s.id,title:s.title})),characters:[],outputs:[],caption_styles:[]}});
-    }catch(e){messages.push({role:'assistant',text:'Could not load scene setup. '+String(e)})}
-  }
 
   /** ActionCard launched a background op: append the in-chat progress row. */
   function handleOpStart(label: string, ctx: RunContext): OpHandle {
@@ -655,7 +645,6 @@
         m.op.status = 'failed';
         m.op.detail = op.error ?? 'failed';
         m.text = op.error ?? 'This action could not finish. Try its action button again; existing work is kept.';
-        if(ctx.action==='render_scene')m.setupSceneId=ctx.sceneId;
       }
     };
   }
@@ -986,7 +975,7 @@
 
             {#if m.text}
               <Bubble.Root align={m.role==='user'?'end':'start'} variant={m.role==='user'?'muted':'ghost'}>{#if m.role==='assistant'}<Bubble.Content class="break-words leading-relaxed"><Response content={m.text} class="text-sm [&_p]:my-2 [&_ul]:my-2 [&_ol]:my-2" /></Bubble.Content>{:else}<Bubble.Content class="whitespace-pre-wrap break-words leading-relaxed">{#if m.attachments?.length}<span class="mb-2 flex flex-wrap gap-2">{#each m.attachments as a (a.id)}{#if a.kind==='image'}<img class="size-20 rounded-md object-cover" src={mediaUrl(a.file_path)??''} alt={a.name}/>{:else}<video class="size-20 rounded-md object-cover" src={mediaUrl(a.file_path)??''} muted preload="metadata" aria-label={a.name}></video>{/if}{/each}</span>{/if}{m.text}</Bubble.Content>{/if}</Bubble.Root>
-              {#if m.role==='assistant'&&(m.setupSceneId||missingVoiceCharacter(m.text))}<Button variant="outline" size="sm" disabled={busy} onclick={()=>openSceneSetup(m)}>Set up scene voices here</Button>{/if}
+
             {/if}
             {#if m.intent?.action==='unknown' && m.state?.next_steps?.length}<ol class="list-decimal space-y-1 pl-5 text-sm">{#each m.state.next_steps as step}<li>{step}</li>{/each}</ol>{/if}
             {#if m.repairContext}<Button variant="outline" size="sm" class="mt-2" disabled={busy||repairingContext} onclick={()=>repairContext(m)}>{repairingContext?'Repairing…':'Repair chat context'}</Button>{/if}

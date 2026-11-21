@@ -54,7 +54,7 @@ func TestChatUsesOwnedSelectionAndPinsCompatibleAction(t *testing.T) {
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
 		raw, _ := json.Marshal(payload)
-		sawContext = strings.Contains(string(raw), "name: studio-recovery") && strings.Contains(string(raw), "recent_activity") && strings.Contains(string(raw), "selected_item") && strings.Contains(string(raw), "crimson car") && strings.Contains(string(raw), "canvas") && strings.Contains(string(raw), "workflow_policy") && strings.Contains(string(raw), "render_setup") && strings.Contains(string(raw), "Never tell the user to approve images") && strings.Contains(string(raw), "connected camera test")
+		sawContext = strings.Contains(string(raw), "name: studio-recovery") && strings.Contains(string(raw), "recent_activity") && strings.Contains(string(raw), "selected_item") && strings.Contains(string(raw), "crimson car") && strings.Contains(string(raw), "canvas") && strings.Contains(string(raw), "workflow_policy") && strings.Contains(string(raw), "Never tell the user to approve images") && strings.Contains(string(raw), "connected camera test")
 		content := `{"reply":"Refine selected scene","action":"refine_scene","scene_id":"wrong-scene"}`
 		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": content}}}})
 	})

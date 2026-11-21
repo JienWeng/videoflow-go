@@ -291,7 +291,6 @@ func (s *Server) handleAutopilotFinish(w http.ResponseWriter, r *http.Request) {
 			}
 			if json.Unmarshal(raw, &captions) == nil && len(captions.Captions) > 0 {
 				manifest["captions"] = captions.Captions
-				manifest["caption_bindings"] = []any{}
 			}
 		}
 		code, raw = s.internalCall(ctx, "POST", "/compositions", manifest)

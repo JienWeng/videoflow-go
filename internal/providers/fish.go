@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 )
 
 const FishURL = "https://api.fish.audio"
@@ -24,8 +25,8 @@ func NewFishClientAt(key, base string) *FishClient {
 
 // Speech is a single synchronous request. Never retry an ambiguous paid submission.
 func (c *FishClient) Speech(ctx context.Context, model string, input map[string]any) ([]byte, error) {
-	if err := ValidateVoiceInput("fish/"+model, input); err != nil {
-		return nil, err
+	if !SafeSpeechID(model) || strings.TrimSpace(stringValue(input["text"])) == "" || strings.TrimSpace(stringValue(input["reference_id"])) == "" || utf8.RuneCountInString(stringValue(input["text"])) > 5000 {
+		return nil, fmt.Errorf("Saved speech requires a supported model, saved voice ID and 1–5000 characters")
 	}
 	data, err := json.Marshal(input)
 	if err != nil {

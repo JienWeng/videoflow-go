@@ -11,9 +11,8 @@
 
 ## Audio choices
 
-- **Native:** synchronized dialogue, ambience and effects from the selected video model. Music direction is optional; blank requests no background music. The native Seedance route does not need Fish/ElevenLabs voice IDs. Native exact voice identity, spoken wording and cut timing are best effort; they are not approved saved-voice guarantees. fal documents native audio at the same video generation price for the configured Seedance Fast endpoint.
-- **Saved character voices:** the video remains silent and the existing explicit speech/lip-sync tools use saved profiles. Saved identities and native-reference samples are never silently replaced with generic voices. A source video is needed only for the later lip-sync stage, not before rendering visuals.
-- **Silent:** generate no audio. Music/narration can still be added in the editor.
+- **Native:** synchronized dialogue, ambience and effects from the selected video model. Music direction is optional; blank requests no background music. Native voice identity, spoken wording and cut timing are best effort. fal documents native audio at the same video generation price for the configured Seedance Fast endpoint.
+- **Silent:** generate no audio. Music and narration (spoken with a character's saved voice) can still be added in the editor. Scenes saved earlier with "saved voices" are treated as silent.
 
 For multiple native-audio clips, assign each saved spoken line to a clip when prompted. A line without an ID uses its visible stable line index. This prevents the whole scene's dialogue being repeated in every clip. It does not fabricate word-level timings. Captions require the actual final audio and verified timing, rather than evenly dividing a script.
 

@@ -14,7 +14,7 @@ import (
 )
 
 func TestPrepareRenderRefreshesStaleStoryboardAndReusesMatching(t *testing.T) {
-	for _, testCase := range []string{"ready", "image_failure", "changed_during_image", "voice_setup"} {
+	for _, testCase := range []string{"ready", "image_failure", "changed_during_image", "saved_audio"} {
 		fail := testCase == "image_failure"
 		t.Run(testCase, func(t *testing.T) {
 			var images atomic.Int32
@@ -97,23 +97,14 @@ print(json.dumps({'type':'turn.completed'}))
 			if blocked.Code != 400 || images.Load() != 0 {
 				t.Fatal("stale reference protection bypassed", blocked.Code, blocked.Body.String())
 			}
-			if testCase == "voice_setup" {
+			if testCase == "saved_audio" {
+				// A scene saved when voices could be added afterwards: a speaker with no
+				// saved voice, and the "saved" sound choice. It renders as a silent clip.
 				c := &models.Character{ProjectID: &project, Name: "Narrator"}
 				s.database.CreateCharacter(c)
 				current, _ := s.database.GetScene(scene.ID)
-				current.SceneJSON = voiceJSON(map[string]any{"spoken_lines": []SpokenLine{{ID: "u", CharacterID: c.ID, Text: "Come home, Pip!", Language: "en"}}})
+				current.SceneJSON = voiceJSON(map[string]any{"production": map[string]any{"audio_mode": "saved", "strategy": "auto"}, "spoken_lines": []SpokenLine{{ID: "u", CharacterID: c.ID, Text: "Come home, Pip!", Language: "en"}}})
 				s.database.UpdateScene(current)
-				blockedVoice := run()
-				if blockedVoice.Status != "failed" || (blockedVoice.Error == nil || !strings.Contains(*blockedVoice.Error, "Narrator")) || images.Load() != 0 {
-					t.Fatal("voice setup spent image quota", blockedVoice.Error, images.Load())
-				}
-				s.cfg.FishAPIKey = "fixture-key"
-				current, _ = s.database.GetScene(scene.ID)
-				body := voiceJSON(map[string]any{"confirmed": true, "expected_updated_at": current.UpdatedAt, "profiles": []map[string]any{{"character_id": c.ID, "revision": 0, "provider": "fish", "model": "s2.1-pro", "voice_id": "narrator"}}})
-				configured := call(t, s, "PUT", "/voice/scenes/"+scene.ID+"/setup", string(body))
-				if configured.Code != 200 {
-					t.Fatal(configured.Body.String())
-				}
 			}
 			op := run()
 			jobs, _ := s.database.ListRenderJobs(project)
@@ -131,6 +122,9 @@ print(json.dumps({'type':'turn.completed'}))
 			}
 			if op.Status != "succeeded" || images.Load() != 1 || len(jobs) != 1 {
 				t.Fatal(op.Status, op.Error, images.Load(), len(jobs))
+			}
+			if testCase == "saved_audio" && !strings.Contains(string(jobs[0].RequestJSON), `"audio_mode":"silent"`) {
+				t.Fatal("saved sound choice was not rendered silent", string(jobs[0].RequestJSON))
 			}
 			if !strings.Contains(prompt, shot.Prompt) {
 				t.Fatal("new keyframe ignored current shots", prompt)

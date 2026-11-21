@@ -342,11 +342,6 @@ func (s *Server) handleGetEditorData(w http.ResponseWriter, r *http.Request) {
 		"available": len(capSegments) > 0,
 	}
 
-	if err := s.ValidateScriptCaptionSource(output); err != nil {
-		captionsBlock["stale"] = true
-		captionsBlock["stale_reason"] = err.Error()
-	}
-
 	// 3. Scene + Shots blocks
 	var sceneBlock map[string]interface{}
 	shotsBlock := []map[string]interface{}{}
@@ -561,12 +556,7 @@ func (s *Server) handleGetCaptions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	staleReason := ""
-	if err := s.ValidateScriptCaptionSource(output); err != nil {
-		staleReason = err.Error()
-	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"stale": staleReason != "", "stale_reason": staleReason,
 		"segments":  capSegments,
 		"style":     capStyle,
 		"available": len(capSegments) > 0,
@@ -707,10 +697,6 @@ func (s *Server) handleDownloadOutput(w http.ResponseWriter, r *http.Request) {
 	}
 	path := output.VideoPath
 	if r.URL.Query().Get("variant") == "captioned" {
-		if err := s.ValidateScriptCaptionSource(output); err != nil {
-			http.Error(w, err.Error(), 409)
-			return
-		}
 		if output.CaptionedPath == nil {
 			http.Error(w, "captioned video has not been generated", 404)
 			return

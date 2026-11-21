@@ -26,7 +26,6 @@ func (s *Server) registerCompositionRoutes() {
 	s.router.Put("/studio/brand", s.handleStudioBrand)
 	s.router.Post("/compositions/transcribe", s.handleCompositionTranscribe)
 	s.router.Post("/compositions/localize", s.handleLocalizeComposition)
-	s.router.Post("/compositions/captions/import", s.handleCompositionCaptionImport)
 	s.router.Post("/compositions/captions/from-script", s.handleCompositionScriptCaptions)
 	s.router.Post("/compositions/voiceover", s.handleCompositionVoiceover)
 	s.router.Get("/scenes/{id}/composition-sources", s.handleSceneCompositionSources)
@@ -40,6 +39,7 @@ func (s *Server) registerCompositionRoutes() {
 	s.router.Get("/compositions/{revision}", s.handleCompositionGet)
 	s.router.Post("/compositions/{revision}/run", s.handleCompositionRun)
 }
+func compositionHash(data []byte) string  { return voiceHash(data) }
 func (s *Server) compositionRoot() string { return filepath.Join(s.cfg.StorageRoot, "compositions") }
 func (s *Server) handleCompositionRuntime(w http.ResponseWriter, r *http.Request) {
 	_, e := composition.Runtime()
@@ -108,10 +108,6 @@ func (s *Server) handleCompositionSave(w http.ResponseWriter, r *http.Request) {
 	var m composition.Manifest
 	if e = json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20)).Decode(&m); e != nil {
 		http.Error(w, "invalid manifest", 400)
-		return
-	}
-	if e = s.validateCompositionCaptions(project, m); e != nil {
-		http.Error(w, e.Error(), 409)
 		return
 	}
 	sources, _, e := s.compositionSources(project)
@@ -196,10 +192,6 @@ func (s *Server) handleCompositionRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, e.Error(), 409)
 		return
 	}
-	if e = s.validateCompositionCaptions(project, m); e != nil {
-		http.Error(w, e.Error(), 409)
-		return
-	}
 	log, e := composition.Run(r.Context(), dir, body.Operation)
 	if e != nil {
 		writeJSON(w, 422, map[string]string{"error": e.Error(), "log": log})
@@ -237,7 +229,7 @@ func (s *Server) handleCompositionRun(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, e.Error(), 500)
 			return
 		}
-		meta, _ := json.Marshal(map[string]interface{}{"composition_revision": revision, "source_manifest": filepath.Join(dir, "manifest.json"), "hyperframes_version": composition.RuntimeVersion, "source_assets": append(m.Clips, m.Audio...), "caption_bindings": m.CaptionBindings})
+		meta, _ := json.Marshal(map[string]interface{}{"composition_revision": revision, "source_manifest": filepath.Join(dir, "manifest.json"), "hyperframes_version": composition.RuntimeVersion, "source_assets": append(m.Clips, m.Audio...)})
 		a := &models.Asset{ID: derivedID, ProjectID: &project, Type: "output_video", Name: "Edited video · " + time.Now().Format("Jan 2, 3:04 PM") + ".mp4", FilePath: derivedPath, TagsJSON: []byte("[]"), MetadataJSON: meta}
 		if e = s.database.CreateUploadedAsset(a); e != nil {
 			http.Error(w, e.Error(), 500)

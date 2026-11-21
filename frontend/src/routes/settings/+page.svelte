@@ -226,7 +226,7 @@ media_model_preferences:Record<string,Record<string,string>>;
   const primaryTextProvider = $derived(
     agents.find((agent) => agent.agent === 'script_agent')?.provider ?? 'openrouter'
   );
-  let voicePrimary=$state('fal');
+  let voicePrimary=$state('fish');
   async function primaryVoice(p:string){try{await put('/voice/preferences',{primary_provider:p});voicePrimary=p;toast.success('Primary speech provider saved')}catch(e){toast.error(String(e))}}
   let providerOpen=$state<Record<string,boolean>>({});
   const orderedProviders = $derived(
@@ -246,7 +246,7 @@ media_model_preferences:Record<string,Record<string,string>>;
       get('/voice/preferences').catch(() => null)
     ]);
     presets = pr;
-    voicePrimary = voice?.primary_provider ?? 'fal';
+    voicePrimary = voice?.primary_provider ?? 'fish';
     agents = ag;
     providers = pv;
     testModelInput = Object.fromEntries(
@@ -741,7 +741,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
 
                 <p class="settings-help mt-2" role="status">{providerDirty(p.name) ? 'Unsaved credential changes' : 'No unsaved credential changes'}</p>
                 <div class="mt-2 flex flex-wrap items-center gap-2">
-                  {#if p.name === 'openai'}<p class="settings-help">Used for images when native Codex image generation is unavailable.</p>{:else if p.protocol === 'speech'}<p class="settings-help">Choose a saved voice and a current speech model in <a class="underline" href="/voices">Voice & dialogue</a>. Configuration checks do not generate speech.</p>{:else}
+                  {#if p.name === 'openai'}<p class="settings-help">Used for images when native Codex image generation is unavailable.</p>{:else if p.protocol === 'speech'}<p class="settings-help">Choose each character's voice in <a class="underline" href="/voices">Voices</a>. Configuration checks do not generate speech.</p>{:else}
                   {#if providerModelInput[p.name]}
                     <Input
                       class="max-w-64"
@@ -807,7 +807,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                       <Wifi class="size-3.5 mr-1" />{cfg?.key_check?.state === 'no_credit' ? 'Check again' : p.protocol === 'chat' ? 'Test connection' : p.protocol === 'video' && p.name !== 'byteplus' ? 'Check key' : 'Check configuration'}
                     {/if}
                   </Button>
-                  {#if ['fal','fish','elevenlabs'].includes(p.name)&&voicePrimary!==p.name}<Button variant="outline" size="sm" disabled={!cfg?.configured} onclick={()=>primaryVoice(p.name)}>Make primary voice provider</Button>{/if}
+                  {#if ['fish','elevenlabs'].includes(p.name)&&voicePrimary!==p.name}<Button variant="outline" size="sm" disabled={!cfg?.configured} onclick={()=>primaryVoice(p.name)}>Make primary voice provider</Button>{/if}
                   {#if cfg?.from_db}
                     <Button
                       size="sm"

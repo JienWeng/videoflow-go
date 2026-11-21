@@ -25,8 +25,6 @@ func (s *Server) episodeSound(project string) []map[string]any {
 			settings, brief := sceneProduction(scene), sceneBrief(scene)
 			speech = brief.ConversationMode
 			switch settings.AudioMode {
-			case "saved":
-				voice = "saved voices"
 			case "silent":
 				voice = "silent"
 			default:
@@ -72,8 +70,8 @@ func (s *Server) chatSetMusic(ctx context.Context, scenes []models.Scene, episod
 			continue
 		}
 		settings := sceneProduction(scene)
-		if settings.AudioMode == "saved" || settings.AudioMode == "silent" {
-			return nil, fmt.Sprintf("“%s” is set to %s sound, so the video model makes no music for it. Open Edit video and upload a track under Audio instead; that is free.", scene.Title, settings.AudioMode)
+		if settings.AudioMode == "silent" {
+			return nil, fmt.Sprintf("“%s” is set to no sound, so the video model makes no music for it. Open Edit video and upload a track under Audio instead; that is free.", scene.Title)
 		}
 		settings.AudioMode, settings.MusicPrompt = "native", music
 		var doc map[string]any

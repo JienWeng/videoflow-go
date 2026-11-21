@@ -255,7 +255,7 @@
 {#snippet resultSummary()}
       {#if lastResult && opStatus !== 'running'}
       <div class="mt-6 space-y-4">
-        {#if lastResult.created_character_ids?.length}<div class="space-y-1 text-sm"><p>{lastResult.created_character_ids.length} new character {lastResult.created_character_ids.length===1?'profile saved':'profiles saved'}. <a class="underline underline-offset-4" href="/library?tab=characters">View characters</a></p><p class="text-muted-foreground">For spoken dialogue, choose approved voices in <a class="underline underline-offset-4" href="/voices">Voice &amp; dialogue</a> before rendering.</p></div>{/if}
+        {#if lastResult.created_character_ids?.length}<div class="space-y-1 text-sm"><p>{lastResult.created_character_ids.length} new character {lastResult.created_character_ids.length===1?'profile saved':'profiles saved'}. <a class="underline underline-offset-4" href="/library?tab=characters">View characters</a></p><p class="text-muted-foreground">To have narration spoken in a character's own voice, choose it in <a class="underline underline-offset-4" href="/voices">Voices</a>.</p></div>{/if}
         <div class="rounded-lg border border-border p-4 text-sm">
           {#if lastResult.status==='awaiting_character_review'}
             <h3 class="font-semibold">Story references</h3><p class="mt-2 text-muted-foreground">Characters, props and locations are saved in Library. Existing suitable assets are reused; missing images are generated. Images are ready to use without approval.</p>

@@ -162,7 +162,7 @@ print(json.dumps({'type':'turn.completed'}))
 	}
 	selected, _ := json.Marshal(map[string]any{"character_ids": []string{character.ID}, "asset_ids": []string{asset.ID}})
 	s.database.SetDirectorSelection(session.ID, project, selected)
-	if response := call(t, s, "PUT", "/voice/profiles/"+character.ID, `{"revision":0,"data":{"mode":"saved","voice_id":"fixture-saved-voice","approved":true}}`); response.Code != 200 {
+	if response := call(t, s, "PUT", "/voice/profiles/"+character.ID, `{"revision":0,"data":{"provider":"fish","model":"s2.1-pro","voice_id":"fixture-saved-voice","approved":true}}`); response.Code != 200 {
 		t.Fatalf("seed voice profile: %d %s", response.Code, response.Body.String())
 	}
 	// Isolated inspection endpoint exposes fixture counters, never production data.

@@ -107,7 +107,7 @@ Open a scene from Studio or /scenes?scene_id=<id>. Its Scene references section 
 
 ## Connected video, sound and music
 
-See docs/CONNECTED-VIDEO-WORKFLOW.md. Video & sound in chat and Scene Studio selects native/saved/silent audio and shows a read-only paid-call plan. Supported Seedance native audio needs no saved voice IDs. Automatic grouping minimizes calls and generated seconds; identical planned clips are reused. Explicit rendering revalidates the displayed plan. Assemble clips & add music opens ordered, trimmed outputs with clip audio preserved; full-story assembly joins matching scene formats. Upload or choose music, set volume/fades, save and export locally. Native sound quality/identity/timing remains model-dependent; exact saved voices/lip-sync and timed captions use the existing separate tools. Opening or saving options never starts generation.
+See docs/CONNECTED-VIDEO-WORKFLOW.md. Video & sound in chat and Scene Studio selects native or silent audio and shows a read-only paid-call plan. Automatic grouping minimizes calls and generated seconds; identical planned clips are reused. Explicit rendering revalidates the displayed plan. Assemble clips & add music opens ordered, trimmed outputs with clip audio preserved; full-story assembly joins matching scene formats. Upload or choose music, set volume/fades, save and export locally. Native sound quality/identity/timing remains model-dependent; narration with a saved voice and timed captions are added in the editor. Opening or saving options never starts generation.
 
 
 ## Edit and finish in Studio

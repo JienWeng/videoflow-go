@@ -3,12 +3,10 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"videoflow-go/internal/db"
 	"videoflow-go/internal/providers"
 )
 
@@ -40,8 +38,7 @@ func TestSpeechCatalogRefreshMatchAndPinnedElevenGeneration(t *testing.T) {
 			if in["model_id"] != "eleven_multilingual_v2" {
 				t.Errorf("prepared model changed: %v", in)
 			}
-			w.Header().Set("Content-Type", "audio/mpeg")
-			w.Write(voiceWAV(1))
+			w.WriteHeader(500)
 		default:
 			t.Error("unexpected endpoint", r.URL.Path)
 			w.WriteHeader(500)
@@ -95,19 +92,18 @@ func TestSpeechCatalogRefreshMatchAndPinnedElevenGeneration(t *testing.T) {
 	if r.Code != 200 {
 		t.Fatal(r.Body.String())
 	}
-	call(t, s, "PUT", "/voice/scripts/main", fmt.Sprintf(`{"revision":0,"data":{"approved":true,"lines":[{"id":"u","character_id":%q,"language":"en","text":"Come home, Pip!"}]}}`, c))
-	r = call(t, s, "POST", "/voice/tasks/prepare", `{"kind":"speech","script_id":"main","line_id":"u"}`)
-	if r.Code != 200 {
-		t.Fatal(r.Body.String())
+	state := call(t, s, "GET", "/voice/state", "")
+	if state.Code != 200 || !strings.Contains(state.Body.String(), `"primary_provider":"elevenlabs"`) || !strings.Contains(state.Body.String(), "warm_voice") || strings.Contains(state.Body.String(), "tasks") {
+		t.Fatal(state.Body.String())
 	}
-	var task db.VoiceTask
-	json.Unmarshal(r.Body.Bytes(), &task)
-	if task.Model != "elevenlabs/eleven_multilingual_v2" || speechCalls != 0 {
-		t.Fatal(task.Model, speechCalls)
+	if r = call(t, s, "PUT", "/voice/preferences", `{"primary_provider":"fal"}`); r.Code != 400 {
+		t.Fatal("removed fal voice provider accepted", r.Code)
 	}
-	result := call(t, s, "POST", "/voice/tasks/"+task.ID+"/run", fmt.Sprintf(`{"confirmed":true,"fingerprint":%q}`, task.Fingerprint))
-	if result.Code != 200 || !strings.Contains(result.Body.String(), `"status":"completed"`) || speechCalls != 1 {
-		t.Fatal(result.Body.String(), speechCalls)
+	if r = call(t, s, "PUT", "/voice/profiles/"+c, `{"revision":1,"data":{"provider":"fal","voice_id":"warm_voice","approved":true}}`); r.Code != 400 {
+		t.Fatal("removed fal voice provider saved on a profile", r.Code)
+	}
+	if speechCalls != 0 {
+		t.Fatal("saving a voice made speech", speechCalls)
 	}
 	if _, err := s.resolveSpeechModel(context.Background(), "elevenlabs", "invented"); err == nil {
 		t.Fatal("invented model accepted")

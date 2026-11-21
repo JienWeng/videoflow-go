@@ -5,13 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"videoflow-go/internal/db"
 	"videoflow-go/internal/models"
 )
 
-// applyDirectorVoicePolicy mutates the durable request before enqueue. Ordinary
-// video is the visual pass; speech and visible-speaker lip sync remain explicit
-// /voices stages. It never contacts a provider or replaces a native audio sample.
 // applyDirectorVoicePolicy decides how a video request gets its sound, then writes the
 // prompt of a planned scene clip from the scene's records.
 func (s *Server) applyDirectorVoicePolicy(ctx context.Context, job *models.RenderJob) error {
@@ -43,7 +39,6 @@ func (s *Server) voicePolicy(ctx context.Context, job *models.RenderJob) error {
 	audioMode, _ := payload["audio_mode"].(string)
 	music, _ := payload["music_prompt"].(string)
 
-	characters := append([]string{}, binding.Selection.CharacterIDs...)
 	var spoken []SpokenLine
 	if job.SceneID != nil {
 		scene, err := s.database.GetScene(*job.SceneID)
@@ -61,12 +56,6 @@ func (s *Server) voicePolicy(ctx context.Context, job *models.RenderJob) error {
 		if brief.ConversationMode != "" {
 			mode = brief.ConversationMode
 		}
-		var cast []string
-		if err = json.Unmarshal(scene.CharacterIDsJSON, &cast); err != nil {
-			return fmt.Errorf("scene cast is invalid")
-		}
-		characters = append(characters, cast...)
-		characters = append(characters, brief.CharacterIDs...)
 		var snapshot struct {
 			Lines []SpokenLine `json:"spoken_lines"`
 		}
@@ -104,8 +93,11 @@ func (s *Server) voicePolicy(ctx context.Context, job *models.RenderJob) error {
 			payload["prompt"] = prompt
 		}
 	}
+	// Scenes saved by earlier versions may still ask for "saved" voices added
+	// afterwards; that stage is gone, so such a clip is simply made without sound.
+	audioMode = currentAudioMode(audioMode)
 	if audioMode == "" {
-		audioMode = "saved"
+		audioMode = "silent"
 		if job.SceneID != nil {
 			_, capabilities, e := s.productionVideoModel(ctx)
 			if e == nil && capabilities.GenerateAudio {
@@ -116,17 +108,17 @@ func (s *Server) voicePolicy(ctx context.Context, job *models.RenderJob) error {
 			audioMode = "silent"
 		}
 	}
-	if audioMode != "native" && audioMode != "saved" && audioMode != "silent" {
+	if audioMode != "native" && audioMode != "silent" {
 		return fmt.Errorf("unsupported audio mode")
 	}
 	payload["audio_mode"] = audioMode
 	if audioMode == "native" {
 		_, capabilities, e := s.productionVideoModel(ctx)
 		if e != nil || !capabilities.GenerateAudio {
-			return fmt.Errorf("native audio is unavailable for the selected model; choose saved voices or silent")
+			return fmt.Errorf("native audio is unavailable for the selected model; choose silent")
 		}
 		payload["generate_audio"] = true
-		payload["voice_policy"] = map[string]any{"mode": "native", "project_id": *job.ProjectID, "exact_voice_identity": false}
+		payload["voice_policy"] = map[string]any{"mode": "native", "project_id": *job.ProjectID}
 		prompt := stringPrompt(payload["prompt"]) + "\nGenerate synchronized dialogue, ambience and sound effects. Native speaker identity and exact word/cut timing are best effort, not a saved-voice guarantee."
 		if mode == "narration" {
 			prompt += "\nUse off-screen narration rather than on-screen character dialogue."
@@ -183,74 +175,9 @@ func (s *Server) voicePolicy(ctx context.Context, job *models.RenderJob) error {
 		job.RequestJSON = voiceJSON(payload)
 		return nil
 	}
-	if audioMode == "silent" {
-		payload["generate_audio"] = false
-		payload["voice_policy"] = map[string]any{"mode": "silent", "project_id": *job.ProjectID}
-		payload["prompt"] = stringPrompt(payload["prompt"]) + "\nAuthoritative voice policy: SILENT visual pass. Generate no speech or audio."
-		job.RequestJSON = voiceJSON(payload)
-		return nil
-	}
-	if len(spoken) > 0 {
-		characters = nil
-		for _, line := range spoken {
-			if strings.TrimSpace(line.Text) != "" {
-				if line.CharacterID == "" {
-					return fmt.Errorf("spoken line has no character; set up its speaker in /voices")
-				}
-				characters = append(characters, line.CharacterID)
-			}
-		}
-	}
-	seen := map[string]bool{}
-	bindings := []db.VoiceBinding{}
-	speakers := []map[string]any{}
-	for _, id := range characters {
-		if seen[id] {
-			continue
-		}
-		seen[id] = true
-		if err := s.voiceCharacter(*job.ProjectID, id); err != nil {
-			return err
-		}
-		doc, err := s.database.GetVoiceDocument(*job.ProjectID, "profile", id)
-		if err != nil {
-			name := id
-			if character, e := s.database.GetCharacter(id); e == nil && character != nil {
-				name = character.Name
-			}
-			return fmt.Errorf("set up and save a voice for %s before rendering: /voices?character_id=%s (choose Fish Audio or fal and a saved voice ID)", name, id)
-		}
-		var profile VoiceProfile
-		if err = json.Unmarshal(doc.Data, &profile); err != nil || !profile.Approved {
-			return fmt.Errorf("speaker %s voice is not approved; review it in /voices", id)
-		}
-		if profile.Mode == "native_reference" {
-			return fmt.Errorf("speaker %s uses native reference audio: ordinary image-to-video cannot preserve its sample; use Prepare native reference video in /voices or explicitly choose an approved saved voice", id)
-		}
-		if (profile.Mode != "" && profile.Mode != "saved") || strings.TrimSpace(profile.VoiceID) == "" {
-			return fmt.Errorf("speaker %s has no supported saved voice; create or bind it in /voices", id)
-		}
-		if profile.SampleAssetID != "" {
-			_, _, hash, err := s.voiceAsset(*job.ProjectID, profile.SampleAssetID)
-			if err != nil || hash != profile.SampleHash {
-				return fmt.Errorf("speaker %s approved sample changed; review its profile in /voices", id)
-			}
-			bindings = append(bindings, db.VoiceBinding{Kind: "asset", ID: profile.SampleAssetID, Hash: hash})
-		}
-		bindings = append(bindings, db.VoiceBinding{Kind: "profile", ID: id, Revision: doc.Revision})
-		speakers = append(speakers, map[string]any{"character_id": id, "voice_id": profile.VoiceID, "provider": profile.Provider, "model": profile.Model, "profile_revision": doc.Revision})
-	}
-	if len(speakers) == 0 {
-		payload["generate_audio"] = false
-		payload["voice_policy"] = map[string]any{"mode": "silent_visual_pass", "project_id": *job.ProjectID, "speech_stage": "/voices"}
-		payload["prompt"] = stringPrompt(payload["prompt"]) + "\nSilent visual pass only. Add approved speaker audio in the explicit Voices workflow."
-		job.RequestJSON = voiceJSON(payload)
-		return nil
-	}
-	policy := map[string]any{"mode": "saved_voice_visual_pass", "project_id": *job.ProjectID, "speakers": speakers, "source_bindings": bindings, "speech_stage": "/voices", "visible_speaker_lip_sync_required": true}
 	payload["generate_audio"] = false
-	payload["voice_policy"] = policy
-	payload["prompt"] = stringPrompt(payload["prompt"]) + "\nAuthoritative voice policy: generate a SILENT visual pass with NO dialogue, narration or generic substitute voice. Approved speaker identities are reserved for explicit saved-voice speech and visible-speaker lip sync stages in /voices. " + string(voiceJSON(policy))
+	payload["voice_policy"] = map[string]any{"mode": "silent", "project_id": *job.ProjectID}
+	payload["prompt"] = stringPrompt(payload["prompt"]) + "\nAuthoritative voice policy: SILENT visual pass. Generate no speech or audio."
 	job.RequestJSON = voiceJSON(payload)
 	return nil
 }

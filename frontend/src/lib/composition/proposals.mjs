@@ -13,11 +13,10 @@ export function editChanges(before,after){
 }
 /** @param {any} current @param {any} proposal */
 export function applyEditProposal(current,proposal){if(JSON.stringify(current)!==proposal.base)throw Error('The edit changed after this proposal. Ask for a new proposal.');return JSON.parse(JSON.stringify(proposal.manifest))}
-/** Move within bounds and snap to frame/neighbor edges. Linked cues must be detached first. */
+/** Move within bounds and snap to frame/neighbor edges. */
 /** @param {any} draft @param {string} track @param {string} id @param {number} start @param {boolean} [snapEdges] */
 export function moveClip(draft,track,id,start,snapEdges=true){
  const clip=draft[track].find((/** @type {any} */ c)=>c.id===id);if(!clip)throw Error('Choose a clip');
- if(draft.caption_bindings?.some((/** @type {any} */ b)=>b.clip_id===id))throw Error('Detach linked captions before moving this clip.');
  const edges=[0,...draft[track].filter((/** @type {any} */ c)=>c.id!==id).flatMap((/** @type {any} */ c)=>[c.start,c.start+c.duration])];
  let next=Math.round(start*draft.fps)/draft.fps;
  const snap=edges.find(edge=>Math.abs(edge-next)<=.15);if(snapEdges&&snap!==undefined)next=snap;

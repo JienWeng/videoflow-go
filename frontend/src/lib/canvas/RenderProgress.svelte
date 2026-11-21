@@ -38,7 +38,7 @@
  {#if active}<div aria-hidden="true" class="space-y-2"><div class="h-2 w-3/4 rounded bg-muted"></div><div class="h-2 w-1/2 rounded bg-muted"></div></div><p class="text-xs text-muted-foreground">Updates automatically · Timing depends on the video provider</p>{/if}
  {#if status==='reconciliation_required'&&!error}<StuckVideo jobId={id} service={serviceName(detail?.job.provider)} onsettled={()=>retry++} />{/if}
  {#if error}<Button variant="outline" size="sm" onclick={()=>retry++}>Reload render details</Button>{/if}
- {#if detail?.job.request_json?.audio_mode}<p class="text-xs text-muted-foreground">Audio: {detail.job.request_json.audio_mode==='native'?'native dialogue, ambience and effects':detail.job.request_json.audio_mode==='saved'?'silent visuals for saved-voice speech':'silent'}</p>{/if}
+ {#if detail?.job.request_json?.audio_mode}<p class="text-xs text-muted-foreground">Sound: {detail.job.request_json.audio_mode==='native'?'made with the clip (voices, ambience and effects)':'none'}</p>{/if}
  {#if output}<Button variant="outline" size="sm" href={editOutputHref(output.id)}>Edit this video</Button>{#if detail?.job.scene_id}<Button variant="outline" size="sm" href={editSceneHref(detail.job.scene_id)}>Trim clips & add music</Button>{/if}{/if}
 </section>
 <style>

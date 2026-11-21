@@ -32,7 +32,7 @@
   {#if loading}<p role="status" class="py-16 text-muted-foreground">Loading character…</p>
   {:else if !character}<div role="alert" class="space-y-4 py-12"><h1 class="text-2xl font-semibold">Could not load character</h1><p class="text-sm text-destructive">{error}</p><Button variant="outline" onclick={load}>Try again</Button></div>
   {:else}
-    <header class="mb-8 flex flex-wrap items-start justify-between gap-4 border-b border-border pb-6"><div class="min-w-0"><h1 class="break-words text-3xl font-semibold">{character.name}</h1><p class="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">Define their appearance and personality, then build a consistent set of reference images.</p></div><Button variant="outline" href={`/voices?character_id=${encodeURIComponent(characterId)}`}>Voice & dialogue</Button></header>
+    <header class="mb-8 flex flex-wrap items-start justify-between gap-4 border-b border-border pb-6"><div class="min-w-0"><h1 class="break-words text-3xl font-semibold">{character.name}</h1><p class="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">Define their appearance and personality, then build a consistent set of reference images.</p></div><Button variant="outline" href={`/voices?character_id=${encodeURIComponent(characterId)}`}>Voice</Button></header>
     {#if error}<p role="alert" class="mb-6 rounded-lg border border-destructive p-4 text-sm text-destructive">{error}</p>{/if}
     <div class="grid items-start gap-10 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.2fr)]">
       <section aria-labelledby="character-details-heading" class="min-w-0">

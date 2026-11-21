@@ -12,6 +12,9 @@ import (
 	"time"
 )
 
+// FalNativeVoiceModel makes a video from reference pictures, clips and sound.
+const FalNativeVoiceModel = "bytedance/seedance-2.0/fast/reference-to-video"
+
 type FalClient struct {
 	mediaHTTP
 	model        string

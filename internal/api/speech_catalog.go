@@ -213,7 +213,7 @@ func (s *Server) handleSpeechVoices(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) handleVoicePreferences(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
-		writeJSON(w, 200, map[string]string{"primary_provider": s.routes().Setting("voice_primary_provider", "fal")})
+		writeJSON(w, 200, map[string]string{"primary_provider": s.primaryVoiceProvider()})
 		return
 	}
 	var body struct {
@@ -222,7 +222,7 @@ func (s *Server) handleVoicePreferences(w http.ResponseWriter, r *http.Request) 
 	if !voiceDecode(w, r, &body) {
 		return
 	}
-	if body.Primary != "fish" && body.Primary != "elevenlabs" && body.Primary != "fal" {
+	if body.Primary != "fish" && body.Primary != "elevenlabs" {
 		http.Error(w, "choose an available speech provider", 400)
 		return
 	}

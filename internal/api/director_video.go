@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"videoflow-go/internal/db"
 	"videoflow-go/internal/models"
 	"videoflow-go/internal/providers"
 )
@@ -304,14 +303,11 @@ func (s *Server) validateFrozenVideo(ctx context.Context, job *models.RenderJob)
 		SceneInput string           `json:"scene_input_revision"`
 		Context    *directorContext `json:"director_context"`
 		Keyframe   string           `json:"director_keyframe"`
-		Voice      struct {
-			Bindings []db.VoiceBinding `json:"source_bindings"`
-		} `json:"voice_policy"`
 	}
 	if json.Unmarshal(job.RequestJSON, &payload) != nil {
 		return fmt.Errorf("invalid frozen render request")
 	}
-	if payload.Context == nil && len(payload.Voice.Bindings) == 0 {
+	if payload.Context == nil {
 		return nil
 	}
 	if job.ProjectID == nil {
@@ -346,11 +342,6 @@ func (s *Server) validateFrozenVideo(ctx context.Context, job *models.RenderJob)
 		asset, err := s.database.GetAsset(payload.Keyframe)
 		if err != nil || asset.ProjectID == nil || *asset.ProjectID != *job.ProjectID || !models.ReferenceApproved(asset.MetadataJSON) {
 			return fmt.Errorf("render keyframe is unavailable or no longer approved")
-		}
-	}
-	if len(payload.Voice.Bindings) > 0 {
-		if err := s.checkVoiceBindings(&db.VoiceTask{ProjectID: *job.ProjectID, Bindings: payload.Voice.Bindings}); err != nil {
-			return err
 		}
 	}
 	return nil

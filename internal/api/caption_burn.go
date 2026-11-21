@@ -18,9 +18,6 @@ func (s *Server) saveBurnedCaptions(ctx context.Context, output *models.RenderOu
 		}
 		return map[string]any{"output_id": output.ID, "status": "cleared"}, nil
 	}
-	if err := s.ValidateScriptCaptionSource(output); err != nil {
-		return nil, err
-	}
 	source, err := s.storagePath(output.VideoPath)
 	if err != nil {
 		return nil, err

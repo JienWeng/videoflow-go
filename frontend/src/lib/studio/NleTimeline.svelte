@@ -136,10 +136,8 @@
                   {#if src?.media_kind === 'image'}<img src={mediaUrl(src.url) ?? ''} alt="" class="h-8 w-8 shrink-0 rounded object-cover" draggable="false" />{/if}
                   <span class="truncate">{label(t.key, item)}</span>
                 </button>
-                {#if !item.source_clip_id}
-                  <span class="absolute inset-y-0 left-0 w-2 cursor-ew-resize bg-foreground/0 hover:bg-foreground/30" title="Drag to trim the start" aria-hidden="true" onpointerdown={e => grab(e, t.key, item, 'start')}></span>
-                  <span class="absolute inset-y-0 right-0 w-2 cursor-ew-resize bg-foreground/0 hover:bg-foreground/30" title="Drag to trim the end" aria-hidden="true" onpointerdown={e => grab(e, t.key, item, 'end')}></span>
-                {/if}
+                <span class="absolute inset-y-0 left-0 w-2 cursor-ew-resize bg-foreground/0 hover:bg-foreground/30" title="Drag to trim the start" aria-hidden="true" onpointerdown={e => grab(e, t.key, item, 'start')}></span>
+                <span class="absolute inset-y-0 right-0 w-2 cursor-ew-resize bg-foreground/0 hover:bg-foreground/30" title="Drag to trim the end" aria-hidden="true" onpointerdown={e => grab(e, t.key, item, 'end')}></span>
               </div>
             {/each}
           </div>

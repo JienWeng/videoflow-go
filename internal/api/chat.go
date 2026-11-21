@@ -62,13 +62,9 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	sceneOptions := []map[string]interface{}{}
 	for _, sc := range scenes {
-		setup, setupErr := s.sceneSetup(r.Context(), &sc)
-		if setupErr != nil {
-			setup = map[string]any{"error": setupErr.Error()}
-		}
 		sceneOptions = append(sceneOptions, map[string]interface{}{
-			"id":           sc.ID,
-			"render_setup": setup, "title": sc.Title, "summary": sc.Summary, "duration": sc.Duration, "character_ids": sc.CharacterIDsJSON,
+			"id":    sc.ID,
+			"title": sc.Title, "summary": sc.Summary, "duration": sc.Duration, "character_ids": sc.CharacterIDsJSON,
 		})
 	}
 
@@ -110,7 +106,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	progress, _ := s.projectProgress(r.Context(), projectID)
 	failedShown, _ := s.database.FailedRendersShown(projectID)
-	contextJSON, _ := json.Marshal(map[string]any{"production_progress": progress, "recent_activity": s.chatActivity(projectID, jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "video_service": s.chatVideoService(), "episode_sound": s.episodeSound(projectID), "failed_video_attempts": failedShown, "assistant_mode": chatMode(body.Auto, body.Full), "attached_media": attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "missing_voices_setup": "inline_render_card", "render_audio_modes": []string{"native", "saved", "silent"}, "native_audio_requires_saved_voices": false, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false, "exact_dialogue_requires_speech_and_lipsync": true}})
+	contextJSON, _ := json.Marshal(map[string]any{"production_progress": progress, "recent_activity": s.chatActivity(projectID, jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "video_service": s.chatVideoService(), "episode_sound": s.episodeSound(projectID), "failed_video_attempts": failedShown, "assistant_mode": chatMode(body.Auto, body.Full), "attached_media": attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": sceneOptions, "characters": charOptions, "outputs": outputsList, "selected_item": selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "render_audio_modes": []string{"native", "silent"}, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false}})
 	ctx := r.Context()
 	var plannedSnapshot *directorContext
 	if s.cfg.UseLocalText {

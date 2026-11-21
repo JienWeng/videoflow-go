@@ -83,7 +83,6 @@ func (s *Server) handleDirectorCompositionPlan(w http.ResponseWriter, r *http.Re
 			}
 		}
 	}
-	planned.CaptionBindings = body.Manifest.CaptionBindings
 	for _, cue := range planned.Captions {
 		if !(cue.Start >= 0 && cue.End > cue.Start && cue.End <= planned.Duration) {
 			http.Error(w, "proposed timing cuts through existing captions", 422)
@@ -100,9 +99,5 @@ func (s *Server) handleDirectorCompositionPlan(w http.ResponseWriter, r *http.Re
 			return
 		}
 	}
-	if err = s.validateCompositionCaptions(binding.ProjectID, planned); err != nil {
-		http.Error(w, err.Error(), 422)
-		return
-	}
-	writeJSON(w, 200, map[string]any{"manifest": planned, "execution": "proposal_only", "note": "Review clips, audio and timings, then save the source revision and use Run. Existing approved caption cues were preserved."})
+	writeJSON(w, 200, map[string]any{"manifest": planned, "execution": "proposal_only", "note": "Review clips, audio and timings, then save the source revision and use Run. Existing caption timings were kept."})
 }

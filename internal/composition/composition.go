@@ -22,7 +22,6 @@ var safeID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 type Manifest struct {
 	CaptionVariants []CaptionVariant `json:"caption_variants,omitempty"`
 	Texts           []TextLayer      `json:"texts,omitempty"`
-	CaptionBindings []CaptionBinding `json:"caption_bindings,omitempty"`
 	CaptionStyle    string           `json:"caption_style"`
 	Renderer        string           `json:"renderer"`
 	Version         int              `json:"version"`
@@ -36,9 +35,8 @@ type Manifest struct {
 	Revision        string           `json:"revision,omitempty"`
 }
 type CaptionVariant struct {
-	Language string           `json:"language"`
-	Captions []Cue            `json:"captions"`
-	Bindings []CaptionBinding `json:"bindings,omitempty"`
+	Language string `json:"language"`
+	Captions []Cue  `json:"captions"`
 }
 type TextLayer struct {
 	ID         string  `json:"id"`
@@ -120,16 +118,6 @@ func (b OverlayBox) CSS() string {
 	return fmt.Sprintf("left:%g%%;top:%g%%;right:auto;bottom:auto;width:%g%%;height:%g%%", b.X, b.Y, b.Width, b.Height)
 }
 
-type CaptionBinding struct {
-	ClipID         string          `json:"clip_id"`
-	OutputID       string          `json:"output_id"`
-	CaptionSHA256  string          `json:"caption_sha256"`
-	VideoSHA256    string          `json:"video_sha256"`
-	SourceBindings json.RawMessage `json:"source_bindings"`
-	Start          float64         `json:"start"`
-	Trim           float64         `json:"trim"`
-	Duration       float64         `json:"duration"`
-}
 type Cue struct {
 	SourceClipID string  `json:"source_clip_id,omitempty"`
 	CharacterID  string  `json:"character_id,omitempty"`
