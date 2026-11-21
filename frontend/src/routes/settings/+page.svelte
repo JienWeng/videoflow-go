@@ -8,14 +8,12 @@
   import { get, put, post } from '$lib/api';
   import AISetup from '$lib/settings/AISetup.svelte';
   import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '$lib/components/ui/card';
-  import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { Separator } from '$lib/components/ui/separator';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { toast } from 'svelte-sonner';
   import {
-    RotateCcw,
     Plug,
     KeyRound,
     Sparkles,
@@ -31,14 +29,6 @@
   } from '@lucide/svelte';
 
   // -------------------------------------------------------------- types
-  type Agent = {
-    agent: string;
-    label: string;
-    provider: string;
-    model: string;
-    default_provider: string;
-    default_model: string;
-  };
   type Provider = {
     name: string;
     label?: string;
@@ -86,7 +76,6 @@ media_model_preferences:Record<string,Record<string,string>>;
   };
 
   // -------------------------------------------------------------- state
-  let agents = $state<Agent[]>([]);
   let providers = $state<Provider[]>([]);
   let app = $state<AppSettings | null>(null);
   let loaded = $state(false);
@@ -94,7 +83,6 @@ media_model_preferences:Record<string,Record<string,string>>;
   let busy = $state('');
   let saveStatus = $state('');
   let confirmClear = $state('');
-  let confirmReset = $state(false);
   let durationError = $state('');
   const providerDirty = (name:string) => !!provKeyInput[name]?.trim() || (provUrlInput[name] ?? '').trim() !== (provCfg[name]?.base_url ?? '');
   protectDraft(() => Object.keys(provKeyInput).some(providerDirty), 'You have unsaved provider credentials. Discard them and leave?');
@@ -119,7 +107,7 @@ media_model_preferences:Record<string,Record<string,string>>;
         protocol: newProtocol, base_url: newUrl || null, model: newModel.trim(), mode: newMode, vision: newVision });
       newLabel = '';
       await refresh();
-      toast.success('Connection added. Add its key in AI connections, then assign agents.');
+      toast.success('Connection added. Add its key in AI connections.');
     } catch (e: any) { toast.error(e.message); }
     finally { busy = ''; }
   }
@@ -160,7 +148,7 @@ media_model_preferences:Record<string,Record<string,string>>;
 
   // Active settings tab (bound so clicking a trigger switches sections).
   let tab = $state('ai');
-  function settingsHash(){const h=window.location.hash.slice(1);tab=h==='presets'?'presets':['providers','connections'].includes(h)?'connections':['agents','advanced'].includes(h)?'advanced':['general','appearance'].includes(h)?'general':'ai';}
+  function settingsHash(){const h=window.location.hash.slice(1);tab=h==='presets'?'presets':['providers','connections'].includes(h)?'connections':h==='advanced'?'advanced':['general','appearance'].includes(h)?'general':'ai';}
   // Links to the removed Media models tab (#models, #engines) land on AI setup.
   function chooseSection(value:string){tab=value;replaceState('#'+value,page.state);}
 
@@ -168,23 +156,6 @@ media_model_preferences:Record<string,Record<string,string>>;
   const providerLabels: Record<string, string> = { openai:'OpenAI Images',elevenlabs:'ElevenLabs',fish:'Fish Audio',fal:'fal.ai',byteplus:'BytePlus ModelArk',openrouter:'OpenRouter' };
   const FALLBACK_PRESETS: Record<string, ProviderPreset> = {
     openrouter: { label: 'OpenRouter', protocol: 'chat', url: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini', preset: 'openrouter', mode: 'auto', vision: true }
-  };
-
-  // One-line descriptions for each agent, plus a text/vision split.
-  const VISION_AGENTS = new Set(['qa_agent', 'asset_recogniser']);
-  const agentDesc: Record<string, string> = {
-    script_agent: 'Turns your idea into a structured script.',
-    scene_agent: 'Breaks the script into scenes.',
-    shot_agent: 'Plans the shots within each scene.',
-    prompt_agent: 'Writes the image / video generation prompts.',
-    qa_agent: 'Looks at rendered frames and flags problems.',
-    idea_agent: 'Develops and expands the core idea.',
-    asset_planner: 'Decides which assets a scene needs.',
-    refine_agent: 'Edits and refines copy on request.',
-    intent_agent: 'Classifies what you are asking for.',
-    asset_recogniser: 'Identifies characters / objects in images.',
-    character_memory: 'Maintains the character bible.',
-    style_agent: 'Designs the visual style.'
   };
 
   // -------------------------------------------------------------- options
@@ -210,30 +181,19 @@ media_model_preferences:Record<string,Record<string,string>>;
 
   // ------------------------------------------------------------- derived
   const byName = $derived(Object.fromEntries(providers.map((p) => [p.name, p])));
-  const configuredProviders = $derived(
-    providers.filter((p) => p.configured && p.protocol === 'chat')
-  );
-  const primaryTextProvider = $derived(
-    agents.find((agent) => agent.agent === 'script_agent')?.provider ?? 'openrouter'
-  );
   let providerOpen=$state<Record<string,boolean>>({});
   const orderedProviders = $derived(
     providers
   );
-  const textAgents = $derived(agents.filter((a) => !VISION_AGENTS.has(a.agent)));
-  const visionAgents = $derived(agents.filter((a) => VISION_AGENTS.has(a.agent)));
-
   // -------------------------------------------------------------- load
   async function refresh() {
     // Everything the page needs is asked for at once, so it appears after one round trip.
-    const [pr, ag, pv, ap] = await Promise.all([
+    const [pr, pv, ap] = await Promise.all([
       get('/settings/connection-presets').catch(() => FALLBACK_PRESETS),
-      get('/settings/agents'),
       get('/settings/providers'),
       get('/settings/app')
     ]);
     presets = pr;
-    agents = ag;
     providers = pv;
     testModelInput = Object.fromEntries(
       pv.map((p: Provider) => [p.name, p.models?.[0] ?? p.suggested_models?.[0] ?? p.default_model ?? ''])
@@ -272,113 +232,6 @@ media_model_preferences:Record<string,Record<string,string>>;
       .catch((e) => (error = e.message))
       .finally(() => (loaded = true));
   });
-
-  // ------------------------------------------------------------- agents
-  function isDefault(a: Agent): boolean {
-    return a.provider === a.default_provider && a.model === a.default_model;
-  }
-  function suggestedFor(provider: string): string[] {
-    return byName[provider]?.suggested_models ?? [];
-  }
-
-  async function saveAgent(a: Agent, provider: string, model: string) {
-    busy = `agent-${a.agent}`;
-    try {
-      const updated = await put(`/settings/agents/${a.agent}`, { provider, model });
-      agents = agents.map((x) => (x.agent === a.agent ? updated : x));
-      toast.success(`${a.label} → ${providerLabels[provider] ?? provider} / ${model}`);
-    } catch (e: any) {
-      toast.error(e.message);
-      await refresh().catch(() => {});
-    } finally {
-      busy = '';
-    }
-  }
-
-  async function onAgentProvider(a: Agent, provider: string) {
-    if (provider === a.provider) return;
-    const model = byName[provider]?.default_model ?? suggestedFor(provider)[0];
-    if (!model) {
-      toast.error('No models available for this provider');
-      return;
-    }
-    await saveAgent(a, provider, model);
-  }
-
-  // Free-typed model: select offers suggestions + a "Custom…" sentinel that
-  // swaps the control for a text input.
-  let agentCustomOpen = $state<Record<string, boolean>>({});
-  let agentCustomVal = $state<Record<string, string>>({});
-
-  function onAgentModelSelect(a: Agent, value: string) {
-    if (value === CUSTOM) {
-      agentCustomOpen[a.agent] = true;
-      agentCustomVal[a.agent] = a.model;
-      return;
-    }
-    agentCustomOpen[a.agent] = false;
-    if (value !== a.model) saveAgent(a, a.provider, value);
-  }
-  function commitAgentCustom(a: Agent) {
-    const m = (agentCustomVal[a.agent] ?? '').trim();
-    agentCustomOpen[a.agent] = false;
-    if (m && m !== a.model) saveAgent(a, a.provider, m);
-  }
-
-  async function resetAgent(a: Agent) {
-    busy = `agent-${a.agent}`;
-    try {
-      const updated = await put(`/settings/agents/${a.agent}`, { provider: null, model: null });
-      agents = agents.map((x) => (x.agent === a.agent ? updated : x));
-      agentCustomOpen[a.agent] = false;
-      toast.success(`${a.label} reset to default`);
-    } catch (e: any) {
-      toast.error(e.message);
-    } finally {
-      busy = '';
-    }
-  }
-
-  async function setAllText(provider: string) {
-    if (!provider) return;
-    const model = byName[provider]?.default_model ?? suggestedFor(provider)[0];
-    if (!model) {
-      toast.error('No models available for this provider');
-      return;
-    }
-    busy = 'bulk-text';
-    try {
-      for (const a of textAgents) {
-        const updated = await put(`/settings/agents/${a.agent}`, { provider, model });
-        agents = agents.map((x) => (x.agent === a.agent ? updated : x));
-      }
-      toast.success(`All text agents → ${providerLabels[provider] ?? provider} / ${model}`);
-    } catch (e: any) {
-      toast.error(e.message);
-      await refresh().catch(() => {});
-    } finally {
-      busy = '';
-    }
-  }
-
-  async function resetAllAgents() {
-    busy = 'bulk-reset';
-    try {
-      for (const a of agents) {
-        const updated = await put(`/settings/agents/${a.agent}`, { provider: null, model: null });
-        agents = agents.map((x) => (x.agent === a.agent ? updated : x));
-      }
-      agentCustomOpen = {};
-      toast.success('All agents reset to defaults');
-    } catch (e: any) {
-      toast.error(e.message);
-      await refresh().catch(() => {});
-    } finally {
-      busy = '';
-    }
-  }
-
-  let bulkTextProvider = $state('');
 
   let providerModelInput = $state<Record<string, boolean>>({});
   let providerModelCustom = $state<Record<string, string>>({});
@@ -427,7 +280,7 @@ media_model_preferences:Record<string,Record<string,string>>;
       provCfg[name] = updated;
       provKeyInput[name] = '';
       provUrlInput[name] = updated.base_url ?? '';
-      // Reflect the new configured-state in the catalog (drives agent selects).
+      // Reflect the new configured-state in the catalog.
       providers = providers.map((p) =>
         p.name === name ? { ...p, configured: updated.configured, from_db: updated.from_db } : p
       );
@@ -675,7 +528,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
             {#each orderedProviders as p (p.name)}
               {@const cfg = provCfg[p.name]}
               {@const test = provTest[p.name]}
-              <details open={providerOpen[p.name] ?? (p.name === primaryTextProvider || p.name === app?.default_image_provider || p.name === app?.default_video_provider)} ontoggle={e=>providerOpen[p.name]=e.currentTarget.open}>
+              <details open={providerOpen[p.name] ?? (p.name === app?.default_image_provider || p.name === app?.default_video_provider)} ontoggle={e=>providerOpen[p.name]=e.currentTarget.open}>
                 <summary class="cursor-pointer rounded-md py-2 text-sm font-medium">
                   {providerLabels[p.name] ?? p.name}
                   {#if cfg?.key_check?.state === 'rejected'}<span class="ml-2 text-xs font-normal text-destructive">Key rejected</span>{:else if cfg?.key_check?.state === 'no_credit'}<span class="ml-2 text-xs font-normal text-destructive">No balance</span>{:else}<span class="ml-2 text-xs font-normal text-muted-foreground">{cfg?.configured ? 'Configured' : 'Not configured'}</span>{/if}
@@ -1003,161 +856,6 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
           </CardContent>
         </Card>
       </section>{/if}
-
-      <!-- ============================================ AGENTS -->
-      {#if tab === 'advanced'}
-      <section id="agents" class="settings-section">
-        <Card>
-          <CardHeader>
-            <CardTitle role="heading" aria-level={2} class="text-base">Agent routing</CardTitle>
-            <CardDescription>
-              Choose which provider and model powers each step. Only configured providers are
-              selectable; model ids can be free-typed.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-           <div class="space-y-5">
-            <!-- Bulk controls -->
- {#if !app?.all_text_local}
-            <div class="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 p-3">
-              <span class="text-xs font-medium">Set all text agents to</span>
-              <select
-                aria-label="Bulk provider for text agents"
-                class="rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                bind:value={bulkTextProvider}
-                disabled={!!busy}
-              >
-                <option value="">Choose provider…</option>
-                {#each configuredProviders as p (p.name)}
-                  <option value={p.name}>{providerLabels[p.name] ?? p.name}</option>
-                {/each}
-              </select>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={!!busy || !bulkTextProvider}
-                onclick={() => setAllText(bulkTextProvider)}
-              >
-                {busy === 'bulk-text' ? 'Applying…' : 'Apply'}
-              </Button>
-              <div class="flex-1"></div>
-              <Button size="sm" variant="ghost" disabled={!!busy} onclick={() => (confirmReset = true)}>
-                <RotateCcw class="size-3.5 mr-1" />
-                {busy === 'bulk-reset' ? 'Resetting…' : 'Reset all'}
-              </Button>
-            </div>
-
-            {#if confirmReset}<div role="group" aria-label="Reset agent routing" class="space-y-2"><p class="text-sm">Reset every agent to its default provider and model? Your custom routing will be replaced.</p><Button variant="destructive" disabled={!!busy} onclick={async () => { await resetAllAgents(); confirmReset = false; }}>Reset routing</Button><Button variant="outline" onclick={() => (confirmReset = false)}>Cancel</Button></div>{/if}
-            {/if}
- {#snippet agentRow(a: Agent)}
-              <div
-                class="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-3"
-                data-agent={a.agent}
-              >
-                <div class="min-w-[160px] flex-1">
-                  <div class="flex items-center gap-2">
-                    <span class="settings-label" title={agentDesc[a.agent] ?? ''}>{a.label}</span>
-                    {#if isDefault(a)}
-                      <Badge variant="outline" class="text-xs">default</Badge>
-                    {/if}
-                  </div>
-                  <div class="settings-help">
-                    {agentDesc[a.agent] ?? ''}
-                    {#if !isDefault(a)}
-                      <span class="block">
-                        default: {providerLabels[a.default_provider] ?? a.default_provider} / {a.default_model}
-                      </span>
-                    {/if}
-                  </div>
-                </div>
-
-                <div class="flex w-full min-w-0 flex-wrap items-center gap-2 lg:w-auto">
-                  <select
-                    aria-label="{a.label} provider"
-                    class="w-full min-w-0 rounded-md border border-input bg-background px-2 py-1.5 text-sm sm:w-auto sm:max-w-full"
-                    disabled={busy === `agent-${a.agent}` || !!busy}
-                    value={a.provider}
-                    onchange={(e) => onAgentProvider(a, (e.currentTarget as HTMLSelectElement).value)}
-                  >
-                    {#each configuredProviders as p (p.name)}
-                      <option value={p.name}>{providerLabels[p.name] ?? p.name}</option>
-                    {/each}
-                    {#if !byName[a.provider]?.configured}
-                      <option value={a.provider}>{providerLabels[a.provider] ?? a.provider} (unconfigured)</option>
-                    {/if}
-                  </select>
-
-                  {#if agentCustomOpen[a.agent]}
-                    <Input
-                      class="h-8 w-full min-w-0 text-sm sm:w-48"
-                      placeholder="Custom model id"
-                      bind:value={agentCustomVal[a.agent]}
-                      onkeydown={(e) => e.key === 'Enter' && commitAgentCustom(a)}
-                    />
-                    <Button size="sm" disabled={busy === `agent-${a.agent}`} onclick={() => commitAgentCustom(a)}>
-                      Save
-                    </Button>
-                    <Button size="sm" variant="ghost" onclick={() => (agentCustomOpen[a.agent] = false)}>
-                      Cancel
-                    </Button>
-                  {:else}
-                    <select
-                      aria-label="{a.label} model"
-                      class="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm sm:w-48 sm:flex-none"
-                      disabled={busy === `agent-${a.agent}` || !!busy}
-                      value={a.model}
-                      onchange={(e) => onAgentModelSelect(a, (e.currentTarget as HTMLSelectElement).value)}
-                    >
-                      {#if !suggestedFor(a.provider).includes(a.model)}
-                        <option value={a.model}>{a.model}</option>
-                      {/if}
-                      {#each suggestedFor(a.provider) as m (m)}
-                        <option value={m}>{m}</option>
-                      {/each}
-                      <option value={CUSTOM}>Custom…</option>
-                    </select>
-
-                    <button
-                      type="button"
-                      title="Reset to default"
-                      aria-label="Reset {a.label} to default"
-                      class="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
-                      disabled={busy === `agent-${a.agent}` || isDefault(a)}
-                      onclick={() => resetAgent(a)}
-                    >
-                      <RotateCcw class="size-4" />
-                    </button>
-                  {/if}
-                </div>
-              </div>
-            {/snippet}
-
-            <div>
-              <div class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                Text agents
-              </div>
-              <div class="space-y-2">
-                {#if app?.all_text_local}<p class="text-sm">All planning and writing use the selected local Claude Code/Codex session. <a class="underline" href="/director">Manage engine, sessions and selected references</a></p>{:else}{#each textAgents as a (a.agent)}
-                  {@render agentRow(a)}
-                {/each}{/if}
-              </div>
-            </div>
-
-            <div>
-              <div class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                Vision agents
-              </div>
-              <div class="space-y-2">
-                {#each visionAgents as a (a.agent)}
-                  {@render agentRow(a)}
-                {/each}
-              </div>
-            </div>
-           </div>
-          </CardContent>
-        </Card>
-      </section>
-      {/if}
 
       <!-- ============================================ CONNECTION DETAILS -->
       {#if tab === 'advanced'}

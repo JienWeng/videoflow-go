@@ -4,17 +4,14 @@
  let creativeBrief=$state(normalizeBrief()),briefConfirmed=$state(false);
  function syncBrief(brief:ReturnType<typeof normalizeBrief>){creativeBrief=brief;briefConfirmed=false;styleTouched=true;if(brief.style_preset_id)style=brief.style_preset_id;if(brief.aspect_ratio)aspectRatio=brief.aspect_ratio;if(brief.scene_count)sceneCount=brief.scene_count;if(brief.language)language=brief.language;duration=brief.target_duration?String(brief.target_duration):'';instruction=brief.instruction;}
 
- import ProductionControls from "$lib/production/ProductionControls.svelte";
- let productionPlans=$state<Record<string,string>>({}),productionBlocked=$state<Record<string,boolean>>({}),productionVersions=$state<Record<string,boolean>>({}),productionQuotes=$state<Record<string,{calls:number;seconds:number;storyboards:number}>>({});
   let { embedded = false }:{embedded?:boolean}=$props();
   import { onDestroy, onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { protectDraft } from '$lib/protect-draft';
-  import { Clapperboard, Sparkles } from '@lucide/svelte';
+  import { ArrowRight, Clapperboard, Sparkles } from '@lucide/svelte';
   import { Button } from '$lib/components/ui/button';
   import GenerationProgress from '$lib/create/GenerationProgress.svelte';
   import { get, post, mediaUrl } from '$lib/api';
-  import {runBackgroundOp} from '$lib/ops';
 
   let idea = $state('');
   let submitted=$state(false);
@@ -35,7 +32,6 @@
   let selectedCharacters:string[]=$state([]);
   let createCharacters=$state(true);
   let instruction = $state('');
-  const renderScope=new AbortController();
   let busy = $state(false);
   let opId = $state('');
   let opStatus = $state('');
@@ -52,10 +48,9 @@
   let preflightError = $state('');
   let activeProject: any = $state(null);
   let lastResult: any = $state(null);
- let reviewAssets:any[]=$state([]);let reviewLoading=$state(false);let renderingScene=$state('');
+ let reviewAssets:any[]=$state([]);let reviewLoading=$state(false);
  async function refreshReviewAssets(){reviewLoading=true;try{const [assets,cast]=await Promise.all([get('/assets'),get('/characters')]);reviewAssets=assets;characters=cast;return true}catch(e){opError=String(e);return false}finally{reviewLoading=false}}
 
- async function renderReviewedScene(id:string){if(renderingScene)return;renderingScene=id;const anotherVersion=!!productionVersions[id];productionVersions[id]=false;try{await runBackgroundOp(`/scenes/${id}/render`,{use_scene_cast:true,prepare_storyboard:true,confirmed_plan_id:productionPlans[id],new_version:anotherVersion,confirmed_calls:productionQuotes[id]?.calls,confirmed_seconds:productionQuotes[id]?.seconds,confirmed_storyboard_calls:productionQuotes[id]?.storyboards},{signal:renderScope.signal,label:'Update storyboard & render',onDone:async()=>{renderingScene='';await goto('/render')},onFail:op=>{renderingScene='';opError=op.error??'Render preparation failed.'}})}catch(e){renderingScene='';opError=String(e)}}
 
   let poller: ReturnType<typeof setInterval> | null = null;
   let renderPoller: ReturnType<typeof setInterval> | null = null;
@@ -145,7 +140,7 @@
     startingSession=true;sessionError='';
     try{
       const ensured=await post('/director/sessions/ensure',{});
-      if(!ensured?.session){sessionError='Connect Claude Code or Codex first (Settings → AI connections).';return}
+      if(!ensured?.session){sessionError='Connect Claude Code or Codex first (Settings → AI setup).';return}
       await loadPreflight(aspectRatio,style);
     }catch(e:any){sessionError=e.message??String(e)}finally{startingSession=false}
   }
@@ -247,7 +242,7 @@
     if (['failed','reconciliation_required'].includes(opStatus)) busy = false;
   });
 
-  onDestroy(() => { renderScope.abort();stopPolling(); stopRenderPolling(); });
+  onDestroy(() => { stopPolling(); stopRenderPolling(); });
 </script>
 
 <svelte:head>{#if !embedded}<title>Guided creator · VideoFlow</title>{/if}</svelte:head>
@@ -262,7 +257,9 @@
             {#if missingCharacterReferences()}<p role="alert" class="mt-3 text-sm">Some story characters need reference images. <a class="underline underline-offset-4" href="/library?tab=characters">Open Characters</a> to add or generate them, then refresh here.</p>{/if}<ul class="mt-4 space-y-3">{#each referenceIds() as id}{@const asset=reviewAssets.find(a=>a.id===id)}{@const character=characters.find(c=>c.id===asset?.character_id)}{@const decision=lastResult.story_assets?.find((item:any)=>item.asset_id===id)}<li class="flex flex-wrap items-center justify-between gap-3"><a class="inline-flex min-h-11 items-center gap-3 underline underline-offset-4" href={`/library?tab=media&asset_id=${encodeURIComponent(id)}`}>{#if asset?.file_path}<img class="size-12 rounded-md object-cover" src={mediaUrl(asset.file_path)??''} alt=""/>{/if}View {character?.name??asset?.name??'reference image'}</a>{#if decision}<span class="text-xs text-muted-foreground" title={decision.reason}>{decision.reuse?'Reused from Library':'Generated'}{#if decision.reason}<span class="block">{decision.reason}</span>{/if}</span><Button type="button" variant="ghost" size="sm" disabled={continuingStory} onclick={()=>excludeAsset(id)}>Remove from story</Button>{/if}<span class="text-xs text-muted-foreground">{asset&&asset.metadata_json?.consistency_review!=='rejected'?'Ready':'Excluded'}</span></li>{/each}</ul>
             <div class="mt-4 flex flex-wrap gap-2"><Button type="button" variant="outline" disabled={reviewLoading||continuingStory} onclick={refreshReviewAssets}>{reviewLoading?'Checking…':'Refresh images'}</Button><Button type="button" disabled={!charactersApproved()||reviewLoading||continuingStory} onclick={continueStory}>{continuingStory?'Continuing…':'Continue storyboarding'}</Button></div><p class="mt-2 text-xs leading-relaxed text-muted-foreground">Continuing generates scene images and may incur provider charges. Video rendering stays separate.</p>
           {:else if ['awaiting_reference_review','ready_to_render'].includes(lastResult.status)}
- <p class="font-medium">Your story and images are ready.</p><p class="mt-1 text-muted-foreground">You can adjust or regenerate images at any time. A missing or outdated storyboard is updated when you choose Render scene. Image and video calls may incur charges.</p><div class="mt-3 space-y-3">{#if lastResult.script_id}<Button variant="outline" size="sm" href={`/compositions?script_id=${encodeURIComponent(lastResult.script_id)}`}>Assemble story & add music</Button>{/if}{#each lastResult.scene_ids??[] as sceneID,i}<div class="flex flex-wrap items-center gap-2"><span>Scene {i+1}</span><a class="underline" href={`/library?tab=media&scene_id=${encodeURIComponent(sceneID)}`}>View images</a><Button type="button" size="sm" disabled={!!renderingScene||productionBlocked[sceneID]!==false} onclick={()=>renderReviewedScene(sceneID)}>Render scene {i+1}</Button><ProductionControls scene={sceneID} bind:newVersion={productionVersions[sceneID]} onplan={(id,cost)=>{productionPlans[sceneID]=id;productionQuotes[sceneID]=cost}} onstate={state=>productionBlocked[sceneID]=state.blocking||state.loading}/></div>{/each}<Button type="button" variant="outline" size="sm" disabled={reviewLoading} onclick={refreshReviewAssets}>Refresh images</Button></div>
+ {@const firstScene=lastResult.scene_ids?.[0]}
+ <p class="font-medium">Your story and images are ready.</p><p class="mt-1 text-muted-foreground">Review each scene in Story, adjust its images, then make its clip there. Video calls may incur charges.</p>
+ <div class="mt-3 flex flex-wrap items-center gap-2"><Button href={firstScene?`/?view=story&scene_id=${encodeURIComponent(firstScene)}`:'/?view=story'}>Review scenes and make clips<ArrowRight class="size-4" /></Button>{#if firstScene}<Button variant="outline" href={`/library?tab=media&scene_id=${encodeURIComponent(firstScene)}`}>View images</Button>{/if}{#if lastResult.script_id}<Button variant="ghost" href={`/?view=edit&script_id=${encodeURIComponent(lastResult.script_id)}`}>Assemble story & add music</Button>{/if}</div>
  {:else}
  <p class="font-medium">{['failed','reconciliation_required'].includes(opStatus) ? 'Existing work is preserved.' : opStatus === 'completed' ? 'Video complete.' : 'Render jobs submitted.'}</p>
           <p class="mt-1 text-muted-foreground">Open existing scenes to inspect completed work. Creating again starts a new pipeline and may repeat paid stages.</p>
@@ -279,7 +276,7 @@
 <div class="mx-auto flex min-h-full w-full max-w-3xl flex-col {embedded?'py-2':'px-6 py-10'}">
   {#if busy || opId}
     <div class="w-full">
-      <GenerationProgress automaticAssets={lastResult?.automatic_assets??stages.includes("assets")} characterReferences={automaticReferences} referenceCount={lastResult?.status==='awaiting_character_review'?referenceIds().length:lastResult?.character_reference_ids?.length??null} reviewHref={lastResult?.status==='awaiting_character_review'?(referenceIds()[0]?`/library?tab=media&asset_id=${encodeURIComponent(referenceIds()[0])}`:'/library?tab=characters'):lastResult?.scene_ids?.[0]?`/library?tab=media&scene_id=${encodeURIComponent(lastResult.scene_ids[0])}`:undefined} status={opStatus} {stages} error={opError} onopen={lastResult?undefined:() => goto('/?view=story')} />
+      <GenerationProgress automaticAssets={lastResult?.automatic_assets??stages.includes("assets")} characterReferences={automaticReferences} referenceCount={lastResult?.status==='awaiting_character_review'?referenceIds().length:lastResult?.character_reference_ids?.length??null} reviewHref={lastResult?.status==='awaiting_character_review'?(referenceIds()[0]?`/library?tab=media&asset_id=${encodeURIComponent(referenceIds()[0])}`:'/library?tab=characters'):undefined} status={opStatus} {stages} error={opError} onopen={lastResult?undefined:() => goto('/?view=story')} />
       {#if !busy}{@render resultSummary()}<Button variant="ghost" class="mt-4" onclick={()=>{opId='';opStatus='';lastResult=null;stages=[];submitted=false;automaticReferences=false;}}>{['failed','reconciliation_required'].includes(opStatus)?'Edit brief & try again':'Create another story'}</Button>{/if}
     </div>
   {:else}
@@ -341,7 +338,7 @@
           {#if preflight.missing.length}
             <ul class="mt-2 list-disc space-y-1 pl-5 text-destructive">
               {#each preflight.missing as item}
-                <li>{item.reason} {#if item.setting?.startsWith('/director')}<Button size="sm" variant="outline" class="ml-1" disabled={startingSession} onclick={startSession}>{startingSession?'Starting…':'Start a session now'}</Button> <a class="underline" href={item.setting}>or choose one</a>{:else}<a class="underline" href={item.setting}>Open settings</a>{/if}</li>
+                <li>{item.reason} {#if item.setting?.startsWith('/director')}<Button size="sm" variant="outline" class="ml-1" disabled={startingSession} onclick={startSession}>{startingSession?'Starting…':'Start a session now'}</Button> <a class="underline" href="/settings#ai">or open AI setup</a>{:else}<a class="underline" href={item.setting}>Open settings</a>{/if}</li>
               {/each}
             </ul>
           {:else}

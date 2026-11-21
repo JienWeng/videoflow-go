@@ -371,7 +371,7 @@
         return { label: `Plan shots for ${label}`, focusId:sceneId, send: `Plan shots for ${label}` };
       if (!scenesWithStoryboard.has(sceneId))
         return { label: `Prepare keyframes for ${label}`, focusId:sceneId, send: `Prepare keyframes for ${label}` };
-      if(hasPendingSceneReferences(graph,sceneId))return {label:`Replace excluded images for ${label}`,href:`/scenes?scene_id=${encodeURIComponent(sceneId)}`,focusId:sceneId};
+      if(hasPendingSceneReferences(graph,sceneId))return {label:`Replace excluded images for ${label}`,href:`/?view=story&scene_id=${encodeURIComponent(sceneId)}`,focusId:sceneId};
       if (!renderedScenes.has(sceneId))
         return { label: `Render “${label}”`, focusId:sceneId, send: `Render scene “${label}”` };
       return null;
@@ -449,7 +449,7 @@
     }
 
     const out: Chip[] = [];
-    if (!characters.length) out.push({ label: 'Add characters first', href: '/characters' });
+    if (!characters.length) out.push({ label: 'Add characters first', href: '/library?tab=characters' });
     if (!scenes.length) {
       out.push({ label: 'Write a story', send: 'Help me write a short story with one scene' });
     } else {
@@ -553,7 +553,7 @@
     fail: (op: { error?: string | null }) => unknown;
   }
 
-  /** Map generated asset ids to image thumbnails (cap 4, click → /assets). */
+  /** Map generated asset ids to image thumbnails (cap 4, click → Library). */
   async function assetThumbs(ids: string[]): Promise<{ src: string; alt: string }[]> {
     if (!ids.length) return [];
     try {
@@ -583,7 +583,7 @@
       m.storyOperationId=result.id??m.storyOperationId;
       m.storyStage=rj.status;m.castIds=rj.cast_character_ids??[];m.referenceIds=rj.story_asset_ids??[];
       m.text=rj.status==='awaiting_character_review'?'Your saved story can continue to storyboarding. Images do not need approval.':['awaiting_reference_review','ready_to_render'].includes(rj.status)?'Your story and images are ready. You can adjust them or render a scene.':'Story planning completed. Review the saved work before continuing.';
-      m.chips=[{label:'Open story progress',href:`/create?op_id=${encodeURIComponent(m.storyOperationId??'')}`}];
+      m.chips=[{label:'Open story progress',href:`/?view=story&new_story=1&op_id=${encodeURIComponent(m.storyOperationId??'')}`}];
       const scene=rj.scene_ids?.[0];if(scene)m.chips.push({label:'Show story on canvas',focusId:scene,fill:'What is the next step for this story?'});
       await refreshStoryApprovals();
       if(mode==='full'){
@@ -693,7 +693,7 @@
         };
       }
       case 'render_scene':
-        return {role:'assistant',text:'Video plan submitted. Native sound follows the saved audio mode; saved character voices use the separate speech workflow. Once clips finish, assemble them, add music and time captions from the actual audio.',chips:[{label:'Track in Videos',href:'/render'},{label:'Assemble & add music',href:ctx.sceneId?`/compositions?scene_id=${encodeURIComponent(ctx.sceneId)}`:'/compositions'}]};
+        return {role:'assistant',text:'Video plan submitted. Native sound follows the saved audio mode; saved character voices use the separate speech workflow. Once clips finish, assemble them, add music and time captions from the actual audio.',chips:[{label:'Track in Videos',href:'/render'},{label:'Assemble & add music',href:ctx.sceneId?editSceneHref(ctx.sceneId):editHref}]};
       case 'render_shot':
       case 'retry_render':
         return {
@@ -884,9 +884,9 @@
     <div class="min-w-0">
       <div class="text-sm font-semibold leading-tight">Chat</div>
       <div class="truncate text-[11px] leading-tight text-muted-foreground">
-        <a href="/director" class="underline" title="Choose native engine, saved session and reference context">{localSessionLabel}</a>
+        <a href="/settings#ai" class="underline" title="AI setup">{localSessionLabel}</a>
       </div>
-      {#if switchedNote}<p class="mt-1 text-[11px] text-muted-foreground">{switchedNote}</p>{/if}{#if signInNeeded}<a href="/director" class="mt-1 inline-flex items-center rounded-md bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:text-amber-300">{signInNeeded} isn't connected · Connect</a>{/if}
+      {#if switchedNote}<p class="mt-1 text-[11px] text-muted-foreground">{switchedNote}</p>{/if}{#if signInNeeded}<a href="/settings#ai" class="mt-1 inline-flex items-center rounded-md bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:text-amber-300">{signInNeeded} isn't connected · Connect</a>{/if}
     </div>
     {/if}
     <div class="ml-auto flex items-center gap-1">
@@ -944,7 +944,7 @@
       {#if pendingOps.length}<ActivityView events={[{kind:'queue',title:'Work in progress',status:'running',items:pendingOps.map(m=>({title:m.op!.label,status:'running'}))}]} />{/if}
       {#if historyLoading}<div role="status" class="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />Loading conversation…</div>
       {:else if historyError}<div role="alert" class="space-y-3 py-4"><h3 class="font-semibold">Could not load conversation</h3><p class="text-sm text-muted-foreground">Your saved history has not been replaced. {historyError}</p><Button variant="outline" onclick={initPersistence}>Retry conversation</Button></div>
-      {:else if sessionRequired}<div class="space-y-3 py-4"><MessageSquare class="size-7 text-muted-foreground" /><h3 class="font-semibold">Connect your story assistant</h3><p class="text-sm text-muted-foreground">Choose a session above, or set up Codex or Claude Code to start planning.</p><Button variant="outline" href="/director">Set up AI session</Button></div>
+      {:else if sessionRequired}<div class="space-y-3 py-4"><MessageSquare class="size-7 text-muted-foreground" /><h3 class="font-semibold">Connect your story assistant</h3><p class="text-sm text-muted-foreground">Choose a session above, or set up Codex or Claude Code to start planning.</p><Button variant="outline" href="/settings#ai">Open AI setup</Button></div>
       {:else if isEmpty}
         <div class="flex flex-col gap-4 py-3">
           <h3 class="text-lg font-semibold">{editing?'Shape your edit':selected?`Let’s work on ${selected.label}`:'Start with an idea'}</h3>
@@ -1082,7 +1082,7 @@
                 <DropdownMenu.RadioItem value="specialists" disabled={!specialistSupported}><span class="grid"><span>Specialist review</span><span class="text-xs text-muted-foreground">Get story and continuity feedback; changes nothing</span></span>{#if !specialistSupported}<span class="ml-auto text-xs text-muted-foreground">Unavailable</span>{/if}</DropdownMenu.RadioItem>
               </DropdownMenu.RadioGroup>
               <DropdownMenu.Separator />
-              <DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/director">AI session settings</a>{/snippet}</DropdownMenu.Item>
+              <DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/settings#ai">AI setup</a>{/snippet}</DropdownMenu.Item>
             </DropdownMenu.Content>
           </DropdownMenu.Root>
           <!-- Stop is offered only when the backend has a concrete local session to cancel. -->

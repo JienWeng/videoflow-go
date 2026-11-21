@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import ConversationHistory from './ConversationHistory.svelte';
+  import SessionReferences from './SessionReferences.svelte';
   import { get, post } from '$lib/api';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import { Button } from '$lib/components/ui/button';
   let {compact=false,minimal=false}:{compact?:boolean;minimal?:boolean}=$props();
-  let sessions:any[]=$state([]), engines:any[]=$state([]), selected=$state(''), engine=$state('codex'), busy=$state(false), error=$state(''), loaded=$state(false);
+  let sessions:any[]=$state([]), engines:any[]=$state([]), selected=$state(''), engine=$state('codex'), title=$state(''), menuOpen=$state(false), referencesOpen=$state(false), busy=$state(false), error=$state(''), loaded=$state(false);
   import { put } from '$lib/api';
   let catalog=$state<Record<string,{models:string[];efforts:string[]}>>({});
   const current=$derived(sessions.find(s=>s.id===selected));
@@ -14,13 +15,14 @@
   async function setModel(model:string,effort:string){if(!current)return;await run(async()=>{await put(`/director/sessions/${current.id}/model`,{model,effort});await refresh()})}
   async function refresh(){get('/director/models').then(c=>catalog=c).catch(()=>{});const [list,status]=await Promise.all([get('/director/sessions'),get('/director/status')]);sessions=list;engines=status.engines??[];if(!engines.some(e=>e.engine===engine&&e.signed_in))engine=engines.find(e=>e.signed_in)?.engine??engine;selected=list.find((s:any)=>s.selected)?.id??'';}
   async function run(fn:()=>Promise<void>){busy=true;error='';try{await fn();window.dispatchEvent(new Event('videoflow-session-changed'));}catch(e){error=String(e);}finally{busy=false;}}
+  const start=()=>run(async()=>{await post('/director/sessions',{engine,title:title.trim()||'Story planning'});title='';menuOpen=false;await refresh()});
   onMount(()=>{refresh().catch(e=>error=String(e)).finally(()=>loaded=true)});
   const available=$derived(engines.some(e=>e.engine===engine&&e.installed));
   const connected=$derived(engines.some(e=>e.engine===engine&&e.signed_in));
 </script>
 <div class="space-y-2" data-testid="session-selector">
   <div class="flex flex-wrap items-center gap-2">
-    <DropdownMenu.Root>
+    <DropdownMenu.Root bind:open={menuOpen}>
       <DropdownMenu.Trigger class="flex min-h-10 min-w-0 flex-1 items-center justify-between gap-2 rounded-lg {minimal?'border border-transparent bg-transparent px-2 font-semibold':'border border-input bg-background px-3'} text-left text-sm focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50" aria-label="AI session" title="Switch conversation" disabled={busy||!loaded}>
         <span class="truncate">{!loaded?'Loading sessions…':sessions.find(s=>s.id===selected)?minimal?(sessions.find(s=>s.id===selected).title||'Untitled'):`${sessions.find(s=>s.id===selected).title||'Untitled'} · ${sessions.find(s=>s.id===selected).engine}`:'Choose conversation'}</span><ChevronDown class="size-4 shrink-0" />
       </DropdownMenu.Trigger>
@@ -49,7 +51,20 @@
           </label>
           <p class="text-xs text-muted-foreground">More effort gives better plans but slower replies and uses more of your AI plan.</p>
         </div>{/if}
-        <DropdownMenu.Separator /><DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/director">Manage AI sessions</a>{/snippet}</DropdownMenu.Item>
+        <DropdownMenu.Separator />
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="grid gap-2 px-2 py-2" onkeydown={e=>e.stopPropagation()}>
+          <p class="text-xs font-medium">New conversation</p>
+          <div class="flex flex-wrap items-center gap-2">
+            <select aria-label="New conversation AI" bind:value={engine} class="min-h-9 rounded-md border border-input bg-background px-2 text-sm" disabled={busy}>{#each [['codex','Codex'],['claude','Claude Code']] as [id,name]}<option value={id}>{name}{engines.some(e=>e.engine===id&&e.signed_in)?' · connected':''}</option>{/each}</select>
+            <input aria-label="New conversation name" bind:value={title} placeholder="Story planning" maxlength="120" class="min-h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm" disabled={busy} />
+            <Button size="sm" disabled={busy||!available} onclick={start}>{busy?'Starting…':'Start'}</Button>
+          </div>
+          {#if !connected}<p class="text-xs text-muted-foreground">{available?'Not connected yet.':'Not available on this server.'} <a class="underline underline-offset-4" href="/settings#ai">Connect your AI</a></p>{/if}
+        </div>
+        <DropdownMenu.Separator />
+        {#if current}<DropdownMenu.Item onclick={()=>referencesOpen=true}>Characters &amp; references</DropdownMenu.Item>{/if}
+        <DropdownMenu.Item>{#snippet child({props})}<a {...props} href="/settings#ai">AI setup</a>{/snippet}</DropdownMenu.Item>
       </DropdownMenu.Content>
     </DropdownMenu.Root>
     <ConversationHistory disabled={busy||!loaded} oncontinue={async id=>{await post(`/director/sessions/${encodeURIComponent(id)}/select`,{});await refresh();window.dispatchEvent(new Event('videoflow-session-changed'));}} />
@@ -57,9 +72,10 @@
   {#if loaded&&!selected}
     <div class="flex flex-wrap items-center gap-2">
       <select aria-label="New session engine" bind:value={engine} class="min-h-10 rounded-lg border border-input bg-background px-2 text-sm" disabled={busy}><option value="codex">Codex</option><option value="claude">Claude Code</option></select>
-      <Button size="sm" disabled={busy||!available} onclick={()=>run(async()=>{await post('/director/sessions',{engine,title:'Story planning'});await refresh()})}>{busy?'Creating…':'Start session'}</Button>
+      <Button size="sm" disabled={busy||!available} onclick={start}>{busy?'Creating…':'Start session'}</Button>
     </div>
-    <p class="text-xs text-muted-foreground">{connected?'Connected and ready.':available?'Not connected yet.':'Not available on this server.'} {#if !connected}<a class="underline underline-offset-4" href="/director">Connect your AI</a>{/if}</p>
+    <p class="text-xs text-muted-foreground">{connected?'Connected and ready.':available?'Not connected yet.':'Not available on this server.'} {#if !connected}<a class="underline underline-offset-4" href="/settings#ai">Connect your AI</a>{/if}</p>
   {/if}
+  {#if current}<SessionReferences bind:open={referencesOpen} session={current} />{/if}
   {#if error}<p role="alert" class="text-xs text-destructive">{error} <button class="underline" onclick={()=>run(refresh)}>Retry</button></p>{/if}
 </div>

@@ -21,7 +21,7 @@ test('counts saved project records and actual outputs, not successful job totals
 test('empty story with saved characters still gets a first action', () => {
   const model = makeOverview(snapshot({ graph: { nodes: [{ type: 'character' }] } }), now);
   assert.equal(model.storyEmpty, true);
-  assert.equal(model.primary.href, '/director');
+  assert.equal(model.primary.href, '/settings#ai');
 });
 test('missing engine and missing credentials are not described as ready', () => {
   const model = makeOverview(snapshot({ sessions: [session], aiHealth: { engines: [{ engine: 'codex', installed: false }] }, appHealth: { missing_keys: ['FAL_KEY'] } }), now);
@@ -55,16 +55,16 @@ test('old failures and failures followed by successful renders do not create ale
   assert.equal(model.attention.some(item => item.id === 'failed-renders'), false);
 });
 test('configured empty project can create a story; a populated project resumes Studio', () => {
-  assert.equal(makeOverview(snapshot({ sessions: [session] }), now).primary.href, '/create');
+  assert.equal(makeOverview(snapshot({ sessions: [session] }), now).primary.href, '/?view=story&new_story=1');
   assert.equal(makeOverview(snapshot({ sessions: [session], graph: { nodes: [{ type: 'scene' }] } }), now).primary.href, '/?view=studio');
 });
 test('interrupted story generation links to its saved workflow', () => {
   const model = makeOverview(snapshot({ ops: [{ id: 'op', kind: 'video_generation', status: 'reconciliation_required' }] }), now);
-  assert.equal(model.primary.href, '/create?op_id=op');
+  assert.equal(model.primary.href, '/?view=story&new_story=1&op_id=op');
 });
 test('an older running story opens its own progress instead of the newest story', () => {
   const model = makeOverview(snapshot({ ops: [{ id: 'running-story', kind: 'video_generation', status: 'running' }] }), now);
-  assert.equal(model.primary.href, '/create?op_id=running-story');
+  assert.equal(model.primary.href, '/?view=story&new_story=1&op_id=running-story');
 });
 test('missing required graph data fails instead of showing false zero totals', () => {
   assert.throws(() => makeOverview(snapshot({ graph: null }), now), /project data/i);
@@ -74,5 +74,5 @@ test('saved composition revisions appear in recent work with exact reopen links'
  const snapshot={graph:{nodes:[]},assets:[],ops:[],jobs:[],sessions:[],aiHealth:{engines:[]},appHealth:{missing_keys:[]},compositions:[{revision:'saved-revision',created_at:'2026-11-12T09:00:00Z',duration:4}]};
  const overview=makeOverview(snapshot);
  assert.equal(overview.recent[0].kind,'Composition');
- assert.equal(overview.recent[0].href,'/compositions?revision=saved-revision');
+ assert.equal(overview.recent[0].href,'/?view=edit&revision=saved-revision');
 });

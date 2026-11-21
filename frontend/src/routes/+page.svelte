@@ -147,7 +147,7 @@
   async function guideNode(id:string){await focusNode(id);tab='chat';assistantOpen=true;mobileView='workbench';}
   function select(next:Node|null){const changed=next?.id!==selected?.id;selected=next;if(!next)tab='chat';if(next&&changed){setWorkspace('studio');tab='details';mobileView='workbench';assistantOpen=true;}}
   function clear(){canvas?.clearSelection();tab='chat';}
-  onMount(()=>{palette.setHandlers({onfocus:focusNode,onnewstory:startStory});if(page.url.searchParams.has('new_story'))void tick().then(async()=>{await startStory();const url=new URL(window.location.href);url.searchParams.delete('new_story');replaceState(url,page.state);});const stop=subscribeJobs(refresh,refresh);const ask=()=>{setWorkspace('studio');tab='chat';openAssistant();};window.addEventListener('videoflow-ask-assistant',ask);return()=>{stop();palette.clearHandlers();window.removeEventListener('videoflow-ask-assistant',ask)}});
+  onMount(()=>{palette.setHandlers({onfocus:focusNode,onnewstory:startStory});const stop=subscribeJobs(refresh,refresh);const ask=()=>{setWorkspace('studio');tab='chat';openAssistant();};window.addEventListener('videoflow-ask-assistant',ask);return()=>{stop();palette.clearHandlers();window.removeEventListener('videoflow-ask-assistant',ask)}});
 </script>
 <svelte:head><title>{workspace==='overview'?'Project overview · VideoFlow':'VideoFlow Studio'}</title></svelte:head>
 <div class="flex h-full min-h-0 flex-col">

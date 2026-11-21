@@ -5,6 +5,7 @@
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
   import { Skeleton } from '$lib/components/ui/skeleton';
+  import AgentConnect from '$lib/director/AgentConnect.svelte';
   import { AudioLines, Check, Clapperboard, Eye, Image, MessageSquare, Mic, TriangleAlert } from '@lucide/svelte';
 
   type Choice = { service: string; model: string; ready: boolean; note: string };
@@ -20,6 +21,9 @@
   let { onopen }: { onopen?: (section: string) => void } = $props();
   let setup = $state<Setup | null>(null), catalog = $state<Record<string, { models: string[]; efforts: string[] }>>({}), services = $state<Services | null>(null);
   let error = $state(''), busy = $state('');
+  // Sign-in state of the local AI tools (Codex, Claude Code) that run the assistant.
+  let tools = $state<any>(null), connectOpen = $state(false), connectChecked = false;
+  const connectedTools = $derived((tools?.engines ?? []).filter((e: any) => e.signed_in).length);
   // The paid picture service saved in settings; 'openai' means an OpenAI key decides it.
   let pictureService = $state('');
   const engineName: Record<string, string> = { claude: 'Claude Code', codex: 'Codex' };
@@ -28,7 +32,8 @@
   async function load() {
     try {
       let app: { default_image_provider?: string } | null;
-      [setup, catalog, app] = await Promise.all([get('/ai/setup'), get('/director/models'), get('/settings/app').catch(() => null)]);
+      [setup, catalog, app, tools] = await Promise.all([get('/ai/setup'), get('/director/models'), get('/settings/app').catch(() => null), get('/director/status').catch(() => null)]);
+      if (!connectChecked) { connectChecked = true; connectOpen = !connectedTools; }
       pictureService = app?.default_image_provider ?? '';
       services = await get('/video-services' + (setup?.video.family ? '?model=' + setup.video.family : ''));
       error = '';
@@ -91,11 +96,28 @@
                 </select>
               </label>
             </div>
-            <p class="text-xs text-muted-foreground">Applies to the open conversation. To use {setup.assistant.engine === 'claude' ? 'Codex' : 'Claude Code'} instead, start a new conversation from the picker above the chat.</p>
+            <p class="text-xs text-muted-foreground">Applies to the open conversation. To use {setup.assistant.engine === 'claude' ? 'Codex' : 'Claude Code'} instead, start a new conversation from the picker above the chat. Its characters and reference pictures are chosen there too.</p>
           {:else}
             <p class="text-sm text-muted-foreground">Open the chat and start a conversation to choose its AI.</p>
           {/if}
         </div>
+        <details id="connect" bind:open={connectOpen} class="rounded-md border border-border px-3 lg:col-span-2">
+          <summary class="min-h-11 cursor-pointer py-3 text-sm font-medium">Connect Codex or Claude Code <span class="font-normal text-muted-foreground">· {(tools?.engines ?? []).map((e: any) => `${engineName[e.engine] ?? e.engine}: ${e.signed_in ? 'connected' : e.installed ? 'not connected' : 'unavailable'}`).join(' · ') || 'status unavailable'}</span></summary>
+          <div class="grid gap-4 pb-4 text-sm">
+            <p class="max-w-prose text-muted-foreground">The assistant runs on Codex or Claude Code with your own account. Connect at least one; you only need to do this once.</p>
+            {#if tools?.all_text_local === false}<p role="alert" class="text-destructive">Local planning is disabled in the backend configuration.</p>{/if}
+            <AgentConnect engines={tools?.engines ?? []} highlight={setup.assistant.engine ?? ''} onchange={() => void load()} />
+            <details>
+              <summary class="cursor-pointer py-2 text-muted-foreground">Prefer the terminal?</summary>
+              <p class="mt-2 max-w-prose text-muted-foreground">On the computer hosting VideoFlow, run one of these from the project folder:</p>
+              <pre class="mt-3 overflow-x-auto rounded-md border border-border bg-muted/30 p-3 text-xs leading-relaxed"><code>docker compose exec backend codex login --device-auth
+docker compose exec backend claude auth login</code></pre>
+              <p class="mt-3 max-w-prose text-muted-foreground">Sign-in is stored in the backend, not your browser, so a login on your own computer doesn't count.</p>
+              {#if tools?.host_requirement}<p class="mt-3 max-w-prose text-muted-foreground">{tools.host_requirement}</p>{/if}
+              {#each tools?.engines ?? [] as item (item.engine)}{#if item.reason}<p class="mt-2 break-words text-muted-foreground">{engineName[item.engine] ?? item.engine}: {item.reason}</p>{/if}{/each}
+            </details>
+          </div>
+        </details>
       </li>
 
       <li class="grid gap-3 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] lg:items-center">

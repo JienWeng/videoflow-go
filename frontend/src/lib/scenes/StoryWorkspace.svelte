@@ -5,7 +5,7 @@
  onDestroy(()=>operationScope.abort());
   import { onMount,onDestroy } from 'svelte';
   import {changedFields,mergeDraft} from './drafts.mjs';
-  import { beforeNavigate,replaceState } from '$app/navigation';
+  import { afterNavigate,beforeNavigate,replaceState } from '$app/navigation';
   import {page} from '$app/state';
   import { storyCreation } from '$lib/create/story-creation.svelte';
   import { get, patch, post, put, del, mediaUrl } from '$lib/api';
@@ -116,6 +116,8 @@
   let mobileDetail=$state(false);
   export async function openScene(id:string){await reload();if(scenes.some(s=>s.id===id)){selectScene(id);}}
   export async function reload(){try{await refresh();error='';}catch(e){error=String(e);}}
+  // A link to /?view=story&scene_id=… while Story is already open selects that scene with fresh data.
+  afterNavigate(()=>{if(!loaded||page.url.searchParams.get('view')!=='story')return;const id=page.url.searchParams.get('scene_id');if(id&&id!==selectedId)void openScene(id);else void reload();});
 
   // ── List UX: search + stage filter + keyboard nav ──────────────────────────
   let search = $state('');

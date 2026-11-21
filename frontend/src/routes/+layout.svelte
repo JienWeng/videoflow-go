@@ -3,7 +3,7 @@
   import CreateStoryDialog from '$lib/create/CreateStoryDialog.svelte';
   import {storyCreation} from '$lib/create/story-creation.svelte';
   import BrandLogo from '$lib/shell/BrandLogo.svelte';
-  import { afterNavigate, goto } from '$app/navigation';
+  import { afterNavigate, replaceState } from '$app/navigation';
   import { Button } from '$lib/components/ui/button';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
   import * as Dialog from '$lib/components/ui/dialog';
@@ -12,7 +12,7 @@
   import Tour from '$lib/shell/Tour.svelte';
   import { guide } from '$lib/shell/guide.svelte';
   import { page } from '$app/state';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import {
     Clapperboard,
     Image,
@@ -60,13 +60,17 @@
   });
 
   let navigationOpen = $state(false);
-  afterNavigate(() => { navigationOpen = false;storyCreation.open=false; });
+  // Links such as /?view=story&new_story=1&op_id=… open the story dialog (it reads op_id itself).
+  afterNavigate(() => {
+    navigationOpen = false;storyCreation.open=false;
+    if(page.url.pathname==='/'&&page.url.searchParams.has('new_story'))void tick().then(()=>{storyCreation.show();const url=new URL(page.url);url.searchParams.delete('new_story');replaceState(url,page.state);});
+  });
   const navGroups = [{label:'Workspace',items:[{href:'/',label:'Studio',icon:Clapperboard},{href:'/library',label:'Library',icon:FolderOpen},{href:'/render',label:'Videos',icon:Film},{href:'/costs',label:'Costs',icon:Receipt}]}];
   // The editor is contextual (reached from a render output), so it highlights Render.
   function isActive(href: string, pathname: string): boolean {
-    if (href === '/') return pathname === '/' || pathname === '/director';
-    if(href==='/library')return ['/library','/characters','/assets','/voices'].some(path=>pathname===path);
-    if (href === '/render') return pathname.startsWith('/render') || pathname === '/compositions';
+    if (href === '/') return pathname === '/';
+    if(href==='/library')return pathname==='/library'||pathname==='/voices';
+    if (href === '/render') return pathname.startsWith('/render');
     return pathname.startsWith(href);
   }
 

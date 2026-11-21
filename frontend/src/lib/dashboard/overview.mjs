@@ -7,7 +7,7 @@ const timestamp = item => {
 const unique = items => [...new Map(items.map(item => [item.id, item])).values()];
 const statusLabel = value => ({ pending: 'Queued', running: 'In progress', succeeded: 'Completed', failed: 'Failed', reconciliation_required: 'Review needed' })[value] ?? 'Saved';
 const kindLabel = value => ({ video_generation: 'Story generation', storyboard: 'Storyboard images', assets: 'Asset generation', shots: 'Shot planning', caption: 'Captions', style_ingest: 'Project style' })[value] ?? String(value || 'Project task').replaceAll('_', ' ');
-const operationHref = op => op.kind === 'video_generation' ? `/create?op_id=${encodeURIComponent(op.id)}` : op.scene_id ? `/scenes?scene_id=${encodeURIComponent(op.scene_id)}` : ['assets', 'style_ingest'].includes(op.kind) ? '/assets' : op.kind === 'caption' ? '/render' : '/scenes';
+const operationHref = op => op.kind === 'video_generation' ? `/?view=story&new_story=1&op_id=${encodeURIComponent(op.id)}` : op.scene_id ? `/?view=story&scene_id=${encodeURIComponent(op.scene_id)}` : ['assets', 'style_ingest'].includes(op.kind) ? '/library?tab=media' : op.kind === 'caption' ? '/render' : '/?view=story';
 
 export function makeOverview(snapshot, now = Date.now()) {
   if (!Array.isArray(snapshot.graph?.nodes) || !['assets', 'ops', 'jobs'].every(key => Array.isArray(snapshot[key]))) {
@@ -37,9 +37,9 @@ export function makeOverview(snapshot, now = Date.now()) {
   if (failed.length) attention.push(issue('failed-renders', `${failed.length} ${failed.length === 1 ? 'render failed' : 'renders failed'} in the last 24 hours`, 'Open the saved error and review the request before running again.', '/render', 'View renders', true));
 
   if (!snapshot.aiHealth || snapshot.sessions === null) {
-    attention.push(issue('ai-unknown', 'AI setup status is unavailable', 'Check your session setup before planning a story.', '/director', 'Check AI setup'));
+    attention.push(issue('ai-unknown', 'AI setup status is unavailable', 'Check your session setup before planning a story.', '/settings#ai', 'Check AI setup'));
   } else if (!selected || state.needsSetup) {
-    attention.push(issue('ai-setup', selected ? 'Your AI assistant needs setup' : 'Choose an AI session', selected ? state.help : 'Choose Codex or Claude Code for this project.', '/director', selected ? 'Set up AI' : 'Choose AI session'));
+    attention.push(issue('ai-setup', selected ? 'Your AI assistant needs setup' : 'Choose an AI session', selected ? state.help : 'Choose Codex or Claude Code for this project.', '/settings#ai', selected ? 'Set up AI' : 'Choose AI session'));
   }
   if (!snapshot.appHealth) attention.push(issue('media-unknown', 'Media setup status is unavailable', 'Check provider settings before generating images or video.', '/settings#providers', 'Check media setup'));
   else if (snapshot.appHealth.missing_keys?.length) attention.push(issue('media-setup', 'Provider credentials need setup', 'Add the required provider keys before generating media.', '/settings#providers', 'Set up providers'));
@@ -50,12 +50,12 @@ export function makeOverview(snapshot, now = Date.now()) {
   const activeOp = ops.find(op => ['running', 'pending'].includes(op.status));
   if (blocker) primary = { id: blocker.id, label: blocker.action, href: blocker.href, detail: blocker.detail };
   else if (activeJob || activeOp) primary = { id: 'progress', label: 'View progress', href: activeJob ? '/render' : operationHref(activeOp), detail: 'Your project has work in progress. You can check its current status.' };
-  else if (selected?.status === 'running') primary = { id: 'session-progress', label: 'View AI session', href: '/director', detail: 'Your assistant is working on a request.' };
+  else if (selected?.status === 'running') primary = { id: 'session-progress', label: 'View AI session', href: '/?view=studio', detail: 'Your assistant is working on a request.' };
   else if (storyEmpty && attention.length) {
     const next = attention[0];
     primary = { id: next.id, label: next.action, href: next.href, detail: next.detail };
   } else primary = storyEmpty
-    ? { id: 'new-story', label: 'Create a story', href: '/create', detail: 'Describe an idea, review the storyboard, then choose what to render.' }
+    ? { id: 'new-story', label: 'Create a story', href: '/?view=story&new_story=1', detail: 'Describe an idea, review the storyboard, then choose what to render.' }
     : { id: 'studio', label: 'Continue in Studio', href: '/?view=studio', detail: 'Open your canvas and chat to keep shaping this project.' };
 
   const recent = [];
@@ -69,9 +69,9 @@ export function makeOverview(snapshot, now = Date.now()) {
     addRecent('job', job, scene ? `Render · ${scene}` : 'Video render', 'Render', '/render');
   }
   for (const op of ops) addRecent('op', op, kindLabel(op.kind), 'Project task', operationHref(op));
-  for (const asset of assets.filter(item => item.type !== 'output_video')) addRecent('asset', asset, asset.name || 'Untitled asset', 'Asset', '/assets', 'Saved');
-  for (const session of sessions) addRecent('session', session, session.title || 'Untitled session', 'AI session', '/director', sessionState(session, snapshot.aiHealth).label);
-  for (const edit of Array.isArray(snapshot.compositions) ? snapshot.compositions : []) addRecent('composition', {...edit,id:edit.revision}, `Saved composition · ${edit.duration}s`, 'Composition', `/compositions?revision=${encodeURIComponent(edit.revision)}`, 'Saved');
+  for (const asset of assets.filter(item => item.type !== 'output_video')) addRecent('asset', asset, asset.name || 'Untitled asset', 'Asset', '/library?tab=media', 'Saved');
+  for (const session of sessions) addRecent('session', session, session.title || 'Untitled session', 'AI session', '/?view=studio', sessionState(session, snapshot.aiHealth).label);
+  for (const edit of Array.isArray(snapshot.compositions) ? snapshot.compositions : []) addRecent('composition', {...edit,id:edit.revision}, `Saved composition · ${edit.duration}s`, 'Composition', `/?view=edit&revision=${encodeURIComponent(edit.revision)}`, 'Saved');
   recent.sort((a, b) => b.time - a.time || a.id.localeCompare(b.id));
   return { metrics, storyEmpty, primary, attention, recent: recent.slice(0, 5), runningCount: [...jobs, ...ops].filter(item => ['running', 'pending'].includes(item.status)).length };
 }

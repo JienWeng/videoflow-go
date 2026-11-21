@@ -147,7 +147,7 @@
       href: '/settings'
     });
 
-    out.push({id:'nav-sessions',label:'Manage AI sessions',hint:'assistant setup and saved conversations',group:'Go to',icon:SlidersHorizontal,href:'/director'});
+    out.push({id:'nav-sessions',label:'AI setup',hint:'connect your AI and choose models',group:'Go to',icon:SlidersHorizontal,href:'/settings#ai'});
     out.push({id:'nav-voices',label:'Voices',hint:'a voice for each character',group:'Go to',icon:Users,href:'/voices'});
     out.push({id:'nav-composition',label:'Edit video',hint:'timeline, captions, music and export',group:'Go to',icon:Film,href:'/?view=edit'});
 
@@ -161,7 +161,7 @@
           hint: 'scene',
           group: 'Scenes',
           icon: ListVideo,
-          // On the canvas we focus the node; elsewhere /scenes opens it.
+          // On the canvas we focus the node; elsewhere the Story view opens it.
           focus: n.id,
           href: '/?view=story'
         });

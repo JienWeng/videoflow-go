@@ -12,7 +12,7 @@
   const secondaryAttention = $derived(model?.attention.filter(item => item.id !== model?.primary.id) ?? []);
   const metrics = $derived(model ? [
     { label: 'Scenes', value: model.metrics.scenes, href: '/?view=story' },
-    { label: 'Characters', value: model.metrics.characters, href: '/characters' },
+    { label: 'Characters', value: model.metrics.characters, href: '/library?tab=characters' },
     { label: 'Assets', value: model.metrics.assets, href: '/library?tab=media' },
     { label: 'Finished videos', value: model.metrics.videos, href: '/render' }
   ] : []);
@@ -106,7 +106,7 @@
       <section aria-labelledby="overview-actions" class="md:border-l md:border-border md:pl-6">
         <h3 id="overview-actions" class="mb-2 text-sm font-semibold">Quick actions</h3>
         <div class="flex flex-col">
-          {#if model.primary.href !== '/create'}<a href="/create" class="flex min-h-11 items-center justify-between gap-3 text-sm hover:underline underline-offset-4">New story<ArrowRight class="size-3.5 text-muted-foreground" /></a>{/if}
+          {#if model.primary.id !== 'new-story'}<a href="/?view=story&new_story=1" class="flex min-h-11 items-center justify-between gap-3 text-sm hover:underline underline-offset-4">New story<ArrowRight class="size-3.5 text-muted-foreground" /></a>{/if}
           <a href="/library?tab=media" class="flex min-h-11 items-center justify-between gap-3 text-sm hover:underline underline-offset-4">Add references<ArrowRight class="size-3.5 text-muted-foreground" /></a>
           <a href="/library?tab=characters" class="flex min-h-11 items-center justify-between gap-3 text-sm hover:underline underline-offset-4">Manage characters<ArrowRight class="size-3.5 text-muted-foreground" /></a>
         </div>
