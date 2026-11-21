@@ -67,8 +67,6 @@ func (s *Server) videoOffers(family, resolution string, seconds float64, setting
 		v := videoService{Offer: offer, Total: money(offer.PerSecond * seconds), Connected: routes.Connected(offer.Provider), KeyCheck: s.keyCheckView(offer.Provider), InUse: offer.Provider == provider && offer.Model == model}
 		v.CheckedAt, v.Problem = settings["video_checked_"+offer.Provider], settings["video_problem_"+offer.Provider]
 		switch {
-		case !offer.Frames:
-			v.Note = "Text prompts only. It cannot start a clip from your storyboard picture, so scenes cannot use it."
 		case s.serviceProblem(offer.Provider) != "":
 			v.Note = s.serviceProblem(offer.Provider)
 		case !v.Connected:
@@ -201,7 +199,7 @@ func (s *Server) handleVideoRouting(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Mode == "manual" {
 		host := costs.HostByName(body.Provider)
-		if host == nil || host.Models[body.Model] == "" || !host.Frames {
+		if host == nil || host.Models[body.Model] == "" {
 			http.Error(w, "the current video service does not offer this model; pick a service that does, or use the cheapest connected one", 400)
 			return
 		}

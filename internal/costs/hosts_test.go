@@ -8,8 +8,8 @@ import (
 
 func TestOffersAreCheapestFirstAndMatchPublishedPrices(t *testing.T) {
 	offers := Offers("seedance-2.0", "720p", "16:9", nil)
-	if len(offers) != 9 || offers[3].Provider != "openrouter" {
-		t.Fatalf("want all nine services at 720p, got %d: %v", len(offers), offers)
+	if len(offers) != 4 || offers[1].Provider != "byteplus" || offers[2].Provider != "openrouter" {
+		t.Fatalf("want all four services at 720p, got %d: %v", len(offers), offers)
 	}
 	for i := 1; i < len(offers); i++ {
 		if offers[i].PerSecond < offers[i-1].PerSecond {
@@ -23,30 +23,39 @@ func TestOffersAreCheapestFirstAndMatchPublishedPrices(t *testing.T) {
 	for _, o := range offers {
 		price[o.Provider] = o.PerSecond
 	}
-	if price["byteplus"] != 0.1512 || price["fal"] != 0.3024 || price["runway"] != 0.30 || price["kie"] != 0.205 {
+	if price["byteplus"] != 0.1512 || price["fal"] != 0.3024 || price["openrouter"] != 0.1512 {
 		t.Fatalf("token-priced services wrong: %v", price)
 	}
 	// A live rate from the service replaces the built-in one.
 	if live := Offers("seedance-2.0-fast", "720p", "16:9", map[string]float64{"fal:seedance-2.0-fast": 0.02}); len(live) == 0 || live[len(live)-1].Provider != "fal" || live[len(live)-1].PerSecond != 0.432 {
 		t.Fatalf("live price ignored: %v", live)
 	}
-	if FamilyOf("runway", "seedance2_fast") != "seedance-2.0-fast" || FamilyOf("fal", "bytedance/seedance-2.0/fast/text-to-video") != "seedance-2.0-fast" {
+	if FamilyOf("openrouter", "bytedance/seedance-2.0-fast") != "seedance-2.0-fast" || FamilyOf("fal", "bytedance/seedance-2.0/fast/text-to-video") != "seedance-2.0-fast" {
 		t.Fatal("family lookup")
 	}
-	if amount, basis := Video("kie", "bytedance/seedance-2", "720p", "9:16", 10, nil); basis != Rate || amount != 2.05 {
-		t.Fatalf("kie = %v %s", amount, basis)
+	if amount, basis := Video("argolink", "seedance-2.0", "720p", "9:16", 10, nil); basis != Rate || amount != 1.29 {
+		t.Fatalf("argolink = %v %s", amount, basis)
 	}
-	if amount, _ := Video("runway", "seedance2", "720p", "9:16", 10, map[string]float64{"runway:seedance-2.0:720p": 0.25}); amount != 2.5 {
+	if amount, _ := Video("argolink", "seedance-2.0", "720p", "9:16", 10, map[string]float64{"argolink:seedance-2.0:720p": 0.25}); amount != 2.5 {
 		t.Fatalf("live per-second price ignored: %v", amount)
+	}
+	// A service the app no longer uses is never offered, but keeps its name for old records.
+	for name := range Retired {
+		if HostByName(name) != nil {
+			t.Errorf("%s is still offered", name)
+		}
+	}
+	if Retired["kie"] != "Kie.ai" {
+		t.Fatalf("retired label = %q", Retired["kie"])
 	}
 }
 
 // A service appears for a model only when it lists that model.
 func TestEachModelIsOfferedByTheServicesThatListIt(t *testing.T) {
 	want := map[string]string{
-		"seedance-2.0-mini":  "kie 0.041, argolink 0.0643, openrouter 0.0756, replicate 0.09, wavespeed 0.108, runway 0.15, fal 0.1512",
-		"seedance-2.5":       "argolink 0.196, loopling 0.1987, openrouter 0.2311, replicate 0.2312, runway 0.3, kie 0.315, wavespeed 0.324, fal 0.4622",
-		"seedance-2.5-flash": "argolink 0.129, openrouter 0.1512, kie 0.205",
+		"seedance-2.0-mini":  "argolink 0.0643, openrouter 0.0756, fal 0.1512",
+		"seedance-2.5":       "argolink 0.196, openrouter 0.2311, fal 0.4622",
+		"seedance-2.5-flash": "argolink 0.129, openrouter 0.1512",
 	}
 	for family, list := range want {
 		got := []string{}

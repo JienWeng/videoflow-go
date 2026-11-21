@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"videoflow-go/internal/config"
+	"videoflow-go/internal/costs"
 	"videoflow-go/internal/db"
 	"videoflow-go/internal/providers"
 )
@@ -24,6 +25,10 @@ func ValidBaseURL(raw string) bool {
 }
 
 func (r Resolver) Credentials(name string) (key, endpoint string, fromDB bool, err error) {
+	// Old video jobs may still name a service the app no longer uses.
+	if label := costs.Retired[name]; label != "" {
+		return "", "", false, fmt.Errorf("%s is no longer available in VideoFlow; choose another video service", label)
+	}
 	if name == "openai" || name == "fal" || name == "byteplus" || name == "fish" || name == "elevenlabs" || providers.VideoHost(name) {
 		return r.mediaCredentials(name)
 	}

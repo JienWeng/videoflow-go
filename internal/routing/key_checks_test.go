@@ -23,11 +23,9 @@ func cheapestFixture(t *testing.T) (Resolver, *db.DB, []string) {
 	family := costs.Families[0].ID
 	ranked := []string{}
 	for _, offer := range costs.Offers(family, "720p", "16:9", nil) {
-		if offer.Frames && providers.VideoHost(offer.Provider) {
-			ranked = append(ranked, offer.Provider)
-			if err := d.SetProviderSecret(offer.Provider, "key-"+offer.Provider, nil); err != nil {
-				t.Fatal(err)
-			}
+		ranked = append(ranked, offer.Provider)
+		if err := d.SetProviderSecret(offer.Provider, "key-"+offer.Provider, nil); err != nil {
+			t.Fatal(err)
 		}
 	}
 	if len(ranked) < 2 {
@@ -72,7 +70,6 @@ func TestCheapestPickSkipsAnAccountWithNoBalance(t *testing.T) {
 	for name, answer := range map[string]error{
 		"fal.ai locked account": &providers.HTTPError{Provider: "x", Status: 403, Message: `{"detail":"User is locked. Reason: Exhausted balance. Top up your balance at fal.ai/dashboard/billing."}`},
 		"payment required":      &providers.HTTPError{Provider: "x", Status: 402, Message: `{"error":"payment required"}`},
-		"Kie.ai code 402":       &providers.HTTPError{Provider: "Kie.ai", Status: 402, Message: "Credits insufficient"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			r, _, ranked := cheapestFixture(t)

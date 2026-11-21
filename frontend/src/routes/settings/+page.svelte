@@ -692,7 +692,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
               <Plug class="size-4" />AI connections
             </CardTitle>
             <CardDescription>
-              Add a key for each service you have an account with: fal.ai, OpenAI or OpenRouter for pictures and video, any of the video services (ArgoLink, Loopling, Replicate, Kie.ai, WaveSpeed, Runway, BytePlus) to compare prices, and Fish Audio or ElevenLabs for voices. Planning and writing use your Claude or Codex session. Keys stay on the backend and are never shown again after saving.
+              Add a key for each service you have an account with: fal.ai, OpenAI or OpenRouter for pictures and video, any of the video services (ArgoLink, BytePlus) to compare prices, and Fish Audio or ElevenLabs for voices. Planning and writing use your Claude or Codex session. Keys stay on the backend and are never shown again after saving.
             </CardDescription>
           </CardHeader>
           <CardContent class="space-y-5">
@@ -957,7 +957,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                 >
 
                   <option value="fal">fal.ai</option><option value="openrouter">OpenRouter</option><option value="byteplus">BytePlus ModelArk (Seedance)</option>
-                  <option value="argolink">ArgoLink</option><option value="replicate">Replicate</option><option value="kie">Kie.ai</option><option value="wavespeed">WaveSpeed</option><option value="runway">Runway API</option>
+                  <option value="argolink">ArgoLink</option>
                 </select>
               </div>
 

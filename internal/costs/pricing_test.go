@@ -23,7 +23,7 @@ func TestVideoUsesSeedanceTokenPrice(t *testing.T) {
 	if _, basis := Video("fal", "some/new-model", "720p", "16:9", 5, nil); basis != Unpriced {
 		t.Fatalf("unknown model should be unpriced, got %s", basis)
 	}
-	if amount, _ := Video("kie", "bytedance/seedance-2", "720p", "16:9", 5, map[string]float64{"kie:seedance-2.0:720p": 0.1}); amount != 0.5 {
+	if amount, _ := Video("argolink", "seedance-2.0", "720p", "16:9", 5, map[string]float64{"argolink:seedance-2.0:720p": 0.1}); amount != 0.5 {
 		t.Fatalf("per-second live price = %v, want 0.5", amount)
 	}
 }

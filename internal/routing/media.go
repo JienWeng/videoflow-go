@@ -136,7 +136,12 @@ func (r Resolver) MediaSelections() (map[string]MediaChoice, error) {
 		}
 		provider := setting(providerKey, "fal")
 		selections[kind] = MediaChoice{provider, setting(modelKey, r.DefaultMediaModel(provider, kind))}
-		if kind == "video" && setting("video_routing", "manual") == "cheapest" {
+		// A saved choice of a service the app no longer uses is picked automatically instead.
+		retired := kind == "video" && costs.Retired[provider] != ""
+		if retired {
+			selections[kind] = MediaChoice{"fal", r.DefaultMediaModel("fal", kind)}
+		}
+		if kind == "video" && (retired || setting("video_routing", "manual") == "cheapest") {
 			if offer, ok := r.cheapestVideo(setting("video_family", costs.Families[0].ID), setting("default_resolution", "720p"), values); ok {
 				selections[kind] = MediaChoice{offer.Provider, offer.Model}
 			}
@@ -145,11 +150,10 @@ func (r Resolver) MediaSelections() (map[string]MediaChoice, error) {
 	return selections, nil
 }
 
-// cheapestVideo picks the lowest-priced connected service that sells the family and can
-// start a clip from a storyboard picture.
+// cheapestVideo picks the lowest-priced connected service that sells the family.
 func (r Resolver) cheapestVideo(family, resolution string, settings map[string]string) (costs.Offer, bool) {
 	for _, offer := range costs.Offers(family, resolution, "16:9", costs.LiveFromSettings(settings)) {
-		if offer.Frames && r.Connected(offer.Provider) {
+		if r.Connected(offer.Provider) {
 			return offer, true
 		}
 	}

@@ -87,9 +87,8 @@ func TestPlannerIsToldWhichVideoServicesCouldTakeOver(t *testing.T) {
 	s := routerServer(t, nil)
 	_, prompt := plannerSays(s, &answer)
 	brokenArgoLink(t, s, map[string]providers.KeyCheck{
-		"kie":       {},                                 // connected, never checked: usable
-		"replicate": providers.OutOfCredit("Replicate"), // no balance left
-		"loopling":  {},                                 // cannot start from a picture
+		"byteplus": {},                              // connected, never checked: usable
+		"fal":      providers.OutOfCredit("fal.ai"), // no balance left
 	})
 
 	sendChat(t, s, "make the videos for both scenes in episode 2")
@@ -104,8 +103,8 @@ func TestPlannerIsToldWhichVideoServicesCouldTakeOver(t *testing.T) {
 			t.Fatalf("targets not priced cheapest first: %+v", targets)
 		}
 	}
-	if got := strings.Join(ids, ","); got != "kie,openrouter" && got != "openrouter,kie" {
-		t.Fatalf("can_switch_to = %v; want only the usable kie and openrouter", ids)
+	if got := strings.Join(ids, ","); got != "byteplus,openrouter" && got != "openrouter,byteplus" {
+		t.Fatalf("can_switch_to = %v; want only the usable byteplus and openrouter", ids)
 	}
 }
 
@@ -113,7 +112,7 @@ func TestChatOffersAVideoServiceSwitchThatOnlyTheRouteStores(t *testing.T) {
 	answer := ""
 	s := routerServer(t, nil)
 	_, prompt := plannerSays(s, &answer)
-	brokenArgoLink(t, s, map[string]providers.KeyCheck{"replicate": providers.OutOfCredit("Replicate"), "loopling": {}})
+	brokenArgoLink(t, s, map[string]providers.KeyCheck{"fal": providers.OutOfCredit("fal.ai")})
 
 	action, _, choice := askSwitch(t, s, &answer, "OpenRouter")
 	_, targets := plannerSwitchTargets(t, *prompt)
@@ -144,14 +143,14 @@ func TestChatTurnsAnUnusableVideoServiceIntoAPlainReply(t *testing.T) {
 	answer := ""
 	s := routerServer(t, nil)
 	plannerSays(s, &answer)
-	brokenArgoLink(t, s, map[string]providers.KeyCheck{"replicate": providers.OutOfCredit("Replicate"), "loopling": {}})
+	brokenArgoLink(t, s, map[string]providers.KeyCheck{"fal": providers.OutOfCredit("fal.ai")})
 
 	for want, says := range map[string]string{
-		"argolink":  "ArgoLink did not accept this key",
-		"replicate": "no balance left",
-		"loopling":  "cannot start a clip from your storyboard picture",
-		"runway":    "Add its API key",
-		"made-up":   "Add a working key",
+		"argolink": "ArgoLink did not accept this key",
+		"fal":      "no balance left",
+		"byteplus": "Add its API key",
+		"made-up":  "Add a working key",
+		"kie":      "Add a working key", // a service the app no longer uses
 	} {
 		action, reply, choice := askSwitch(t, s, &answer, want)
 		if action != "unknown" || choice != nil || !strings.Contains(reply, says) {
@@ -163,8 +162,8 @@ func TestChatTurnsAnUnusableVideoServiceIntoAPlainReply(t *testing.T) {
 		t.Fatalf("cheapest: %s %+v", action, choice)
 	}
 	// The route refuses a service that cannot make videos, in plain words for the card.
-	if w := call(t, s, "PUT", "/video-services/routing", `{"mode":"manual","model":"`+switchFamily+`","provider":"replicate"}`); w.Code != 400 || !strings.Contains(w.Body.String(), "no balance left") {
-		t.Fatalf("manual replicate: %d %s", w.Code, w.Body.String())
+	if w := call(t, s, "PUT", "/video-services/routing", `{"mode":"manual","model":"`+switchFamily+`","provider":"fal"}`); w.Code != 400 || !strings.Contains(w.Body.String(), "no balance left") {
+		t.Fatalf("manual fal: %d %s", w.Code, w.Body.String())
 	}
 
 	// Nothing else usable: no button, and the reply says what to fix.

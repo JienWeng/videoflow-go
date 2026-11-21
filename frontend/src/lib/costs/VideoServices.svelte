@@ -10,7 +10,7 @@
   import * as Table from '$lib/components/ui/table';
   import { LoaderCircle } from '@lucide/svelte';
 
-  type Service = { provider: string; label: string; model: string; per_second: number; total: number; frames: boolean; checked: string; connected: boolean; usable: boolean; checked_at?: string; problem?: string; cheapest: boolean; in_use: boolean; note?: string; key_check?: { state: string; message?: string } };
+  type Service = { provider: string; label: string; model: string; per_second: number; total: number; checked: string; connected: boolean; usable: boolean; checked_at?: string; problem?: string; cheapest: boolean; in_use: boolean; note?: string; key_check?: { state: string; message?: string } };
   type State = { families: { id: string; label: string }[]; model: string; resolution: string; seconds: number; routing: string; current: { provider: string; label: string; model: string; family: string }; services: Service[] };
 
   let data = $state<State | null>(null), error = $state(''), busy = $state('');
@@ -111,7 +111,6 @@
           <Table.Row>
             <Table.Cell class="whitespace-normal">
               <span class="font-medium">{s.label}</span>
-              {#if s.note && !s.usable && !s.frames}<span class="block text-xs text-muted-foreground">{s.note}</span>{/if}
               {#if s.key_check?.state === 'rejected' || s.key_check?.state === 'no_credit'}<span class="block text-xs text-destructive">{s.key_check.message}</span>{/if}
               <span class="block text-xs text-muted-foreground">{#if s.problem}{s.problem}{:else if s.checked_at}Price read from {s.label} {ago(s.checked_at)}{:else}Price not read yet{/if}</span>
             </Table.Cell>

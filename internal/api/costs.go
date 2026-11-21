@@ -120,6 +120,9 @@ func serviceLabel(provider string) string {
 	if l := serviceLabels[provider]; l != "" {
 		return l
 	}
+	if l := costs.Retired[provider]; l != "" {
+		return l
+	}
 	return provider
 }
 

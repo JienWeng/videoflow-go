@@ -10,26 +10,19 @@ import (
 
 func TestVideoServiceKeyCheck(t *testing.T) {
 	const good = "good-key"
-	paths := map[string]string{"argolink": "/account/balance", "loopling": "/me", "replicate": "/account", "kie": "/v1/chat/credit", "wavespeed": "/balance", "runway": "/organization"}
-	for name, path := range paths {
+	for name, path := range map[string]string{"argolink": "/account/balance"} {
 		calls := 0
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			calls++
 			if r.Method != "GET" || r.URL.Path != path {
 				t.Errorf("%s: key check sent %s %s; only the free GET %s is allowed", name, r.Method, r.URL.Path, path)
 			}
-			valid := r.Header.Get("Authorization") == "Bearer "+good
-			switch {
-			case name == "kie" && valid:
-				w.Write([]byte(`{"code":200,"msg":"success","data":12.5}`))
-			case name == "kie": // Kie.ai answers HTTP 200 and puts the refusal in the body.
-				w.Write([]byte(`{"code":401,"msg":"You do not have access permissions"}`))
-			case valid:
+			if r.Header.Get("Authorization") == "Bearer "+good {
 				w.Write([]byte(`{}`))
-			default:
-				w.WriteHeader(401)
-				w.Write([]byte(`{"code":"INVALID_API_KEY","message":"Invalid API key"}`))
+				return
 			}
+			w.WriteHeader(401)
+			w.Write([]byte(`{"code":"INVALID_API_KEY","message":"Invalid API key"}`))
 		}))
 		label := NewHostClient(name, "", "").host.Label
 		if got := NewHostClient(name, good, server.URL).CheckKey(context.Background()); got.State != KeyAccepted {

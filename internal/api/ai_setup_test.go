@@ -28,16 +28,16 @@ func TestAISetupReportsWhoDoesEachJobAndWhatIsMissing(t *testing.T) {
 		t.Fatalf("no voice key is saved, yet voice reports ready: %v", before["voice"])
 	}
 	// Saving a key and choosing the service must show up as the job's default.
-	call(t, s, "PUT", "/settings/providers/kie", `{"api_key":"k"}`)
-	if w := call(t, s, "PUT", "/video-services/routing", `{"mode":"manual","model":"seedance-2.0","provider":"kie"}`); w.Code != 200 {
-		t.Fatalf("choose kie: %d %s", w.Code, w.Body.String())
+	call(t, s, "PUT", "/settings/providers/argolink", `{"api_key":"k"}`)
+	if w := call(t, s, "PUT", "/video-services/routing", `{"mode":"manual","model":"seedance-2.0","provider":"argolink"}`); w.Code != 200 {
+		t.Fatalf("choose argolink: %d %s", w.Code, w.Body.String())
 	}
 	// Changing only the model keeps the service and moves it to that model.
 	if w := call(t, s, "PUT", "/video-services/routing", `{"mode":"manual","model":"seedance-2.0-mini"}`); w.Code != 200 {
 		t.Fatalf("change model: %d %s", w.Code, w.Body.String())
 	}
 	video := read()["video"]
-	if video["service"] != "Kie.ai" || video["family"] != "seedance-2.0-mini" || video["ready"] != true || video["per_second"] == nil {
+	if video["service"] != "ArgoLink" || video["family"] != "seedance-2.0-mini" || video["ready"] != true || video["per_second"] == nil {
 		t.Fatalf("video = %v", video)
 	}
 }
