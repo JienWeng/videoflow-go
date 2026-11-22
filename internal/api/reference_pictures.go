@@ -147,7 +147,7 @@ func (s *Server) sceneUsesReferences(ctx context.Context, scene *models.Scene) b
 func clipReferences(payload map[string]any) []seedance.Reference {
 	raw, _ := json.Marshal(payload["reference_pictures"])
 	var pictures []referencePicture
-	_ = json.Unmarshal(raw, &pictures)
+	_ = json.Unmarshal(raw, &pictures) // marshalled just above; any other shape has no pictures
 	out := []seedance.Reference{}
 	for _, p := range pictures {
 		out = append(out, seedance.Reference{Kind: p.Kind, Name: p.Name, Sheet: p.Sheet})
@@ -170,7 +170,7 @@ func (s *Server) attachReferenceVoices(ctx context.Context, job *models.RenderJo
 	defer func() { job.RequestJSON = voiceJSON(payload) }()
 	raw, _ := json.Marshal(payload["reference_pictures"])
 	var pictures []referencePicture
-	_ = json.Unmarshal(raw, &pictures)
+	_ = json.Unmarshal(raw, &pictures) // marshalled just above; any other shape has no pictures
 	policy, _ := payload["voice_policy"].(map[string]any)
 	scene, err := s.database.GetScene(*job.SceneID)
 	if err != nil || len(pictures) == 0 || policy["mode"] != "native" || sceneBrief(scene).ConversationMode == "narration" {

@@ -74,7 +74,7 @@ func sceneProduction(scene *models.Scene) productionSettings {
 	var d struct {
 		Production productionSettings `json:"production"`
 	}
-	_ = json.Unmarshal(scene.SceneJSON, &d)
+	_ = json.Unmarshal(scene.SceneJSON, &d) // unreadable scene metadata uses the default settings
 	if d.Production.Strategy == "" {
 		d.Production.Strategy = "auto"
 	}

@@ -19,6 +19,6 @@ func sceneSpokenLines(scene *models.Scene) []SpokenLine {
 	var script struct {
 		Lines []SpokenLine `json:"spoken_lines"`
 	}
-	_ = json.Unmarshal(scene.SceneJSON, &script)
+	_ = json.Unmarshal(scene.SceneJSON, &script) // unreadable scene metadata has no spoken lines
 	return script.Lines
 }

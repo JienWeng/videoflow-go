@@ -76,7 +76,7 @@ func (s *Server) handlePresetCatalog(w http.ResponseWriter, r *http.Request) {
 	entries := []map[string]any{}
 	for _, p := range options {
 		var entry map[string]any
-		_ = json.Unmarshal(voiceJSON(p), &entry)
+		_ = json.Unmarshal(voiceJSON(p), &entry) // marshalled from a preset struct; always an object
 		entry["fingerprint"] = creativeStyleFingerprint(p)
 		entries = append(entries, entry)
 	}

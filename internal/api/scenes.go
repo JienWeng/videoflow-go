@@ -217,7 +217,10 @@ func (s *Server) handleGenerateShots(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		var snapshot map[string]any
-		json.Unmarshal(scene.SceneJSON, &snapshot)
+		if err = json.Unmarshal(scene.SceneJSON, &snapshot); err != nil && len(scene.SceneJSON) > 0 {
+			http.Error(w, "scene metadata is invalid", http.StatusConflict)
+			return
+		}
 		if snapshot == nil {
 			snapshot = map[string]any{}
 		}

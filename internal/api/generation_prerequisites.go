@@ -59,7 +59,7 @@ func (s *Server) generationPrerequisites(ctx context.Context, brief generationBr
 			add("image", err.Error())
 		} else if len(brief.ReferenceAssetIDs) > 0 || needsSheets {
 			var caps map[string]json.RawMessage
-			json.Unmarshal(image.SupportedParameters, &caps)
+			_ = json.Unmarshal(image.SupportedParameters, &caps) // unreadable parameters mean no reference support
 			if caps["input_references"] == nil {
 				add("image", "Selected image model does not support character references; choose a reference-capable image model before generating")
 			}

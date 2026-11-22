@@ -186,7 +186,7 @@ func (d *DB) ReplaceUnapprovedCharacterReferences(id, project string, created []
 		var state struct {
 			Review string `json:"consistency_review"`
 		}
-		json.Unmarshal([]byte(meta), &state)
+		_ = json.Unmarshal([]byte(meta), &state) // unreadable metadata has no review verdict
 		if (state.Review == "" || state.Review == "approved") && !seen[ref] {
 			next = append(next, ref)
 			seen[ref] = true
@@ -252,9 +252,7 @@ func (d *DB) ExcludeStoryAsset(op, project, asset string, scenes []string, expec
 		if metadata == nil {
 			metadata = map[string]json.RawMessage{}
 		}
-		var refs, all []string
-		_ = json.Unmarshal(metadata["story_asset_ids"], &refs)
-		_ = json.Unmarshal(assetRaw, &all)
+		refs, all := models.IDList(metadata["story_asset_ids"]), models.IDList(assetRaw)
 		metadata["story_asset_ids"], _ = json.Marshal(remove(refs))
 		sceneRaw, _ = json.Marshal(metadata)
 		assetRaw, _ = json.Marshal(remove(all))

@@ -73,7 +73,7 @@ func renderClip(job models.RenderJob) string {
 			Index int `json:"index"`
 		} `json:"render_unit"`
 	}
-	_ = json.Unmarshal(job.RequestJSON, &request)
+	_ = json.Unmarshal(job.RequestJSON, &request) // a request without a render unit is unit 0
 	return fmt.Sprintf("%s|%s|%d", scene, shot, request.Unit.Index)
 }
 

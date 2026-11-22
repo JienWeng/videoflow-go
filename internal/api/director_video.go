@@ -127,7 +127,7 @@ func (s *Server) freezeDirectorVideo(ctx context.Context, job *models.RenderJob)
 			var inputs struct {
 				Revision string `json:"scene_input_revision"`
 			}
-			_ = json.Unmarshal(asset.MetadataJSON, &inputs)
+			_ = json.Unmarshal(asset.MetadataJSON, &inputs) // unreadable metadata has no input revision
 			if inputs.Revision != "" && inputs.Revision != sceneRevision {
 				continue
 			}
@@ -138,7 +138,7 @@ func (s *Server) freezeDirectorVideo(ctx context.Context, job *models.RenderJob)
 			var metadata struct {
 				Revision string `json:"director_context_revision"`
 			}
-			json.Unmarshal(asset.MetadataJSON, &metadata)
+			_ = json.Unmarshal(asset.MetadataJSON, &metadata) // unreadable metadata has no context revision
 			if metadata.Revision == snapshot.Revision || (metadata.Revision == "" && len(visual) == 0) {
 				keyframe = asset
 				break

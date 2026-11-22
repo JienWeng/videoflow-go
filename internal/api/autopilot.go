@@ -285,7 +285,9 @@ func (a *autopilotRunner) startSceneVideos(ctx context.Context, adopted map[stri
 			JobID  string   `json:"job_id"`
 			JobIDs []string `json:"job_ids"`
 		}
-		_ = json.Unmarshal(raw, &started)
+		if err := json.Unmarshal(raw, &started); err != nil {
+			return nil, fmt.Errorf("couldn't read the video jobs started for %s: %w", scene.Title, err)
+		}
 		if len(started.JobIDs) == 0 && started.JobID != "" {
 			started.JobIDs = []string{started.JobID}
 		}
@@ -371,7 +373,7 @@ func (a *autopilotRunner) joinAndExport(ctx context.Context) (any, error) {
 		Asset    *models.Asset `json:"asset"`
 		Error    string        `json:"error"`
 	}
-	_ = json.Unmarshal(raw, &exported)
+	_ = json.Unmarshal(raw, &exported) // an unreadable reply has no asset URL and is reported below
 	if code >= 300 || exported.AssetURL == "" {
 		detail := exported.Error
 		if detail == "" {

@@ -44,7 +44,7 @@ func (s *Server) projectState(projectID string) (map[string]any, error) {
 			var meta struct {
 				SceneID string `json:"scene_id"`
 			}
-			json.Unmarshal(a.MetadataJSON, &meta)
+			_ = json.Unmarshal(a.MetadataJSON, &meta) // unreadable metadata belongs to no scene
 			if a.Type == "storyboard" && meta.SceneID == sc.ID && approvedSet[a.ID] {
 				storyboard = true
 			}

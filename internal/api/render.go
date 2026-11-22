@@ -144,7 +144,7 @@ func (s *Server) handleResubmitJob(w http.ResponseWriter, r *http.Request) {
 		fresh.Provider = "openrouter"
 	}
 	var frozen map[string]json.RawMessage
-	_ = json.Unmarshal(fresh.RequestJSON, &frozen)
+	_ = json.Unmarshal(fresh.RequestJSON, &frozen) // an unreadable request has no frozen director context
 	if frozen["director_context"] != nil {
 		err = s.validateFrozenVideo(r.Context(), fresh)
 		if err == nil {

@@ -113,7 +113,7 @@ func (s *Server) writeScenePrompt(ctx context.Context, job *models.RenderJob, wr
 		}
 		names[id] = character.Name
 		voice := []string{}
-		_ = json.Unmarshal(character.VoiceRulesJSON, &voice)
+		_ = json.Unmarshal(character.VoiceRulesJSON, &voice) // unreadable voice rules are left out of the prompt
 		clip.Cast = append(clip.Cast, seedance.Character{Name: character.Name, Look: character.Appearance, Voice: strings.Join(voice, ", "), Manner: character.Personality})
 	}
 	// Places and props connected to the scene or to one of this clip's shots.

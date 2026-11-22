@@ -44,7 +44,7 @@ func (s *Server) sceneReferenceState(ctx context.Context, scene *models.Scene) (
 		var metadata struct {
 			Scene string `json:"scene_id"`
 		}
-		_ = json.Unmarshal(a.MetadataJSON, &metadata)
+		_ = json.Unmarshal(a.MetadataJSON, &metadata) // unreadable metadata belongs to no scene
 		if a.Type == "storyboard" && metadata.Scene == scene.ID {
 			boards = append(boards, a)
 		}
@@ -86,7 +86,7 @@ func (s *Server) sceneReferenceState(ctx context.Context, scene *models.Scene) (
 			Revision string `json:"director_context_revision"`
 			Inputs   string `json:"scene_input_revision"`
 		}
-		_ = json.Unmarshal(a.MetadataJSON, &metadata)
+		_ = json.Unmarshal(a.MetadataJSON, &metadata) // unreadable metadata has no revisions
 		if metadata.Inputs != "" && metadata.Inputs != inputRevision {
 			continue
 		}
@@ -157,7 +157,7 @@ func (s *Server) handleSetSceneReference(w http.ResponseWriter, r *http.Request)
 	}
 	if attach {
 		var metadata map[string]any
-		_ = json.Unmarshal(asset.MetadataJSON, &metadata)
+		_ = json.Unmarshal(asset.MetadataJSON, &metadata) // unreadable metadata has no review verdict
 		if metadata["consistency_review"] == "rejected" {
 			http.Error(w, "rejected assets cannot be used as scene references", 409)
 			return
@@ -212,7 +212,7 @@ func (s *Server) handleAssetUsage(w http.ResponseWriter, r *http.Request) {
 			Scene  string `json:"scene_id"`
 			Inputs string `json:"scene_input_revision"`
 		}
-		_ = json.Unmarshal(a.MetadataJSON, &metadata)
+		_ = json.Unmarshal(a.MetadataJSON, &metadata) // unreadable metadata belongs to no scene
 		if metadata.Scene != "" {
 			if revision, e := s.currentSceneInputRevision(metadata.Scene); e == nil {
 				stale = metadata.Inputs != revision

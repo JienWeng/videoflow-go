@@ -41,7 +41,7 @@ func (s *Server) bindDirectorRequest(next http.Handler) http.Handler {
 				if session.Selected {
 					binding.SessionID = session.ID
 					raw, _ := s.database.GetDirectorSelection(session.ID)
-					_ = json.Unmarshal(raw, &binding.Selection)
+					_ = json.Unmarshal(raw, &binding.Selection) // an unreadable selection binds the session with none
 					break
 				}
 			}
