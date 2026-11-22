@@ -2,18 +2,17 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
-	"videoflow-go/internal/db"
+	"videoflow-go/internal/jobs"
 	"videoflow-go/internal/models"
 )
 
 func (s *Server) directorGenerationContext(ctx context.Context, project *string, sceneID string, character *string) (context.Context, *directorContext, error) {
-	if !s.cfg.UseLocalText {
-		return ctx, nil, nil
-	}
 	if project == nil {
 		return ctx, nil, fmt.Errorf("production project is required")
 	}
@@ -33,7 +32,8 @@ func (s *Server) directorGenerationContext(ctx context.Context, project *string,
 		if json.Unmarshal(scene.CharacterIDsJSON, &ids) != nil {
 			return ctx, nil, fmt.Errorf("invalid scene cast")
 		}
-		binding.Selection.CharacterIDs = append(binding.Selection.CharacterIDs, ids...)
+		binding.Selection = directorSelection{CharacterIDs: ids}
+		binding.Selection.AssetIDs = append(binding.Selection.AssetIDs, s.sceneBoundAssets(scene)...)
 	}
 	if character != nil {
 		binding.Selection.CharacterIDs = append(binding.Selection.CharacterIDs, *character)
@@ -65,9 +65,6 @@ func imageAsset(path string) bool {
 
 // freezeDirectorVideo snapshots selected identity and voice policy before a job is durable/queued.
 func (s *Server) freezeDirectorVideo(ctx context.Context, job *models.RenderJob) error {
-	if !s.cfg.UseLocalText {
-		return nil
-	}
 	sceneID := ""
 	if job.SceneID != nil {
 		sceneID = *job.SceneID
@@ -83,7 +80,7 @@ func (s *Server) freezeDirectorVideo(ctx context.Context, job *models.RenderJob)
 			return err
 		}
 		if !models.ReferenceApproved(asset.MetadataJSON) {
-			return fmt.Errorf("reference %s requires consistency review in Assets before video generation", asset.Name)
+			return fmt.Errorf("reference %s is excluded from generation; replace it in Library", asset.Name)
 		}
 		if !item.Available {
 			return fmt.Errorf("selected reference %s is unavailable", asset.Name)
@@ -99,14 +96,39 @@ func (s *Server) freezeDirectorVideo(ctx context.Context, job *models.RenderJob)
 		}
 	}
 	var keyframe *models.Asset
+	if payload["video_input"] == inputReferences {
+		// Reference mode: the connected pictures go as references and no storyboard is made.
+		payload["director_context"] = snapshot
+		if sceneRevision, err := s.currentSceneInputRevision(sceneID); err == nil && sceneID != "" {
+			payload["scene_input_revision"] = sceneRevision
+		}
+		job.RequestJSON = voiceJSON(payload)
+		return s.applyDirectorVoicePolicy(bound, job)
+	}
 	unreviewed := false
+	hasSceneBoards := false
+	sceneRevision := ""
+	if sceneID != "" {
+		sceneRevision, err = s.currentSceneInputRevision(sceneID)
+		if err != nil {
+			return err
+		}
+	}
 	if sceneID != "" {
 		scene, _ := s.database.GetScene(sceneID)
-		var ids []string
-		json.Unmarshal(scene.AssetIDsJSON, &ids)
-		for _, id := range ids {
+		ids := models.IDList(scene.AssetIDsJSON)
+		for i := len(ids) - 1; i >= 0; i-- {
+			id := ids[i]
 			asset, e := s.database.GetAsset(id)
 			if e != nil || asset.Type != "storyboard" {
+				continue
+			}
+			hasSceneBoards = true
+			var inputs struct {
+				Revision string `json:"scene_input_revision"`
+			}
+			_ = json.Unmarshal(asset.MetadataJSON, &inputs)
+			if inputs.Revision != "" && inputs.Revision != sceneRevision {
 				continue
 			}
 			if !models.ReferenceApproved(asset.MetadataJSON) {
@@ -123,14 +145,17 @@ func (s *Server) freezeDirectorVideo(ctx context.Context, job *models.RenderJob)
 			}
 		}
 		if keyframe == nil && unreviewed {
-			return fmt.Errorf("generated keyframes await consistency review; approve a matching reference in Assets before Render")
+			return fmt.Errorf("matching keyframes are excluded; generate a replacement before Render")
 		}
 	}
-	if keyframe == nil && len(visual) == 1 {
+	if sceneID != "" && hasSceneBoards && keyframe == nil {
+		return fmt.Errorf("scene inputs or references changed; regenerate a matching storyboard before rendering")
+	}
+	if sceneID == "" && keyframe == nil && len(visual) == 1 {
 		keyframe = &visual[0]
 	}
 	if len(visual) > 0 && keyframe == nil {
-		return fmt.Errorf("selected identities require a reviewed combined keyframe; generate and approve it before video rendering")
+		return fmt.Errorf("selected identities require a combined keyframe; generate it before video rendering")
 	}
 	if keyframe != nil {
 		if payload["frame_images"] != nil || payload["input_references"] != nil {
@@ -157,6 +182,9 @@ func (s *Server) freezeDirectorVideo(ctx context.Context, job *models.RenderJob)
 		}
 		payload["frame_images"] = []map[string]any{{"type": "image_url", "image_url": map[string]string{"url": image}, "frame_type": "first_frame"}}
 		payload["director_keyframe"] = keyframe.ID
+		if sceneRevision != "" {
+			payload["scene_input_revision"] = sceneRevision
+		}
 	}
 	if stringPrompt(payload["prompt"]) == "" {
 		if job.ShotID != nil {
@@ -166,13 +194,15 @@ func (s *Server) freezeDirectorVideo(ctx context.Context, job *models.RenderJob)
 			}
 			payload["prompt"] = shot.Prompt
 		} else if sceneID != "" {
-			scene, _ := s.database.GetScene(sceneID)
-			prompt := scene.Title + ". " + scene.Summary
-			shots, _ := s.database.ListShots(sceneID)
-			for _, shot := range shots {
-				prompt += fmt.Sprintf("\nShot %d (%ds): %s", shot.ShotOrder, shot.Duration, shot.Prompt)
+			// Only a request saved before clips carried their own text gets here, when
+			// it is retried.
+			scene, e := s.database.GetScene(sceneID)
+			if e != nil {
+				return e
 			}
-			payload["prompt"] = prompt
+			if payload["prompt"], e = jobs.ScenePrompt(s.database, scene); e != nil {
+				return e
+			}
 		}
 	}
 	payload["director_context"] = snapshot
@@ -180,30 +210,94 @@ func (s *Server) freezeDirectorVideo(ctx context.Context, job *models.RenderJob)
 	job.RequestJSON = voiceJSON(payload)
 	return s.applyDirectorVoicePolicy(bound, job)
 }
+
+// freezeReferencePictures attaches a reference-mode clip's pictures, checked against
+// what the chosen model takes, before the request's sources are frozen.
+func (s *Server) freezeReferencePictures(ctx context.Context, job *models.RenderJob) error {
+	var payload map[string]any
+	if json.Unmarshal(job.RequestJSON, &payload) != nil || payload["video_input"] != inputReferences {
+		return nil
+	}
+	client, _, err := s.routes().Media(job.Provider, job.Model, job.ProviderEndpoint)
+	if err != nil {
+		return err
+	}
+	model, err := client.Model(ctx, job.Model, "video")
+	if err != nil {
+		return err
+	}
+	if model.ReferenceImages == 0 {
+		return fmt.Errorf("the chosen video model cannot take reference pictures; choose first frame for this scene")
+	}
+	if err = s.attachReferencePictures(job, payload, model.ReferenceImages); err != nil {
+		return err
+	}
+	job.RequestJSON = voiceJSON(payload)
+	return nil
+}
+
 func (s *Server) prepareDirectorVideoJob(ctx context.Context, job *models.RenderJob) error {
 	if err := s.prepareVideoJob(job); err != nil {
 		return err
 	}
-	return s.freezeDirectorVideo(ctx, job)
+	if err := s.freezeReferencePictures(ctx, job); err != nil {
+		return err
+	}
+	if err := s.freezeDirectorVideo(ctx, job); err != nil {
+		return err
+	}
+	var payload map[string]any
+	if json.Unmarshal(job.RequestJSON, &payload) != nil || payload == nil {
+		return fmt.Errorf("invalid frozen video request")
+	}
+	if job.SceneID != nil && payload["resolution"] == nil {
+		if scene, e := s.database.GetScene(*job.SceneID); e == nil {
+			resolution := sceneBrief(scene).Resolution
+			if resolution != "" && resolution != "auto" {
+				payload["resolution"] = resolution
+			}
+		}
+	}
+	if job.SceneID != nil {
+		if scene, e := s.database.GetScene(*job.SceneID); e == nil {
+			brief := sceneBrief(scene)
+			direction := brief.creativeDirection()
+			if brief.BriefVersion != 1 && brief.Style != "" {
+				direction += "\nVisual style: " + brief.Style
+			}
+			if strings.TrimSpace(direction) != "" {
+				payload["prompt"] = stringPrompt(payload["prompt"]) + "\n" + direction
+			}
+		}
+	}
+	delete(payload, "request_fingerprint")
+	digest := sha256.Sum256(voiceJSON(map[string]any{"provider": job.Provider, "model": job.Model, "endpoint": job.ProviderEndpoint, "request": payload}))
+	payload["request_fingerprint"] = hex.EncodeToString(digest[:])
+	job.RequestJSON = voiceJSON(payload)
+	return nil
 }
 
 // Called again at the provider submission boundary, including after a backend restart.
 func (s *Server) validateFrozenVideo(ctx context.Context, job *models.RenderJob) error {
 	var payload struct {
-		Context  *directorContext `json:"director_context"`
-		Keyframe string           `json:"director_keyframe"`
-		Voice    struct {
-			Bindings []db.VoiceBinding `json:"source_bindings"`
-		} `json:"voice_policy"`
+		SceneInput string           `json:"scene_input_revision"`
+		Context    *directorContext `json:"director_context"`
+		Keyframe   string           `json:"director_keyframe"`
 	}
 	if json.Unmarshal(job.RequestJSON, &payload) != nil {
 		return fmt.Errorf("invalid frozen render request")
 	}
-	if payload.Context == nil && len(payload.Voice.Bindings) == 0 {
+	if payload.Context == nil {
 		return nil
 	}
 	if job.ProjectID == nil {
 		return fmt.Errorf("missing frozen render project")
+	}
+	if payload.SceneInput != "" && job.SceneID != nil {
+		current, e := s.currentSceneInputRevision(*job.SceneID)
+		if e != nil || current != payload.SceneInput {
+			return fmt.Errorf("scene changed after render approval; review before submitting")
+		}
 	}
 	if payload.Context != nil {
 		if payload.Context.ProjectID != *job.ProjectID {
@@ -228,11 +322,6 @@ func (s *Server) validateFrozenVideo(ctx context.Context, job *models.RenderJob)
 		asset, err := s.database.GetAsset(payload.Keyframe)
 		if err != nil || asset.ProjectID == nil || *asset.ProjectID != *job.ProjectID || !models.ReferenceApproved(asset.MetadataJSON) {
 			return fmt.Errorf("render keyframe is unavailable or no longer approved")
-		}
-	}
-	if len(payload.Voice.Bindings) > 0 {
-		if err := s.checkVoiceBindings(&db.VoiceTask{ProjectID: *job.ProjectID, Bindings: payload.Voice.Bindings}); err != nil {
-			return err
 		}
 	}
 	return nil

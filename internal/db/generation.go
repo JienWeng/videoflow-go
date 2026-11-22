@@ -8,17 +8,45 @@ import (
 )
 
 func (d *DB) SaveScriptScenes(script *models.Script, scenes []models.Scene) error {
+	return d.SaveStorySnapshot(script, scenes, nil)
+}
+
+// SaveStorySnapshot commits the planned cast and story as one unit.
+func (d *DB) SaveStorySnapshot(script *models.Script, scenes []models.Scene, characters []models.Character) error {
 	tx, err := d.conn.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	for i := range characters {
+		if script.ProjectID == nil || characters[i].ProjectID == nil || *characters[i].ProjectID != *script.ProjectID {
+			return fmt.Errorf("story character project mismatch")
+		}
+		if err = insertCharacter(tx, &characters[i]); err != nil {
+			return err
+		}
+	}
 	if err = insertScript(tx, script); err != nil {
 		return err
 	}
 	for i := range scenes {
 		scenes[i].ScriptID = &script.ID
 		scenes[i].ProjectID = script.ProjectID
+		var cast []string
+		if len(scenes[i].CharacterIDsJSON) > 0 {
+			if err = json.Unmarshal(scenes[i].CharacterIDsJSON, &cast); err != nil {
+				return err
+			}
+		}
+		for _, id := range cast {
+			var owner string
+			if err = tx.QueryRow(`SELECT project_id FROM characters WHERE id=?`, id).Scan(&owner); err != nil {
+				return err
+			}
+			if script.ProjectID == nil || owner != *script.ProjectID {
+				return fmt.Errorf("story cast belongs to another project")
+			}
+		}
 		if err = insertScene(tx, &scenes[i]); err != nil {
 			return err
 		}
@@ -121,35 +149,118 @@ func (d *DB) AppendCharacterReferences(id, project string, assetIDs []string) er
 	return tx.Commit()
 }
 
-// SaveOperationJobs records the complete batch before any worker can submit paid work.
-func (d *DB) SaveOperationJobs(opID string, jobs []models.RenderJob, result map[string]any) error {
+// ClaimStoryContinuation fences concurrent/replayed continuation clicks before
+// any paid work; the exact saved snapshot must still be waiting for review.
+func (d *DB) ClaimStoryContinuation(id, project string, expected json.RawMessage) (bool, error) {
+	result, err := d.conn.Exec(`UPDATE ops SET status='running',error=NULL,updated_at=? WHERE id=? AND project_id=? AND kind='video_generation' AND status='succeeded' AND result_json=?`, time.Now().UTC(), id, project, string(expected))
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	return rows == 1, err
+}
+
+// ReplaceUnapprovedCharacterReferences keeps approved active inputs and retires
+// older candidates only after a new image is saved. Asset history is untouched.
+func (d *DB) ReplaceUnapprovedCharacterReferences(id, project string, created []string) error {
 	tx, err := d.conn.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	ids := []string{}
-	for i := range jobs {
-		if err = insertRenderJob(tx, &jobs[i]); err != nil {
+	var raw string
+	if err = tx.QueryRow(`SELECT reference_asset_ids_json FROM characters WHERE id=? AND project_id=?`, id, project).Scan(&raw); err != nil {
+		return err
+	}
+	var current []string
+	if err = json.Unmarshal([]byte(raw), &current); err != nil {
+		return err
+	}
+	next := []string{}
+	seen := map[string]bool{}
+	for _, ref := range current {
+		var meta string
+		if err = tx.QueryRow(`SELECT metadata_json FROM assets WHERE id=? AND project_id=?`, ref, project).Scan(&meta); err != nil {
 			return err
 		}
-		ids = append(ids, jobs[i].ID)
+		var state struct {
+			Review string `json:"consistency_review"`
+		}
+		json.Unmarshal([]byte(meta), &state)
+		if (state.Review == "" || state.Review == "approved") && !seen[ref] {
+			next = append(next, ref)
+			seen[ref] = true
+		}
 	}
-	result["render_job_ids"] = ids
-	raw, err := json.Marshal(result)
+	for _, ref := range created {
+		var owner, kind string
+		if err = tx.QueryRow(`SELECT character_id,type FROM assets WHERE id=? AND project_id=?`, ref, project).Scan(&owner, &kind); err != nil {
+			return err
+		}
+		if owner != id || kind != "character_reference" {
+			return fmt.Errorf("candidate is not a reference for this character")
+		}
+		if !seen[ref] {
+			next = append(next, ref)
+			seen[ref] = true
+		}
+	}
+	rawNext, err := json.Marshal(next)
 	if err != nil {
 		return err
 	}
-	res, err := tx.Exec(`UPDATE ops SET status='succeeded',result_json=?,updated_at=? WHERE id=? AND status='running'`, string(raw), time.Now().UTC(), opID)
+	if _, err = tx.Exec(`UPDATE characters SET reference_asset_ids_json=?,updated_at=? WHERE id=? AND project_id=?`, string(rawNext), time.Now().UTC(), id, project); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ExcludeStoryAsset atomically updates the paused operation and its scene bindings.
+// The library asset is retained. Exact result matching prevents racing continuation.
+func (d *DB) ExcludeStoryAsset(op, project, asset string, scenes []string, expected, next []byte) error {
+	tx, err := d.conn.Begin()
 	if err != nil {
 		return err
 	}
-	n, err := res.RowsAffected()
+	defer tx.Rollback()
+	result, err := tx.Exec(`UPDATE ops SET result_json=? WHERE id=? AND project_id=? AND kind='video_generation' AND status='succeeded' AND result_json=?`, string(next), op, project, string(expected))
 	if err != nil {
 		return err
 	}
+	n, _ := result.RowsAffected()
 	if n != 1 {
-		return fmt.Errorf("operation is no longer running")
+		return fmt.Errorf("story changed; refresh before removing a reference")
+	}
+	remove := func(ids []string) []string {
+		result := []string{}
+		for _, id := range ids {
+			if id != asset {
+				result = append(result, id)
+			}
+		}
+		return result
+	}
+	for _, id := range scenes {
+		var sceneRaw, assetRaw []byte
+		if err = tx.QueryRow(`SELECT scene_json,asset_ids_json FROM scenes WHERE id=? AND project_id=?`, id, project).Scan(&sceneRaw, &assetRaw); err != nil {
+			return err
+		}
+		var metadata map[string]json.RawMessage
+		if err = json.Unmarshal(sceneRaw, &metadata); err != nil {
+			return err
+		}
+		if metadata == nil {
+			metadata = map[string]json.RawMessage{}
+		}
+		var refs, all []string
+		_ = json.Unmarshal(metadata["story_asset_ids"], &refs)
+		_ = json.Unmarshal(assetRaw, &all)
+		metadata["story_asset_ids"], _ = json.Marshal(remove(refs))
+		sceneRaw, _ = json.Marshal(metadata)
+		assetRaw, _ = json.Marshal(remove(all))
+		if _, err = tx.Exec(`UPDATE scenes SET scene_json=?,asset_ids_json=?,updated_at=? WHERE id=? AND project_id=?`, string(sceneRaw), string(assetRaw), time.Now().UTC(), id, project); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }

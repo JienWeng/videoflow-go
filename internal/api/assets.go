@@ -52,7 +52,12 @@ func (s *Server) handleAssetTypes(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetAsset(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	project, projectErr := s.activeProjectID(r.Context())
 	asset, err := s.database.GetAsset(id)
+	if projectErr != nil || err != nil || asset.ProjectID == nil || *asset.ProjectID != project {
+		http.Error(w, "asset not found", 404)
+		return
+	}
 	if err != nil {
 		http.Error(w, "asset not found", http.StatusNotFound)
 		return
@@ -62,10 +67,31 @@ func (s *Server) handleGetAsset(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteAsset(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	if err := s.database.DeleteAsset(id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	project, e := s.activeProjectID(r.Context())
+	asset, err := s.database.GetAsset(id)
+	if e != nil || err != nil || asset.ProjectID == nil || *asset.ProjectID != project {
+		http.Error(w, "asset not found", 404)
 		return
 	}
+	value, _ := s.referenceLocks.LoadOrStore("asset-version:"+id, make(chan struct{}, 1))
+	lock := value.(chan struct{})
+	select {
+	case lock <- struct{}{}:
+		defer func() { <-lock }()
+	default:
+		http.Error(w, "an asset version is still generating; wait before deleting", 409)
+		return
+	}
+	uses, err := s.database.DeleteUnusedAsset(project, id)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if len(uses) > 0 {
+		writeJSON(w, 409, map[string]any{"error": "This shared asset is still in use. Remove its active bindings before deleting it.", "uses": uses})
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 

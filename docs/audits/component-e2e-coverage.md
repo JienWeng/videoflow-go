@@ -13,7 +13,7 @@ PLAYWRIGHT_MODULE=/tmp/videoflow-browser-runner/node_modules/playwright/index.mj
 | Shell/navigation | All 12 routes at 1440×1000 and 390×844; command palette opens/closes; primary navigation controls inventoried | Every palette command, onboarding steps, activity operation cancellation/recovery, keyboard focus order |
 | Studio | Empty canvas and backend failure inventory | Nodes, edges, drag, zoom, selection, inspector, canvas menus, chat action cards and native director sessions |
 | Create | Empty/missing-provider and backend failure inventory; empty Create disabled | Story upload, selected characters, preflight validation, Run/cancel/retry/reload recovery, generated clips |
-| Projects | Empty-name disabled; rename cancel/save; delete cancel/confirm; dialog inventory | Create/switch, import ZIP validation, export actual download and reimport |
+| Projects | Empty-name disabled; rename cancel/save; delete cancel/confirm; dialog inventory | Cross-host media restoration/full-volume backups; supported same-host JSON export/import is covered in the remaining-risk follow-up |
 | Scenes | Empty page and backend failure inventory; generator opens/cancels, empty submit disabled, max-scenes validation | editing, sorting/filtering, shot creation/reorder, confirmation variants, storyboard lightbox, generation jobs |
 | Characters | Empty page and backend failure inventory; empty character disabled | CRUD, reference upload/remove, reference lightbox previous/next, generation, visual/voice rule persistence |
 | Assets | Empty page and backend failure inventory | Upload types, filter/search, detail metadata, describe dialog, style references, reingest confirmation, delete confirmation |
@@ -88,3 +88,8 @@ E2E_RESUME_REVIEW=1 node scripts/e2e_reference_review.mjs
 ```
 
 The normal command without that variable performs Create first. All five browser scripts (`e2e_components`, `e2e_director`, `e2e_native_workflow`, `e2e_identity_upload`, `e2e_reference_review`) require the external Playwright module; no app dependency was added.
+
+
+## Remaining-risk follow-up (2026-11-14)
+
+[Targeted follow-up evidence](2026-11-14-remaining-risks.md) covers same-host JSON download/import, media binding validation, uncached backend recovery/voice tests, real optional HyperFrames rendering, Chromium scale checks, Linux WebKit and automated accessibility scans. It supersedes the corresponding historical gap entries above; real account-backed native AI, Safari/iOS hardware, screen readers and provider quality remain outside the run. The follow-up also records the ARIA, focus and contrast fixes discovered by populated/light-theme testing.

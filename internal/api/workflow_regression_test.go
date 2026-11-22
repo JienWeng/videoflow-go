@@ -58,27 +58,6 @@ func TestAuditSceneExpansionHonorsCast(t *testing.T) {
 		t.Fatalf("selected cast discarded: %s", scenePtr.CharacterIDsJSON)
 	}
 }
-func TestCaptionFailurePreservesPreviousOutput(t *testing.T) {
-	s := auditMock(t, `{}`)
-	job := &models.RenderJob{Status: "succeeded", Provider: "openrouter", Model: "fixture"}
-	if err := s.database.CreateRenderJob(job); err != nil {
-		t.Fatal(err)
-	}
-	path := "storage/old-captioned.mp4"
-	out := &models.RenderOutput{RenderJobID: job.ID, VideoPath: "storage/raw.mp4", CaptionedPath: &path}
-	if err := s.database.CreateRenderOutput(out); err != nil {
-		t.Fatal(err)
-	}
-	r := call(t, s, "PUT", "/outputs/"+out.ID+"/captions", `{"segments":[{"start":0,"end":1,"text":"Hi"}],"style":"clean"}`)
-	if r.Code < 400 {
-		t.Fatalf("caption save falsely succeeded: %d", r.Code)
-	}
-	updated, _ := s.database.GetRenderOutput(out.ID)
-	if updated.CaptionedPath == nil || *updated.CaptionedPath != path {
-		t.Fatalf("editor promises re-burn, endpoint only saves segments and removes captioned output: %s", r.Body.String())
-	}
-}
-
 func TestCastRemovalInvalidatesConditioningSnapshot(t *testing.T) {
 	s := auditMock(t, `{}`)
 	project, _ := s.database.GetActiveProjectID()

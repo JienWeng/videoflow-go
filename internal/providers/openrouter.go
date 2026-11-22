@@ -121,6 +121,12 @@ type Model struct {
 	FrameImages         []string        `json:"supported_frame_images"`
 	InputReferences     json.RawMessage `json:"supported_input_references"`
 	GenerateAudio       bool            `json:"generate_audio"`
+	// ReferenceImages is how many pictures a clip may be given as references in place of a
+	// first frame, sent as image_urls and named in the prompt as @Image 1, @Image 2, ...
+	ReferenceImages int `json:"reference_images,omitempty"`
+	// ReferenceAudios is how many voice recordings a reference-mode clip may also be given,
+	// sent as audio_urls and named in the prompt as @Audio 1, @Audio 2, ...
+	ReferenceAudios int `json:"reference_audios,omitempty"`
 }
 
 func (c *OpenRouterClient) Models(ctx context.Context, modality string) ([]Model, error) {
@@ -130,8 +136,6 @@ func (c *OpenRouterClient) Models(ctx context.Context, modality string) ([]Model
 		path = "/images/models"
 	case "video":
 		path = "/videos/models"
-	case "transcription":
-		path = "/models?output_modalities=transcription"
 	case "text", "vision", "":
 	default:
 		return nil, fmt.Errorf("unsupported modality %q", modality)
@@ -182,10 +186,21 @@ func contains[T comparable](values []T, value T) bool {
 }
 
 func (c *OpenRouterClient) chat(ctx context.Context, model, system string, content any) (string, error) {
-	payload := map[string]any{"model": model, "messages": []map[string]any{{"role": "system", "content": system}, {"role": "user", "content": content}}}
+	payload := map[string]any{"model": model, "usage": map[string]any{"include": true}, "messages": []map[string]any{{"role": "system", "content": system}, {"role": "user", "content": content}}}
 	data, err := c.request(ctx, "POST", "/chat/completions", payload)
 	if err != nil {
 		return "", err
+	}
+	if OnTextCost != nil {
+		var billed struct {
+			Usage struct {
+				Cost   float64 `json:"cost"`
+				Tokens float64 `json:"total_tokens"`
+			} `json:"usage"`
+		}
+		if json.Unmarshal(data, &billed) == nil && billed.Usage.Tokens > 0 {
+			OnTextCost(model, billed.Usage.Tokens, billed.Usage.Cost)
+		}
 	}
 	var res struct {
 		Choices []struct {
@@ -215,6 +230,7 @@ func (c *OpenRouterClient) StructuredJSON(ctx context.Context, model, system, us
 func (c *OpenRouterClient) StructuredVision(ctx context.Context, model, system, user string, images []string, target any) error {
 	template, _ := json.Marshal(exampleShape(reflect.TypeOf(target)))
 	system += "\nReturn only a JSON object matching this shape (replace zero values with the requested content): " + string(template) + ". Do not use markdown."
+	var last error
 	for attempt := 0; attempt < 2; attempt++ {
 		var content any = user
 		if len(images) > 0 {
@@ -232,17 +248,26 @@ func (c *OpenRouterClient) StructuredVision(ctx context.Context, model, system, 
 		result = strings.TrimPrefix(result, "```json")
 		result = strings.TrimPrefix(result, "```")
 		result = strings.TrimSuffix(result, "```")
-		if err = json.Unmarshal([]byte(strings.TrimSpace(result)), target); err == nil {
+		result = strings.TrimSpace(result)
+		if i, j := strings.Index(result, "{"), strings.LastIndex(result, "}"); i > 0 && j > i {
+			result = result[i : j+1] // Models sometimes wrap the object in a sentence.
+		}
+		if err = json.Unmarshal([]byte(result), target); err == nil {
 			return nil
 		}
+		last = err
 		user += "\nYour last response was not valid JSON. Return the requested JSON object only."
 	}
-	return fmt.Errorf("OpenRouter model %s returned invalid JSON after two attempts", model)
+	return fmt.Errorf("OpenRouter model %s returned invalid JSON after two attempts: %v", model, last)
 }
+
+// OnTextCost receives what OpenRouter says each text call cost. Set once at startup.
+var OnTextCost func(model string, tokens, dollars float64)
 
 type GeneratedImage struct {
 	Data      []byte
 	MediaType string
+	Usage     json.RawMessage // units the service says it billed, when it reports them
 }
 
 func (c *OpenRouterClient) GenerateImages(ctx context.Context, payload map[string]any) ([]GeneratedImage, error) {
@@ -459,46 +484,6 @@ func (c *OpenRouterClient) VideoContent(ctx context.Context, jobID string, index
 		}
 	}
 	return data, err
-}
-
-type TranscriptSegment struct {
-	Start float64 `json:"start"`
-	End   float64 `json:"end"`
-	Text  string  `json:"text"`
-}
-type Transcript struct {
-	Text     string              `json:"text"`
-	Segments []TranscriptSegment `json:"segments"`
-}
-
-func (c *OpenRouterClient) Transcribe(ctx context.Context, model string, audio []byte, format, language string) (*Transcript, error) {
-	if len(audio) == 0 {
-		return nil, fmt.Errorf("audio is empty")
-	}
-	if _, err := c.Model(ctx, model, "transcription"); err != nil {
-		return nil, err
-	}
-	payload := map[string]any{"model": model, "input_audio": map[string]string{"data": base64.StdEncoding.EncodeToString(audio), "format": format}, "response_format": "verbose_json", "timestamp_granularities": []string{"segment"}}
-	if language != "" && language != "auto" {
-		payload["language"] = language
-	}
-	data, err := c.request(ctx, "POST", "/audio/transcriptions", payload)
-	if err != nil {
-		return nil, err
-	}
-	var transcript Transcript
-	if err = json.Unmarshal(data, &transcript); err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(transcript.Text) != "" && len(transcript.Segments) == 0 {
-		return nil, fmt.Errorf("selected OpenRouter transcription model did not return timestamps; use a Whisper model with verbose_json support")
-	}
-	for _, segment := range transcript.Segments {
-		if segment.Start < 0 || segment.End <= segment.Start {
-			return nil, fmt.Errorf("invalid transcription timestamps")
-		}
-	}
-	return &transcript, nil
 }
 
 // exampleShape gives slice element fields as well as object fields to prompt-only JSON models.

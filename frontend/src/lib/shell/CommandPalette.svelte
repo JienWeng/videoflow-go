@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { editOutputHref } from '$lib/editor/links';
   /**
    * Cmd/Ctrl+K command palette — the keyboard-first way around the Studio.
    *
@@ -13,7 +14,7 @@
    * focuses the node via the onfocus callback instead of navigating.
    */
   import { goto } from '$app/navigation';
-  import { get, post } from '$lib/api';
+  import { get } from '$lib/api';
   import * as Dialog from '$lib/components/ui/dialog';
   import {
     Search,
@@ -97,8 +98,8 @@
     // --- Top actions -----------------------------------------------------
     out.push({
       id: 'act-new-story',
-      label: 'New story',
-      hint: 'write a script with the chat',
+      label: 'Create story',
+      hint: 'story, characters and storyboard',
       group: 'Actions',
       icon: Sparkles,
       run: () => onnewstory?.()
@@ -108,18 +109,18 @@
       label: 'Go to Studio',
       group: 'Go to',
       icon: Clapperboard,
-      href: '/'
+      href: '/?view=studio'
     });
     out.push({
       id: 'nav-scenes',
-      label: 'Go to Scenes',
+      label: 'Go to Story',
       group: 'Go to',
       icon: ListVideo,
-      href: '/scenes'
+      href: '/?view=story'
     });
     out.push({
       id: 'nav-render',
-      label: 'Go to Render',
+      label: 'Go to Videos',
       group: 'Go to',
       icon: Film,
       href: '/render'
@@ -129,14 +130,14 @@
       label: 'Go to Characters',
       group: 'Go to',
       icon: Users,
-      href: '/characters'
+      href: '/library?tab=characters'
     });
     out.push({
       id: 'nav-assets',
-      label: 'Go to Assets',
+      label: 'Go to Media',
       group: 'Go to',
       icon: Image,
-      href: '/assets'
+      href: '/library?tab=media'
     });
     out.push({
       id: 'nav-settings',
@@ -145,6 +146,10 @@
       icon: SlidersHorizontal,
       href: '/settings'
     });
+
+    out.push({id:'nav-sessions',label:'AI setup',hint:'connect your AI and choose models',group:'Go to',icon:SlidersHorizontal,href:'/settings#ai'});
+    out.push({id:'nav-voices',label:'Voices',hint:'a voice for each character',group:'Go to',icon:Users,href:'/voices'});
+    out.push({id:'nav-composition',label:'Edit video',hint:'timeline, captions, music and export',group:'Go to',icon:Film,href:'/?view=edit'});
 
     // --- Entities from the graph ----------------------------------------
     const nodes: any[] = graph?.nodes ?? [];
@@ -156,9 +161,9 @@
           hint: 'scene',
           group: 'Scenes',
           icon: ListVideo,
-          // On the canvas we focus the node; elsewhere /scenes opens it.
+          // On the canvas we focus the node; elsewhere the Story view opens it.
           focus: n.id,
-          href: '/scenes'
+          href: '/?view=story'
         });
       } else if (n.type === 'character') {
         out.push({
@@ -168,7 +173,7 @@
           group: 'Characters',
           icon: Users,
           focus: n.id,
-          href: '/characters'
+          href: '/library?tab=characters'
         });
       } else if (n.type === 'asset') {
         out.push({
@@ -178,16 +183,16 @@
           group: 'Assets',
           icon: Image,
           focus: n.id,
-          href: '/assets'
+          href: '/library?tab=media'
         });
       } else if (n.type === 'output') {
         out.push({
           id: `out-${n.id}`,
           label: lastPath(n.data?.video_path) || n.label || 'Render',
-          hint: 'render output',
+          hint: 'render output · edit video',
           group: 'Renders',
           icon: Film,
-          href: `/editor/${n.id}`
+          href: editOutputHref(n.id)
         });
       }
     }
@@ -224,7 +229,26 @@
   const filtered = $derived.by(() => {
     const q = query.trim();
     if (!q) return items;
-    return items.filter((it) => fuzzy(q, `${it.label} ${it.hint ?? ''} ${it.group}`));
+    // Best matches first: a word in the title beats a word in the hint beats loose letters.
+    const needle = q.toLowerCase();
+    const score = (it: any): number => {
+      const label = String(it.label).toLowerCase(), hint = String(it.hint ?? '').toLowerCase();
+      if (label.startsWith(needle)) return 5;
+      if (label.split(/[\s·\-–—/]+/).some((w) => w.startsWith(needle))) return 4;
+      if (label.includes(needle)) return 3;
+      if (hint.split(/[\s,·\-–—/]+/).some((w) => w.startsWith(needle))) return 2;
+      if (needle.length <= 3 && fuzzy(q, label)) return 1; // initials like “vf”
+      return 0;
+    };
+    const ranked = items
+      .map((it, index) => ({ it, index, s: score(it) }))
+      .filter((x) => x.s > 0)
+      .sort((a, b) => b.s - a.s || a.index - b.index)
+      .map((x) => x.it);
+    // Sections are shown together, best-matching section first, so keyboard order matches the screen.
+    const groupOrder: string[] = [];
+    for (const it of ranked) if (!groupOrder.includes(it.group)) groupOrder.push(it.group);
+    return groupOrder.flatMap((g) => ranked.filter((it) => it.group === g));
   });
 
   // Keep the active index in range as the filtered list shrinks.
@@ -234,14 +258,9 @@
 
   async function switchProject(id: string) {
     open = false;
-    try {
-      // Same flow as /projects: activate then hard-reload so every surface
-      // refetches under the new scope.
-      await post(`/projects/${id}/activate`);
-      window.location.href = '/';
-    } catch {
-      /* toast lives on the projects page; silent failure here is acceptable */
-    }
+    // Let the current screen's navigation guard run before changing backend scope.
+    // The Projects page consumes this navigation intent once, after departure succeeds.
+    await goto('/projects', {state: {activateProject: id}});
   }
 
   function choose(it: Item | undefined) {
@@ -264,7 +283,7 @@
   function onKeydown(e: KeyboardEvent) {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      active = Math.min(active + 1, filtered.length - 1);
+      active = Math.max(0,Math.min(active + 1, filtered.length - 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       active = Math.max(active - 1, 0);
@@ -272,6 +291,7 @@
       e.preventDefault();
       choose(filtered[active]);
     }
+    requestAnimationFrame(() => document.getElementById(`command-result-${active}`)?.scrollIntoView({block:'nearest'}));
   }
 
   // Group the visible items in stable catalogue order for section headers.
@@ -310,10 +330,15 @@
         placeholder="Search or jump to… / 搜索"
         class="h-11 w-full border-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         aria-label="Search commands"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded="true"
+        aria-controls="command-results"
+        aria-activedescendant={filtered[active] ? `command-result-${active}` : undefined}
       />
     </div>
 
-    <div class="max-h-80 overflow-y-auto py-1.5">
+    <div id="command-results" role="listbox" aria-label="Commands and project items" class="max-h-80 overflow-y-auto py-1.5">
       {#if !loaded && !graph}
         <p class="px-3 py-6 text-center text-sm text-muted-foreground">Loading…</p>
       {:else if filtered.length === 0}
@@ -329,6 +354,10 @@
             {@const Icon = row.item.icon}
             <button
               type="button"
+              id={`command-result-${row.index}`}
+              role="option"
+              tabindex="-1"
+              aria-selected={row.index === active}
               class="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm
                      {row.index === active ? 'bg-accent' : 'hover:bg-accent/60'}"
               onmousemove={() => (active = row.index)}

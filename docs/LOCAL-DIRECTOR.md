@@ -4,9 +4,18 @@ Current source routes all planning and writing through your selected local **Cod
 
 ## Set up the local engine
 
-Install and sign in to [Codex CLI](https://developers.openai.com/codex/cli/) or [Claude Code](https://code.claude.com/docs/en/setup) on the **same host and OS account as the VideoFlow backend**. This implementation checks Codex 0.165.0 command flags; Claude needs a version supporting `--restricted` (documented from 2.1.248). Installation detection does not prove login, account entitlement, quota or successful inference. The app reports a failed native turn instead of falling back to a paid OpenRouter text call.
+For native backends, install and sign in to [Codex CLI](https://developers.openai.com/codex/cli/) or [Claude Code](https://code.claude.com/docs/en/setup) on the **same host and OS account as the VideoFlow backend**. Docker builds bundle Codex 0.169.0 and Claude Code 2.1.325. Installation detection does not prove login, account entitlement, quota or successful inference. The app reports a failed native turn instead of falling back to a paid OpenRouter text call.
 
-A backend inside Docker cannot automatically use the CLIs/authentication on your computer. Run the native backend for this local workflow; a host bridge is not bundled. Provider/media keys are configured separately in Settings. Optional executable overrides are `VIDEOFLOW_CODEX_BIN` and `VIDEOFLOW_CLAUDE_BIN`; these are server environment settings, not arbitrary browser commands.
+A backend inside Docker uses its own bundled CLIs and authentication, not the login on your computer. After rebuilding, sign in from the project folder on the backend host using one of:
+
+```sh
+docker compose exec backend codex login --device-auth
+docker compose exec backend claude auth login
+```
+
+Follow the provider's official flow in your browser/terminal. Codex device login must be enabled for your account/workspace; if unavailable, use the official authentication fallback. The `videoflow-agent-auth` named volume mounts `/home/videoflow`, preserving CLI credentials, configuration and native histories across container recreation. It is separate from public media storage and the project-data volume; keep it private and never export it in a project JSON. `docker compose down -v` deletes both named volumes. No host credentials are imported automatically. Existing installations need `docker compose up --build -d` to receive the bundled tools.
+
+Provider/media keys are configured separately in Settings. Optional executable overrides are `VIDEOFLOW_CODEX_BIN` and `VIDEOFLOW_CLAUDE_BIN`; these are server environment settings, not arbitrary browser commands. Packaged native desktop previews still require separately installed CLIs.
 
 1. Open **Local sessions** (`/director`), choose an engine and create a named session.
 2. Select the characters and reference assets, then save the selection. Full appearance, personality, visual/voice rules, sample dialogue and reference bindings are included. In Assets, open a file and save identity locks such as `kind: car`, `color: red`.
@@ -22,9 +31,9 @@ Interrupted turns are not replayed automatically. Review the saved native sessio
 
 Open **Voices & captions** (`/voices`). Saved character voices are the default; native reference-audio video is an explicit alternative. Upload a sample, bind it to the correct character, review any cloned voice, and approve exact spoken lines with stable utterance/speaker IDs. Generated scene spoken lines can seed that approval, but scene summaries are never automatically treated as speech.
 
-Each paid stage has a prepared preview/fingerprint and explicit Run: voice creation, speech, native video, lip sync or forced alignment. Results retain upstream receipts; refresh retrieves the existing request, while an uncertain submission needs reconciliation rather than another paid attempt. Ordinary renders are silent visual passes with captured identity/saved-voice policy; speech is a separate explicit stage. A native-reference profile is rejected by ordinary first-frame rendering with a link to its compatible voice workflow. Visible saved-voice dialogue needs lip sync; narration may be a separate audio track. The initial native reference mode supports one speaker/sample and 1–9 image references per clip. Unsupported combinations fail preflight rather than dropping references.
+Each paid stage has a prepared preview/fingerprint and explicit Run: voice creation, speech, native video, lip sync or forced alignment. Results retain upstream receipts; refresh retrieves the existing request, while an uncertain submission needs reconciliation rather than another paid attempt. Scene renders now use the saved Video & sound plan: native audio on supported models (no saved voice IDs required), saved-voice silent visuals, or silence. Saved-voice speech is a separate explicit stage. See CONNECTED-VIDEO-WORKFLOW.md for paid-call caps, grouped clips and music/assembly. A native-reference profile is rejected by ordinary first-frame rendering with a link to its compatible voice workflow. Visible saved-voice dialogue needs lip sync; narration may be a separate audio track. The initial native reference mode supports one speaker/sample and 1–9 image references per clip. Unsupported combinations fail preflight rather than dropping references.
 
-Approved script supplies wording. Final audio supplies timing. Alignment produces editable cues and SRT/VTT/JSON; human review is still required to check actual spoken wording and voice/lip-sync quality. Existing editor preview/burn and composition caption imports preserve cue IDs and source provenance. Script/profile/sample/final media changes invalidate dependent results; guessed evenly-spaced word timing is not used. See [the detailed voice and recovery contract](voice-and-script-captions.md).
+Approved script supplies wording. Final audio supplies timing. Alignment produces editable cues and SRT/VTT/JSON; human review is still required to check actual spoken wording and voice/lip-sync quality. Existing editor preview/burn and composition caption imports preserve cue IDs and source provenance. Script/profile/sample/final media changes invalidate dependent results; guessed evenly-spaced word timing is not used. See the voice and recovery contract in the source (`internal/api/voice.go`).
 
 ## Local composition editing
 
@@ -44,3 +53,9 @@ OpenCut is **not integrated**. Its current repository is being rewritten and the
 ### Canvas workspace
 
 Studio includes an AI session selector. Start a Codex/Claude session there or use More tools → AI sessions for history and recovery. Select a canvas node to edit Details or open Chat with that item's scope. Suggestions fill a draft; review and submit it yourself. Settings groups preferences under General, credentials/models under AI connections, and routing/recovery under Advanced.
+
+## Automatic character sheets in guided creation
+
+Create story plans the cast and shots, then uses the configured reference-image route to create sheets for cast members without reference images. Codex or Claude Code prepares the prompts; the image provider draws the sheets. Existing bindings and identities are reused. Generated candidates remain pending, and the saved operation pauses at character review. Approve each design in Library, refresh approvals, then Continue storyboarding. The same operation resumes using current approved bindings and its captured media routes, without redoing character sheets. Storyboard approval and explicit video rendering remain later gates. Missing character sheets and storyboard images are separate image calls and can incur charges. Voices are configured separately.
+
+Manual reference regeneration from canvas or Library excludes pending/rejected images as conditioning inputs. It creates a new candidate for the selected character, retaining approved active images and all prior assets. Superseded unapproved drafts are no longer active bindings after success. This reference-candidate path does not relax ordinary scene/video approval gates.

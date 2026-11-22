@@ -20,7 +20,7 @@ func (s *Server) setSceneCast(scene *models.Scene, ids []string) error {
 		b.SceneCount = 1
 	}
 	style := b.Style
-	if err := s.prepareBrief(*scene.ProjectID, &b); err != nil {
+	if err := s.prepareSavedBrief(*scene.ProjectID, &b); err != nil {
 		return err
 	}
 	if style != "" {
@@ -47,8 +47,7 @@ func (s *Server) changeSceneCast(sceneID, characterID string, add bool) (*models
 	if err != nil {
 		return nil, err
 	}
-	var ids []string
-	json.Unmarshal(scene.CharacterIDsJSON, &ids)
+	ids := models.IDList(scene.CharacterIDsJSON)
 	next := []string{}
 	found := false
 	for _, id := range ids {

@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {mediaKind,typeLabel,characterMatches} from './catalog.mjs';
+assert.equal(mediaKind({file_path:'/storage/FOX.PNG',type:'character_reference'}),'image');
+assert.equal(mediaKind({file_path:'/storage/take.mp4',type:'other'}),'video');
+assert.equal(mediaKind({file_path:'/storage/voice.WAV',type:'other'}),'audio');
+assert.equal(mediaKind({file_path:'/storage/notes.pdf',type:'other'}),'other');
+assert.equal(mediaKind({type:'video'}),'video');
+assert.equal(mediaKind({type:'prop'}),'other');
+assert.equal(mediaKind({file_path:'storage/portrait.avif'}),'image');
+assert.equal(mediaKind({file_path:'storage/diagram.svg'}),'image');
+assert.equal(typeLabel('character_reference'),'Character reference');
+assert.equal(typeLabel(''),'Other');
+assert.equal(characterMatches({name:'Pip',appearance:'Brown fur'},' BROWN '),true);
+assert.equal(characterMatches({name:'Pip'},'cat'),false);
+console.log('PASS 12 library catalog assertions');

@@ -24,6 +24,8 @@ import (
 
 type Server struct {
 	directorRunner  *director.Runner
+	agentAuth       *director.AuthManager
+	agentAuthOnce   sync.Once
 	directorCancels sync.Map
 	cfg             *config.Config
 	database        *db.DB
@@ -38,6 +40,7 @@ type Server struct {
 	tasks           sync.WaitGroup
 	activeRequests  sync.Map
 	recoveryMu      sync.Mutex
+	referenceLocks  sync.Map
 	paidRequests    chan struct{}
 	operationSlots  chan struct{}
 }
@@ -64,16 +67,8 @@ func NewServer(
 		media:      mediaEngine,
 		router:     chi.NewRouter(),
 	}
-	s.agents.SetResolver(s.routes().Agent)
 	s.agents.SetLanguageResolver(func() string { return s.routes().Setting("dialogue_language", "English") })
 	s.agents.SetStructuredRunner(func(ctx context.Context, name, system, prompt string, target any) error {
-		if !s.cfg.UseLocalText {
-			client, model, err := s.routes().Agent(ctx, name)
-			if err != nil {
-				return err
-			}
-			return client.StructuredJSON(ctx, model, system, prompt, target)
-		}
 		return s.localTextJSON(ctx, name, system, prompt, target)
 	})
 	s.workers.SetSubmissionValidator(s.validateFrozenVideo)
@@ -98,7 +93,19 @@ func (s *Server) setupRoutes() {
 	s.router.Use(middleware.RealIP)
 	s.router.Use(middleware.Logger)
 	s.router.Use(middleware.Recoverer)
-	s.router.Use(middleware.Timeout(5 * time.Minute))
+	// Every request is cut off after five minutes except the event stream, which stays
+	// open for as long as the page does.
+	limit := middleware.Timeout(5 * time.Minute)
+	s.router.Use(func(next http.Handler) http.Handler {
+		limited := limit(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/events" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			limited.ServeHTTP(w, r)
+		})
+	})
 
 	// CORS matching SvelteKit frontend origins
 	s.router.Use(cors.Handler(cors.Options{
@@ -170,7 +177,6 @@ func (s *Server) setupRoutes() {
 	s.router.Patch("/projects/{id}", s.handleUpdateProject)
 	s.router.Delete("/projects/{id}", s.handleDeleteProject)
 	s.router.Get("/projects/{id}/export", s.handleExportProject)
-	s.router.Post("/projects/{id}/export", s.handleExportProject)
 	s.router.Post("/projects/import", s.handleImportProject)
 
 	// Characters
@@ -184,14 +190,22 @@ func (s *Server) setupRoutes() {
 
 	// Scenes, Shots, Scripts & Ideas
 	s.router.Get("/scenes", s.handleListScenes)
+	s.router.Get("/production/progress", s.handleProjectProgress)
 	s.router.Post("/scenes", s.handleCreateScene)
 	s.router.Get("/scenes/{id}", s.handleGetScene)
 	s.router.Patch("/scenes/{id}", s.handleUpdateScene)
+	s.router.Put("/scenes/{id}/style", s.handleSceneStyle)
 	s.router.Delete("/scenes/{id}", s.handleDeleteScene)
 	s.router.Post("/scenes/{id}/generate", s.handleExpandScene)
 	s.router.Post("/scenes/{id}/refine", s.handleRefineScene)
 	s.router.Post("/scenes/{id}/render", s.handleRenderScene)
+	s.router.Get("/scenes/{id}/production", s.handleProductionPlan)
+	s.router.Put("/scenes/{id}/production", s.handleProductionPlan)
+	s.router.Post("/scenes/{id}/storyboard/audit", s.handleStoryboardAudit)
 	s.router.Post("/scenes/{id}/storyboard", s.handleStoryboard)
+	s.router.Get("/scenes/{id}/references", s.handleSceneReferences)
+	s.router.Post("/scenes/{id}/references/{asset_id}", s.handleSetSceneReference)
+	s.router.Delete("/scenes/{id}/references/{asset_id}", s.handleSetSceneReference)
 	s.router.Post("/scenes/{id}/assets/plan", s.handlePlanSceneAssets)
 	s.router.Post("/scenes/{id}/assets/generate", s.handleGenerateSceneAssets)
 	s.router.Post("/scenes/{id}/shots/generate", s.handleGenerateShots)
@@ -212,49 +226,45 @@ func (s *Server) setupRoutes() {
 	s.router.Post("/revisions/{id}/revert", s.handleRevertRevision)
 
 	s.router.Post("/ideas/develop", s.handleDevelopIdea)
-	s.router.Post("/scripts/generate", s.handleGenerateScript)
 	s.router.Get("/scripts", s.handleListScripts)
 
 	// Assets
+	s.router.Post("/assets/generate", s.handleGenerateImage)
 	s.router.Get("/assets", s.handleListAssets)
 	s.router.Get("/assets/types", s.handleAssetTypes)
 	s.router.Post("/assets/upload", s.handleUploadAsset)
+	s.router.Post("/assets/import-link", s.handleImportLinkAsset)
+	s.router.Patch("/assets/{id}", s.handleUpdateAssetDetails)
+	s.router.Post("/assets/{id}/regenerate", s.handleRegenerateAsset)
+	s.router.Get("/assets/{id}/usage", s.handleAssetUsage)
 	s.router.Get("/assets/{id}", s.handleGetAsset)
 	s.router.Delete("/assets/{id}", s.handleDeleteAsset)
 	s.router.Post("/assets/{id}/recognise", s.handleRecogniseAsset)
 
 	// Render & Outputs
-	s.router.Post("/render", s.handleStartRender)
 	s.router.Post("/render/from-shot", s.handleRenderFromShot)
 	s.router.Get("/render-jobs", s.handleListRenderJobs)
 	s.router.Get("/render-jobs/{id}", s.handleGetRenderJob)
 	s.router.Post("/render-jobs/{id}/resubmit", s.handleResubmitJob)
-	s.router.Post("/render-jobs/{id}/reconcile", s.handleReconcileRender)
+	s.registerRenderRecoveryRoutes()
 
-	s.router.Post("/outputs/assemble", s.handleAssembleOutputs)
-	s.router.Get("/outputs/{id}/editor", s.handleGetEditorData)
 	s.router.Post("/outputs/{id}/retry", s.handleRetryOutput)
-	s.router.Patch("/outputs/{id}/select", s.handleSelectOutput)
 	s.router.Get("/outputs/{id}/download", s.handleDownloadOutput)
-	s.router.Post("/outputs/{id}/run-qa", s.handleRunQA)
-	s.router.Get("/outputs/{id}/captions", s.handleGetCaptions)
-	s.router.Put("/outputs/{id}/captions", s.handleUpdateCaptions)
-	s.router.Post("/outputs/{id}/captions/transcribe", s.handleTranscribeCaptions)
-	s.router.Post("/outputs/{id}/caption", s.handleCaptionOutput)
-	s.router.Get("/caption-styles", s.handleCaptionStyles)
-	s.router.Get("/caption-config", s.handleCaptionConfig)
 
 	// Style Guide
+	s.router.Get("/style-presets", s.handlePresetCatalog)
+	s.router.Post("/preset-packs/preview", s.handlePresetPack)
+	s.router.Post("/preset-packs/import", s.handlePresetPack)
+	s.router.Delete("/preset-packs/{id}", s.handleDeletePresetPack)
+	s.router.Get("/preset-packs/{id}/export", s.handleExportPresetPack)
 	s.router.Get("/style", s.handleGetStyle)
 	s.router.Patch("/style", s.handleUpdateStyle)
-	s.router.Put("/style", s.handleUpdateStyle)
 	s.router.Post("/style/ingest", s.handleIngestStyle)
+	s.router.Post("/style/reference", s.handleAnalyzeStyleReference)
 
 	// Settings
 	s.router.Get("/settings/app", s.handleGetAppSettings)
 	s.router.Put("/settings/app", s.handlePutAppSettings)
-	s.router.Get("/settings/agents", s.handleListAgents)
-	s.router.Put("/settings/agents/{agent}", s.handlePutAgent)
 	s.router.Get("/settings/providers", s.handleListProviders)
 	s.router.Get("/settings/providers/{name}", s.handleGetProviderConfig)
 	s.router.Put("/settings/providers/{name}", s.handlePutProviderConfig)
@@ -270,6 +280,8 @@ func (s *Server) setupRoutes() {
 	// Videos (Guided Pipeline)
 	s.router.Get("/videos/preflight", s.handleVideoPreflight)
 	s.router.Post("/videos/generate", s.handleGenerateVideo)
+	s.router.Post("/videos/generate/{id}/continue", s.handleContinueStory)
+	s.router.Post("/videos/generate/{id}/assets/exclude", s.handleExcludeStoryAsset)
 
 	// Ops
 	s.router.Get("/ops/{id}", s.handleGetOp)

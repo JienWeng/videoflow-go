@@ -12,7 +12,7 @@ Latest Electron preview: https://github.com/JienWeng/videoflow-go/releases/tag/v
 
 The older v0.3.2 browser-launcher ZIP remains available at https://github.com/JienWeng/videoflow-go/releases/tag/v0.3.2-browser-preview.1 but does not contain the new local director architecture or redesigned workspace.
 
-Current source uses your fal.ai key/credits for default image/video routes and a selected local Claude Code/Codex session for all text planning/writing and OpenRouter key/credits for vision and transcription, with optional direct BytePlus video. See docs/PROVIDERS.md. The older v0.3.2 download uses OpenRouter only. AI generation and transcription need internet and can incur charges. Local installation and ordinary navigation do not require a paid generation.
+Current source uses signed-in local Codex built-in image generation first when available. Image APIs are the fallback for unavailable/unsupported native generation; native errors pause for review rather than automatically creating a second image. Claude Code sessions use the configured image API. Video generation uses your fal.ai key/credits by default, with optional direct BytePlus video. A selected local Claude Code/Codex session handles text planning/writing; OpenRouter handles vision and transcription. See docs/PROVIDERS.md. The older v0.3.2 download uses OpenRouter only. AI generation and transcription need internet and can incur charges. Local installation and ordinary navigation do not require a paid generation.
 
 ## Install the browser version from source
 
@@ -26,6 +26,13 @@ Run these commands in a terminal:
 
 Open http://127.0.0.1:8080 in your browser.
 The frontend proxies the backend; do not use port 8000 for this Docker route.
+
+Docker builds include the pinned local HyperFrames composition renderer, Chromium and FFmpeg for manual video editing, plus Codex and Claude Code for local text planning. Sign in to your chosen engine inside the backend container from this project folder:
+
+    docker compose exec backend codex login --device-auth
+    docker compose exec backend claude auth login
+
+Run the command for the engine you want, then complete its official account authorization. Codex device login must be enabled for your account/workspace. Installation detection does not verify sign-in or model access. The private videoflow-agent-auth volume retains credentials and native histories across restarts; do not share it or include it in project exports. Existing containers need a rebuild to receive these tools. Native desktop previews still require separately installed CLIs.
 
 Inspect or stop the app:
 
@@ -69,8 +76,8 @@ Only when ready to spend a small test budget:
 
 5. Configure the provider keys required by the version you installed in Settings. Current source defaults media to fal.ai; older v0.3.2 packages use OpenRouter. Media configuration/catalog checks do not verify real account access. Set a small provider-side spending limit before generation.
 6. Start with one scene, one character and a duration/aspect supported by the configured model. Review the preflight before submitting. The local studio's configured models are distinct from SaaS server-controlled model policy.
-7. Confirm shots, reference-conditioned keyframes, clip status and playback. One scene render is one generated clip; model output is not guaranteed to match exact camera cuts or character identity.
-8. Open the output editor, add/transcribe captions, save, and play/download the captioned export. Transcription is also a provider request.
+7. In current local Create story runs, missing character reference sheets generate automatically first and can incur image charges. Approve them in Library, then choose Continue storyboarding to generate scene images using those references. Existing sheets are reused. Essential props and locations are identified against the project Library; suitable existing images are reused and missing images are generated. Review each reference and its reuse reason before continuing; Remove from story detaches an unsuitable prop/location without deleting the library asset. Image generation can incur charges. Voice setup is separate. Confirm shots, reference-conditioned keyframes, clip status and playback. One scene render is one generated clip; model output is not guaranteed to match exact camera cuts or character identity.
+8. Open Studio → Edit video, choose Captions from script, adjust the captions on the timeline, then save and export. Timing captions by listening to a clip is also a provider request.
 9. When ready for a second paid clip, generate it, select both outputs in playback order in My videos, assemble them, and check the combined download including audio and captions.
 10. Restart and confirm saved work persists. If a request becomes uncertain, check Activity, saved outputs and provider activity. Reconcile the existing provider job or follow Settings recovery; do not repeatedly submit paid work because a response was lost.
 
@@ -78,8 +85,7 @@ The repair was verified with local provider mocks, real FFmpeg, automated tests 
 
 ## Detailed repository documentation
 
-- docs/LOCAL-DIRECTOR.md — local engine setup, exact saved sessions, selected identity constraints, voices/captions and local composition editing.
-- docs/voice-and-script-captions.md — approved script, saved/native voices, paid-stage Run gates and recovery.
+- docs/LOCAL-DIRECTOR.md — local engine setup, exact saved sessions, selected identity constraints and editing.
 - docs/audits/component-e2e-coverage.md — reproducible mocked E2E coverage and limits.
 
 - [Provider setup and supported routes](https://github.com/JienWeng/videoflow-go/blob/main/docs/PROVIDERS.md)
@@ -93,3 +99,32 @@ The repair was verified with local provider mocks, real FFmpeg, automated tests 
 For maintainers, build/package commands are in ELECTRON-AND-WEB.md. Do not run release publication, destructive cleanup or paid model tests merely because this guide mentions them.
 
 - docs/audits/2026-11-11-local-integration.md — independent review fixes, verification evidence, architectural decisions and live-test limits.
+
+## Scene studios and shared assets
+
+Open a scene from Studio (Story view). Its Scene references section uses the project's shared character sheets, props and locations. Choose props/locations from Library; removing a binding does not delete the asset. Library scene filters include reused references and cast sheets. Asset details show usage and allow manual identity edits. In-use assets cannot be deleted. New story runs generate missing references and storyboards automatically without image-approval stops. Images are ready to use when saved; optionally exclude an image in Details or Image options. Generate new version preserves existing scene bindings; replace a version explicitly in the desired scene. Scene/shot/style changes can invalidate a storyboard; regenerate matching images before rendering. Video rendering remains an explicit action and may incur provider charges. Ordinary library management does not start generation.
+
+## Connected video, sound and music
+
+See docs/CONNECTED-VIDEO-WORKFLOW.md. Video & sound in chat and Scene Studio selects native or silent audio and shows a read-only paid-call plan. Automatic grouping minimizes calls and generated seconds; identical planned clips are reused. Explicit rendering revalidates the displayed plan. Assemble clips & add music opens ordered, trimmed outputs with clip audio preserved; full-story assembly joins matching scene formats. Upload or choose music, set volume/fades, save and export locally. Native sound quality/identity/timing remains model-dependent; narration with a saved voice and timed captions are added in the editor. Opening or saving options never starts generation.
+
+
+## Edit and finish in Studio
+
+Open Studio → Edit video, or an Assemble / Trim & arrange handoff. The same workspace contains preview, playhead, visual/audio tracks, editable settings and the main Codex/Claude chat. Mobile switches between Editor and Assistant without changing the draft. Drag clips to move them with snapping; arrow keys nudge by one frame and Shift by one second. AI edits are proposals with changed fields: Apply checks that the draft has not changed, then Undo remains available. Unsaved drafts recover per project and source. Saving and local rendering remain explicit.
+
+Finish your video provides captions from the script, music/mix and Save & export. Captions take their words from each scene's script and their timing from listening to each clip (shot timing when a clip cannot be listened to); listening can consume credits. Captions remain editable. Export retries do not rerun video generation. Caption language variants preserve timings; translation uses the selected local session and does not dub speech or alter lips. Layouts & brand adds four title layouts, bounded logo overlays, project colors/font family and safe version-1 community layout JSON import/export. See docs/INTEGRATED-EDITING-STUDIO.md for APIs, verification and remaining capability boundaries.
+
+## Choose and confirm the story brief
+
+Use the paperclip in Chat, or “Use an image, video or link” in Look & mood, to start from a style reference. Library and Projects offer the same panel. Upload PNG/JPEG/GIF/WebP or MP4/MOV/WebM (up to 50 MB), select existing Library media, or enter a public HTTPS link. Pasting a link by itself or with “style/reference/look” into chat opens this panel. Public web pages supply only their Open Graph/Twitter preview image; login-only pages and sites without a usable preview require a clip or screenshot upload. No browser scripts are executed.
+
+Analyze reference uses the configured vision API, not local Codex/Claude text inference, and can consume provider credits. Videos supply at most four sparse frames from their beginning; audio, exact pacing and full-video coverage are not analyzed. This extracts editable visual direction; it does not train a model. Analysis returns a draft without changing the project. Edit the name, visual direction, palette, lighting, tone and audience, then explicitly Save as project style. Select that project style in the creative brief and reconfirm before Create. Existing saved stories keep their captured style and locked character identities. Uploaded files remain in the project Library. Remote analysis inputs are fetched without credentials and cannot access private network addresses.
+
+In Chat or Create story, choose a visible visual-style card and specify tone, audience, destination platform, aspect ratio, video size, spoken language/speech mode, total duration and scene count. Chat asks for missing groups and retains the original idea through follow-up answers. Use suggested settings only when you want those editable recommendations. Confirm the displayed brief, then choose Create story & references; confirming or editing alone does not generate media. Editing choices clears confirmation. Per-story styling does not overwrite the project default. Project defaults are edited with the style cards on Projects.
+
+The version-1 generation contract validates complete confirmed choices and the displayed style fingerprint before provider work. It stores the brief with the scenes, honors total duration/format and forwards creative direction and supported resolution to rendering. Existing scene workflows and legacy API clients remain compatible. Actual visual quality, translated speech and platform suitability still require checking the generated result. No publishing is implied by a destination platform.
+
+## Storytelling methods and production library
+
+Choose a narrative method independently from the visual look in the creative brief's Look & mood step. Character drama, Adventure & discovery, Guided explainer and Visual comedy are optional; Follow my story preserves your own direction. Library → Media has collapsed Production filters for saved-file readiness and latest asset versions, without changing scene references. See docs/STORYTELLING-AND-LIBRARY.md for behavior, checks and limits.

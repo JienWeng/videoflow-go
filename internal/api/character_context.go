@@ -4,7 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"videoflow-go/internal/models"
 )
+
+func characterNote(c *models.Character) string {
+	return fmt.Sprintf("\nCharacter %s (%s): %s. Appearance: %s. Personality: %s. Visual rules: %s. Voice rules: %s. Sample dialogue: %s.", c.Name, c.ID, c.Description, c.Appearance, c.Personality, c.VisualRulesJSON, c.VoiceRulesJSON, c.SampleDialogue)
+}
 
 func (s *Server) characterNotes(project *string, raw []byte) (string, error) {
 	var ids []string
@@ -24,7 +29,7 @@ func (s *Server) characterNotes(project *string, raw []byte) (string, error) {
 		if err != nil || project == nil || c.ProjectID == nil || *project != *c.ProjectID {
 			return "", fmt.Errorf("character not found in this project")
 		}
-		fmt.Fprintf(&notes, "\nCharacter %s (%s): %s. Appearance: %s. Personality: %s. Visual rules: %s. Voice rules: %s. Sample dialogue: %s.", c.Name, c.ID, c.Description, c.Appearance, c.Personality, c.VisualRulesJSON, c.VoiceRulesJSON, c.SampleDialogue)
+		notes.WriteString(characterNote(c))
 	}
 	return notes.String(), nil
 }

@@ -11,6 +11,11 @@ import (
 	"time"
 )
 
+// DownloadReference fetches public reference material without credentials or local-network access.
+func DownloadReference(ctx context.Context, raw string, limit int64) ([]byte, error) {
+	return publicMedia(ctx, raw, limit)
+}
+
 // Remote output URLs never receive provider credentials and cannot reach local services.
 // Explicit loopback mock API bases are allowed only by constructor-injected test clients.
 func publicMedia(ctx context.Context, raw string, limit int64, apiBase ...string) ([]byte, error) {
@@ -66,6 +71,9 @@ func publicMedia(ctx context.Context, raw string, limit int64, apiBase ...string
 	if err != nil {
 		return nil, fmt.Errorf("invalid media request")
 	}
+	// Some hosts (e.g. Wikimedia) refuse Go's default client name; send a generic one.
+	req.Header.Set("User-Agent", "VideoFlow/1.0 (media reference fetch)")
+	req.Header.Set("Accept", "image/*,video/*,text/html;q=0.8,*/*;q=0.5")
 	res, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("media download failed")

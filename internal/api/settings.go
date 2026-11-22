@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"videoflow-go/internal/costs"
 	"videoflow-go/internal/providers"
 	"videoflow-go/internal/routing"
 
@@ -25,11 +26,39 @@ type ProviderPresetInfo struct {
 }
 
 var presetCatalog = map[string]ProviderPresetInfo{
+	"elevenlabs": {Label: "ElevenLabs", Protocol: "speech", URL: providers.ElevenURL, DefaultModel: "auto", EnvKey: "ELEVENLABS_API_KEY"},
+	"fish":       {Label: "Fish Audio", Protocol: "speech", URL: providers.FishURL, DefaultModel: "s2.1-pro", SuggestedModels: []string{"s2.1-pro", "s2.1-pro-free", "s2-pro"}, EnvKey: "FISH_API_KEY"},
 	"fal":        {Label: "fal.ai", Protocol: "media", URL: providers.FalURL, DefaultModel: providers.FalVideoModel, SuggestedModels: []string{providers.FalVideoModel, providers.FalImageModel}, EnvKey: "FAL_KEY"},
+	"openai":     {Label: "OpenAI Images", Protocol: "image", URL: providers.OpenAIURL, DefaultModel: providers.OpenAIImageModel, SuggestedModels: []string{providers.OpenAIImageModel}, EnvKey: "OPENAI_API_KEY"},
 	"byteplus":   {Label: "BytePlus ModelArk (Seedance)", Protocol: "video", URL: providers.BytePlusURL, DefaultModel: providers.BytePlusVideoModel, SuggestedModels: []string{providers.BytePlusVideoModel}, EnvKey: "BYTEPLUS_API_KEY"},
 	"openrouter": {Label: "OpenRouter", Protocol: "chat", URL: providers.OpenRouterURL, DefaultModel: "openai/gpt-4o-mini", SuggestedModels: []string{"openai/gpt-4o-mini", "meta-llama/llama-3.3-70b-instruct"}, EnvKey: "OPENROUTER_API_KEY"},
 }
-var presetOrder = []string{"fal", "openrouter", "byteplus"}
+
+func init() {
+	added := 0
+	for _, host := range costs.Hosts {
+		if providers.VideoHost(host.Name) {
+			models := []string{}
+			for _, family := range costs.Families {
+				if id := host.Models[family.ID]; id != "" {
+					models = append(models, id)
+				}
+			}
+			presetCatalog[host.Name] = ProviderPresetInfo{Label: host.Label, Protocol: "video", URL: host.URL, DefaultModel: host.Models[costs.Families[0].ID], SuggestedModels: models, EnvKey: host.EnvKey}
+			// Video services sit together, right after BytePlus.
+			for i, name := range presetOrder {
+				if name == "byteplus" {
+					at := i + 1 + added
+					presetOrder = append(presetOrder[:at], append([]string{host.Name}, presetOrder[at:]...)...)
+					added++
+					break
+				}
+			}
+		}
+	}
+}
+
+var presetOrder = []string{"fal", "openai", "openrouter", "byteplus", "fish", "elevenlabs"}
 
 func maskKey(raw string) string {
 	if raw == "" {
@@ -53,15 +82,11 @@ func (s *Server) handleGetAppSettings(w http.ResponseWriter, r *http.Request) {
 		"default_video_provider": "fal",
 		"default_image_provider": "fal",
 		"default_scene_duration": 5.0,
-		"caption_style":          "clean",
-		"caption_language":       "auto",
-		"whisper_model":          "openai/whisper-1",
 		"dialogue_language":      "English",
 		"image_model":            s.cfg.OpenRouterImageModel,
 		"ref_image_model":        s.cfg.OpenRouterImageModel,
 		"video_model":            s.cfg.OpenRouterVideoModel,
 		"vl_model":               s.cfg.OpenRouterVisionModel,
-		"max_video_refs":         3,
 		"render_negatives":       []string{"blurry", "low quality", "distorted", "watermark"},
 	}
 
@@ -90,7 +115,7 @@ func (s *Server) handleGetAppSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	appSettings["media_model_preferences"] = prefs
-	appSettings["all_text_local"] = s.cfg.UseLocalText
+	appSettings["all_text_local"] = true
 	writeJSON(w, http.StatusOK, appSettings)
 }
 
@@ -104,7 +129,7 @@ func (s *Server) handlePutAppSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 400)
 		return
 	}
-	for key, modality := range map[string]string{"vl_model": "vision", "whisper_model": "transcription"} {
+	for key, modality := range map[string]string{"vl_model": "vision"} {
 		if value, ok := body[key]; ok {
 			model, valid := value.(string)
 			if !valid || strings.TrimSpace(model) == "" {
@@ -149,147 +174,8 @@ func (s *Server) handlePutAppSettings(w http.ResponseWriter, r *http.Request) {
 	s.handleGetAppSettings(w, r)
 }
 
-var standardAgents = []struct {
-	Agent           string
-	Label           string
-	DefaultProvider string
-	DefaultModel    string
-}{
-	{"script_agent", "Script Agent", "openrouter", "openai/gpt-4o-mini"},
-	{"scene_agent", "Scene Agent", "openrouter", "openai/gpt-4o-mini"},
-	{"shot_agent", "Shot Agent", "openrouter", "openai/gpt-4o-mini"},
-	{"prompt_agent", "Prompt Agent", "openrouter", "openai/gpt-4o-mini"},
-	{"qa_agent", "QA Agent", "openrouter", "openai/gpt-4o-mini"},
-	{"idea_agent", "Idea Agent", "openrouter", "openai/gpt-4o-mini"},
-	{"asset_planner", "Asset Planner", "openrouter", "openai/gpt-4o-mini"},
-	{"refine_agent", "Refine Agent", "openrouter", "openai/gpt-4o-mini"},
-	{"intent_agent", "Intent Agent", "openrouter", "openai/gpt-4o-mini"},
-	{"asset_recogniser", "Asset Recogniser", "openrouter", "openai/gpt-4o-mini"},
-	{"character_memory", "Character Memory", "openrouter", "openai/gpt-4o-mini"},
-	{"style_agent", "Style Agent", "openrouter", "openai/gpt-4o-mini"},
-}
-
-func (s *Server) defaultAgentModel(agent string) string {
-	if agent == "qa_agent" || agent == "asset_recogniser" {
-		return s.routes().Setting("vl_model", s.cfg.OpenRouterVisionModel)
-	}
-	return s.cfg.OpenRouterTextModel
-}
-
-func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
-	overrides, _ := s.database.GetAgentSettings()
-	if overrides == nil {
-		overrides = make(map[string]models.AgentSetting)
-	}
-
-	res := make([]map[string]interface{}, 0, len(standardAgents))
-	for _, a := range standardAgents {
-		prov := a.DefaultProvider
-		mod := s.defaultAgentModel(a.Agent)
-		if ov, ok := overrides[a.Agent]; ok && ov.Provider != "" {
-			prov = ov.Provider
-			if ov.Model != "" {
-				mod = ov.Model
-			}
-		}
-		if selectedProvider, selectedModel, _, err := s.routes().Selection(a.Agent); err == nil {
-			prov = selectedProvider
-			mod = selectedModel
-		}
-		res = append(res, map[string]interface{}{
-			"agent":            a.Agent,
-			"label":            a.Label,
-			"provider":         prov,
-			"model":            mod,
-			"default_provider": a.DefaultProvider,
-			"default_model":    s.defaultAgentModel(a.Agent),
-		})
-	}
-	writeJSON(w, http.StatusOK, res)
-}
-
-func (s *Server) handlePutAgent(w http.ResponseWriter, r *http.Request) {
-	agentName := chi.URLParam(r, "agent")
-	var body struct {
-		Provider *string `json:"provider"`
-		Model    *string `json:"model"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	var foundAgent *struct {
-		Agent           string
-		Label           string
-		DefaultProvider string
-		DefaultModel    string
-	}
-	for i := range standardAgents {
-		if standardAgents[i].Agent == agentName {
-			foundAgent = &standardAgents[i]
-			break
-		}
-	}
-	if foundAgent == nil {
-		http.Error(w, "unknown agent", http.StatusNotFound)
-		return
-	}
-
-	if body.Provider == nil || *body.Provider == "" {
-		_ = s.database.ResetAgentSetting(agentName)
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"agent":            foundAgent.Agent,
-			"label":            foundAgent.Label,
-			"provider":         foundAgent.DefaultProvider,
-			"model":            s.defaultAgentModel(foundAgent.Agent),
-			"default_provider": foundAgent.DefaultProvider,
-			"default_model":    s.defaultAgentModel(foundAgent.Agent),
-		})
-		return
-	}
-
-	if *body.Provider != "openrouter" {
-		conns, err := s.database.ListConnections()
-		valid := false
-		if err == nil {
-			for _, c := range conns {
-				if c.Name == *body.Provider && c.Preset == "openrouter" {
-					valid = true
-				}
-			}
-		}
-		if !valid {
-			http.Error(w, "Select an OpenRouter connection", 400)
-			return
-		}
-	}
-	modelStr := ""
-	if body.Model != nil {
-		modelStr = *body.Model
-	}
-	if err := s.database.SetAgentSetting(agentName, *body.Provider, modelStr); err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"agent":    foundAgent.Agent,
-		"label":    foundAgent.Label,
-		"provider": *body.Provider,
-		"model": func() string {
-			_, model, _, err := s.routes().Selection(agentName)
-			if err == nil {
-				return model
-			}
-			return modelStr
-		}(),
-		"default_provider": foundAgent.DefaultProvider,
-		"default_model":    s.defaultAgentModel(foundAgent.Agent),
-	})
-}
-
 func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
+	s.refreshKeyChecks()
 	conns, _ := s.database.ListConnections()
 	providers := []map[string]interface{}{}
 
@@ -317,6 +203,7 @@ func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 			"default_model":    preset.DefaultModel,
 			"allow_custom":     true,
 			"from_db":          fromDB,
+			"key_check":        s.keyCheckView(name),
 		})
 	}
 
@@ -364,6 +251,7 @@ func (s *Server) handleGetProviderConfig(w http.ResponseWriter, r *http.Request)
 		"masked_key": maskKey(key),
 		"base_url":   baseURL,
 		"from_db":    fromDB,
+		"key_check":  s.keyCheckView(name),
 	})
 }
 
@@ -408,9 +296,23 @@ func (s *Server) handlePutProviderConfig(w http.ResponseWriter, r *http.Request)
 	if body.APIKey != nil {
 		keyStr = strings.TrimSpace(*body.APIKey)
 	}
+	// A new video service key is asked about before it is kept. If the service cannot be
+	// reached the key is still saved, and the screen says it could not be checked.
+	var check *providers.KeyCheck
+	if body.APIKey != nil && keyStr != "" && providers.VideoHost(name) {
+		result := checkVideoKey(r.Context(), name, keyStr, costs.HostByName(name).URL)
+		if result.State == providers.KeyRejected {
+			http.Error(w, result.Message, 400)
+			return
+		}
+		check = &result
+	}
 	if err = s.database.SetProviderSecret(name, keyStr, body.BaseURL); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
+	}
+	if check != nil {
+		_ = s.routes().SaveKeyCheck(name, keyStr, *check)
 	}
 
 	s.handleGetProviderConfig(w, r)
@@ -418,7 +320,36 @@ func (s *Server) handlePutProviderConfig(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleTestProvider(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
-	if name == "fal" || name == "byteplus" {
+	if providers.VideoHost(name) {
+		key, endpoint, _, err := s.routes().Credentials(name)
+		if err != nil {
+			writeJSON(w, 200, map[string]any{"ok": false, "error": err.Error(), "latency_ms": 0, "checked": "key", "credentials_verified": false, "generation_tested": false})
+			return
+		}
+		start := time.Now()
+		check := checkVideoKey(r.Context(), name, key, endpoint)
+		_ = s.routes().SaveKeyCheck(name, key, check)
+		label := costs.HostByName(name).Label
+		var problem any
+		message := label + " accepted this key. Nothing was made or charged."
+		if check.State != providers.KeyAccepted {
+			message = check.Message
+		}
+		usable := check.State != providers.KeyRejected && check.State != providers.KeyNoCredit
+		if !usable {
+			problem = check.Message
+		}
+		writeJSON(w, 200, map[string]any{"ok": usable, "error": problem, "latency_ms": time.Since(start).Milliseconds(), "checked": "key", "credentials_verified": check.State == providers.KeyAccepted, "generation_tested": false, "message": message})
+		return
+	}
+	// fal.ai and BytePlus have no free way to ask about the balance: Check again forgets
+	// the "no balance left" answer and the next real video decides.
+	if check := s.keyCheckView(name); check != nil && check.State == providers.KeyNoCredit && name != "openrouter" {
+		s.routes().ForgetNoCredit(name)
+		writeJSON(w, 200, map[string]any{"ok": true, "error": nil, "latency_ms": 0, "checked": "key", "credentials_verified": false, "generation_tested": false, "message": costs.HostByName(name).Label + " has no free way to check the balance, so VideoFlow will use it again. The next video shows whether the top-up worked."})
+		return
+	}
+	if name == "openai" || name == "fal" || name == "byteplus" || name == "fish" || name == "elevenlabs" {
 		_, _, _, err := s.routes().Credentials(name)
 		var message any
 		if err != nil {
@@ -431,6 +362,7 @@ func (s *Server) handleTestProvider(w http.ResponseWriter, r *http.Request) {
 	client, err := s.routes().Client(chi.URLParam(r, "name"))
 	if err == nil {
 		err = client.CheckKey(r.Context())
+		s.routes().NoteServiceAnswer(name, err)
 	}
 	var message any
 	if err != nil {
@@ -447,7 +379,7 @@ func (s *Server) handleDiscoverModels(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("modality") == "" {
 		if name == "fal" {
 			modality = "image"
-		} else if name == "byteplus" {
+		} else if name == "byteplus" || providers.VideoHost(name) {
 			modality = "video"
 		}
 	}
@@ -478,7 +410,7 @@ func (s *Server) handleVerifyModel(w http.ResponseWriter, r *http.Request) {
 	if body.Modality == "" {
 		body.Modality = "text"
 		name := chi.URLParam(r, "name")
-		if name == "byteplus" {
+		if name == "byteplus" || providers.VideoHost(name) {
 			body.Modality = "video"
 		} else if name == "fal" {
 			body.Modality = "video"

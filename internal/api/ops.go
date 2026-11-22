@@ -27,7 +27,9 @@ func (s *Server) handleListOps(w http.ResponseWriter, r *http.Request) {
 	kind := r.URL.Query().Get("kind")
 	limit := 20
 	if l := r.URL.Query().Get("limit"); l != "" {
-		if val, err := strconv.Atoi(l); err == nil {
+		if l == "all" {
+			limit = -1 // Dashboard recovery must include older unresolved work.
+		} else if val, err := strconv.Atoi(l); err == nil && val > 0 {
 			limit = val
 		}
 	}

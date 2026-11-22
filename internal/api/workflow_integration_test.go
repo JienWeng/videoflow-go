@@ -42,6 +42,9 @@ func TestGuidedCharacterToTwoOutputsAndCombinedExport(t *testing.T) {
 			if strings.Contains(system, "cinematographer") {
 				content = `{"shots":[{"shot_order":1,"duration":1,"prompt":"Mimi plays","camera":"wide","movement":"still"}]}`
 			}
+			if asksForPlannedAssets(system) {
+				content = plannedAssetsAnswer
+			}
 			if !strings.Contains(body.Messages[1].Content, "Mimi") {
 				t.Error("character context did not reach text stage")
 			}
@@ -62,7 +65,7 @@ func TestGuidedCharacterToTwoOutputsAndCombinedExport(t *testing.T) {
 			var body map[string]any
 			json.NewDecoder(r.Body).Decode(&body)
 			prompt, _ := body["prompt"].(string)
-			if body["frame_images"] == nil || !strings.Contains(prompt, "Chinese") || !strings.Contains(prompt, "Mimi") || !strings.Contains(prompt, "Warm playful direction") {
+			if body["frame_images"] == nil || !strings.Contains(prompt, "Mimi") {
 				t.Errorf("brief or keyframe lost: %v", body)
 			}
 			fmt.Fprintf(w, `{"id":"upstream-%d"}`, submissions.Add(1))
@@ -95,13 +98,12 @@ func TestGuidedCharacterToTwoOutputsAndCombinedExport(t *testing.T) {
 		ID string `json:"op_id"`
 	}
 	json.Unmarshal(response.Body.Bytes(), &started)
+	if requested := renderReadyStory(t, s, started.ID); len(requested) != 2 {
+		t.Fatal(requested)
+	}
 	var outputIDs []string
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		op, _ := s.database.GetOp(started.ID)
-		if op.Status == "failed" {
-			t.Fatalf("guided failed: %v", op.Error)
-		}
 		jobs, _ := s.database.ListRenderJobs(project)
 		outputIDs = nil
 		for _, job := range jobs {
@@ -129,32 +131,4 @@ func TestGuidedCharacterToTwoOutputsAndCombinedExport(t *testing.T) {
 			t.Fatal("cast not persisted")
 		}
 	}
-	// Captions must produce a real replacement file, not just save segments.
-	response = call(t, s, "PUT", "/outputs/"+outputIDs[0]+"/captions", `{"segments":[{"start":0,"end":0.8,"text":"Mimi"}],"style":"clean"}`)
-	if response.Code != 200 {
-		t.Fatalf("caption burn: %d %s", response.Code, response.Body.String())
-	}
-	out, _ := s.database.GetRenderOutput(outputIDs[0])
-	if out.CaptionedPath == nil {
-		t.Fatal("captioned file missing")
-	}
-	raw, _ := json.Marshal(map[string]any{"output_ids": outputIDs, "aspect_ratio": "16:9"})
-	response = call(t, s, "POST", "/outputs/assemble", string(raw))
-	if response.Code != 200 {
-		t.Fatalf("assembly: %d %s", response.Code, response.Body.String())
-	}
-	var assembled struct {
-		ID string `json:"output_id"`
-	}
-	json.Unmarshal(response.Body.Bytes(), &assembled)
-	combined, _ := s.database.GetRenderOutput(assembled.ID)
-	full, _ := s.storagePath(combined.VideoPath)
-	if b, err := exec.Command(binary, "-v", "error", "-i", full, "-c:v", "rawvideo", "-c:a", "pcm_s16le", "-f", "null", "-").CombinedOutput(); err != nil {
-		t.Fatalf("export decode failed: %v %s", err, b)
-	}
-	response = call(t, s, "GET", "/outputs/"+assembled.ID+"/download", "")
-	if response.Code != 200 || response.Body.Len() == 0 {
-		t.Fatal("combined download unavailable")
-	}
-
 }

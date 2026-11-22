@@ -49,12 +49,16 @@ func (c *mediaHTTP) request(ctx context.Context, method, path string, payload an
 		}
 		body = bytes.NewReader(data)
 	}
+	return c.requestBody(ctx, method, path, "application/json", body)
+}
+
+func (c *mediaHTTP) requestBody(ctx context.Context, method, path, contentType string, body io.Reader) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.base+path, body)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Authorization", c.auth+c.key)
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", contentType)
 	res, err := c.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("%s request failed: %w", c.provider, err)
@@ -111,9 +115,13 @@ func mediaCatalog(provider, modality string) []Model {
 		add(FalImageModel, "image", false)
 		add(FalImageModel+"/edit", "image", false)
 		add(FalVideoModel, "video", true)
+		add("bytedance/seedance-2.0/image-to-video", "video", true)
 		add("bytedance/seedance-2.0/fast/text-to-video", "video", false)
+		add("bytedance/seedance-2.0/mini/image-to-video", "video", true)
+		add("bytedance/seedance-2.5/image-to-video", "video", true)
 	case "byteplus":
 		add(BytePlusVideoModel, "video", true)
+		add("dreamina-seedance-2-0-fast-260128", "video", true)
 	}
 	return models
 }
@@ -173,6 +181,9 @@ func videoFrames(payload map[string]any) ([]canonicalFrame, error) {
 }
 func validateMediaVideo(provider string, ctx context.Context, p map[string]any) error {
 	id, _ := p["model"].(string)
+	if provider == "fal" && id == RetiredFalReferenceVideoModel {
+		return ErrRetiredClip
+	}
 	m, err := catalogModel(provider, id, "video")
 	if err != nil {
 		return err

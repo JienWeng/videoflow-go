@@ -26,7 +26,7 @@ func (d *DB) UpdateAssetReview(project, id string, expected time.Time, meta json
 // UpdateAssetRecognition changes only recognition-owned fields, preserving
 // identity/review metadata edited while a remote vision call was in flight.
 func (d *DB) UpdateAssetRecognition(project, id, description string, tags json.RawMessage) error {
-	result, err := d.conn.Exec(`UPDATE assets SET description=?,tags_json=?,updated_at=? WHERE id=? AND project_id=?`, description, string(tags), time.Now().UTC(), id, project)
+	result, err := d.conn.Exec(`UPDATE assets SET metadata_json=CASE WHEN description!=? THEN json_remove(json_set(metadata_json,'$.consistency_review','pending'),'$.consistency_reviewed_at') ELSE metadata_json END,description=?,tags_json=?,updated_at=? WHERE id=? AND project_id=?`, description, description, string(tags), time.Now().UTC(), id, project)
 	if err != nil {
 		return err
 	}

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,8 +23,9 @@ func (s *Server) handleVideoPreflight(w http.ResponseWriter, r *http.Request) {
 	}
 
 	project, _ := s.activeProjectID(r.Context())
-	brief := generationBrief{Idea: "Preflight", AspectRatio: aspectRatio, Style: style}
+	brief := generationBrief{Idea: "Preflight", AspectRatio: aspectRatio, Style: style, PresetID: r.URL.Query().Get("style_preset_id")}
 	brief.SceneCount, _ = strconv.Atoi(r.URL.Query().Get("scene_count"))
+	brief.CreateCharacters, _ = strconv.ParseBool(r.URL.Query().Get("create_characters"))
 	brief.TargetDuration, _ = strconv.Atoi(r.URL.Query().Get("target_duration"))
 	if ids := r.URL.Query().Get("character_ids"); ids != "" {
 		brief.CharacterIDs = strings.Split(ids, ",")
@@ -33,7 +35,8 @@ func (s *Server) handleVideoPreflight(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	missing := s.generationPrerequisites(r.Context(), brief)
-	effective, hasStyle := s.effectiveStyle(project, style)
+	_, hasStyle := s.effectiveStyle(project, style)
+	effective := brief.Style
 	client, videoProvider, videoModel, _ := s.routes().SelectedMedia("video")
 	imageProvider, _ := s.routes().MediaSelection("image")
 	var durations []int
@@ -48,7 +51,9 @@ func (s *Server) handleVideoPreflight(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"ready":           len(missing) == 0,
+		"ready":            len(missing) == 0,
+		"automatic_assets": true, "character_references": true,
+		"native_images":   s.preferCodexImages(r.Context()),
 		"effective_style": effective, "has_project_style": hasStyle, "video_durations": durations, "supports_references": supportsReferences,
 		"missing": missing,
 		"effective_routes": map[string]string{
@@ -79,7 +84,7 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 400)
 		return
 	}
-	routes, err := s.captureMediaRoutes()
+	routes, err := s.captureMediaRoutes(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return
@@ -95,7 +100,7 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Three background operations are already running. Check Activity before starting another.", 429)
 		return
 	}
-	op := &models.Op{Kind: "video_generation", Status: "running", ProjectID: &project}
+	op := &models.Op{Kind: "video_generation", Status: models.StatusRunning, ProjectID: &project}
 	if err = s.database.CreateOp(op); err != nil {
 		<-s.operationSlots
 		http.Error(w, "failed to save operation", 500)
@@ -105,17 +110,29 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer s.tasks.Done()
 		defer func() { <-s.operationSlots }()
-		ctx, cancel := context.WithTimeout(s.ctx, 10*time.Minute)
+		ctx, cancel := context.WithTimeout(s.ctx, 45*time.Minute)
 		defer cancel()
 		if binding := r.Context().Value(directorBindingKey{}); binding != nil {
 			ctx = context.WithValue(ctx, directorBindingKey{}, binding)
 		}
+		ctx = guidedStoryContext(ctx, project, brief.CharacterIDs)
 		ctx = context.WithValue(brief.context(ctx), mediaRoutesKey{}, routes)
 		stages := []string{}
-		fail := func(err error) { message := err.Error(); s.database.UpdateOp(op.ID, "failed", nil, &message) }
+		createdCharacters := []string{}
+		savedScriptID := ""
+		savedSceneIDs := []string{}
+		cast := []string{}
+		characterReferences := []string{}
+		storyAssets := []string{}
+		assetDecisions := []plannedAsset{}
+		fail := func(err error) {
+			message := err.Error()
+			raw, _ := json.Marshal(map[string]any{"stages": stages, "brief": brief, "created_character_ids": createdCharacters, "script_id": savedScriptID, "scene_ids": savedSceneIDs, "project_id": project, "cast_character_ids": cast, "character_reference_ids": characterReferences, "story_asset_ids": storyAssets, "story_assets": assetDecisions, "automatic_assets": true, "character_references": true, "media_routes": routes})
+			s.database.UpdateOp(op.ID, models.StatusFailed, raw, &message)
+		}
 		record := func(stage string) {
 			stages = append(stages, stage)
-			raw, _ := json.Marshal(map[string]any{"stages": stages, "brief": brief, "media_routes": routes})
+			raw, _ := json.Marshal(map[string]any{"stages": stages, "brief": brief, "media_routes": routes, "created_character_ids": createdCharacters, "script_id": savedScriptID, "scene_ids": savedSceneIDs, "project_id": project, "cast_character_ids": cast, "character_reference_ids": characterReferences, "story_asset_ids": storyAssets, "story_assets": assetDecisions, "automatic_assets": true, "character_references": true})
 			s.database.UpdateOp(op.ID, "running", raw, nil)
 			s.broker.Publish(map[string]any{"type": "pipeline_stage", "op_id": op.ID, "stage": stage, "stages": stages, "project_id": project})
 		}
@@ -129,11 +146,37 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 			fail(err)
 			return
 		}
+		// Persisted scene/speaker references now use real project character IDs.
+		savedScriptID = script.ID
+		cast = []string{}
+		seenCast := map[string]bool{}
+		for i := range scenes {
+			scene := &scenes[i]
+			savedSceneIDs = append(savedSceneIDs, scene.ID)
+			ids := models.IDList(scene.CharacterIDsJSON)
+			for _, id := range ids {
+				if !seenCast[id] {
+					cast = append(cast, id)
+					seenCast[id] = true
+				}
+			}
+		}
+		originalCast := map[string]bool{}
+		for _, id := range brief.CharacterIDs {
+			originalCast[id] = true
+		}
+		for _, id := range cast {
+			if !originalCast[id] {
+				createdCharacters = append(createdCharacters, id)
+			}
+		}
 		record("story")
 		record("scenes")
 		for i := range scenes {
 			scene := &scenes[i]
-			drafts, err := s.agents.GenerateShots(ctx, scene.Title, scene.Summary+"\n"+brief.prompt(), scene.Duration)
+			localBrief := sceneBrief(scene)
+			sceneCtx := localBrief.context(guidedStoryContext(ctx, project, localBrief.CharacterIDs))
+			drafts, err := s.agents.GenerateShots(sceneCtx, scene.Title, scene.Summary+"\n"+localBrief.prompt(), scene.Duration)
 			if err != nil {
 				fail(err)
 				return
@@ -149,58 +192,53 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		record("shots")
+
+		var approved bool
 		for i := range scenes {
 			scene := &scenes[i]
-			refs, err := s.sceneReferences(scene)
-			if err != nil {
-				fail(err)
+			plan, planErr := s.planAssets(ctx, scene, brief.Style, 3)
+			if planErr != nil {
+				fail(planErr)
 				return
 			}
-			images, err := s.generateAssets(ctx, scene.ProjectID, nil, scene.ID, scene.Title+" keyframe", "storyboard", scene.Title+". "+scene.Summary+"\n"+brief.prompt(), scene.AspectRatio, refs)
-			if err != nil {
-				fail(err)
-				return
+			assets, assetErr := s.materializeStoryAssets(ctx, scene, plan)
+			assetDecisions = append(assetDecisions, plan.Assets...)
+			for _, asset := range assets {
+				storyAssets = append(storyAssets, asset.ID)
 			}
-			var ids []string
-			json.Unmarshal(scene.AssetIDsJSON, &ids)
-			for _, image := range images {
-				ids = append(ids, image.ID)
-			}
-			scene.AssetIDsJSON, _ = json.Marshal(ids)
-			if err = s.database.UpdateScene(scene); err != nil {
-				fail(err)
+			if assetErr != nil {
+				fail(assetErr)
 				return
 			}
 		}
-		record("visuals")
-		if s.cfg.UseLocalText {
-			sceneIDs := []string{}
-			for _, scene := range scenes {
-				sceneIDs = append(sceneIDs, scene.ID)
-			}
-			raw, _ := json.Marshal(map[string]any{"project_id": project, "script_id": script.ID, "scene_ids": sceneIDs, "stages": stages, "status": "awaiting_reference_review", "brief": brief, "media_routes": routes})
-			if err = s.database.UpdateOp(op.ID, "succeeded", raw, nil); err != nil {
-				fail(err)
-			}
-			return
-		}
-		jobs := []models.RenderJob{}
-		sceneIDs := []string{}
-		for i := range scenes {
-			scene := &scenes[i]
-			stage, progress := "submitted", "Queued scene clip"
-			jobs = append(jobs, models.RenderJob{ProjectID: &project, SceneID: &scene.ID, Provider: routes["video"].Provider, Model: routes["video"].Model, ProviderEndpoint: routes["video"].Endpoint, Status: "pending", Stage: &stage, Progress: &progress})
-			sceneIDs = append(sceneIDs, scene.ID)
-		}
-		stages = append(stages, "render")
-		result := map[string]any{"project_id": project, "script_id": script.ID, "scene_ids": sceneIDs, "stages": stages, "status": "rendering", "brief": brief, "media_routes": routes}
-		if err = s.database.SaveOperationJobs(op.ID, jobs, result); err != nil {
+		record("assets")
+		style := brief.Style
+		characterReferences, approved, err = s.storyCharacterReferences(ctx, project, cast, style)
+		if err != nil {
 			fail(err)
 			return
 		}
-		for _, job := range jobs {
-			s.workers.Enqueue(job.ID)
+		record("characters")
+		if !approved {
+			fail(fmt.Errorf("story references are unavailable or excluded"))
+			return
+		}
+		storyboardsMade, err := s.storyboardStory(ctx, scenes)
+		if err != nil {
+			fail(err)
+			return
+		}
+
+		record("visuals")
+		sceneIDs := []string{}
+		for i := range scenes {
+			scene := &scenes[i]
+			sceneIDs = append(sceneIDs, scene.ID)
+		}
+		raw, _ := json.Marshal(map[string]any{"project_id": project, "script_id": script.ID, "scene_ids": sceneIDs, "stages": stages, "status": "ready_to_render", "storyboards_made": storyboardsMade, "cast_character_ids": cast, "character_reference_ids": characterReferences, "story_asset_ids": storyAssets, "story_assets": assetDecisions, "automatic_assets": true, "character_references": true, "brief": brief, "media_routes": routes, "created_character_ids": createdCharacters})
+		if err = s.database.UpdateOp(op.ID, "succeeded", raw, nil); err != nil {
+			fail(err)
 		}
 	}()
-	writeJSON(w, 202, map[string]any{"op_id": op.ID, "status": "running"})
+	writeJSON(w, 202, map[string]any{"op_id": op.ID, "status": models.StatusRunning, "automatic_assets": true, "character_references": true})
 }

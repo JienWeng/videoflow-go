@@ -20,12 +20,21 @@ import (
 	"videoflow-go/internal/providers"
 )
 
+// routerServer is a server with a selected local session whose planning and writing turns
+// are answered by h at /chat/completions, like every other fake provider call.
 func routerServer(t *testing.T, h http.HandlerFunc) *Server {
+	t.Helper()
+	server, remote := bareServer(t, h)
+	useFakeEngine(t, server, remote)
+	return server
+}
+
+// bareServer has no local session yet, and no Codex or Claude Code CLI installed.
+func bareServer(t *testing.T, h http.HandlerFunc) (*Server, string) {
 	t.Helper()
 	remote := httptest.NewServer(h)
 	t.Cleanup(remote.Close)
 	cfg := config.Load()
-	cfg.UseLocalText = false
 	cfg.StorageRoot = t.TempDir()
 	cfg.DatabasePath = filepath.Join(t.TempDir(), "db.sqlite")
 	cfg.OpenRouterAPIKey = ""
@@ -42,9 +51,11 @@ func routerServer(t *testing.T, h http.HandlerFunc) *Server {
 	broker := events.NewBroker()
 	engine := media.NewMediaEngine()
 	client := providers.NewOpenRouterClientAt("", remote.URL)
-	server := NewServer(cfg, database, broker, jobs.NewWorkerPool(cfg, database, broker, engine), agents.NewAgentEngine(client, "openai/gpt-4o-mini"), client, engine)
+	server := NewServer(cfg, database, broker, jobs.NewWorkerPool(cfg, database, broker, engine), agents.NewAgentEngine(), client, engine)
 	t.Cleanup(server.Close)
-	return server
+	server.directorRunner.Codex = filepath.Join(t.TempDir(), "codex-is-not-installed")
+	server.directorRunner.Claude = filepath.Join(t.TempDir(), "claude-is-not-installed")
+	return server, remote.URL
 }
 func call(t *testing.T, s *Server, method, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
@@ -85,39 +96,21 @@ func TestDiscoveryUsesLiveCatalog(t *testing.T) {
 		t.Fatal(w.Body.String())
 	}
 }
-func TestSavedKeyAndAgentSelectionUsed(t *testing.T) {
-	var actualModel string
+func TestPlannerIsToldTheDialogueLanguage(t *testing.T) {
 	var systemPrompt string
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer saved-key" {
-			t.Error("DB key not used")
-		}
-		if r.URL.Path == "/models" {
-			w.Write([]byte(`{"data":[{"id":"selected/model","architecture":{"input_modalities":["text"],"output_modalities":["text"]}}]}`))
-			return
-		}
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
-		actualModel, _ = payload["model"].(string)
 		systemPrompt = payload["messages"].([]any)[0].(map[string]any)["content"].(string)
 		w.Write([]byte(`{"choices":[{"message":{"content":"{\"reply\":\"hello\",\"action\":\"none\"}"}}]}`))
 	})
 	s.database.SetAppSetting("dialogue_language", `"Malay"`)
-	for _, model := range []string{"first/model", "selected/model"} {
-		if err := s.database.SetAgentSetting("intent_agent", "openrouter", model); err != nil {
-			t.Fatal(err)
-		}
-	}
 	w := call(t, s, "POST", "/chat", `{"message":"hello"}`)
-	if w.Code != 200 || actualModel != "selected/model" {
-		t.Fatalf("status %d model %q body %s", w.Code, actualModel, w.Body.String())
+	if w.Code != 200 {
+		t.Fatalf("status %d body %s", w.Code, w.Body.String())
 	}
 	if !strings.Contains(systemPrompt, "Malay") {
 		t.Fatal("dialogue language ignored", systemPrompt)
-	}
-	settings, err := s.database.GetAgentSettings()
-	if err != nil || settings["intent_agent"].Model != "selected/model" {
-		t.Fatal(settings, err)
 	}
 }
 func TestSavingURLPreservesKey(t *testing.T) {
@@ -132,7 +125,6 @@ func TestRejectOtherProviders(t *testing.T) {
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Fatal("should not contact upstream") })
 	for _, test := range []struct{ path, body string }{
 		{"/settings/app", `{"default_video_provider":"atlascloud"}`},
-		{"/settings/agents/script_agent", `{"provider":"openai","model":"gpt-4o"}`},
 		{"/settings/connections", `{"label":"Other","preset":"openai","protocol":"chat","base_url":"https://api.openai.com/v1"}`},
 	} {
 		method := "PUT"
@@ -207,7 +199,7 @@ func TestMediaFailurePropagates(t *testing.T) {
 
 func TestMissingOutputNeverReturnsSample(t *testing.T) {
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) {})
-	for _, path := range []string{"/outputs/missing/editor", "/outputs/missing/download"} {
+	for _, path := range []string{"/outputs/missing/download"} {
 		w := call(t, s, "GET", path, "")
 		if w.Code != 404 {
 			t.Fatal(path, w.Code, w.Body.String())
@@ -264,7 +256,8 @@ func TestStoryboardHasFrontendAssetType(t *testing.T) {
 func TestResubmitCreatesFreshProviderJob(t *testing.T) {
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) {})
 	oldID := "failed-upstream"
-	job := &models.RenderJob{Provider: "openrouter", Model: "test/video", Status: "failed", ProviderJobID: &oldID, RequestJSON: json.RawMessage(`{"prompt":"Retry me"}`)}
+	project, _ := s.database.GetActiveProjectID()
+	job := &models.RenderJob{ProjectID: &project, Provider: "openrouter", Model: "test/video", Status: "failed", ProviderJobID: &oldID, RequestJSON: json.RawMessage(`{"prompt":"Retry me"}`)}
 	if err := s.database.CreateRenderJob(job); err != nil {
 		t.Fatal(err)
 	}
@@ -292,17 +285,13 @@ func TestSavedSceneDefaultsAreUsed(t *testing.T) {
 	}
 }
 
-func TestImagePromptAgentSelectionIsUsed(t *testing.T) {
-	promptModel := ""
+func TestPreparedImagePromptIsSentToTheImageModel(t *testing.T) {
 	imagePrompt := ""
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/models":
 			w.Write([]byte(`{"data":[{"id":"selected/prompter","architecture":{"output_modalities":["text"]}}]}`))
 		case "/chat/completions":
-			var p map[string]any
-			json.NewDecoder(r.Body).Decode(&p)
-			promptModel, _ = p["model"].(string)
 			w.Write([]byte(`{"choices":[{"message":{"content":"{\"prompt\":\"Prepared image prompt\"}"}}]}`))
 		case "/images/models":
 			w.Write([]byte(`{"data":[{"id":"openai/gpt-image-2","supported_parameters":{"aspect_ratio":{"type":"enum","values":["9:16"]}}}]}`))
@@ -313,13 +302,12 @@ func TestImagePromptAgentSelectionIsUsed(t *testing.T) {
 			w.Write([]byte(`{"data":[{"b64_json":"iVBORw0KGgo=","media_type":"image/png"}]}`))
 		}
 	})
-	s.database.SetAgentSetting("prompt_agent", "openrouter", "selected/prompter")
 	w := call(t, s, "POST", "/scenes", `{"title":"Scene","aspect_ratio":"9:16"}`)
 	var scene models.Scene
 	json.Unmarshal(w.Body.Bytes(), &scene)
 	w = call(t, s, "POST", "/scenes/"+scene.ID+"/storyboard", `{}`)
-	if w.Code != 200 || promptModel != "selected/prompter" || imagePrompt != "Prepared image prompt" {
-		t.Fatal(w.Code, promptModel, imagePrompt, w.Body.String())
+	if w.Code != 200 || imagePrompt != "Prepared image prompt" {
+		t.Fatal(w.Code, imagePrompt, w.Body.String())
 	}
 }
 
@@ -341,6 +329,9 @@ func TestOpenRouterOnlyGuidedWorkflow(t *testing.T) {
 			}
 			if strings.Contains(payload.Messages[0].Content, "cinematographer") {
 				content = `{"shots":[{"shot_order":1,"duration":4,"prompt":"Wave rising","camera":"wide","movement":"pan"}]}`
+			}
+			if asksForPlannedAssets(payload.Messages[0].Content) {
+				content = plannedAssetsAnswer
 			}
 			json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": content}}}})
 		case "/images/models":
@@ -376,37 +367,25 @@ func TestOpenRouterOnlyGuidedWorkflow(t *testing.T) {
 		ID string `json:"op_id"`
 	}
 	json.Unmarshal(w.Body.Bytes(), &started)
+	jobs := renderReadyStory(t, s, started.ID)
+	if len(jobs) != 1 {
+		t.Fatal(jobs)
+	}
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		op, err := s.database.GetOp(started.ID)
-		if err != nil {
-			t.Fatal(err)
+		job, _ := s.database.GetRenderJob(jobs[0])
+		if job.Status == "failed" {
+			t.Fatal(*job.Error)
 		}
-		if op.Status == "failed" {
-			t.Fatal("pipeline failed", op.Error)
-		}
-		if op.Status == "succeeded" {
-			var result struct {
-				Jobs []string `json:"render_job_ids"`
+		if job.Status == "succeeded" {
+			outputs, _ := s.database.ListOutputsForJob(job.ID)
+			if len(outputs) != 1 || outputs[0].Score != nil {
+				t.Fatal(outputs)
 			}
-			json.Unmarshal(op.ResultJSON, &result)
-			if len(result.Jobs) != 1 {
-				t.Fatal(result)
+			if !bytes.Contains(job.RequestJSON, []byte("frame_images")) {
+				t.Fatal("actual request not persisted")
 			}
-			job, _ := s.database.GetRenderJob(result.Jobs[0])
-			if job.Status == "failed" {
-				t.Fatal(job.Error)
-			}
-			if job.Status == "succeeded" {
-				outputs, _ := s.database.ListOutputsForJob(job.ID)
-				if len(outputs) != 1 || outputs[0].Score != nil {
-					t.Fatal(outputs)
-				}
-				if !bytes.Contains(job.RequestJSON, []byte("frame_images")) {
-					t.Fatal("actual request not persisted")
-				}
-				return
-			}
+			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

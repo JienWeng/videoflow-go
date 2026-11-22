@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {assetReadiness,latestAssetVersions} from '../frontend/src/lib/library/catalog.mjs';
+import {normalizeBrief,confirmedBriefRequest} from '../frontend/src/lib/brief/brief.mjs';
+const assets=[{id:'a',file_path:'a.png',created_at:'2026-01-01',metadata_json:{variant_group_id:'prop'}},{id:'b',file_path:'b.png',created_at:'2026-02-01',metadata_json:{variant_group_id:'prop'}},{id:'c',file_path:'c.png',metadata_json:{consistency_review:'rejected'}},{id:'d'}];
+assert.deepEqual(assets.map(assetReadiness),['has-file','has-file','excluded','missing']);
+assert.deepEqual(latestAssetVersions(assets).map(a=>a.id),['b','c','d']);
+assert.equal(assets.length,4,'view grouping must not mutate saved assets');
+assert.equal(normalizeBrief({storytelling_id:'drama'}).storytelling_id,'drama');
+assert.equal(normalizeBrief().storytelling_id,'');
+const brief=normalizeBrief({idea:'A dog finds Mama',storytelling_id:'drama',style_preset_id:'clay',style_fingerprint:'x',tone:'Hopeful',audience:'Families',platform:'Shorts',aspect_ratio:'9:16',resolution:'720p',language:'English',conversation_mode:'dialogue',target_duration:8,scene_count:1});
+assert.equal(confirmedBriefRequest(brief,true).storytelling_id,'drama');
+console.log('Production library and independent storytelling contracts passed');

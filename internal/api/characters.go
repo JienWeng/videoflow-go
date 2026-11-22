@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"videoflow-go/internal/models"
@@ -93,27 +92,14 @@ func (s *Server) handleCharacterRefSheets(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	project, err := s.activeProjectID(r.Context())
+	if err != nil || c.ProjectID == nil || *c.ProjectID != project {
+		http.Error(w, "character not found in active project", 404)
+		return
+	}
+
 	s.operation(w, r, &models.Op{Kind: "character_reference", ProjectID: c.ProjectID}, func(ctx context.Context) (any, error) {
-		cast, _ := json.Marshal([]string{c.ID})
-		refs, err := s.sceneReferences(&models.Scene{ProjectID: c.ProjectID, CharacterIDsJSON: cast})
-		if err != nil {
-			return nil, err
-		}
-		images, err := s.generateAssets(ctx, c.ProjectID, &c.ID, "", c.Name+" reference", "character_reference", fmt.Sprintf("Character reference sheet showing front, side and full body views of %s. Appearance: %s. Description: %s. Visual rules: %s", c.Name, c.Appearance, c.Description, c.VisualRulesJSON), "1:1", refs)
-		if err != nil {
-			return nil, err
-		}
-		ids := []string{}
-		for _, image := range images {
-			ids = append(ids, image.ID)
-		}
-		if c.ProjectID == nil {
-			return nil, fmt.Errorf("character has no project")
-		}
-		if err = s.database.AppendCharacterReferences(c.ID, *c.ProjectID, ids); err != nil {
-			return nil, err
-		}
-		return s.database.GetCharacter(c.ID)
+		return s.generateCharacterSheet(ctx, c, false, "")
 	})
 }
 

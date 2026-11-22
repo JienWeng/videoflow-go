@@ -1,6 +1,6 @@
 # 11. Troubleshooting
 
-[Handbook](README.md) · Previous: [Captions](10-captions-editor.md) · Next: [Reference](12-reference.md)
+[Handbook](README.md) · Previous: [Renders and outputs](09-renders.md) · Next: [Reference](12-reference.md)
 
 Start by identifying the stage that failed. Keep the project, scene, operation, and job IDs when reporting a problem. Remove API keys from shared logs.
 

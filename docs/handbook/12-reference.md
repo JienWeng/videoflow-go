@@ -33,21 +33,19 @@
 | `OPENROUTER_VISION_MODEL` | Vision model default; timed transcription model is saved in Settings |
 | `VITE_API_BASE` | Frontend API base override; configured for the frontend process/build |
 
-[`.env.example`](../.env.example) lists the primary configuration. Saved database settings can override environment defaults.
+Configuration is read from environment variables (the `environment:` block of `compose.yml` shows the ones the app uses). Saved database settings can override environment defaults.
 
 ## Navigation and API
 
 | Screen | Route | Main API areas |
 |---|---|---|
-| Create video | `/create` | `/videos/generate`, `/ops` |
+| Studio (story, scenes, editor) | `/` (the editor is `/?view=edit`) | `/graph`, `/chat`, `/scenes`, `/compositions` |
 | My videos | `/render` | `/render-jobs`, `/outputs` |
-| Studio | `/` | `/graph`, `/chat` |
+| Library (characters, assets) | `/library` | `/characters`, `/assets`, `/style` |
+| Voices | `/voices` | `/voice/state`, `/voice/profiles`, `/voice/samples` |
 | Projects | `/projects` | `/projects` |
-| Characters | `/characters` | `/characters` |
-| Assets and style | `/assets` | `/assets`, `/style` |
-| Scenes | `/scenes` | `/scripts`, `/scenes`, `/shots` |
-| Output editor | `/editor/{output-id}` | `/outputs/{id}/editor`, caption endpoints |
-| Settings | `/settings` | `/settings/providers`, `/settings/agents`, `/settings/app` |
+| Costs | `/costs` | `/costs` |
+| Settings | `/settings` | `/settings/providers`, `/settings/app` |
 
 Use the running Go backend for request schemas. Posting generation endpoints can incur provider usage. Health and model listing are not substitutes for an end-to-end generation check.
 

@@ -13,8 +13,7 @@ import (
 )
 
 func TestLocalDirectorTextNeverFallsBackAndPersistsNativeSession(t *testing.T) {
-	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("local text must not call OpenRouter") })
-	s.cfg.UseLocalText = true
+	s, _ := bareServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("local text must not call OpenRouter") })
 	fake := filepath.Join(t.TempDir(), "codex")
 	os.WriteFile(fake, []byte(`#!/bin/sh
 cat >/dev/null
@@ -46,7 +45,6 @@ printf '%s\n' '{"type":"thread.started","thread_id":"native-test"}' '{"type":"it
 }
 func TestDirectorProposalRejectsChangedReferencesBeforeExecution(t *testing.T) {
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("must reject before provider") })
-	s.cfg.UseLocalText = true
 	project, _ := s.database.GetActiveProjectID()
 	session, _ := s.database.CreateDirectorSession(project, "codex", "Identity test")
 	path := filepath.Join(s.cfg.StorageRoot, "car.png")
@@ -65,7 +63,6 @@ func TestDirectorProposalRejectsChangedReferencesBeforeExecution(t *testing.T) {
 }
 func TestDirectorCompositionPlannerUsesLocalSkillAndNeverExecutes(t *testing.T) {
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("must not use remote text") })
-	s.cfg.UseLocalText = true
 	project, _ := s.database.GetActiveProjectID()
 	s.database.CreateDirectorSession(project, "codex", "Editing")
 	fake := filepath.Join(t.TempDir(), "codex")
@@ -98,7 +95,6 @@ func TestRequestProjectBindingSurvivesActiveProjectSwitch(t *testing.T) {
 
 func TestIdentityEditDuringNativeTurnRejectsOldContextProposal(t *testing.T) {
 	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("no remote text") })
-	s.cfg.UseLocalText = true
 	project, _ := s.database.GetActiveProjectID()
 	session, _ := s.database.CreateDirectorSession(project, "codex", "Race test")
 	path := filepath.Join(s.cfg.StorageRoot, "reference.png")

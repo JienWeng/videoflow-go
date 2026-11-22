@@ -1,0 +1,37 @@
+import assert from 'node:assert/strict';
+import {creationProgress as progress,creationSteps,stepsForCreation} from './progress.mjs';
+assert.equal(creationSteps.length,5);
+assert.equal(progress('running',[]).current,'story');
+assert.equal(progress('running',['story','scenes']).current,'shots');
+assert.equal(progress('running',['story','scenes','shots','visuals']).current,'render');
+assert.equal(progress('awaiting_reference_review',['story','scenes','shots','visuals']).review,true);
+assert.equal(progress('awaiting_reference_review',['visuals']).completed.has('render'),false);
+assert.equal(progress('rendering',['render']).completed.has('render'),false);
+assert.equal(progress('rendering',['render']).completed.has('review'),false);
+assert.equal(progress('completed',['render']).completed.has('render'),true);
+assert.equal(progress('completed',[]).title,'Your story is ready');
+assert.equal(progress('failed',['story']).stopped,true);
+assert.equal(progress('reconciliation_required',['story']).current,'scenes');
+assert.equal(stepsForCreation(true).length,6);
+assert.equal(progress('running',['story','scenes','shots'],true).current,'characters');
+assert.equal(progress('awaiting_character_review',['story','scenes','shots','characters'],true).current,'visuals');
+assert.equal(progress('awaiting_character_review',[],true).review,true);
+assert.equal(progress('awaiting_character_review',[],true).characterReview,true);
+assert.equal(progress('running',['story','scenes','shots','characters','character_review'],true).current,'visuals');
+console.log('PASS 18 story-progress assertions');
+assert.equal(stepsForCreation(true,true).length,7);
+assert.equal(stepsForCreation(true,true)[3].key,'assets');
+assert.equal(progress('running',['story','scenes','shots'],true,true).current,'assets');
+assert.equal(progress('awaiting_character_review',['story','scenes','shots','assets','characters'],true,true).title,'Your story references are ready');
+console.log('PASS 4 story-asset progress assertions');
+
+assert.equal(progress('ready_to_render',['story','scenes','shots','visuals']).current,'render');
+assert(!stepsForCreation(true,true).some(s=>s.key==='review'||s.key==='character_review'));
+// A story whose scenes use their connected pictures makes no storyboard: the stage still completes, and nothing says one was made.
+const none=progress('ready_to_render',['story','scenes','shots','assets','characters','visuals'],true,true,0);
+assert.equal(none.completed.has('visuals'),true);assert.equal(none.current,'render');assert.equal(none.noStoryboards,true);
+assert.equal(/storyboard/i.test(none.title),false);
+assert.equal(progress('ready_to_render',['visuals'],true,true,2).title,'Your storyboard is ready');
+assert.equal(progress('ready_to_render',['visuals']).noStoryboards,false);
+assert.equal(/were|made|created/i.test(stepsForCreation().find(s=>s.key==='visuals').label),false);
+console.log('PASS 7 no-storyboard progress assertions');

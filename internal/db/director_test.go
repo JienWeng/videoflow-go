@@ -45,6 +45,13 @@ func TestDirectorSessionProjectIsolationAndInterruptedRecovery(t *testing.T) {
 	if err = d.FinishDirectorTurn(turn.ID, "succeeded", []byte(`{}`), ""); err == nil {
 		t.Fatal("late completion overwrote recovery")
 	}
+	// A restart never leaves the session locked: the next request starts with no review.
+	if restarted, e := d.GetDirectorSession(session.ID, project); e != nil || restarted.Status != "ready" {
+		t.Fatalf("session after restart: %+v %v", restarted, e)
+	}
+	if _, err = d.BeginDirectorTurn(session.ID, project, "request-3", "chat", nil); err != nil {
+		t.Fatal("new request refused after a restart", err)
+	}
 	saved, _ := d.GetDirectorSession(session.ID, project)
 	if saved.NativeID != "native-123" {
 		t.Fatal("native ID lost")

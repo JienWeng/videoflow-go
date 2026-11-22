@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"time"
+	"videoflow-go/internal/models"
 )
 
 type DirectorSession struct {
@@ -16,6 +17,9 @@ type DirectorSession struct {
 	Status    string `json:"status"`
 	Selected  bool   `json:"selected"`
 	CreatedAt string `json:"created_at"`
+	// Model and Effort are optional: empty means the AI tool's own default.
+	Model  string `json:"model"`
+	Effort string `json:"effort"`
 }
 type DirectorTurn struct {
 	ID          string          `json:"id"`
@@ -34,9 +38,32 @@ func (d *DB) ensureDirectorWorkflow() error {
  CREATE TABLE IF NOT EXISTS director_turns(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES director_sessions(id) ON DELETE CASCADE,request_id TEXT NOT NULL,kind TEXT NOT NULL,status TEXT NOT NULL,request_json TEXT NOT NULL,result_json TEXT NOT NULL DEFAULT 'null',error TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,UNIQUE(session_id,request_id));
  CREATE TABLE IF NOT EXISTS director_contexts(session_id TEXT PRIMARY KEY REFERENCES director_sessions(id) ON DELETE CASCADE,selection TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS director_proposals(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES director_sessions(id) ON DELETE CASCADE,project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,revision TEXT NOT NULL,selection TEXT NOT NULL);
- UPDATE director_sessions SET status='review_required' WHERE status='running';
- UPDATE director_turns SET status='interrupted',error='Backend restarted during this turn. Review saved native session before continuing; no automatic replay.' WHERE status='running';`)
-	return err
+ UPDATE director_sessions SET status='ready' WHERE status IN ('running','review_required');
+ UPDATE director_turns SET status='interrupted',error='The app restarted during this request. The AI session cannot change the project by itself, so nothing was changed. Ask again.' WHERE status='running';`)
+	if err != nil {
+		return err
+	}
+	for _, column := range []string{"model", "effort"} {
+		var n int
+		if d.conn.QueryRow(`SELECT count(*) FROM pragma_table_info('director_sessions') WHERE name=?`, column).Scan(&n) == nil && n == 0 {
+			if _, err = d.conn.Exec(`ALTER TABLE director_sessions ADD COLUMN ` + column + ` TEXT NOT NULL DEFAULT ''`); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// SetDirectorSessionModel saves which model and reasoning level a conversation uses.
+func (d *DB) SetDirectorSessionModel(id, project, model, effort string) error {
+	result, err := d.conn.Exec(`UPDATE director_sessions SET model=?,effort=? WHERE id=? AND project_id=?`, model, effort, id, project)
+	if err != nil {
+		return err
+	}
+	if n, _ := result.RowsAffected(); n != 1 {
+		return fmt.Errorf("session not found in project")
+	}
+	return nil
 }
 func (d *DB) CreateDirectorSession(project, engine, title string) (*DirectorSession, error) {
 	if engine != "codex" && engine != "claude" {
@@ -68,11 +95,11 @@ func (d *DB) CreateDirectorSession(project, engine, title string) (*DirectorSess
 }
 func (d *DB) GetDirectorSession(id, project string) (*DirectorSession, error) {
 	s := &DirectorSession{}
-	err := d.conn.QueryRow(`SELECT id,project_id,engine,native_id,title,status,selected,created_at FROM director_sessions WHERE id=? AND project_id=?`, id, project).Scan(&s.ID, &s.ProjectID, &s.Engine, &s.NativeID, &s.Title, &s.Status, &s.Selected, &s.CreatedAt)
+	err := d.conn.QueryRow(`SELECT id,project_id,engine,native_id,title,status,selected,created_at,model,effort FROM director_sessions WHERE id=? AND project_id=?`, id, project).Scan(&s.ID, &s.ProjectID, &s.Engine, &s.NativeID, &s.Title, &s.Status, &s.Selected, &s.CreatedAt, &s.Model, &s.Effort)
 	return s, err
 }
 func (d *DB) ListDirectorSessions(project string) ([]DirectorSession, error) {
-	rows, err := d.conn.Query(`SELECT id,project_id,engine,native_id,title,status,selected,created_at FROM director_sessions WHERE project_id=? ORDER BY created_at DESC`, project)
+	rows, err := d.conn.Query(`SELECT id,project_id,engine,native_id,title,status,selected,created_at,model,effort FROM director_sessions WHERE project_id=? ORDER BY created_at DESC`, project)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +107,7 @@ func (d *DB) ListDirectorSessions(project string) ([]DirectorSession, error) {
 	result := []DirectorSession{}
 	for rows.Next() {
 		var s DirectorSession
-		if err = rows.Scan(&s.ID, &s.ProjectID, &s.Engine, &s.NativeID, &s.Title, &s.Status, &s.Selected, &s.CreatedAt); err != nil {
+		if err = rows.Scan(&s.ID, &s.ProjectID, &s.Engine, &s.NativeID, &s.Title, &s.Status, &s.Selected, &s.CreatedAt, &s.Model, &s.Effort); err != nil {
 			return nil, err
 		}
 		result = append(result, s)
@@ -107,17 +134,6 @@ func (d *DB) SelectDirectorSession(id, project string) error {
 		return err
 	}
 	return tx.Commit()
-}
-func (d *DB) AcknowledgeDirectorSession(id, project string) error {
-	result, err := d.conn.Exec(`UPDATE director_sessions SET status='ready' WHERE id=? AND project_id=? AND status='review_required'`, id, project)
-	if err != nil {
-		return err
-	}
-	n, _ := result.RowsAffected()
-	if n != 1 {
-		return fmt.Errorf("session is not awaiting review")
-	}
-	return nil
 }
 func (d *DB) SetDirectorNativeID(id, native string) error {
 	result, err := d.conn.Exec(`UPDATE director_sessions SET native_id=? WHERE id=? AND (native_id='' OR native_id=?)`, native, id, native)
@@ -148,9 +164,9 @@ func (d *DB) BeginDirectorTurn(session, project, request, kind string, raw json.
 	}
 	n, _ := result.RowsAffected()
 	if n != 1 {
-		return nil, fmt.Errorf("session busy or requires review; open Local sessions")
+		return nil, fmt.Errorf("the AI session is busy with another request; wait for it to finish or stop it")
 	}
-	turn := &DirectorTurn{ID: uuid.NewString(), SessionID: session, Kind: kind, Status: "running", RequestJSON: raw, ResultJSON: json.RawMessage(`null`), CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	turn := &DirectorTurn{ID: uuid.NewString(), SessionID: session, Kind: kind, Status: models.StatusRunning, RequestJSON: raw, ResultJSON: json.RawMessage(`null`), CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 	if _, err = tx.Exec(`INSERT INTO director_turns(id,session_id,request_id,kind,status,request_json,created_at) VALUES(?,?,?,?,?,?,?)`, turn.ID, session, request, kind, turn.Status, string(raw), turn.CreatedAt); err != nil {
 		return nil, fmt.Errorf("request already recorded or unavailable: %w", err)
 	}
@@ -160,7 +176,7 @@ func (d *DB) BeginDirectorTurn(session, project, request, kind string, raw json.
 	return turn, nil
 }
 func (d *DB) FinishDirectorTurn(id, status string, result json.RawMessage, message string) error {
-	if status != "succeeded" && status != "failed" && status != "interrupted" {
+	if status != models.StatusSucceeded && status != models.StatusFailed && status != "interrupted" {
 		return fmt.Errorf("invalid turn status")
 	}
 	if len(result) == 0 {
@@ -179,11 +195,9 @@ func (d *DB) FinishDirectorTurn(id, status string, result json.RawMessage, messa
 	if n != 1 {
 		return fmt.Errorf("turn is no longer running")
 	}
-	sessionStatus := "ready"
-	if status != "succeeded" {
-		sessionStatus = "review_required"
-	}
-	if _, err = tx.Exec(`UPDATE director_sessions SET status=? WHERE id=(SELECT session_id FROM director_turns WHERE id=?)`, sessionStatus, id); err != nil {
+	// The AI session only reads and proposes, so a request that failed or was cut short
+	// left nothing half done: the session is free again at once, with the turn on record.
+	if _, err = tx.Exec(`UPDATE director_sessions SET status='ready' WHERE id=(SELECT session_id FROM director_turns WHERE id=?)`, id); err != nil {
 		return err
 	}
 	return tx.Commit()

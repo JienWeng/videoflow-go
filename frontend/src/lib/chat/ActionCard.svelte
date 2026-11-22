@@ -1,14 +1,20 @@
 <script lang="ts">
+  import { editHref } from '$lib/editor/links';
+ import CreativeBriefEditor from '$lib/brief/CreativeBriefEditor.svelte';
+ import {normalizeBrief,missingBriefFields,confirmedBriefRequest} from '$lib/brief/brief.mjs';
+ let newRenderVersion = $state(false);
  const operationScope=new AbortController();
  onDestroy(()=>operationScope.abort());
- import {onDestroy} from 'svelte';
-  import { del as apiDel, get, post as apiPost } from '$lib/api';
+ import ProductionControls from '$lib/production/ProductionControls.svelte';
+ let renderPlanId=$state(''),renderQuote=$state({calls:0,seconds:0,storyboards:0});
+ import {onDestroy,untrack} from 'svelte';
+  import { del as apiDel, get, patch as apiPatch, post as apiPost } from '$lib/api';
   import { normalizeChatIntent } from './intent.mjs';
   import { runBackgroundOp, type Op } from '$lib/ops';
-  import { Suggestion, Suggestions } from '$lib/components/ai-elements/suggestion';
+
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
-  import * as Card from '$lib/components/ui/card';
+  import * as Item from '$lib/components/ui/item';
   import { Textarea } from '$lib/components/ui/textarea';
   import Lightbulb from '@lucide/svelte/icons/lightbulb';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
@@ -24,13 +30,16 @@
   }
 
   interface Intent {
+ editor_panel?:string;
+ character_changes?:Record<string,string>;
+ creation_brief?:any;
     action: string;
+    asset_type?:string;
     director_proposal?: string;
     scene_id?: string | null;
     character_id?: string | null;
     shot_id?: string | null;
     output_id?: string | null;
-    style?: string | null;
     language?: string | null;
     idea?: string | null;
     scene_count?: number | null;
@@ -42,7 +51,6 @@
     scenes: Option[];
     characters: Option[];
     outputs: Option[];
-    caption_styles: string[];
   }
 
   interface IdeaOption {
@@ -61,6 +69,7 @@
   /** Passed up with the result so the chat can propose the next step. */
   interface RunContext {
     action: string;
+    characterId?:string;
     sceneId?: string;
     outputId?: string;
   }
@@ -94,8 +103,15 @@
     onran,
     onfocus,
     onop,
-    onsuggest
+    onsuggest,
+    onbriefchange,
+    onreference,
+    auto = false,
+    onautostart
   }: {
+    /** Auto mode: run this step right away when it is free and ready. */
+    auto?: boolean;
+    onautostart?: () => void;
     intent: Intent;
     options: Options;
     projectState?: ProjectState | null;
@@ -104,29 +120,41 @@
     /** Called when a background op launches; returns done/fail callbacks. */
     onop?: (label: string, ctx: RunContext) => OpHandle | undefined;
     onsuggest?: (text: string) => void;
+ onbriefchange?:(brief:ReturnType<typeof normalizeBrief>)=>void;
+ onreference?:(preset:any,style:any)=>void;
   } = $props();
 
   let intent = $derived(normalizeChatIntent(rawIntent));
   function proposalPath(path: string): string { return intent.director_proposal ? `${path}${path.includes('?') ? '&' : '?'}director_proposal=${encodeURIComponent(intent.director_proposal)}` : path; }
   const post = (path: string, body?: unknown) => apiPost(proposalPath(path), body);
   const del = (path: string) => apiDel(proposalPath(path));
+  const patch = (path: string, body: unknown) => apiPatch(proposalPath(path), body);
 
   // Each card gets one fixed intent, so plain init from props is fine.
   let busy = $state(false);
+  let sceneSetupBlocking=$state(true);
   // svelte-ignore state_referenced_locally
   let idea = $state(intent.idea ?? '');
+ let creationBrief=$state(untrack(()=>normalizeBrief(intent.creation_brief,intent.idea??'')));
+ let briefConfirmed=$state(false);
+ function editBrief(brief:ReturnType<typeof normalizeBrief>){creationBrief=brief;briefConfirmed=false;onbriefchange?.(JSON.parse(JSON.stringify(brief)))}
   // svelte-ignore state_referenced_locally
-  let sceneCount = $state<number | ''>(intent.scene_count ?? '');
+  let characterId=$state(intent.character_id??'');
+  // update_character: the assistant's rewritten fields, editable before saving.
+  const changeFields=[{key:'appearance',label:'Appearance'},{key:'description',label:'Description'},{key:'personality',label:'Personality'}] as const;
+  let characterDraft=$state<Record<string,string>>(untrack(()=>({...(intent.character_changes??{})})));
+  let remakeReference=$state(true);
+  const changedCharacter=$derived(options.characters.find((c:any)=>c.id===characterId) as any);
+  let storyFormat=$state(untrack(()=>intent.action==='generate_image'?'1:1':'9:16'));
+  let imageType=$state(untrack(()=>intent.asset_type??'other'));
   // svelte-ignore state_referenced_locally
-  let castIds:string[]=$state(intent.character_id?[intent.character_id]:[]);
+  let castIds:string[]=$state(Array.isArray((intent as any).cast_ids)&&(intent as any).cast_ids.length?[...(intent as any).cast_ids]:intent.character_id?[intent.character_id]:[]);
   // svelte-ignore state_referenced_locally
   let sceneId = $state(intent.scene_id ?? '');
   // svelte-ignore state_referenced_locally
   let shotId = $state(intent.shot_id ?? '');
   // svelte-ignore state_referenced_locally
   let outputId = $state(intent.output_id ?? '');
-  // svelte-ignore state_referenced_locally
-  let captionStyle = $state(intent.style ?? 'kids');
   let shots = $state<{ id: string; shot_order: number; prompt: string }[]>([]);
   let maxAssets = $state(4);
   let autoAssets = $state(true);
@@ -139,14 +167,26 @@
   let selectedIdea = $state(0);
   let developing = $state(false);
 
+  let repairStoryboard = $state(false);
+  const editorPanels: Record<string,{label:string;help:string;panel:string}> = {
+    voice:{label:'Open Voice from script',help:'In Edit video → Audio, Voice from script speaks your scene lines with saved character voices or a narrator voice. Only new lines use speech credits.',panel:'audio'},
+    music:{label:'Open Audio in the editor',help:'Add music from your Library or upload a track in Edit video → Audio, then set its volume and fades.',panel:'audio'},
+    captions:{label:'Open Captions in the editor',help:'Edit video → Text makes captions from the script, timed to the sound of each clip, and can translate them.',panel:'text'},
+    export:{label:'Open Export',help:'Export renders your edit to an MP4 you can download.',panel:'export'},
+    edit:{label:'Open Edit video',help:'Trim, reorder and combine scene videos on the timeline. Nothing is generated.',panel:''}
+  };
+  const editorTarget = $derived(editorPanels[intent.editor_panel as string] ?? editorPanels.edit);
   const labels: Record<string, string> = {
-    generate_script: 'Generate script',
+    update_character:'Save changes',
+    generate_script: 'Create story & references',
+    generate_image:'Generate image',
+    generate_character_reference:'Generate character reference',
     generate_scenes: 'Expand scene',
     generate_shots: 'Generate shots',
     storyboard: 'Generate storyboard',
-    render_scene: 'Render scene',
+    audit_storyboard: 'Run visual audit',
+    render_scene: 'Update storyboard & render',
     render_shot: 'Render shot',
-    caption: 'Burn saved captions',
     retry_render: 'Fix & re-render',
     generate_assets: 'Generate assets',
     refine_scene: 'AI refine scene',
@@ -193,10 +233,14 @@
 
   const ready = $derived.by(() => {
     switch (intent.action) {
+      case 'generate_image':return !!idea.trim();
+      case 'generate_character_reference':return !!characterId;
+      case 'update_character':return !!characterId&&Object.values(characterDraft).some(v=>v?.trim());
       case 'generate_script':
-        return idea.trim().length > 0;
+        return creationBrief.idea.trim().length>0&&missingBriefFields(creationBrief).length===0&&briefConfirmed;
       case 'generate_scenes':
       case 'generate_shots':
+      case 'audit_storyboard':
       case 'storyboard':
       case 'render_scene':
       case 'generate_assets':
@@ -211,8 +255,6 @@
         return !!sceneId && !!shotId && idea.trim().length > 0;
       case 'style_ingest':
         return true;
-      case 'caption':
-        return !!outputId && !!captionStyle;
       case 'retry_render':
         return !!outputId;
       default:
@@ -232,6 +274,7 @@
       const result: IdeaOptions = await post('/ideas/develop', { idea: idea.trim() });
       ideaOptions = result;
       selectedIdea = result.recommended_index ?? 0;
+ idea=composedIdea();editBrief({...creationBrief,idea});
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -279,13 +322,39 @@
     }
   }
 
+  // Free planning steps the assistant may carry out itself in Auto mode. Nothing here
+  // spends image, video or voice credits, and each result can be changed again.
+  const AUTO_FREE = new Set(['refine_scene', 'refine_shot', 'generate_shots', 'plan_assets']);
+  let autoStarted = false;
+  $effect(() => {
+    if (!auto || autoStarted || busy || !ready || !AUTO_FREE.has(intent.action)) return;
+    autoStarted = true;
+    onautostart?.();
+    untrack(() => void run());
+  });
   async function run() {
     const ctx: RunContext = {
       action: intent.action,
+      characterId:characterId||undefined,
       sceneId: sceneId || undefined,
       outputId: outputId || undefined
     };
     switch (intent.action) {
+      case 'generate_script':
+        {if(!ready){toast.error('Complete and confirm the creative brief first');return;}const brief=confirmedBriefRequest(creationBrief,briefConfirmed);briefConfirmed=false;return runInBackground('/videos/generate?background=true',{...brief,character_ids:castIds,create_characters:true,review_before_render:true},'Story & reference images',op=>op.result_json?.scene_ids?.[0],ctx);}
+      case 'generate_image':return runInBackground('/assets/generate',{prompt:idea.trim(),aspect_ratio:storyFormat,type:imageType},'Image generation',op=>op.result_json?.asset_ids?.[0],ctx);
+      case 'update_character':{
+        const changes=Object.fromEntries(Object.entries(characterDraft).map(([k,v])=>[k,v.trim()]).filter(([,v])=>v));
+        busy=true;
+        try{await patch(`/characters/${encodeURIComponent(characterId)}`,changes);toast.success(`${changedCharacter?.name??'Character'} updated`);}
+        catch(e){busy=false;toast.error((e as Error).message);return;}
+        busy=false;
+        if(remakeReference)return runInBackground(`/characters/${characterId}/reference-sheets`,{},'Character reference',()=>characterId,ctx);
+        await onran?.({character_id:characterId},ctx);onfocus?.(characterId);return;}
+      case 'generate_character_reference':
+        return runInBackground(`/characters/${characterId}/reference-sheets`,{},'Character reference',()=>characterId,ctx);
+      case 'audit_storyboard':
+        return runInBackground(`/scenes/${sceneId}/storyboard/audit`, {repair:repairStoryboard}, 'Storyboard visual audit', op=>op.result_json?.asset_id??sceneId, ctx);
       case 'storyboard':
         return runInBackground(
           `/scenes/${sceneId}/storyboard`,
@@ -294,6 +363,7 @@
           (op) => op.result_json?.asset_id ?? op.scene_id ?? sceneId,
           ctx
         );
+      case 'render_scene':{const quote={...renderQuote};const anotherVersion=newRenderVersion;newRenderVersion=false;return runInBackground(`/scenes/${sceneId}/render`,{prepare_storyboard:true,use_scene_cast:true,new_version:anotherVersion,confirmed_plan_id:renderPlanId,confirmed_calls:quote.calls,confirmed_seconds:quote.seconds,confirmed_storyboard_calls:quote.storyboards},'Update storyboard & render',op=>op.result_json?.job_id,ctx);}
       case 'generate_shots':
         return runInBackground(
           `/scenes/${sceneId}/shots/generate`,
@@ -310,40 +380,16 @@
           (op) => op.result_json?.asset_ids?.[0],
           ctx
         );
-      case 'caption':
-        return runInBackground(
-          `/outputs/${outputId}/caption`,
-          {
-            style: captionStyle
-          },
-          'Captioning',
-          (op) => op.result_json?.output_id ?? op.output_id ?? outputId,
-          ctx
-        );
     }
     busy = true;
     try {
       let result: any;
       let focusId: string | undefined;
       switch (intent.action) {
-        case 'generate_script':
-          result = await post('/scripts/generate', {
-            idea: ideaOptions ? composedIdea() : idea.trim(),
-            character_ids:castIds,
-            ...(sceneCount ? { scene_count: sceneCount } : {})
-          });
-          focusId = result.scenes?.at(-1)?.id;
-          toast.success(`Script generated — ${result.scenes?.length ?? 0} scenes`);
-          break;
         case 'generate_scenes':
           result = await post(`/scenes/${sceneId}/generate`, {});
           focusId = result.id ?? sceneId;
           toast.success('Scene expanded');
-          break;
-        case 'render_scene':
-          result = await post(`/scenes/${sceneId}/render`);
-          focusId = result.job_id;
-          toast.success(`Render started — job ${result.job_id}`);
           break;
         case 'render_shot':
           result = await post('/render/from-shot', { scene_id: sceneId, shot_id: shotId });
@@ -398,9 +444,26 @@
   const labelClass = 'block text-xs text-muted-foreground mb-1';
 </script>
 
-<Card.Root class="mt-2 max-w-sm gap-3 py-4">
-  <Card.Content class="space-y-3 px-4">
-    {#if intent.action === 'unknown'}
+<Item.Root variant="outline" class="mt-2 w-full items-start"><Item.Content class="min-w-0">
+  {#if intent.action==='open_editor'}<Item.Title>Edit video</Item.Title>{:else if intent.action==='update_character'}<Item.Title>Update character</Item.Title><Item.Description>Check the new wording, then save. Nothing changes until you do.</Item.Description>{:else}<Item.Title>Creation options</Item.Title><Item.Description>Adjust the options, then choose an action to start. Editing fields does not run generation.</Item.Description>{/if}
+  <div class="mt-3 space-y-3">
+    {#if intent.action === 'update_character'}
+      {#if changedCharacter}
+        <p class="text-sm font-medium">{changedCharacter.name}</p>
+        {#each changeFields as field (field.key)}{#if characterDraft[field.key]!==undefined}
+          <label class="grid gap-1 text-xs">New {field.label.toLowerCase()}<Textarea bind:value={characterDraft[field.key]} rows={3}/></label>
+          {#if changedCharacter[field.key]}<p class="text-xs text-muted-foreground">Was: {changedCharacter[field.key]}</p>{/if}
+        {/if}{/each}
+        {#if !Object.keys(characterDraft).length}<label class="grid gap-1 text-xs">New appearance<Textarea bind:value={characterDraft.appearance} rows={3} placeholder={changedCharacter.appearance}/></label>{/if}
+        <label class="flex items-start gap-2 text-xs"><input type="checkbox" class="mt-0.5" bind:checked={remakeReference} disabled={busy}/>Then make a new reference picture so scenes use the new look (uses image credits)</label>
+        <p class="text-xs text-muted-foreground">Scenes already rendered keep the old look until you render them again.</p>
+        <div class="pt-1"><Button size="sm" class="rounded-full px-4" disabled={busy||!ready} onclick={run}>{#if busy}<LoaderCircle class="size-4 mr-1 animate-spin"/>{/if}{busy?'Saving…':remakeReference?'Save & make new picture':'Save changes'}</Button></div>
+      {:else}<p class="text-xs text-muted-foreground">Choose the character to change.</p>
+        <select class={selectClass} bind:value={characterId}><option value="">Choose a character…</option>{#each options.characters as c(c.id)}<option value={c.id}>{c.name}</option>{/each}</select>{/if}
+    {:else if intent.action === 'open_editor'}
+      <p class="text-xs text-muted-foreground">{editorTarget.help}</p>
+      <div class="pt-1"><Button size="sm" class="rounded-full px-4" href={editorTarget.panel?`${editHref}&panel=${editorTarget.panel}`:editHref}>{editorTarget.label}</Button></div>
+    {:else if intent.action === 'unknown'}
       {#if projectState?.next_steps?.length}
         <div class="text-sm space-y-1">
           <p class="font-medium">Next steps:</p>
@@ -413,33 +476,28 @@
       {/if}
       <details class="text-sm text-muted-foreground">
         <summary class="cursor-pointer text-xs hover:text-foreground select-none">
-          What can you do? / 你能做什么？
+          What can I ask?
         </summary>
         <ul class="list-disc pl-4 mt-1 space-y-0.5">
-          <li>generate a script from an idea — 从想法生成剧本</li>
-          <li>expand a scene / generate shots — 展开场景／生成镜头</li>
-          <li>create a storyboard — 生成分镜图</li>
-          <li>render a scene or a single shot — 渲染场景或单个镜头</li>
-          <li>add captions to a rendered video — 为视频添加字幕</li>
-          <li>fix &amp; re-render using QA feedback — 根据审核反馈修复并重渲染</li>
-          <li>generate props/assets for a scene — 生成场景道具</li>
-          <li>refine a scene or shot with AI — AI 优化场景或镜头</li>
-          <li>delete a scene — 删除场景</li>
-          <li>derive the project style from the story — 从故事中提取项目风格</li>
-          <li>suggest assets without generating — 建议道具但不生成</li>
+          <li>start a new story from an idea</li>
+          <li>plan shots, make a storyboard, or render a scene</li>
+          <li>make a character picture, prop or background</li>
+          <li>change a scene or shot in your own words</li>
+          <li>add voices, music or captions, and export (opens the editor)</li>
+          <li>ask why something failed and how to fix it</li>
         </ul>
       </details>
-      <Suggestions>
+      <div class="flex flex-wrap gap-2">
         {#each exampleChips as s (s)}
-          <Suggestion suggestion={s} onclick={(text) => onsuggest?.(text)} />
+          <Button variant="outline" size="sm" onclick={()=>onsuggest?.(s)}>{s}</Button>
         {/each}
-      </Suggestions>
+      </div>
     {:else}
       {#if intent.action === 'generate_script'}
         {#if !ideaOptions}
           <div>
             <label class={labelClass} for="idea-{intent.action}">Idea</label>
-            <Textarea id="idea-{intent.action}" bind:value={idea} rows={3} class="bg-muted/50" placeholder="Describe the video idea…" />
+            <Textarea id="idea-{intent.action}" value={creationBrief.idea} oninput={e=>{idea=e.currentTarget.value;editBrief({...creationBrief,idea})}} rows={3} class="bg-muted/50" placeholder="Describe the video idea…" />
           </div>
         {:else}
           <div class="space-y-2">
@@ -449,7 +507,7 @@
                 class="w-full rounded-md border p-2.5 text-left text-sm transition-colors {selectedIdea === i
                   ? 'border-primary bg-primary/5'
                   : 'border-input hover:border-muted-foreground/40'}"
-                onclick={() => (selectedIdea = i)}
+                onclick={()=>{selectedIdea=i;idea=composedIdea();editBrief({...creationBrief,idea})}}
               >
                 <div class="flex items-center gap-1.5 flex-wrap">
                   <span class="font-bold">{o.title}</span>
@@ -469,18 +527,17 @@
             {/if}
           </div>
         {/if}
-        <div>
-          <label class={labelClass} for="scenes-{intent.action}">Scenes (optional)</label>
-          <input id="scenes-{intent.action}" type="number" min="1" max="20"
-            bind:value={sceneCount} placeholder="auto" class={selectClass} />
-          <p class="text-xs text-muted-foreground mt-1">1 scene = 1 video</p>
-        </div>
+        <CreativeBriefEditor bind:value={creationBrief} bind:confirmed={briefConfirmed} disabled={busy||developing} onchange={editBrief} onstyleapplied={onreference}/>
+
       {/if}
 
+      {#if intent.action==='generate_image'}<label class="grid gap-1 text-xs">Image type<select class={selectClass} bind:value={imageType}><option value="other">General image</option><option value="prop">Prop</option><option value="location">Location</option><option value="background">Background</option></select></label><label class="grid gap-1 text-xs">Image prompt<Textarea bind:value={idea} rows={3}/></label><label class="grid gap-1 text-xs">Format<select class={selectClass} bind:value={storyFormat}><option value="1:1">Square · 1:1</option><option value="9:16">Vertical · 9:16</option><option value="16:9">Landscape · 16:9</option></select></label><p class="text-xs text-muted-foreground">Uses the current project style. Generated images are ready to use. Provider calls may incur charges.</p>{/if}
+      {#if intent.action==='generate_character_reference'}<div><label class={labelClass} for="reference-character">Character</label><select id="reference-character" class={selectClass} bind:value={characterId}><option value="">Choose a character…</option>{#each options.characters as c(c.id)}<option value={c.id}>{c.name}</option>{/each}</select><p class="mt-2 text-xs text-muted-foreground">Generates a full-body reference candidate. Review it before use. Provider calls may incur charges.</p></div>{/if}
+
       {#if intent.action === 'generate_script' && options.characters.length}
-      <fieldset class="space-y-1"><legend class="text-xs">Cast</legend>{#each options.characters as character(character.id)}<label class="flex items-center gap-2 text-xs"><input type="checkbox" bind:group={castIds} value={character.id}/>{character.name}</label>{/each}</fieldset>
+      <fieldset class="space-y-1"><legend class="text-xs">Cast</legend>{#each options.characters as character(character.id)}<label class="flex items-center gap-2 text-xs"><input type="checkbox" bind:group={castIds} value={character.id} onchange={()=>briefConfirmed=false}/>{character.name}</label>{/each}</fieldset>
       {/if}
-      {#if ['generate_scenes', 'generate_shots', 'storyboard', 'render_scene', 'render_shot', 'generate_assets', 'refine_scene', 'refine_shot', 'delete_scene', 'plan_assets'].includes(intent.action)}
+      {#if ['generate_scenes', 'generate_shots', 'audit_storyboard', 'storyboard', 'render_scene', 'render_shot', 'generate_assets', 'refine_scene', 'refine_shot', 'delete_scene', 'plan_assets'].includes(intent.action)}
         <div>
           <label class={labelClass} for="scene-{intent.action}">Scene</label>
           <select
@@ -507,6 +564,11 @@
         </div>
       {/if}
 
+      {#if intent.action==='audit_storyboard'}
+        <label class="flex items-center gap-2 text-sm"><input type="checkbox" bind:checked={repairStoryboard} disabled={busy}/>Repair if needed</label>
+        <p class="text-xs text-muted-foreground">Checks the image against the scene and its references. Repair can generate one replacement and check it. Provider charges may apply.</p>
+      {/if}
+      {#if intent.action==='render_scene'}<p class="text-xs text-muted-foreground">Uses the saved clip and sound plan below. Automatic mode groups consecutive shots to reduce paid calls. Matching clips are reused. Image and video generation may use account quota or provider credits.</p>{#if sceneId}<ProductionControls scene={sceneId} bind:newVersion={newRenderVersion} onplan={(id,cost)=>{renderPlanId=id;renderQuote=cost}} disabled={busy} onstate={s=>sceneSetupBlocking=s.blocking||s.loading} onask={text=>onsuggest?.(text)}/>{/if}{/if}
       {#if intent.action === 'generate_shots'}
         <label class="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
           <input type="checkbox" class="w-auto" bind:checked={autoAssets} />
@@ -571,7 +633,9 @@
         </div>
       {/if}
 
-      {#if ['caption', 'retry_render'].includes(intent.action)}
+      {#if intent.action === 'retry_render' && !options.outputs.length}
+        <p role="status" class="text-sm text-muted-foreground">There is no finished video yet, so there is nothing to pick here. Make the scene's video first: ask "make the video for" and the scene name.</p>
+      {:else if intent.action === 'retry_render'}
         <div>
           <label class={labelClass} for="output-{intent.action}">Output</label>
           <select id="output-{intent.action}" bind:value={outputId} class={selectClass}>
@@ -581,45 +645,10 @@
         </div>
       {/if}
 
-      {#if intent.action === 'caption'}
-        <p class="text-xs text-muted-foreground">Transcribe or write captions in the editor first. This action burns saved captions into a new video file.</p>
-        {#if outputId}<a class="text-xs underline" href={`/editor/${outputId}`}>Open caption editor</a>{/if}
-        <div>
-          <div>
-            <label class={labelClass} for="style-{intent.action}">Style</label>
-            <select id="style-{intent.action}" bind:value={captionStyle} class={selectClass}>
-              {#each options.caption_styles as st (st)}<option value={st}>{st}</option>{/each}
-            </select>
-          </div>
-
-        </div>
-      {/if}
-
       <div class="flex items-center gap-1.5 pt-1">
         {#if intent.action === 'generate_script' && !ideaOptions}
-          <Button
-            size="sm"
-            class="rounded-full px-4"
-            disabled={busy || developing || !ready}
-            onclick={developIdeas}
-          >
-            {#if developing}
-              <LoaderCircle class="size-4 mr-1 animate-spin" />
-            {:else}
-              <Lightbulb class="size-4 mr-1" />
-            {/if}
-            {developing ? 'Developing…' : 'Develop ideas'}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            class="rounded-full px-3"
-            disabled={busy || developing || !ready}
-            onclick={run}
-          >
-            {#if busy}<LoaderCircle class="size-4 mr-1 animate-spin" />{/if}
-            {busy ? 'Running…' : 'Skip — generate directly'}
-          </Button>
+          <Button size="sm" class="rounded-full px-4" disabled={busy||developing||!ready} onclick={run}>{#if busy}<LoaderCircle class="size-4 mr-1 animate-spin"/>{:else}<Play class="size-4 mr-1"/>{/if}{busy?'Running…':'Create story & references'}</Button>
+          <Button size="sm" variant="outline" class="rounded-full px-3" disabled={busy||developing||!idea.trim()} onclick={developIdeas}><Lightbulb class="size-4 mr-1"/>{developing?'Exploring…':'Explore ideas first'}</Button>
         {:else if intent.action === 'generate_script'}
           <Button size="sm" class="rounded-full px-4" disabled={busy} onclick={run}>
             {#if busy}
@@ -627,7 +656,7 @@
             {:else}
               <Play class="size-4 mr-1" />
             {/if}
-            {busy ? 'Running…' : 'Generate script'}
+            {busy ? 'Running…' : 'Create story & references'}
           </Button>
           <Button
             size="sm"
@@ -643,7 +672,7 @@
             size="sm"
             variant={intent.action === 'delete_scene' ? 'destructive' : 'default'}
             class="rounded-full px-4"
-            disabled={busy || !ready}
+            disabled={busy || !ready || (intent.action==='render_scene'&&sceneSetupBlocking)}
             onclick={run}
           >
             {#if busy}
@@ -653,10 +682,10 @@
             {:else}
               <Play class="size-4 mr-1" />
             {/if}
-            {busy ? 'Running…' : (labels[intent.action] ?? 'Run')}
+            {busy ? 'Running…' : intent.action==='render_scene'&&renderPlanId&&!renderQuote.storyboards ? 'Render scene' : (labels[intent.action] ?? 'Run')}
           </Button>
         {/if}
       </div>
     {/if}
-  </Card.Content>
-</Card.Root>
+  </div>
+</Item.Content></Item.Root>

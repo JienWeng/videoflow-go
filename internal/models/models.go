@@ -5,14 +5,22 @@ import (
 	"time"
 )
 
+type ProjectCounts struct {
+	Scenes     int `json:"scenes"`
+	Characters int `json:"characters"`
+	Assets     int `json:"assets"`
+}
+
 // Project table
 type Project struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	IsActive    bool      `json:"is_active"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	Counts      *ProjectCounts `json:"counts,omitempty"`
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Cover       string         `json:"cover,omitempty"` // a representative image, for project cards
+	IsActive    bool           `json:"is_active"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
 }
 
 // Character table
@@ -158,15 +166,6 @@ type Op struct {
 type AppSetting struct {
 	Key   string          `json:"key"`
 	Value json.RawMessage `json:"value"`
-}
-
-// AgentSetting table
-type AgentSetting struct {
-	Agent          string  `json:"agent"`
-	ProjectID      *string `json:"project_id"`
-	Provider       string  `json:"provider"`
-	Model          string  `json:"model"`
-	PromptTemplate string  `json:"prompt_template"`
 }
 
 // ProviderSecret table

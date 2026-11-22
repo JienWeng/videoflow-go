@@ -1,6 +1,6 @@
 # 4. Projects and backups
 
-[Handbook](README.md) · Previous: [Providers](03-providers.md) · Next: [First video](05-first-video.md)
+[Handbook](README.md) · Previous: [Install from zero](02-installation.md) · Next: [First video](05-first-video.md)
 
 Use one project per coherent story or production. A fresh database creates a default project automatically; you do not need to preload assets.
 

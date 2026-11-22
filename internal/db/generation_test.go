@@ -2,9 +2,32 @@ package db
 
 import (
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"videoflow-go/internal/models"
 )
+
+func TestStorySnapshotFailureRollsBackCharactersAndStory(t *testing.T) {
+	d, err := Open(filepath.Join(t.TempDir(), "test.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	project, _ := d.GetActiveProjectID()
+	script := &models.Script{ProjectID: &project, Title: "Dog story"}
+	characters := []models.Character{{ID: "new-pup", ProjectID: &project, Name: "Pip"}}
+	scenes := []models.Scene{{ID: "duplicate", Title: "One", CharacterIDsJSON: []byte(`["new-pup"]`)}, {ID: "duplicate", Title: "Two"}}
+	if err = d.SaveStorySnapshot(script, scenes, characters); err == nil {
+		t.Fatal("invalid snapshot committed")
+	}
+	chars, _ := d.ListCharacters(project)
+	scripts, _ := d.ListScripts(project)
+	stored, _ := d.ListScenes(project)
+	if len(chars)+len(scripts)+len(stored) != 0 {
+		t.Fatal("partial story or characters left behind")
+	}
+}
 
 func TestScriptSceneFailureRollsBackWholeSnapshot(t *testing.T) {
 	d, err := Open(filepath.Join(t.TempDir(), "test.sqlite"))
@@ -128,23 +151,6 @@ func TestRecoveryAcknowledgementRequiresInterruptedOperation(t *testing.T) {
 		t.Fatal("reviewed operation did not unlock", err)
 	}
 }
-func TestOperationJobBatchRollsBackOnFailure(t *testing.T) {
-	d, err := Open(filepath.Join(t.TempDir(), "test.sqlite"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer d.Close()
-	op := &models.Op{Kind: "video", Status: "running"}
-	d.CreateOp(op)
-	jobs := []models.RenderJob{{ID: "duplicate", Provider: "openrouter", Status: "pending"}, {ID: "duplicate", Provider: "openrouter", Status: "pending"}}
-	if err = d.SaveOperationJobs(op.ID, jobs, map[string]any{}); err == nil {
-		t.Fatal("invalid batch committed")
-	}
-	if _, err = d.GetRenderJob("duplicate"); err == nil {
-		t.Fatal("partial batch survived")
-	}
-}
-
 func TestEndpointPinPreservesSubmissionFence(t *testing.T) {
 	d, err := Open(filepath.Join(t.TempDir(), "db.sqlite"))
 	if err != nil {
@@ -168,5 +174,41 @@ func TestEndpointPinPreservesSubmissionFence(t *testing.T) {
 	endpoint, err = d.PinRenderEndpoint(job.ID, "https://different.invalid")
 	if err != nil || endpoint != "https://queue.fal.run" {
 		t.Fatal("endpoint was redirected", endpoint, err)
+	}
+}
+
+func TestStoryContinuationHasOneAtomicOwner(t *testing.T) {
+	d, err := Open(filepath.Join(t.TempDir(), "claims.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	project, _ := d.GetActiveProjectID()
+	op := &models.Op{ProjectID: &project, Kind: "video_generation", Status: "succeeded", ResultJSON: []byte(`{"status":"awaiting_character_review"}`)}
+	if err = d.CreateOp(op); err != nil {
+		t.Fatal(err)
+	}
+	if claimed, err := d.ClaimStoryContinuation(op.ID, "wrong-project", op.ResultJSON); err != nil || claimed {
+		t.Fatal("cross-project claim", claimed, err)
+	}
+	if claimed, err := d.ClaimStoryContinuation(op.ID, project, []byte(`{}`)); err != nil || claimed {
+		t.Fatal("changed snapshot claim", claimed, err)
+	}
+	var wg sync.WaitGroup
+	var claimed atomic.Int32
+	for range 8 {
+		wg.Go(func() {
+			ok, err := d.ClaimStoryContinuation(op.ID, project, op.ResultJSON)
+			if err != nil {
+				t.Error(err)
+			}
+			if ok {
+				claimed.Add(1)
+			}
+		})
+	}
+	wg.Wait()
+	if claimed.Load() != 1 {
+		t.Fatal("multiple continuation owners", claimed.Load())
 	}
 }

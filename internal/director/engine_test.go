@@ -2,6 +2,7 @@ package director
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,12 +44,37 @@ func TestClaudeRejectsFailureAndWrongNativeSession(t *testing.T) {
 	}
 }
 func TestNativeEnvironmentRemovesMediaCredentials(t *testing.T) {
-	env := SafeEnvironment([]string{"HOME=/tmp/home", "PATH=/bin", "FAL_KEY=secret", "OPENROUTER_API_KEY=secret", "BYTEPLUS_API_KEY=secret", "ANTHROPIC_API_KEY=auth", "CODEX_HOME=/tmp/codex"})
+	env := SafeEnvironment([]string{"HOME=/tmp/home", "PATH=/bin", "FAL_KEY=secret", "FISH_API_KEY=secret", "ELEVENLABS_API_KEY=secret", "OPENROUTER_API_KEY=secret", "BYTEPLUS_API_KEY=secret", "ANTHROPIC_API_KEY=auth", "CODEX_HOME=/tmp/codex"})
 	joined := strings.Join(env, "\n")
-	if strings.Contains(joined, "FAL_KEY") || strings.Contains(joined, "OPENROUTER") || strings.Contains(joined, "BYTEPLUS") {
+	if strings.Contains(joined, "ELEVENLABS_API_KEY") || strings.Contains(joined, "FISH_API_KEY") || strings.Contains(joined, "FAL_KEY") || strings.Contains(joined, "OPENROUTER") || strings.Contains(joined, "BYTEPLUS") {
 		t.Fatal("provider keys inherited")
 	}
 	if !strings.Contains(joined, "ANTHROPIC_API_KEY=auth") {
 		t.Fatal("native auth removed")
+	}
+}
+
+func TestClaudeImageInputCarriesImagesThenPrompt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a.jpg")
+	os.WriteFile(path, []byte("jpegbytes"), 0600)
+	line, err := claudeImageInput("describe it", []string{path, filepath.Join(t.TempDir(), "missing.jpg")})
+	var message struct {
+		Type    string
+		Message struct {
+			Content []struct {
+				Type   string
+				Text   string
+				Source struct {
+					MediaType string `json:"media_type"`
+				}
+			}
+		}
+	}
+	if err != nil || json.Unmarshal([]byte(line), &message) != nil || message.Type != "user" {
+		t.Fatal(err, line)
+	}
+	c := message.Message.Content
+	if len(c) != 2 || c[0].Type != "image" || c[0].Source.MediaType != "image/jpeg" || c[1].Text != "describe it" {
+		t.Fatalf("%+v", c)
 	}
 }

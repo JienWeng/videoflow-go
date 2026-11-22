@@ -1,17 +1,10 @@
-<script lang="ts" module>
-  // Caption config is project-wide — fetch once per app session, lazily on
-  // the first output-node selection, and share across panel instances.
-  type CaptionConfig = {
-    styles: string[];
-    models: string[];
-    default_model: string;
-    default_language: string;
-    default_style: string;
-  };
-  let captionConfigPromise: Promise<CaptionConfig> | null = null;
-</script>
-
 <script lang="ts">
+  import { editOutputHref } from '$lib/editor/links';
+  import NodeTools from './NodeTools.svelte';
+  import RenderProgress from './RenderProgress.svelte';
+  import AssetDescriptionEditor from '$lib/assets/AssetDescriptionEditor.svelte';
+  import CharacterReferences from './CharacterReferences.svelte';
+  import {changedFields} from '$lib/scenes/drafts.mjs';
   import { beforeNavigate } from '$app/navigation';
   import { untrack } from 'svelte';
   import type { Node } from '@xyflow/svelte';
@@ -24,13 +17,12 @@
   import { toast } from 'svelte-sonner';
   import { Captions, Clapperboard, History, RefreshCw, Sparkles, Trash2, X } from '@lucide/svelte';
   import { get, put, patch, post, del, mediaUrl, isImage } from '$lib/api';
-  import { runBackgroundOp } from '$lib/ops';
 
   let {
     node,
     onclose,
-    onsaved, embedded = false
-  }: { node: Node | null; onclose: () => void; onsaved: () => void; embedded?: boolean } = $props();
+    onsaved, embedded = false, onopenscene,onopencharacterrefs
+  }: { node: Node | null; onclose: () => void; onsaved: () => void; embedded?: boolean; onopenscene?:(id:string)=>void;onopencharacterrefs?:(id:string)=>void } = $props();
 
   // The panel's own source of truth for which node it shows. It tracks the
   // `node` prop, EXCEPT when the form is dirty and the user cancels the
@@ -62,15 +54,11 @@
   let revisions = $state<any[]>([]);
   let reverting = $state('');
 
-  // Output node actions (QA retry + captions). Captioning uses the project
-  // defaults from /caption-config — fine-tuning lives in /editor/{id}.
+  // Output node action: make another take.
   let retrying = $state(false);
-  let captioning = $state(false);
-  let captionStyle = $state('');
-  let captionModel = $state('');
-  let captionLanguage = $state('zh');
 
   export function canLeave(){if(saving||refining||reverting||deleting)return false;return !formDirty || confirm('Discard unsaved changes?');}
+  export function hasUnsavedChanges(){return formDirty;}
   beforeNavigate(({cancel})=>{if(!canLeave())cancel();});
   // Sync the `node` prop into `shown`, guarding unsaved edits on node-switch.
   // Design note: reverting the parent's selection on cancel is impractical
@@ -112,7 +100,7 @@
       };
     } else if(shown && String(d.kind)==='asset'){
       form={};loadingRecord=true;const id=shown.id;
-      get(`/assets/${id}`).then(a=>{if(token!==recordToken)return;form={updated_at:a.updated_at,traits:Object.entries(a.metadata_json?.locked_traits??{}).map(([name,value])=>({name,value:String(value)})),review:a.metadata_json?.consistency_review};remember();}).catch(e=>{if(token===recordToken)recordError=String(e)}).finally(()=>{if(token===recordToken)loadingRecord=false});
+      get(`/assets/${id}`).then(a=>{if(token!==recordToken)return;form={name:a.name,description:a.description??'',updated_at:a.updated_at,character_id:a.character_id,traits:Object.entries(a.metadata_json?.locked_traits??{}).map(([name,value])=>({name,value:String(value)})),review:a.metadata_json?.consistency_review};remember();}).catch(e=>{if(token===recordToken)recordError=String(e)}).finally(()=>{if(token===recordToken)loadingRecord=false});
     } else if(shown && String(d.kind)==='character'){
       form={};loadingRecord=true;const id=shown.id;
       get(`/characters/${id}`).then(c=>{if(token!==recordToken)return;form={name:c.name,description:c.description??'',appearance:c.appearance??'',personality:c.personality??'',visual_rules:(c.visual_rules_json??[]).join('\n'),voice_rules:(c.voice_rules_json??[]).join('\n'),sample_dialogue:c.sample_dialogue??''};remember();}).catch(e=>{if(token===recordToken)recordError=String(e)}).finally(()=>{if(token===recordToken)loadingRecord=false});
@@ -120,7 +108,6 @@
       form = {};
     }
     untrack(()=>{if(!loadingRecord)remember();});
-    if (shown && String(d.kind) === 'output') void loadCaptionConfig();
   });
 
   // Close requested via Escape or the X button. Dirty edits get a confirm;
@@ -143,55 +130,17 @@
     requestClose();
   }
 
-  async function loadCaptionConfig() {
-    captionConfigPromise ??= get('/caption-config');
-    try {
-      const cfg = await captionConfigPromise;
-      captionStyle = cfg.default_style || cfg.styles?.[0] || 'kids';
-      captionModel = cfg.default_model || cfg.models?.[0] || '';
-      captionLanguage = cfg.default_language || 'zh';
-    } catch {
-      captionConfigPromise = null; // allow retry on next selection
-    }
-  }
-
   async function fixAndRerender() {
     if (!shown) return;
     retrying = true;
     try {
       const res = await post(`/outputs/${shown.id}/retry`);
-      toast.success(`Corrective re-render started — job ${res.job_id}`);
+      toast.success("New take started. Track it in Videos.");
       onsaved();
     } catch (err: any) {
       toast.error(err.message);
     } finally {
       retrying = false;
-    }
-  }
-
-  async function addCaptions() {
-    if (!shown) return;
-    captioning = true;
-    try {
-      await runBackgroundOp(
-        `/outputs/${shown.id}/caption`,
-        {
-          style: captionStyle || undefined,
-          model: captionModel || undefined,
-          language: captionLanguage === 'auto' ? null : captionLanguage
-        },
-        {
-          label: 'Captioning',
-          onDone: () => {
-            captioning = false;
-            onsaved();
-          },
-          onFail: () => (captioning = false)
-        }
-      );
-    } catch (err: any) {
-      captioning = false;
-      toast.error(err.message);
     }
   }
 
@@ -203,25 +152,25 @@
     try {
       if(kind==='asset'){
         const traits:Record<string,string>={};for(const row of form.traits){const name=row.name.trim(),value=row.value.trim();if(!name||!value)throw Error('Each identity trait needs a name and value');if(Object.hasOwn(traits,name))throw Error('Trait names must be unique');traits[name]=value;}
-        const a=await put(`/assets/${shown.id}/identity`,{expected_updated_at:form.updated_at,locked_traits:traits});form.updated_at=a.updated_at;
+        const a=await patch(`/assets/${shown.id}`,{expected_updated_at:form.updated_at,name:form.name,description:form.description,locked_traits:traits});form.updated_at=a.updated_at;
       } else if(kind==='character'){
         if(!form.name?.trim())throw Error('Character name is required');
         await patch(`/characters/${shown.id}`,{...form,name:form.name.trim(),visual_rules_json:form.visual_rules.split('\n').map((v:string)=>v.trim()).filter(Boolean),voice_rules_json:form.voice_rules.split('\n').map((v:string)=>v.trim()).filter(Boolean)});
       } else if (kind === 'scene') {
-        await patch(`/scenes/${shown.id}`, {
+        await patch(`/scenes/${shown.id}`, changedFields({
           title: form.title,
           summary: form.summary,
           duration: Number(form.duration),
           aspect_ratio: form.aspect_ratio
-        });
+        },JSON.parse(baseline||'{}')));
       } else if (kind === 'shot') {
-        await patch(`/shots/${shown.id}`, {
+        await patch(`/shots/${shown.id}`, changedFields({
           prompt: form.prompt,
           duration: Number(form.duration),
           camera: form.camera,
           movement: form.movement,
           shot_order: Number(form.shot_order)
-        });
+        },JSON.parse(baseline||'{}')));
       }
       formDirty = false;remember();
       toast.success('Saved');
@@ -338,7 +287,7 @@
   }
 
   const videoSrc = $derived(
-    kind === 'output' ? mediaUrl(data.captioned_path || data.video_path) : null
+    kind === 'output' ? mediaUrl(data.captioned_path || data.video_path) : kind === 'final_video' ? mediaUrl(data.file_path) : null
   );
   const imageSrc = $derived(
     kind === 'asset' && isImage(data.file_path) ? mediaUrl(data.file_path) : null
@@ -374,6 +323,7 @@
     </Button>
 
     <div class="flex min-h-0 flex-col gap-4 overflow-y-auto px-4 pb-4">
+      {#if shown}<NodeTools {kind} id={shown.id} {data}/>{/if}
       {#if kind === 'scene'}
         <div class="grid gap-1.5">
           <Label for="np-title">Title</Label>
@@ -450,9 +400,7 @@
         {:else}
           <p class="text-sm text-muted-foreground">No video file available.</p>
         {/if}
-        <Button variant="secondary" class="w-full" href={`/editor/${shown?.id}`}>
-          <Clapperboard class="size-4 mr-1" />Open in editor
-        </Button>
+
 
         <div class="text-xs text-muted-foreground">
           {#if data.captioned_path}<p class="truncate">Captioned: {data.captioned_path}</p>{/if}
@@ -462,40 +410,27 @@
         <Separator />
 
         <div class="grid gap-1.5">
-          <Label>Quality check</Label>
-          <p class="text-sm">QA: {data.score ?? '—'}{data.score != null ? '/10' : ''}</p>
-          {#if data.qa_issues?.length}
-            <ul class="text-xs text-muted-foreground space-y-0.5">
-              {#each data.qa_issues.slice(0, 3) as issue (issue)}
-                <li class="truncate" title={issue}>- {issue}</li>
-              {/each}
-            </ul>
-            <Button variant="secondary" size="sm" disabled={retrying} onclick={fixAndRerender}>
-              <RefreshCw class="size-4 mr-1 {retrying ? 'animate-spin' : ''}" />
-              {retrying ? 'Submitting…' : 'Fix & re-render'}
-            </Button>
-          {/if}
+          <Label>Not happy with this take?</Label>
+          <p class="text-xs text-muted-foreground">Make a new version from the same scene setup. This is a paid video call.</p>
+          <Button variant="outline" size="sm" class="justify-self-start" disabled={retrying} onclick={() => { if (window.confirm('Make another take of this scene? This uses one paid video call with the same settings.')) void fixAndRerender(); }}>
+            <RefreshCw class="size-4 mr-1 {retrying ? 'animate-spin' : ''}" />{retrying ? 'Submitting…' : 'Make another take'}
+          </Button>
         </div>
 
         <Separator />
 
         <div class="grid gap-1.5">
           <Label>Captions</Label>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={captioning}
-            title="Burn captions with the project defaults — fine-tune in the editor"
-            onclick={addCaptions}
-          >
+          <Button variant="outline" size="sm" href={editOutputHref(shown.id)}>
             <Captions class="size-4 mr-1" />
-            {captioning ? 'Transcribing…' : data.captioned_path ? 'Re-caption' : 'Auto captions'}
+            Add captions in Edit video
           </Button>
           <p class="text-xs text-muted-foreground">
-            Uses the project defaults — open the editor to fine-tune text, timing and style.
+            Edit video makes captions from the script, timed to the clip's sound.
           </p>
         </div>
       {:else if kind === 'asset'}
+        {#if form.character_id&&data.asset_type==='character_reference'&&onopencharacterrefs}<Button variant="outline" onclick={()=>onopencharacterrefs?.(form.character_id)}>Character reference images</Button>{/if}
         {#if imageSrc}
           <img src={imageSrc} alt={String(data.label ?? '')} class="w-full rounded-md border border-border object-cover" />
         {/if}
@@ -510,36 +445,35 @@
           </div>
         </div>
         {#if loadingRecord}<p role="status">Loading identity…</p>{:else if recordError}<p role="alert" class="text-destructive">{recordError}</p>{:else}
-          <div class="space-y-3"><h3 class="font-medium">Identity locks</h3><p class="text-xs text-muted-foreground">Keep defining details consistent, such as color: red or vehicle: car.</p>
+          <div class="space-y-3"><Label for="np-asset-name">Asset name</Label><Input id="np-asset-name" bind:value={form.name} oninput={markFormDirty}/><AssetDescriptionEditor bind:value={form.description} onchange={markFormDirty}/><h3 class="font-medium">Identity locks</h3><p class="text-xs text-muted-foreground">Keep defining details consistent, such as color: red or vehicle: car.</p>
           {#each form.traits??[] as trait,i}<div class="grid grid-cols-[1fr_1fr_auto] gap-2"><Input aria-label={'Trait name '+(i+1)} bind:value={trait.name} oninput={markFormDirty} placeholder="Color" /><Input aria-label={'Trait value '+(i+1)} bind:value={trait.value} oninput={markFormDirty} placeholder="Red" /><Button variant="ghost" aria-label={'Remove trait '+(i+1)} onclick={()=>{form.traits.splice(i,1);markFormDirty()}}><X class="size-4" /></Button></div>{/each}
           <Button variant="outline" disabled={(form.traits?.length??0)>=32} onclick={()=>{form.traits.push({name:'',value:''});markFormDirty()}}>Add identity trait</Button>
-          <div class="flex gap-2"><Button onclick={save} disabled={saving||!formDirty}>{saving?'Saving…':'Save identity'}</Button><Button variant="outline" onclick={discard} disabled={!formDirty||saving}>Cancel</Button></div></div>
+          <div class="flex gap-2"><Button onclick={save} disabled={saving||!formDirty}>{saving?'Saving…':'Save asset details'}</Button><Button variant="outline" onclick={discard} disabled={!formDirty||saving}>Cancel</Button></div></div>
         {/if}
-        <Button variant="secondary" href={`/assets?asset_id=${encodeURIComponent(shown?.id ?? '')}`}>Edit asset identity & review</Button>
-        <Button variant="destructive" onclick={deleteAsset} disabled={deleting}>
+
+        <Button variant="destructive" class="hover:text-foreground" onclick={deleteAsset} disabled={deleting}>
           <Trash2 class="size-4 mr-1" />
           {deleting ? 'Deleting…' : confirmingDelete ? 'Confirm delete' : 'Delete asset'}
         </Button>
-      {:else if kind === 'render_job'}
-        <div class="flex items-center gap-2 text-sm">
-          <span class="text-muted-foreground">Status</span>
-          <Badge
-            variant={data.status === 'succeeded'
-              ? 'default'
-              : data.status === 'failed'
-                ? 'destructive'
-                : 'secondary'}>{data.status}</Badge
-          >
+      {:else if kind === 'final_video'}
+        <!-- svelte-ignore a11y_media_has_caption -->
+        <video controls src={videoSrc} class="mx-auto max-h-64 w-full rounded-md border border-border object-contain"></video>
+        <div class="space-y-1 text-sm">
+          <p class="font-medium">Joined from, in order</p>
+          <ol class="list-decimal space-y-0.5 pl-5 text-muted-foreground">{#each data.scene_titles ?? [] as title}<li>{title}</li>{/each}</ol>
+          <p class="text-xs text-muted-foreground">Exported {new Date(data.created_at).toLocaleString()}. Only the newest export of an episode is shown here; older ones are in Videos.</p>
         </div>
+      {:else if kind === 'render_job'}
+        <RenderProgress id={shown.id} initialStatus={String(data.status??'pending')}/>
       {:else if kind === 'character'}
+        <CharacterReferences characterId={shown!.id} disabled={formDirty||saving||loadingRecord||!!recordError} onchanged={onsaved}/>
         {#if loadingRecord}<p role="status">Loading character…</p>{:else if recordError}<p role="alert" class="text-destructive">{recordError}</p>{:else}
           {#each [{key:'name',label:'Name'},{key:'description',label:'Description'},{key:'appearance',label:'Appearance'},{key:'personality',label:'Personality'},{key:'visual_rules',label:'Visual rules (one per line)'},{key:'voice_rules',label:'Voice rules (one per line)'},{key:'sample_dialogue',label:'Sample dialogue'}] as field}
             <div class="grid gap-1.5"><Label for={'np-character-'+field.key}>{field.label}</Label><Textarea id={'np-character-'+field.key} rows={field.key==='name'?1:3} bind:value={form[field.key]} oninput={markFormDirty} /></div>
           {/each}
           <div class="flex gap-2"><Button class="flex-1" onclick={save} disabled={saving||!formDirty}>{saving?'Saving…':'Save character'}</Button><Button variant="outline" disabled={saving||!formDirty} onclick={discard}>Cancel</Button></div>
         {/if}
-        <Button variant="outline" href={`/characters?character_id=${encodeURIComponent(shown?.id??'')}`}>Manage reference photos</Button>
-        <Button variant="outline" href="/voices">Edit saved voice</Button>
+
       {/if}
 
       {#if kind === 'scene' || kind === 'shot'}

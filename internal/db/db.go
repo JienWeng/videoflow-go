@@ -3,9 +3,11 @@ package db
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -56,8 +58,17 @@ func Open(databasePath string) (*DB, error) {
 	if err := d.ensureMediaProviders(); err != nil {
 		return nil, err
 	}
+	if err := d.ensureRenderCleanup(); err != nil {
+		return nil, err
+	}
+	if err := d.ensureCosts(); err != nil {
+		return nil, err
+	}
 	if err := d.ensureRequestReplay(); err != nil {
 		return nil, err
+	}
+	if err := d.runMigrations(); err != nil {
+		return nil, fmt.Errorf("migration failed: %w", err)
 	}
 	if err := d.ensureActiveProject(); err != nil {
 		return nil, fmt.Errorf("ensure active project failed: %w", err)
@@ -222,14 +233,6 @@ func (d *DB) migrate() error {
 		value TEXT NOT NULL
 	);
 
-	CREATE TABLE IF NOT EXISTS agent_settings (
-		agent TEXT NOT NULL,
-		project_id TEXT,
-		provider TEXT DEFAULT '',
-		model TEXT DEFAULT '',
-		prompt_template TEXT DEFAULT '',
-		PRIMARY KEY (agent, project_id)
-	);
 
 	CREATE TABLE IF NOT EXISTS provider_secrets (
 		provider TEXT PRIMARY KEY,
@@ -318,7 +321,16 @@ func (d *DB) GetActiveProject() (*models.Project, error) {
 }
 
 func (d *DB) ListProjects() ([]models.Project, error) {
-	rows, err := d.conn.Query("SELECT id, name, description, is_active, created_at, updated_at FROM projects ORDER BY created_at DESC")
+	rows, err := d.conn.Query(`
+ SELECT p.id, p.name, p.description, p.is_active, p.created_at, p.updated_at,
+ (SELECT COUNT(*) FROM scenes WHERE project_id = p.id),
+ (SELECT COUNT(*) FROM characters WHERE project_id = p.id),
+ (SELECT COUNT(*) FROM assets WHERE project_id = p.id),
+ COALESCE((SELECT file_path FROM assets WHERE project_id = p.id
+   AND (lower(file_path) LIKE '%.png' OR lower(file_path) LIKE '%.jpg' OR lower(file_path) LIKE '%.jpeg' OR lower(file_path) LIKE '%.webp')
+   ORDER BY CASE type WHEN 'storyboard' THEN 0 WHEN 'location' THEN 1 ELSE 2 END, created_at DESC LIMIT 1), '')
+ FROM projects p ORDER BY p.created_at DESC
+ `)
 	if err != nil {
 		return nil, err
 	}
@@ -328,13 +340,15 @@ func (d *DB) ListProjects() ([]models.Project, error) {
 	for rows.Next() {
 		var p models.Project
 		var isAct int
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &isAct, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		var counts models.ProjectCounts
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &isAct, &p.CreatedAt, &p.UpdatedAt, &counts.Scenes, &counts.Characters, &counts.Assets, &p.Cover); err != nil {
 			return nil, err
 		}
+		p.Counts = &counts
 		p.IsActive = isAct == 1
 		projects = append(projects, p)
 	}
-	return projects, nil
+	return projects, rows.Err()
 }
 
 func (d *DB) GetProject(id string) (*models.Project, error) {
@@ -375,9 +389,49 @@ func (d *DB) UpdateProject(id, name, description string) error {
 	return err
 }
 
+var ErrProjectBusy = errors.New("project has work in progress; wait for it to finish before deleting")
+
 func (d *DB) DeleteProject(id string) error {
-	_, err := d.conn.Exec("DELETE FROM projects WHERE id = ?", id)
-	return err
+	tx, err := d.conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var active, busy bool
+	err = tx.QueryRow(`SELECT is_active,
+ EXISTS(SELECT 1 FROM ops WHERE project_id=? AND status='running') OR
+ EXISTS(SELECT 1 FROM render_jobs WHERE project_id=? AND status IN ('pending','queued','submitted','running','reconciliation_required')) OR
+ EXISTS(SELECT 1 FROM voice_tasks WHERE project_id=? AND status IN ('submitting','queued','running','uncertain')) OR
+ EXISTS(SELECT 1 FROM director_sessions WHERE project_id=? AND status='running')
+ FROM projects WHERE id=?`, id, id, id, id, id).Scan(&active, &busy)
+	if err != nil {
+		return err
+	}
+	if busy {
+		return ErrProjectBusy
+	}
+	for _, query := range []string{"DELETE FROM ops WHERE project_id=?", "DELETE FROM projects WHERE id=?"} {
+		if _, err = tx.Exec(query, id); err != nil {
+			return err
+		}
+	}
+	if active {
+		res, err := tx.Exec(`UPDATE projects SET is_active=1 WHERE id=(SELECT id FROM projects ORDER BY updated_at DESC,id LIMIT 1)`)
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			now := time.Now().UTC()
+			if _, err = tx.Exec(`INSERT INTO projects(id,name,description,is_active,created_at,updated_at) VALUES(?, 'Default Project','Default workspace',1,?,?)`, "project_"+uuid.New().String()[:8], now, now); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit()
 }
 
 func (d *DB) ActivateProject(id string) error {
@@ -456,7 +510,9 @@ func (d *DB) GetCharacter(id string) (*models.Character, error) {
 	return &c, nil
 }
 
-func (d *DB) CreateCharacter(c *models.Character) error {
+func (d *DB) CreateCharacter(c *models.Character) error { return insertCharacter(d.conn, c) }
+
+func insertCharacter(conn sqlExecutor, c *models.Character) error {
 	if c.ID == "" {
 		c.ID = "char_" + uuid.New().String()[:8]
 	}
@@ -477,7 +533,7 @@ func (d *DB) CreateCharacter(c *models.Character) error {
 		ra = "[]"
 	}
 
-	_, err := d.conn.Exec(`
+	_, err := conn.Exec(`
 		INSERT INTO characters (id, project_id, name, description, appearance, personality, visual_rules_json, voice_rules_json, sample_dialogue, reference_asset_ids_json, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, c.ID, c.ProjectID, c.Name, c.Description, c.Appearance, c.Personality, vr, vor, c.SampleDialogue, ra, now, now)
@@ -638,6 +694,7 @@ func (d *DB) UpdateScene(s *models.Scene) error {
 }
 
 func (d *DB) DeleteScene(id string) error {
+	d.syncCostsFor("scenes", id)
 	_, err := d.conn.Exec("DELETE FROM scenes WHERE id = ?", id)
 	return err
 }
@@ -908,6 +965,7 @@ func (d *DB) UpdateAsset(a *models.Asset) error {
 }
 
 func (d *DB) DeleteAsset(id string) error {
+	d.syncCostsFor("assets", id)
 	_, err := d.conn.Exec("DELETE FROM assets WHERE id = ?", id)
 	return err
 }
@@ -968,6 +1026,24 @@ func (d *DB) GetStyleGuide(projectID string) (*models.StyleGuide, error) {
 }
 
 func (d *DB) UpsertStyleGuide(s *models.StyleGuide) error {
+	if s.ProjectID == nil {
+		return fmt.Errorf("style project is required")
+	}
+	if s.ID != "" {
+		var owner string
+		err := d.conn.QueryRow(`SELECT project_id FROM style_guides WHERE id=?`, s.ID).Scan(&owner)
+		if err == nil && owner != *s.ProjectID {
+			return fmt.Errorf("style belongs to another project")
+		}
+	}
+	if existing, err := d.GetStyleGuide(*s.ProjectID); err == nil {
+		s.ID = existing.ID
+		s.CreatedAt = existing.CreatedAt
+	}
+	return upsertStyleGuide(d.conn, s)
+}
+
+func upsertStyleGuide(conn sqlExecutor, s *models.StyleGuide) error {
 	now := time.Now().UTC()
 	if s.ID == "" {
 		s.ID = "style_" + uuid.New().String()[:8]
@@ -975,7 +1051,7 @@ func (d *DB) UpsertStyleGuide(s *models.StyleGuide) error {
 	}
 	s.UpdatedAt = now
 
-	_, err := d.conn.Exec(`
+	_, err := conn.Exec(`
 		INSERT INTO style_guides (id, project_id, name, style_prompt, palette, lighting, audience, tone, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
@@ -1213,7 +1289,7 @@ func (d *DB) ListOps(projectID string, limit int) ([]models.Op, error) {
 }
 
 func (d *DB) ListOpsFiltered(projectID, kind string, limit int) ([]models.Op, error) {
-	if limit <= 0 {
+	if limit <= 0 && limit != -1 {
 		limit = 20
 	}
 	query := "SELECT id, kind, status, scene_id, output_id, project_id, error, result_json, created_at, updated_at FROM ops WHERE 1=1"
@@ -1264,220 +1340,6 @@ func (d *DB) SetAppSetting(key, val string) error {
 	return err
 }
 
-// --- Graph Visualization ---
-
-func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
-	nodes := []models.GraphNode{}
-	edges := []models.GraphEdge{}
-
-	// Characters
-	chars, err := d.ListCharacters(projectID)
-	if err == nil {
-		for _, c := range chars {
-			nodes = append(nodes, models.GraphNode{
-				ID:    c.ID,
-				Type:  "character",
-				Label: c.Name,
-			})
-		}
-	}
-
-	// Assets
-	assets, err := d.ListAssets(projectID)
-	if err == nil {
-		for _, a := range assets {
-			nodes = append(nodes, models.GraphNode{
-				ID:    a.ID,
-				Type:  "asset",
-				Label: a.Name,
-				Data: map[string]interface{}{
-					"file_path":  a.FilePath,
-					"asset_type": a.Type,
-				},
-			})
-			if a.CharacterID != nil && *a.CharacterID != "" {
-				edges = append(edges, models.GraphEdge{
-					Source: *a.CharacterID,
-					Target: a.ID,
-					Label:  "reference",
-				})
-			}
-			if len(a.MetadataJSON) > 0 {
-				var meta struct {
-					SceneID *string `json:"scene_id"`
-				}
-				if err := json.Unmarshal(a.MetadataJSON, &meta); err == nil && meta.SceneID != nil && *meta.SceneID != "" {
-					edges = append(edges, models.GraphEdge{
-						Source: *meta.SceneID,
-						Target: a.ID,
-						Label:  a.Type,
-					})
-				}
-			}
-		}
-	}
-
-	// Scenes
-	scenes, err := d.ListScenes(projectID)
-	if err == nil {
-		for _, s := range scenes {
-			nodes = append(nodes, models.GraphNode{
-				ID:    s.ID,
-				Type:  "scene",
-				Label: s.Title,
-				Data: map[string]interface{}{
-					"aspect_ratio": s.AspectRatio,
-					"duration":     s.Duration,
-					"summary":      s.Summary,
-				},
-			})
-
-			// Add casts / uses edges
-			var charIDs []string
-			_ = json.Unmarshal(s.CharacterIDsJSON, &charIDs)
-			for _, cid := range charIDs {
-				edges = append(edges, models.GraphEdge{
-					Source: s.ID,
-					Target: cid,
-					Label:  "casts",
-				})
-			}
-			var assetIDs []string
-			_ = json.Unmarshal(s.AssetIDsJSON, &assetIDs)
-			for _, aid := range assetIDs {
-				edges = append(edges, models.GraphEdge{
-					Source: s.ID,
-					Target: aid,
-					Label:  "uses",
-				})
-			}
-
-			// Shots for scene
-			shots, _ := d.ListShots(s.ID)
-			for _, sh := range shots {
-				nodes = append(nodes, models.GraphNode{
-					ID:    sh.ID,
-					Type:  "shot",
-					Label: fmt.Sprintf("#%d %s", sh.ShotOrder+1, sh.Prompt),
-					Data: map[string]interface{}{
-						"scene_id":   sh.SceneID,
-						"shot_order": sh.ShotOrder,
-						"duration":   sh.Duration,
-						"prompt":     sh.Prompt,
-						"camera":     sh.Camera,
-						"movement":   sh.Movement,
-					},
-				})
-				edges = append(edges, models.GraphEdge{
-					Source: s.ID,
-					Target: sh.ID,
-					Label:  "shot",
-				})
-
-				var shotAssetIDs []string
-				_ = json.Unmarshal(sh.AssetIDsJSON, &shotAssetIDs)
-				for _, aid := range shotAssetIDs {
-					edges = append(edges, models.GraphEdge{
-						Source: sh.ID,
-						Target: aid,
-						Label:  "uses",
-					})
-				}
-			}
-		}
-	}
-
-	// RenderJobs & RenderOutputs
-	jobs, err := d.ListRenderJobs(projectID)
-	if err == nil {
-		for _, j := range jobs {
-			modelName := j.Model
-			if idx := strings.LastIndex(modelName, "/"); idx >= 0 {
-				modelName = modelName[idx+1:]
-			}
-			nodes = append(nodes, models.GraphNode{
-				ID:    j.ID,
-				Type:  "render_job",
-				Label: fmt.Sprintf("%s (%s)", j.Status, modelName),
-				Data: map[string]interface{}{
-					"status": j.Status,
-				},
-			})
-			parentID := ""
-			if j.ShotID != nil && *j.ShotID != "" {
-				parentID = *j.ShotID
-			} else if j.SceneID != nil && *j.SceneID != "" {
-				parentID = *j.SceneID
-			}
-			if parentID != "" {
-				edges = append(edges, models.GraphEdge{
-					Source: parentID,
-					Target: j.ID,
-					Label:  "render",
-				})
-			}
-
-			// Outputs for this job
-			outputs, _ := d.ListOutputsForJob(j.ID)
-			for _, o := range outputs {
-				qaIssues := []string{}
-				if len(o.QAJSON) > 0 {
-					var qaData struct {
-						Issues   []string `json:"issues"`
-						QAIssues []string `json:"qa_issues"`
-					}
-					if err := json.Unmarshal(o.QAJSON, &qaData); err == nil {
-						if len(qaData.Issues) > 0 {
-							qaIssues = qaData.Issues
-						} else if len(qaData.QAIssues) > 0 {
-							qaIssues = qaData.QAIssues
-						}
-					}
-				}
-				label := o.ID
-				if o.VideoPath != "" {
-					label = filepath.Base(o.VideoPath)
-				}
-				nodes = append(nodes, models.GraphNode{
-					ID:    o.ID,
-					Type:  "output",
-					Label: label,
-					Data: map[string]interface{}{
-						"video_path":     o.VideoPath,
-						"thumbnail_path": o.ThumbnailPath,
-						"captioned_path": o.CaptionedPath,
-						"score":          o.Score,
-						"qa_issues":      qaIssues,
-						"render_job_id":  o.RenderJobID,
-					},
-				})
-				edges = append(edges, models.GraphEdge{
-					Source: j.ID,
-					Target: o.ID,
-					Label:  "output",
-				})
-			}
-		}
-	}
-
-	// Filter valid edges
-	knownNodes := make(map[string]bool)
-	for _, n := range nodes {
-		knownNodes[n.ID] = true
-	}
-	validEdges := []models.GraphEdge{}
-	for _, e := range edges {
-		if knownNodes[e.Source] && knownNodes[e.Target] {
-			validEdges = append(validEdges, e)
-		}
-	}
-
-	return &models.GraphResponse{
-		Nodes: nodes,
-		Edges: validEdges,
-	}, nil
-}
-
 // --- Provider Secrets & Agent Settings ---
 
 func (d *DB) GetProviderSecret(provider string) (apiKey string, baseURL *string, fromDB bool, err error) {
@@ -1510,69 +1372,6 @@ func (d *DB) SetProviderSecret(provider, apiKey string, baseURL *string) error {
 			base_url = CASE WHEN ? IS NOT NULL THEN excluded.base_url ELSE provider_secrets.base_url END,
 			updated_at = excluded.updated_at
 	`, provider, apiKey, urlVal, now, apiKey, apiKey, urlVal)
-	return err
-}
-
-func (d *DB) ListProviderSecrets() (map[string]models.ProviderSecret, error) {
-	rows, err := d.conn.Query("SELECT provider, api_key, base_url, updated_at FROM provider_secrets")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	res := make(map[string]models.ProviderSecret)
-	for rows.Next() {
-		var ps models.ProviderSecret
-		var bUrl sql.NullString
-		if err := rows.Scan(&ps.Provider, &ps.APIKey, &bUrl, &ps.UpdatedAt); err != nil {
-			return nil, err
-		}
-		if bUrl.Valid {
-			u := bUrl.String
-			ps.BaseURL = &u
-		}
-		res[ps.Provider] = ps
-	}
-	return res, nil
-}
-
-func (d *DB) GetAgentSettings() (map[string]models.AgentSetting, error) {
-	rows, err := d.conn.Query("SELECT agent, provider, model FROM agent_settings")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	res := make(map[string]models.AgentSetting)
-	for rows.Next() {
-		var a models.AgentSetting
-		if err := rows.Scan(&a.Agent, &a.Provider, &a.Model); err != nil {
-			return nil, err
-		}
-		res[a.Agent] = a
-	}
-	return res, nil
-}
-
-func (d *DB) SetAgentSetting(agent, provider, model string) error {
-	// Global rows have NULL project_id, which SQLite does not conflict on.
-	tx, err := d.conn.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if _, err = tx.Exec("DELETE FROM agent_settings WHERE agent = ? AND project_id IS NULL", agent); err != nil {
-		return err
-	}
-	if _, err = tx.Exec("INSERT INTO agent_settings (agent, provider, model) VALUES (?, ?, ?)", agent, provider, model); err != nil {
-		return err
-	}
-	err = tx.Commit()
-	return err
-}
-
-func (d *DB) ResetAgentSetting(agent string) error {
-	_, err := d.conn.Exec("DELETE FROM agent_settings WHERE agent = ?", agent)
 	return err
 }
 
@@ -1687,24 +1486,6 @@ func (d *DB) UpdateRenderOutput(o *models.RenderOutput) error {
 	return nil
 }
 
-func (d *DB) SelectRenderOutput(id string, selected bool) error {
-	tx, err := d.conn.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	now := time.Now().UTC()
-	if selected {
-		if _, err = tx.Exec(`UPDATE render_outputs SET selected=0,updated_at=? WHERE render_job_id=(SELECT render_job_id FROM render_outputs WHERE id=?)`, now, id); err != nil {
-			return err
-		}
-	}
-	if _, err = tx.Exec(`UPDATE render_outputs SET selected=?,updated_at=? WHERE id=?`, selected, now, id); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
 // --- Shots Reorder & Scene/Shot Associations ---
 
 func (d *DB) ReorderShots(sceneID string, orderedIDs []string) error {
@@ -1731,8 +1512,7 @@ func (d *DB) AttachShotAsset(shotID, assetID string) error {
 	if err != nil {
 		return err
 	}
-	var assetIDs []string
-	_ = json.Unmarshal(shot.AssetIDsJSON, &assetIDs)
+	assetIDs := models.IDList(shot.AssetIDsJSON)
 	for _, aid := range assetIDs {
 		if aid == assetID {
 			return nil
@@ -1749,8 +1529,7 @@ func (d *DB) DetachShotAsset(shotID, assetID string) error {
 	if err != nil {
 		return err
 	}
-	var assetIDs []string
-	_ = json.Unmarshal(shot.AssetIDsJSON, &assetIDs)
+	assetIDs := models.IDList(shot.AssetIDsJSON)
 	filtered := make([]string, 0, len(assetIDs))
 	for _, aid := range assetIDs {
 		if aid != assetID {
@@ -1820,3 +1599,23 @@ func (d *DB) GetRevision(id string) (*models.Revision, error) {
 	r.SnapshotJSON = []byte(snap)
 	return &r, nil
 }
+
+// CreateRenderJobs commits a confirmed batch before any unit is enqueued.
+func (d *DB) CreateRenderJobs(jobs []*models.RenderJob) error {
+	tx, err := d.conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, j := range jobs {
+		if err = insertRenderJob(tx, j); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// Prompts keep internal IDs for generation; canvas labels show readable text only.
+var internalIDMention = regexp.MustCompile(`\s*\((?:char|asset|scene|shot)_[0-9a-f]{6,}\)`)
+
+func displayPrompt(prompt string) string { return internalIDMention.ReplaceAllString(prompt, "") }

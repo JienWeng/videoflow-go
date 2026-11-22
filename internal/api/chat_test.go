@@ -2,9 +2,12 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
+
+	"videoflow-go/internal/models"
 )
 
 func TestChatReturnsRunnableCanonicalActions(t *testing.T) {
@@ -31,10 +34,13 @@ func TestChatReturnsRunnableCanonicalActions(t *testing.T) {
 	}
 }
 
-func TestChatRejectsMissingSelectedNodeBeforeInference(t *testing.T) {
-	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { t.Error("must not invoke model for invalid selection") })
+// A selection that no longer exists is dropped, not a reason to refuse the message.
+func TestChatDropsAMissingSelectedNode(t *testing.T) {
+	s := routerServer(t, nil)
+	answer := `{"reply":"Which shot do you mean?","action":"none"}`
+	_, prompt := plannerSays(s, &answer)
 	result := call(t, s, "POST", "/chat", `{"message":"Change this","selected":{"kind":"shot","id":"missing"}}`)
-	if result.Code != 409 {
+	if result.Code != 200 || strings.Contains(*prompt, `"id":"missing"`) {
 		t.Fatalf("got %d %s", result.Code, result.Body.String())
 	}
 }
@@ -49,7 +55,7 @@ func TestChatUsesOwnedSelectionAndPinsCompatibleAction(t *testing.T) {
 		var payload map[string]any
 		json.NewDecoder(r.Body).Decode(&payload)
 		raw, _ := json.Marshal(payload)
-		sawContext = strings.Contains(string(raw), "selected_item") && strings.Contains(string(raw), "crimson car")
+		sawContext = strings.Contains(string(raw), "name: studio-recovery") && strings.Contains(string(raw), "recent_activity") && strings.Contains(string(raw), "selected_item") && strings.Contains(string(raw), "crimson car") && strings.Contains(string(raw), "canvas") && strings.Contains(string(raw), "workflow_policy") && strings.Contains(string(raw), "Never tell the user to approve images") && strings.Contains(string(raw), "connected camera test")
 		content := `{"reply":"Refine selected scene","action":"refine_scene","scene_id":"wrong-scene"}`
 		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": content}}}})
 	})
@@ -58,6 +64,10 @@ func TestChatUsesOwnedSelectionAndPinsCompatibleAction(t *testing.T) {
 		ID string `json:"id"`
 	}
 	json.Unmarshal(created.Body.Bytes(), &scene)
+	shot := call(t, s, "POST", "/scenes/"+scene.ID+"/shots", `{"shot_order":1,"duration":4,"prompt":"connected camera test"}`)
+	if shot.Code != 201 {
+		t.Fatalf("seed shot: %d %s", shot.Code, shot.Body.String())
+	}
 	payload, _ := json.Marshal(map[string]any{"message": "Make the lighting warmer", "selected": map[string]string{"kind": "scene", "id": scene.ID}})
 	result := call(t, s, "POST", "/chat", string(payload))
 	if result.Code != 200 {
@@ -97,5 +107,127 @@ func TestScopedChatRefusesWrongKindAction(t *testing.T) {
 	json.Unmarshal(result.Body.Bytes(), &body)
 	if body.Intent.Action != "unknown" {
 		t.Fatalf("wrong-scope runnable action: %s", result.Body.String())
+	}
+}
+
+func TestOpenEditorActionIsFreeNavigationWithKnownPanel(t *testing.T) {
+	if canonicalChatAction("open_editor") != "open_editor" || !selectedChatActionAllowed("output", "open_editor") || !selectedChatActionAllowed("scene", "open_editor") {
+		t.Fatal("open_editor must be a supported action for any selection")
+	}
+}
+
+func fakeChatModel(content string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/models" {
+			w.Write([]byte(`{"data":[{"id":"openai/gpt-4o-mini","architecture":{"output_modalities":["text"]}}]}`))
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"content": content}}}})
+	}
+}
+
+func TestChatUpdateCharacterKeepsOnlyRealFieldsForTheResolvedCharacter(t *testing.T) {
+	s := routerServer(t, fakeChatModel(`{"reply":"Here is the new look.","action":"update_character","character_changes":{"appearance":"  Enormous fluffy all-black cat, green eyes  ","personality":"   "}}`))
+	call(t, s, "POST", "/characters", `{"name":"Giant Cat","appearance":"Orange tabby"}`)
+	result := call(t, s, "POST", "/chat", `{"message":"make the cat black"}`)
+	var body struct {
+		Intent struct {
+			Action           string            `json:"action"`
+			CharacterID      string            `json:"character_id"`
+			CharacterChanges map[string]string `json:"character_changes"`
+		}
+	}
+	if result.Code != 200 || json.Unmarshal(result.Body.Bytes(), &body) != nil {
+		t.Fatal(result.Code, result.Body.String())
+	}
+	if body.Intent.Action != "update_character" || body.Intent.CharacterID == "" || body.Intent.CharacterChanges["appearance"] != "Enormous fluffy all-black cat, green eyes" || len(body.Intent.CharacterChanges) != 1 {
+		t.Fatalf("%+v", body.Intent)
+	}
+}
+
+func TestChatStoryQuestionFollowsTheUsersLanguage(t *testing.T) {
+	for _, tc := range []struct{ lang, reply, want string }{
+		{"es", "¿Qué estilo visual prefieres?", "¿Qué estilo visual prefieres?"},
+		{"en", "Which style?", "Before I create the story"},
+		{"", "Which style?", "Before I create the story"},
+	} {
+		content, _ := json.Marshal(map[string]any{"reply": tc.reply, "action": "generate_script", "user_language": tc.lang, "creation_brief": map[string]any{"idea": "Un gato que baila"}})
+		s := routerServer(t, fakeChatModel(string(content)))
+		result := call(t, s, "POST", "/chat", `{"message":"hazme un video de un gato que baila"}`)
+		var body struct{ Intent struct{ Reply string } }
+		json.Unmarshal(result.Body.Bytes(), &body)
+		if !strings.HasPrefix(body.Intent.Reply, tc.want) {
+			t.Fatalf("lang %q: reply %q", tc.lang, body.Intent.Reply)
+		}
+	}
+}
+
+// The one-off "make a clip from this photo" step was removed: a planner that still
+// answers with it gets no button, and the user is pointed at making a scene.
+func TestChatNoLongerOffersOneOffClipFromAPhoto(t *testing.T) {
+	answer := `{"reply":"I'll make him dance.","action":"make_clip","clip_prompt":"The man from the image dances energetically","clip_duration":8}`
+	asked := ""
+	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			sent, _ := io.ReadAll(r.Body)
+			asked += string(sent)
+		}
+		fakeChatModel(answer)(w, r)
+	})
+	project, _ := s.database.GetActiveProjectID()
+	if e := s.database.CreateAsset(&models.Asset{ID: "asset_photo", ProjectID: &project, Type: "other", Name: "man.jpg", FilePath: "storage/assets/asset_photo.jpg", TagsJSON: []byte("[]"), MetadataJSON: []byte("{}")}); e != nil {
+		t.Fatal(e)
+	}
+	result := call(t, s, "POST", "/chat", `{"message":"make him dance","attachments":["asset_photo"]}`)
+	var body struct {
+		Intent struct {
+			Action, Reply string
+			Clip          any
+		}
+	}
+	if result.Code != 200 || json.Unmarshal(result.Body.Bytes(), &body) != nil {
+		t.Fatal(result.Code, result.Body.String())
+	}
+	if body.Intent.Action != "unknown" || body.Intent.Clip != nil || !strings.Contains(body.Intent.Reply, "scene") || strings.Contains(body.Intent.Reply, "I'll make him dance") {
+		t.Fatalf("%+v", body.Intent)
+	}
+	if canonicalChatAction("make_clip") != "unknown" || selectedChatActionAllowed("scene", "make_clip") {
+		t.Fatal("make_clip is still an action")
+	}
+	if asked == "" || strings.Contains(asked, "make_clip") || strings.Contains(asked, "clip_prompt") {
+		t.Fatal("the planner is still offered make_clip")
+	}
+}
+
+func TestTryAgainWithNoFinishedVideoBecomesMakingTheSceneVideo(t *testing.T) {
+	answer := `{"reply":"I can redo it.","action":"retry_render","scene_id":"Not to Mourn"}`
+	s := routerServer(t, fakeChatModel(answer))
+	project, _ := s.database.GetActiveProjectID()
+	for i, title := range []string{"The Quiet End", "Not to Mourn"} {
+		if e := s.database.CreateScene(&models.Scene{ProjectID: &project, SceneOrder: i + 1, Title: title, Duration: 10, AspectRatio: "9:16", CharacterIDsJSON: []byte("[]"), SceneJSON: []byte("{}")}); e != nil {
+			t.Fatal(e)
+		}
+	}
+	w := call(t, s, "POST", "/chat", `{"message":"try again"}`)
+	var body struct {
+		Intent struct {
+			Action  string
+			SceneID string `json:"scene_id"`
+		}
+	}
+	if e := json.Unmarshal(w.Body.Bytes(), &body); e != nil || w.Code != 200 {
+		t.Fatalf("chat: %d %s", w.Code, w.Body.String())
+	}
+	scenes, _ := s.database.ListScenes(project)
+	want := ""
+	for _, scene := range scenes {
+		if scene.Title == "Not to Mourn" {
+			want = scene.ID
+		}
+	}
+	// With no finished video there is nothing to pick in an "Output" list, so the card
+	// must be the one that makes the named scene's video.
+	if body.Intent.Action != "render_scene" || body.Intent.SceneID != want {
+		t.Fatalf("action = %q scene = %q, want render_scene on %q", body.Intent.Action, body.Intent.SceneID, want)
 	}
 }

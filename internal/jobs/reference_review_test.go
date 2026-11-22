@@ -8,7 +8,7 @@ import (
 	"videoflow-go/internal/models"
 )
 
-func TestWorkerRefusesPendingGeneratedStoryboard(t *testing.T) {
+func TestWorkerRefusesExcludedGeneratedStoryboard(t *testing.T) {
 	submitted := false
 	worker, _ := workerFixture(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/videos/models" {
@@ -20,18 +20,17 @@ func TestWorkerRefusesPendingGeneratedStoryboard(t *testing.T) {
 		}
 		w.WriteHeader(500)
 	})
-	worker.cfg.UseLocalText = false
 	project, _ := worker.database.GetActiveProjectID()
 	scene := &models.Scene{ProjectID: &project, Title: "Review me", Duration: 4, AspectRatio: "16:9"}
 	worker.database.CreateScene(scene)
-	a := &models.Asset{ProjectID: &project, Type: "storyboard", Name: "Pending", FilePath: "storage/no-read-before-approval.png", MetadataJSON: json.RawMessage(`{"scene_id":"` + scene.ID + `","consistency_review":"pending"}`)}
+	a := &models.Asset{ProjectID: &project, Type: "storyboard", Name: "Pending", FilePath: "storage/no-read-before-approval.png", MetadataJSON: json.RawMessage(`{"scene_id":"` + scene.ID + `","consistency_review":"rejected"}`)}
 	worker.database.CreateAsset(a)
 	scene.AssetIDsJSON, _ = json.Marshal([]string{a.ID})
 	worker.database.UpdateScene(scene)
 	job := &models.RenderJob{ProjectID: &project, SceneID: &scene.ID, Provider: "openrouter", Model: "test/video", Status: "pending", RequestJSON: json.RawMessage(`{"prompt":"A car","duration":4,"aspect_ratio":"16:9"}`)}
 	worker.database.CreateRenderJob(job)
 	e := worker.processJob(job.ID)
-	if e == nil || !strings.Contains(e.Error(), "review") || submitted {
+	if e == nil || !strings.Contains(e.Error(), "excluded") || submitted {
 		t.Fatal("pending reference reused", e, submitted)
 	}
 }

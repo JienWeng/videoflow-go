@@ -13,7 +13,7 @@ type mediaRoute struct {
 }
 type mediaRoutesKey struct{}
 
-func (s *Server) captureMediaRoutes() (map[string]mediaRoute, error) {
+func (s *Server) captureMediaRoutes(ctx context.Context) (map[string]mediaRoute, error) {
 	routes := map[string]mediaRoute{}
 	selections, err := s.routes().MediaSelections()
 	if err != nil {
@@ -23,7 +23,7 @@ func (s *Server) captureMediaRoutes() (map[string]mediaRoute, error) {
 		choice := selections[kind]
 		provider, model := choice.Provider, choice.Model
 		_, endpoint, err := s.routes().Media(provider, model, "")
-		if err != nil {
+		if err != nil && !(kind != "video" && s.preferCodexImages(ctx)) {
 			return nil, err
 		}
 		routes[kind] = mediaRoute{provider, model, endpoint}
@@ -39,6 +39,10 @@ func (s *Server) selectedMedia(ctx context.Context, kind string) (providers.Medi
 	return s.routes().SelectedMedia(kind)
 }
 func (s *Server) prepareVideoJob(job *models.RenderJob) error {
+	// With "always use the cheapest" on, compare today's prices before picking.
+	if job.Provider == "" && s.routes().Setting("video_routing", "manual") == "cheapest" {
+		s.refreshVideoPrices(context.Background(), false)
+	}
 	if job.Provider == "" {
 		job.Provider, job.Model = s.routes().MediaSelection("video")
 	}

@@ -2,7 +2,6 @@ package db
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"videoflow-go/internal/models"
 )
@@ -20,17 +19,26 @@ func (d *DB) InterruptOperations() error {
 	_, err := d.conn.Exec(`UPDATE ops SET status='reconciliation_required',error='Server restarted during this operation. Review saved work before starting another request.',updated_at=CURRENT_TIMESTAMP WHERE status='running'`)
 	return err
 }
-func (d *DB) ResolveRenderSubmission(id, providerID, reason string) error {
-	evidence, _ := json.Marshal(map[string]string{"reconciliation_reason": reason, "adopted_provider_job_id": providerID})
-	result, err := d.conn.Exec(`UPDATE render_jobs SET response_json=?,provider_job_id=?,status='running',stage='polling',error=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='reconciliation_required'`, string(evidence), providerID, id)
+
+// ResumeUncertainRender goes back to waiting on the service's own job for a render
+// whose outcome was unknown, once the service has answered for it. Nothing is sent again.
+func (d *DB) ResumeUncertainRender(id string) (bool, error) {
+	result, err := d.conn.Exec(`UPDATE render_jobs SET status='running',stage='polling',error=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='reconciliation_required' AND coalesce(provider_job_id,'')<>''`, id)
 	if err != nil {
-		return err
+		return false, err
 	}
-	n, _ := result.RowsAffected()
-	if n != 1 {
-		return fmt.Errorf("job does not require reconciliation")
+	n, err := result.RowsAffected()
+	return n == 1, err
+}
+
+// FailUncertainRender closes a render whose outcome was unknown, so its scene can be made again.
+func (d *DB) FailUncertainRender(id, reason string) (bool, error) {
+	result, err := d.conn.Exec(`UPDATE render_jobs SET status='failed',stage='failed',progress=?,error=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='reconciliation_required'`, reason, reason, id)
+	if err != nil {
+		return false, err
 	}
-	return nil
+	n, err := result.RowsAffected()
+	return n == 1, err
 }
 
 // CreateRenderRetry serializes retries of the same original, including headerless clients.
@@ -45,7 +53,7 @@ func (d *DB) CreateRenderRetry(original string, fresh *models.RenderJob) (bool, 
 	}
 	var child, status string
 	err = tx.QueryRow(`SELECT j.id,j.status FROM render_retries r JOIN render_jobs j ON j.id=r.child_job_id WHERE original_job_id=?`, original).Scan(&child, &status)
-	if err == nil && (status == "pending" || status == "running" || status == "reconciliation_required") {
+	if err == nil && (status == models.StatusPending || status == models.StatusRunning || status == models.StatusReconciliationRequired) {
 		fresh.ID = child
 		fresh.Status = status
 		return false, tx.Commit()
@@ -56,7 +64,7 @@ func (d *DB) CreateRenderRetry(original string, fresh *models.RenderJob) (bool, 
 	if err = tx.QueryRow(`SELECT status FROM render_jobs WHERE id=?`, original).Scan(&status); err != nil {
 		return false, err
 	}
-	if status != "failed" && status != "succeeded" {
+	if status != models.StatusFailed && status != models.StatusSucceeded {
 		return false, fmt.Errorf("original job is still active")
 	}
 	if err = insertRenderJob(tx, fresh); err != nil {

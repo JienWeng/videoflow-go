@@ -1,0 +1,5 @@
+# Conversation history
+
+Added a History control beside the session selector. It loads saved project conversations and previews chat/specialist-review messages. Browsing does not select sessions, submit messages or replay generation. Open in chat explicitly selects the session and invokes existing saved-history restoration. Composer drafts are retained. Loading, empty, error/retry and request-race states are handled; technical native turns are not presented as chat messages.
+
+Validation: Svelte 0 errors/warnings, production frontend build, eight desktop/mobile checks, two axe scans with no violations or browser errors. All API writes in browser tests were intercepted. Covers automatic current-history restore, readonly prior-history browsing, explicit open with retained draft and no generation replay, and error/retry. This displays application-recorded session history; it does not import unrelated native CLI conversations. Remote-mode browser history remains browser-session storage as before.

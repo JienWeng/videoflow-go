@@ -12,6 +12,13 @@ import (
 	"time"
 )
 
+// RetiredFalReferenceVideoModel is the model of the removed "generate from references"
+// clips. Jobs made with it are still stored and shown; nothing new is sent to it.
+const RetiredFalReferenceVideoModel = "bytedance/seedance-2.0/fast/reference-to-video"
+
+// ErrRetiredClip is returned when a stored request of that removed kind is sent again.
+var ErrRetiredClip = errors.New("this kind of clip (made directly from reference pictures, videos and audio) is no longer available; make a scene and render it instead")
+
 type FalClient struct {
 	mediaHTTP
 	model        string

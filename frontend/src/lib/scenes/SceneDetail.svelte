@@ -1,4 +1,11 @@
 <script lang="ts">
+ import ProductionControls from "$lib/production/ProductionControls.svelte";
+ let productionPlanId=$state(''),productionBlocked=$state(true),productionNewVersion=$state(false),productionQuote=$state({calls:0,seconds:0,storyboards:0});
+  import {page} from '$app/state';
+  import {tick} from 'svelte';
+  import SceneStyle from './SceneStyle.svelte';
+  import SceneReferences from './SceneReferences.svelte';
+  import {sceneStages} from './stages.mjs';
   import { mediaUrl } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
@@ -20,6 +27,7 @@
     sceneDirty = false,
     shotDirty = (_sh: any) => false,
     storyboard = null,
+    preview = null,
     shots = [],
     // bindable per-scene state maps
     castSelection = $bindable(),
@@ -47,116 +55,104 @@
     onGenerateSelectedAssets,
     onGenerateStoryboard,
     onRenderScene,
+    progress = null,
     onDelete,
-    onLightbox
+    onLightbox,
+    onReferencesChanged
   }: any = $props();
 
-  // Same correct-CTA logic as the old card: the "current" step is the first
-  // not-done one ONLY when nothing after it is done; otherwise it's complete-ish
-  // (primary CTA → Re-render, skipped earlier steps shown muted but clickable).
+  // Stage disclosure follows saved work; generation controls live inside each stage.
+  let referenceInfo:any=$state(null);
+  // The scene's clips use its connected pictures: it has, and needs, no storyboard.
+  const usesReferences=$derived(!!progress?.reference_mode);
+  let references: SceneReferences | undefined;
+  let scenePanel = $state<HTMLElement>();
+  const currentStoryboard=$derived(referenceInfo?.storyboards?.find((a:any)=>a.id===referenceInfo.active_storyboard_id)??storyboard);
+  let showAll=$state(false);
+  let opened=$state<Record<string,boolean>>({});
+  const sections=$derived(sceneStages({expanded:!!steps.find((st:any)=>st.key==='expand')?.done,shots:shots.length,storyboard:!!storyboard,rendered:!!steps.find((st:any)=>st.key==='render')?.done,assets:(generatedAssets[s.id]??[]).length,all:showAll,references:usesReferences}));
+  const section=(key:string)=>sections.find(st=>st.key===key)!;
+  const isOpen=(key:string)=>opened[key]??section(key).open;
+  let focusedShot='';
+  $effect(()=>{const id=page.url.searchParams.get('shot_id');if(id&&shots.some((shot:any)=>shot.id===id)&&focusedShot!==id){focusedShot=id;opened={...opened,shots:true};void tick().then(()=>{const row=document.getElementById('scene-shot-'+id);row?.scrollIntoView({block:'center'});row?.focus()})}});
+  const STAGE_FOR: Record<string,string> = { generate_shots: 'shots', generate_assets: 'assets', storyboard: 'storyboard', render_scene: 'render', retry_render: 'render' };
+  async function openStage(key: string) {
+    if (!section(key).visible) showAll = true;
+    opened = {...opened, [key]: true};
+    await tick();
+    const stage = scenePanel?.querySelector<HTMLElement>(`[data-stage="${key}"]`);
+    stage?.scrollIntoView({block:'start'});
+    stage?.querySelector('summary')?.focus({preventScroll:true});
+  }
+  async function refreshSceneLook() {
+    await onReferencesChanged();
+    await references?.reload();
+  }
+  const remember=(key:string,event:Event)=>opened[key]=(event.currentTarget as HTMLDetailsElement).open;
+
   const firstNotDone = $derived(steps.findIndex((st: any) => !st.done));
   const laterDone = $derived(
     firstNotDone !== -1 && steps.some((st: any, i: number) => i > firstNotDone && st.done)
   );
   const currentIdx = $derived(laterDone ? -1 : firstNotDone);
   const current = $derived(currentIdx === -1 ? null : steps[currentIdx]);
+  const nextStage = $derived(
+    current?.key === 'expand' ? { key: 'scene', label: 'Review story & cast' }
+      : current?.key === 'shots' ? { key: 'shots', label: 'Set up shots' }
+      : !usesReferences && (current?.key === 'storyboard' || referenceInfo?.storyboard_ready === false)
+        ? { key: 'storyboard', label: 'Review storyboard' }
+        : { key: 'render', label: current ? 'Review render plan' : 'View video options' }
+  );
 </script>
 
-<div class="p-5">
-  <!-- Header: title, duration, primary next-step CTA / re-render, delete -->
-  <div class="flex items-start gap-4">
+<div class="p-4 sm:p-5" bind:this={scenePanel}>
+  <!-- Status and identity stay visible; each stage owns its actions. -->
+  <div class="flex flex-wrap items-start gap-4">
     {#if storyboard}
       <button type="button"
         class="group relative size-16 shrink-0 overflow-hidden rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-ring"
-        title="View storyboard" onclick={() => onLightbox(storyboard)}>
+        title="View storyboard" onclick={() => onLightbox(currentStoryboard)}>
         <img class="size-full object-cover transition-transform group-hover:scale-105"
-          src={mediaUrl(storyboard.file_path)} alt="Storyboard" loading="lazy" />
+          src={mediaUrl(currentStoryboard.file_path)} alt="Storyboard" loading="lazy" />
         <span class="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-colors">
           <Maximize2 class="size-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
         </span>
       </button>
+    {:else if preview}
+      <img class="size-16 shrink-0 rounded-lg border border-border object-cover" src={mediaUrl(preview.file_path)} alt="" title={`Connected picture: ${preview.name ?? ''}`} loading="lazy" />
     {:else}
       <div class="flex size-16 shrink-0 items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 text-muted-foreground/50">
         <Film class="size-5" />
       </div>
     {/if}
 
-    <div class="min-w-0 flex-1">
+    <div class="min-w-0 flex-1 basis-52">
       <div class="flex items-center gap-2 mb-2">
         <h2 class="font-semibold text-base truncate" title={s.title}>{s.title || 'Untitled scene'}</h2>
         <Badge variant="secondary" class="shrink-0 gap-1"><Clock class="size-3" />{s.duration}s</Badge>
         {#if sceneDirty}
-          <Badge variant="outline" class="shrink-0 border-amber-500/50 text-amber-600">Unsaved</Badge>
+          <Badge variant="outline" class="shrink-0 border-amber-500/50 text-amber-800 dark:text-amber-300">Unsaved</Badge>
         {/if}
-        <span class="ml-auto font-mono text-[10px] text-muted-foreground/40">{s.id}</span>
       </div>
 
-      <!-- Pipeline stepper: connected segments, primary visual element -->
-      <div class="flex items-center gap-0 flex-wrap">
-        {#each steps as st, i (st.key)}
-          {#if i > 0}
-            <div class="h-0.5 w-4 sm:w-6 shrink-0 {st.done && steps[i - 1].done ? 'bg-primary/50' : 'bg-border'}"></div>
-          {/if}
-          {#if st.done}
-            <span class="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
-              <Check class="size-3" />{st.label}{#if st.key === 'shots' && shots?.length}<span class="opacity-70">{shots.length}</span>{/if}
-            </span>
-          {:else if i === currentIdx}
-            <button type="button"
-              class="inline-flex items-center gap-1.5 rounded-full bg-background px-2.5 py-1 text-xs font-medium ring-2 ring-primary/70 hover:bg-accent disabled:opacity-60"
-              disabled={st.busy} onclick={st.action}>
-              <st.icon class="size-3" />{st.busy ? st.busyLabel : st.label}
-            </button>
-          {:else if !st.done && laterDone}
-            <button type="button"
-              class="inline-flex items-center gap-1.5 rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground/60 hover:text-foreground disabled:opacity-60"
-              title="Skipped — later steps are already done. Click to run it anyway."
-              disabled={st.busy} onclick={st.action}>
-              <st.icon class="size-3" />{st.busy ? st.busyLabel : st.label}
-            </button>
-          {:else}
-            <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs text-muted-foreground/50">
-              <st.icon class="size-3" />{st.label}
-            </span>
-          {/if}
-        {/each}
-      </div>
+      {#if progress}
+        <div data-tour="scene-next" class="rounded-lg border px-3 py-2.5 {progress.stage==='needs_attention'?'border-amber-500/60 bg-amber-500/5':'border-border bg-muted/20'}" role="status" aria-label="Scene progress">
+          <p class="text-sm font-medium">{progress.label}<span class="ml-2 text-xs font-normal text-muted-foreground">Step {Math.min(progress.step + 1, 4)} of 4</span></p>
+          <p class="mt-1 max-w-prose text-xs text-muted-foreground">{progress.detail}</p>
+          <div class="mt-2 flex flex-wrap gap-2">
+            {#if progress.next.action === 'open_videos'}<Button size="sm" href="/render">{progress.next.label}</Button>
+            {:else if progress.next.action === 'open_editor'}<Button size="sm" href={`/?view=edit&scene_id=${encodeURIComponent(s.id)}`}>{progress.next.label}</Button>
+            {:else if progress.next.action === 'ask_assistant'}<Button size="sm" onclick={() => window.dispatchEvent(new CustomEvent('videoflow-ask-assistant', { detail: { text: `Why is “${s.title}” stuck, and what should I do next?` } }))}>{progress.next.label}</Button>
+            {:else}<Button size="sm" onclick={() => openStage(STAGE_FOR[progress.next.action] ?? nextStage.key)}>{progress.next.label}</Button>{/if}
+            {#if progress.stage === 'needs_attention' && progress.next.action !== 'ask_assistant'}<Button size="sm" variant="ghost" onclick={() => window.dispatchEvent(new CustomEvent('videoflow-ask-assistant', { detail: { text: `Why did “${s.title}” stop, what is already saved, and what should I do next?` } }))}>Ask the assistant</Button>{/if}
+          </div>
+        </div>
+      {:else}
+        <Button size="sm" onclick={() => openStage(nextStage.key)}>{nextStage.label}</Button>
+      {/if}
     </div>
 
     <div class="flex shrink-0 items-center gap-2">
-      {#if current}
-        <div class="flex flex-col items-end gap-1">
-          <Button size="sm" disabled={current.busy} onclick={current.action}>
-            <current.icon class="size-3.5 mr-1" />
-            {current.busy ? current.busyLabel : `Next: ${current.label}`}
-          </Button>
-          {#if current.key === 'shots'}
-            <label class="inline-flex items-center gap-1 text-xs text-muted-foreground cursor-pointer select-none">
-              <input
-                type="checkbox"
-                class="w-auto"
-                checked={autoProps[s.id] ?? true}
-                onchange={(e) => (autoProps[s.id] = (e.currentTarget as HTMLInputElement).checked)}
-              />
-              auto props
-            </label>
-          {/if}
-        </div>
-      {:else}
-        <Button variant="secondary" size="sm" disabled={busy[`render-${s.id}`]} onclick={() => onRenderScene(s)}>
-          <Video class="size-3.5 mr-1" />{busy[`render-${s.id}`] ? 'Submitting…' : 'Re-render'}
-        </Button>
-      {/if}
-      {#if shots.length > 0 && !steps.find((st: any) => st.key === 'render')?.done}
-        <Button
-          variant="outline"
-          size="sm"
-          title="Submit the current shots directly without generating a storyboard"
-          disabled={busy[`render-${s.id}`] || sceneDirty || shots.some((shot: any) => shotDirty(shot))}
-          onclick={() => onRenderScene(s)}>
-          <Video class="size-3.5 mr-1" />{busy[`render-${s.id}`] ? 'Submitting…' : 'Render now'}
-        </Button>
-      {/if}
       <Button variant="ghost" size="icon" class="size-8 text-muted-foreground hover:text-destructive"
         title="Delete scene" disabled={busy[`delete-${s.id}`]} onclick={() => onDelete(s)}>
         <Trash2 class="size-4" />
@@ -164,10 +160,16 @@
     </div>
   </div>
 
-  <div class="mt-5 space-y-5">
+  <SceneStyle scene={s} projectStyle={style} disabled={sceneDirty}
+    cast={characters.filter((character: {id: string}) => (s.character_ids_json ?? []).includes(character.id))}
+    onchanged={refreshSceneLook} onstoryboard={() => openStage('storyboard')}/>
+  <SceneReferences bind:this={references} sceneId={s.id} {characters} onchanged={onReferencesChanged} onstate={value=>referenceInfo=value}/>
+
+  <div class="mt-5 space-y-3">
+    <div class="flex flex-wrap items-center justify-between gap-2"><Button variant="ghost" size="sm" aria-expanded={showAll} onclick={()=>showAll=!showAll}>{showAll?'Hide future stages':'Show all stages'}</Button></div>
     <!-- Scene -->
-    <div>
-      <div class="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Scene</div>
+    {#if section('scene').visible}<details class="border-t border-border pt-2" open={isOpen('scene')} ontoggle={event=>remember('scene',event)} data-stage="scene">
+      <summary class="min-h-11 cursor-pointer py-3 text-sm font-semibold">{section('scene').label}</summary><div class="pb-4">
       <div class="flex flex-wrap gap-4 items-end mb-2">
         <div style="flex:2;min-width:160px">
           <label class="block text-xs text-muted-foreground mb-1" for="title-{s.id}">Title</label>
@@ -225,16 +227,16 @@
         {/each}
       </div>
       <Button variant="outline" size="sm" disabled={busy[`expand-${s.id}`]} onclick={() => onExpand(s)}>
-        <Wand2 class="size-3 mr-1" />{busy[`expand-${s.id}`] ? 'Expanding…' : 'Re-expand scene (AI)'}
+        <Wand2 class="size-3 mr-1" />{busy[`expand-${s.id}`] ? 'Expanding…' : steps.find((st:any)=>st.key==='expand')?.done?'Re-expand scene (AI)':'Expand scene (AI)'}
       </Button>
-    </div>
+    </div></details>{/if}
 
     <!-- Shots -->
-    <div class="border-t border-border pt-4">
-      <div class="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Shots</div>
+    {#if section('shots').visible}<details class="border-t border-border pt-2" open={isOpen('shots')} ontoggle={event=>remember('shots',event)} data-stage="shots">
+      <summary class="min-h-11 cursor-pointer py-3 text-sm font-semibold">{section('shots').label}</summary><div class="pb-4">
       <div class="flex flex-wrap items-center gap-2 mb-2">
         <Button variant="outline" size="sm" disabled={opBusy[`shots-${s.id}`]} onclick={() => onGenerateShots(s)}>
-          <LayoutGrid class="size-3 mr-1" />{opBusy[`shots-${s.id}`] ? 'Generating…' : 'Regenerate shots (AI)'}
+          <LayoutGrid class="size-3 mr-1" />{opBusy[`shots-${s.id}`] ? 'Generating…' : shots.length?'Regenerate shots (AI)':'Generate shots (AI)'}
         </Button>
         <Button variant="outline" size="sm" disabled={busy[`add-${s.id}`]} onclick={() => onAddShot(s)}>
           <Plus class="size-3 mr-1" />{busy[`add-${s.id}`] ? 'Adding…' : 'Add shot'}
@@ -273,7 +275,7 @@
             </TableHeader>
             <TableBody>
               {#each shots as shot, i (shot.id)}
-                <TableRow>
+                <TableRow id={'scene-shot-'+shot.id} tabindex={-1}>
                   <TableCell>
                     <div class="flex items-center gap-0.5">
                       <span class="w-4 text-right">{shot.shot_order + 1}</span>
@@ -346,11 +348,11 @@
       {:else}
         <p class="text-xs text-muted-foreground">Generate shots with AI or add one manually.</p>
       {/if}
-    </div>
+    </div></details>{/if}
 
     <!-- Assets -->
-    <div class="border-t border-border pt-4">
-      <div class="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Assets</div>
+    {#if section('assets').visible}<details class="border-t border-border pt-2" open={isOpen('assets')} ontoggle={event=>remember('assets',event)} data-stage="assets">
+      <summary class="min-h-11 cursor-pointer py-3 text-sm font-semibold">{section('assets').label}</summary><div class="pb-4">
       <div class="text-xs text-muted-foreground mb-1">Generate assets (props) for this scene:</div>
       <div class="flex flex-wrap gap-2 items-center">
         <input
@@ -369,15 +371,7 @@
         <Button variant="outline" size="sm" disabled={opBusy[`assets-${s.id}`]} onclick={() => onGenerateAssets(s)}>
           <ImagePlus class="size-3 mr-1" />{opBusy[`assets-${s.id}`] ? 'Generating…' : 'Generate assets'}
         </Button>
-        {#if style?.style_prompt}
-          <Badge variant="secondary" class="text-muted-foreground max-w-[260px]" title={style.style_prompt}>
-            <span class="truncate">
-              styled: {style.style_prompt.length > 30
-                ? `${style.style_prompt.slice(0, 30)}…`
-                : style.style_prompt}
-            </span>
-          </Badge>
-        {/if}
+
       </div>
       {#if assetPlans[s.id]?.assets?.length}
         {@const plan = assetPlans[s.id]!}
@@ -435,30 +429,31 @@
           {/each}
         </div>
       {/if}
-    </div>
+    </div></details>{/if}
 
     <!-- Storyboard -->
-    <div class="border-t border-border pt-4">
-      <div class="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Storyboard</div>
+    {#if section('storyboard').visible}<details class="border-t border-border pt-2" open={isOpen('storyboard')} ontoggle={event=>remember('storyboard',event)} data-stage="storyboard">
+      <summary class="min-h-11 cursor-pointer py-3 text-sm font-semibold">{section('storyboard').label}</summary><div class="pb-4">
       <div class="flex flex-wrap items-center gap-2 mb-2">
         <Button variant="outline" size="sm"
-          disabled={opBusy[`sb-${s.id}`] || !(shots?.length)}
+          disabled={referenceInfo?.references_ready===false||opBusy[`sb-${s.id}`] || !(shots?.length)}
           onclick={() => onGenerateStoryboard(s)}>
-          <Images class="size-3 mr-1" />{opBusy[`sb-${s.id}`] ? 'Generating…' : 'Regenerate storyboard'}
+          <Images class="size-3 mr-1" />{opBusy[`sb-${s.id}`] ? 'Generating…' : storyboard?'Regenerate storyboard':'Generate storyboard'}
         </Button>
       </div>
       {#if storyboard}
         <button type="button"
           class="group relative block max-w-[420px] w-full overflow-hidden rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-ring"
-          title="Click to enlarge" onclick={() => onLightbox(storyboard)}>
-          <img class="w-full transition-transform group-hover:scale-[1.02]" src={mediaUrl(storyboard.file_path)} alt="Storyboard" loading="lazy" />
+          title="Click to enlarge" onclick={() => onLightbox(currentStoryboard)}>
+          <img class="w-full transition-transform group-hover:scale-[1.02]" src={mediaUrl(currentStoryboard.file_path)} alt="Storyboard" loading="lazy" />
           <span class="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity">
             <Maximize2 class="size-3" />Enlarge
           </span>
         </button>
       {:else}
-        <p class="text-xs text-muted-foreground">Generate a storyboard after adding shots.</p>
+        <p class="text-xs text-muted-foreground">{usesReferences?'Not needed: this scene\'s clips use its connected pictures. A storyboard is only used when Pictures is set to first frame under Video.':'Generate a storyboard after adding shots.'}</p>
       {/if}
-    </div>
+    </div></details>{/if}
+    {#if section('render').visible}<details class="border-t border-border pt-2" open={isOpen('render')} ontoggle={event=>remember('render',event)} data-stage="render"><summary class="min-h-11 cursor-pointer py-3 text-sm font-semibold">Video</summary><div class="space-y-3 pb-4"><ProductionControls scene={s.id} bind:newVersion={productionNewVersion} onplan={(id,cost)=>{productionPlanId=id;productionQuote=cost}} onstate={state=>productionBlocked=state.blocking||state.loading}/><div class="flex flex-wrap gap-2"><Button disabled={productionBlocked||referenceInfo?.references_ready===false||!shots.length||busy[`render-${s.id}`]||sceneDirty||shots.some((shot:any)=>shotDirty(shot))} onclick={()=>{const request={...s,production_plan_id:productionPlanId,new_version:productionNewVersion,confirmed_calls:productionQuote.calls,confirmed_seconds:productionQuote.seconds,confirmed_storyboard_calls:productionQuote.storyboards};productionNewVersion=false;onRenderScene(request)}}>{busy[`render-${s.id}`]?'Preparing…':productionQuote.storyboards>0?'Render video · updates storyboard':'Render video'}</Button><Button variant="outline" href={`/?view=edit&scene_id=${encodeURIComponent(s.id)}`}>Edit this scene's video</Button><Button variant="ghost" href="/render">All videos</Button><Button variant="ghost" href={`/library?tab=media&scene_id=${encodeURIComponent(s.id)}`}>Images</Button></div><p class="text-xs text-muted-foreground">Rendering uses credits. You'll see the cost above before anything is sent.</p>{#if !shots.length}<p class="text-xs text-muted-foreground">Add shots before rendering.</p>{/if}</div></details>{/if}
   </div>
 </div>
