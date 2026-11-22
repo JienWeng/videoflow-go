@@ -8,9 +8,17 @@
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
   import { Mic, RefreshCw } from '@lucide/svelte';
+  import type { Character } from '$lib/api-types';
 
   type Profile = { provider: string; model: string; voice_id: string; approved: boolean };
   type Document = { id: string; revision: number; data: Partial<Profile> };
+  /** GET /voice/state */
+  type VoiceState = {
+    project_id: string;
+    primary_provider?: string;
+    profiles: Document[];
+    samples?: Record<string, string>;
+  };
   const providers = ['fish', 'elevenlabs'];
   const providerName = (p: string) => p === 'elevenlabs' ? 'ElevenLabs' : 'Fish Audio';
 
@@ -23,7 +31,7 @@
   let sampleVersion = $state(0);
   let forms = $state<Record<string, Profile>>({});
   let baselines = $state<Record<string, string>>({});
-  let characters = $state<any[]>([]);
+  let characters = $state<Character[]>([]);
   let busy = $state('');
   let error = $state('');
   let notice = $state('');
@@ -44,13 +52,13 @@
   function resetForm(id: string) { forms[id] = formFor(id); baselines[id] = JSON.stringify(forms[id]); }
 
   async function refresh(reset = false) {
-    const state = await get(project ? scoped('/voice/state') : '/voice/state');
+    const state = await get<VoiceState>(project ? scoped('/voice/state') : '/voice/state');
     if (project && state.project_id !== project) throw new Error('Project changed. Reload this page.');
     project = state.project_id;
     primary = state.primary_provider ?? 'fish';
     profiles = state.profiles;
     samples = state.samples ?? {};
-    characters = await get('/characters');
+    characters = await get<Character[]>('/characters');
     if (selectedCharacter && !characters.some(c => c.id === selectedCharacter)) selectedCharacter = '';
     for (const c of characters) if (reset || !forms[c.id]) resetForm(c.id);
   }
@@ -72,7 +80,7 @@
   }
   async function saveProfile(id: string, name: string) {
     const submitted: Profile = { ...forms[id], voice_id: forms[id].voice_id.trim() };
-    const saved: Document = await put(scoped(`/voice/profiles/${id}`), { revision: profileFor(id)?.revision ?? 0, data: submitted });
+    const saved = await put<Document>(scoped(`/voice/profiles/${id}`), { revision: profileFor(id)?.revision ?? 0, data: submitted });
     profiles = [...profiles.filter(p => p.id !== id), saved];
     resetForm(id);
     notice = `Voice saved for ${name}.`;
@@ -81,7 +89,8 @@
   async function saveSample(id: string, name: string, file?: File) {
     let form: FormData | undefined;
     if (file) { form = new FormData(); form.append('file', file); }
-    const saved = await (form ? upload(scoped(`/voice/samples/${id}`), form) : post(scoped(`/voice/samples/${id}`)));
+    const sample = scoped(`/voice/samples/${id}`);
+    const saved = await (form ? upload<{ file_path: string }>(sample, form) : post<{ file_path: string }>(sample));
     samples = { ...samples, [id]: saved.file_path };
     sampleVersion++;
     notice = `Voice sample saved for ${name}.`;

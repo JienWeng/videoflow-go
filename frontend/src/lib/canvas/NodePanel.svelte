@@ -18,6 +18,48 @@
   import { toast } from 'svelte-sonner';
   import { Captions, Clapperboard, History, RefreshCw, Sparkles, Trash2, X } from '@lucide/svelte';
   import { get, put, patch, post, del, mediaUrl, isImage } from '$lib/api';
+  import type { Asset, Character, EditRevision, GraphNodeData, Scene, Shot } from '$lib/api-types';
+
+  type Trait = { name: string; value: string };
+  /** One editable form for every node kind; each kind seeds only its own fields. */
+  type NodeForm = {
+    title?: string;
+    summary?: string;
+    duration?: number;
+    aspect_ratio?: string;
+    prompt?: string;
+    camera?: string | null;
+    movement?: string | null;
+    shot_order?: number;
+    name?: string;
+    description?: string;
+    updated_at?: string;
+    character_id?: string | null;
+    traits?: Trait[];
+    review?: string;
+    appearance?: string;
+    personality?: string;
+    visual_rules?: string;
+    voice_rules?: string;
+    sample_dialogue?: string;
+  };
+  type CharacterField =
+    | 'name'
+    | 'description'
+    | 'appearance'
+    | 'personality'
+    | 'visual_rules'
+    | 'voice_rules'
+    | 'sample_dialogue';
+  const CHARACTER_FIELDS: { key: CharacterField; label: string }[] = [
+    { key: 'name', label: 'Name' },
+    { key: 'description', label: 'Description' },
+    { key: 'appearance', label: 'Appearance' },
+    { key: 'personality', label: 'Personality' },
+    { key: 'visual_rules', label: 'Visual rules (one per line)' },
+    { key: 'voice_rules', label: 'Voice rules (one per line)' },
+    { key: 'sample_dialogue', label: 'Sample dialogue' }
+  ];
 
   let {
     node,
@@ -44,10 +86,10 @@
   let shown = $state<Node | null>(null);
 
   const kind = $derived(String(shown?.data?.kind ?? ''));
-  const data = $derived((shown?.data ?? {}) as Record<string, any>);
+  const data = $derived((shown?.data ?? {}) as GraphNodeData);
 
   // Editable form state, re-seeded whenever the selected node changes.
-  let form = $state<Record<string, any>>({});
+  let form = $state<NodeForm>({});
   // True once any form field was touched; reset on seed/save/refine/revert.
   let formDirty = $state(false);
   const markFormDirty = () => (formDirty = true);
@@ -67,7 +109,7 @@
   let deleting = $state(false);
   let confirmTimer: ReturnType<typeof setTimeout> | undefined;
   let showHistory = $state(false);
-  let revisions = $state<any[]>([]);
+  let revisions = $state<EditRevision[]>([]);
   let reverting = $state('');
 
   // Output node action: make another take.
@@ -99,7 +141,7 @@
 
   // Re-seed the form whenever the shown node changes.
   $effect(() => {
-    const d = (shown?.data ?? {}) as Record<string, any>;
+    const d = (shown?.data ?? {}) as GraphNodeData;
     const token = ++recordToken;
     recordError = '';
     loadingRecord = false;
@@ -111,7 +153,7 @@
     formDirty = false;
     if (shown && String(d.kind) === 'scene') {
       form = {
-        title: d.label ?? '',
+        title: String(d.label ?? ''),
         summary: d.summary ?? '',
         duration: d.duration ?? 0,
         aspect_ratio: d.aspect_ratio ?? ''
@@ -128,7 +170,7 @@
       form = {};
       loadingRecord = true;
       const id = shown.id;
-      get(`/assets/${id}`)
+      get<Asset>(`/assets/${id}`)
         .then(a => {
           if (token !== recordToken) return;
           form = {
@@ -154,7 +196,7 @@
       form = {};
       loadingRecord = true;
       const id = shown.id;
-      get(`/characters/${id}`)
+      get<Character>(`/characters/${id}`)
         .then(c => {
           if (token !== recordToken) return;
           form = {
@@ -206,7 +248,7 @@
     if (!shown) return;
     retrying = true;
     try {
-      const res = await post(`/outputs/${shown.id}/retry`);
+      await post(`/outputs/${shown.id}/retry`);
       toast.success('New take started. Track it in Videos.');
       onsaved();
     } catch (err) {
@@ -228,14 +270,14 @@
     try {
       if (kind === 'asset') {
         const traits: Record<string, string> = {};
-        for (const row of form.traits) {
+        for (const row of form.traits ?? []) {
           const name = row.name.trim(),
             value = row.value.trim();
           if (!name || !value) throw Error('Each identity trait needs a name and value');
           if (Object.hasOwn(traits, name)) throw Error('Trait names must be unique');
           traits[name] = value;
         }
-        const a = await patch(`/assets/${shown.id}`, {
+        const a = await patch<Asset>(`/assets/${shown.id}`, {
           expected_updated_at: form.updated_at,
           name: form.name,
           description: form.description,
@@ -247,13 +289,13 @@
         await patch(`/characters/${shown.id}`, {
           ...form,
           name: form.name.trim(),
-          visual_rules_json: form.visual_rules
+          visual_rules_json: (form.visual_rules ?? '')
             .split('\n')
-            .map((v: string) => v.trim())
+            .map(v => v.trim())
             .filter(Boolean),
-          voice_rules_json: form.voice_rules
+          voice_rules_json: (form.voice_rules ?? '')
             .split('\n')
-            .map((v: string) => v.trim())
+            .map(v => v.trim())
             .filter(Boolean)
         });
       } else if (kind === 'scene') {
@@ -300,7 +342,9 @@
     refining = true;
     try {
       if (kind === 'scene') {
-        const r = await post(`/scenes/${shown.id}/refine`, { instruction: refineInstruction.trim() });
+        const r = await post<{ scene: Scene; note?: string }>(`/scenes/${shown.id}/refine`, {
+          instruction: refineInstruction.trim()
+        });
         form = {
           title: r.scene.title ?? '',
           summary: r.scene.summary ?? '',
@@ -309,7 +353,9 @@
         };
         toast.success(r.note || 'Refined');
       } else if (kind === 'shot') {
-        const r = await post(`/shots/${shown.id}/refine`, { instruction: refineInstruction.trim() });
+        const r = await post<{ shot: Shot; note?: string }>(`/shots/${shown.id}/refine`, {
+          instruction: refineInstruction.trim()
+        });
         form = {
           prompt: r.shot.prompt ?? '',
           duration: r.shot.duration ?? 0,
@@ -330,7 +376,7 @@
     }
   }
 
-  function seedForm(e: Record<string, any>) {
+  function seedForm(e: Partial<Scene & Shot>) {
     formDirty = false;
     if (kind === 'scene') {
       form = {
@@ -355,7 +401,7 @@
     showHistory = !showHistory;
     if (!showHistory) return;
     try {
-      revisions = await get(`/${kind}s/${shown.id}/revisions`);
+      revisions = await get<EditRevision[]>(`/${kind}s/${shown.id}/revisions`);
     } catch (err) {
       toast.error(errorMessage(err));
     }
@@ -365,10 +411,10 @@
     if (!shown) return;
     reverting = revisionId;
     try {
-      const entity = await post(`/revisions/${revisionId}/revert`);
+      const entity = await post<Partial<Scene & Shot>>(`/revisions/${revisionId}/revert`);
       seedForm(entity);
       remember();
-      revisions = await get(`/${kind}s/${shown.id}/revisions`);
+      revisions = await get<EditRevision[]>(`/${kind}s/${shown.id}/revisions`);
       toast.success('Reverted');
       onsaved();
     } catch (err) {
@@ -389,7 +435,7 @@
     clearTimeout(confirmTimer);
     deleting = true;
     try {
-      const r = await del(`/assets/${shown.id}`);
+      const r = await del<{ detached_from: number }>(`/assets/${shown.id}`);
       toast.success(`Asset deleted (detached from ${r.detached_from} place${r.detached_from === 1 ? '' : 's'}).`);
       onsaved();
       onclose();
@@ -559,7 +605,7 @@
       {:else if kind === 'asset'}
         {#if form.character_id&&data.asset_type==='character_reference'&&onopencharacterrefs}<Button
           variant="outline"
-          onclick={()=>onopencharacterrefs?.(form.character_id)}>Character reference images</Button>{/if}
+          onclick={()=>onopencharacterrefs?.(form.character_id ?? '')}>Character reference images</Button>{/if}
         {#if imageSrc}
           <img src={imageSrc} alt={String(data.label ?? '')} class="w-full rounded-md border border-border object-cover" />
         {/if}
@@ -592,11 +638,11 @@
             placeholder="Red" /><Button
             variant="ghost"
             aria-label={'Remove trait '+(i+1)}
-            onclick={()=>{form.traits.splice(i,1);markFormDirty()}}><X class="size-4" /></Button></div>{/each}
+            onclick={()=>{form.traits?.splice(i,1);markFormDirty()}}><X class="size-4" /></Button></div>{/each}
           <Button
             variant="outline"
             disabled={(form.traits?.length??0)>=32}
-            onclick={()=>{form.traits.push({name:'',value:''});markFormDirty()}}>Add identity trait</Button>
+            onclick={()=>{(form.traits ??= []).push({name:'',value:''});markFormDirty()}}>Add identity trait</Button>
           <div class="flex gap-2"><Button onclick={save} disabled={saving||!formDirty}>{saving?'Saving…':'Save asset details'}</Button><Button
             variant="outline"
             onclick={discard}
@@ -613,22 +659,14 @@
         <div class="space-y-1 text-sm">
           <p class="font-medium">Joined from, in order</p>
           <ol class="list-decimal space-y-0.5 pl-5 text-muted-foreground">{#each data.scene_titles ?? [] as title}<li>{title}</li>{/each}</ol>
-          <p class="text-xs text-muted-foreground">Exported {new Date(data.created_at).toLocaleString()}. Only the newest export of an episode is shown here; older ones are in Videos.</p>
+          <p class="text-xs text-muted-foreground">Exported {new Date(data.created_at ?? "").toLocaleString()}. Only the newest export of an episode is shown here; older ones are in Videos.</p>
         </div>
       {:else if kind === 'render_job'}
         <RenderProgress id={shown.id} initialStatus={String(data.status??'pending')}/>
       {:else if kind === 'character'}
         <CharacterReferences characterId={shown!.id} disabled={formDirty||saving||loadingRecord||!!recordError} onchanged={onsaved}/>
         {#if loadingRecord}<p role="status">Loading character…</p>{:else if recordError}<p role="alert" class="text-destructive">{recordError}</p>{:else}
-          {#each [
-              { key: 'name', label: 'Name' },
-              { key: 'description', label: 'Description' },
-              { key: 'appearance', label: 'Appearance' },
-              { key: 'personality', label: 'Personality' },
-              { key: 'visual_rules', label: 'Visual rules (one per line)' },
-              { key: 'voice_rules', label: 'Voice rules (one per line)' },
-              { key: 'sample_dialogue', label: 'Sample dialogue' }
-            ] as field}
+          {#each CHARACTER_FIELDS as field}
             <div class="grid gap-1.5"><Label for={'np-character-'+field.key}>{field.label}</Label><Textarea
               id={'np-character-'+field.key}
               rows={field.key==='name'?1:3}

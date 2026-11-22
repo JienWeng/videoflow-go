@@ -15,13 +15,14 @@
   import * as Dialog from '$lib/components/ui/dialog';
   import { toast } from 'svelte-sonner';
   import { Images, Trash2, X } from '@lucide/svelte';
+  import type { Asset, Character } from '$lib/api-types';
 
   let search = $state(''),
     referenceFilter = $state(''),
     sortBy = $state('name');
 
-  let characters: any[] = $state([]);
-  let assets: Record<string, any> = $state({});
+  let characters: Character[] = $state([]);
+  let assets: Record<string, Asset> = $state({});
   let error = $state('');
   let busy = $state('');
   let loaded = $state(false);
@@ -79,7 +80,7 @@
   );
 
   // --- delete confirm ---
-  let deleteTarget: any = $state(null);
+  let deleteTarget = $state<Character | null>(null);
 
   let loadSequence = 0;
   export async function reload() {
@@ -88,10 +89,10 @@
   async function refresh() {
     const sequence = ++loadSequence;
     try {
-      const [nextCharacters, all] = await Promise.all([get('/characters'), get('/assets')]);
+      const [nextCharacters, all] = await Promise.all([get<Character[]>('/characters'), get<Asset[]>('/assets')]);
       if (sequence !== loadSequence) return;
       characters = nextCharacters;
-      assets = Object.fromEntries(all.map((a: any) => [a.id, a]));
+      assets = Object.fromEntries(all.map(a => [a.id, a]));
       oncounts?.(characters.length, all.length);
     } catch (e) {
       if (sequence === loadSequence) throw e;
@@ -255,7 +256,7 @@
 
   <div class="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
     {#each filteredCharacters as c (c.id)}
-      {@const refs=(c.reference_asset_ids_json??[]).map((id:string)=>assets[id]).filter((a:any)=>a&&isImage(a.file_path))}
+      {@const refs=(c.reference_asset_ids_json??[]).map(id=>assets[id]).filter(a=>a&&isImage(a.file_path))}
       <Card class="self-start py-0">
         <CardContent class="p-0">
           <a

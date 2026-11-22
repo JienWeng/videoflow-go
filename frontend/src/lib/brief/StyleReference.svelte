@@ -3,7 +3,10 @@
   import { get, patch, upload } from '$lib/api';
   import { runBackgroundOp } from '$lib/ops';
   import { Button } from '$lib/components/ui/button';
-  type Style = { name: string; style_prompt: string; palette: string; lighting: string; tone: string; audience: string };
+  import type { Asset, ProjectStylePreset, StyleCatalog, StyleFields, StyleGuide } from '$lib/api-types';
+  type Style = StyleFields;
+  /** result_json of the style reference op (internal/api/style_reference.go). */
+  type ReferenceAnalysis = { style?: unknown; source: string; source_kind: string; sample_count: number; saved?: boolean };
   let {
     disabled = false,
     initialURL = '',
@@ -13,9 +16,9 @@
     disabled?: boolean;
     initialURL?: string;
     initialAssetID?: string;
-    onsaved?: (preset: any, style: Style) => void;
+    onsaved?: (preset: ProjectStylePreset, style: Style) => void;
   } = $props();
-  let assets = $state<any[]>([]),
+  let assets = $state<Asset[]>([]),
     assetId = $state(untrack(() => initialAssetID)),
     url = $state(untrack(() => initialURL)),
     focus = $state(''),
@@ -27,16 +30,18 @@
     kind = $state(''),
     sampleCount = $state(0),
     baseline = '',
-    project = '';
+    project: string | null | undefined = '';
   const controller = new AbortController();
   onDestroy(() => controller.abort());
   const fields = ['name', 'style_prompt', 'palette', 'lighting', 'tone', 'audience'] as const;
-  const clean = (style: any): Style =>
-    Object.fromEntries(fields.map(k => [k, typeof style?.[k] === 'string' ? style[k] : ''])) as Style;
+  const clean = (style: unknown): Style => {
+    const source = (style && typeof style === 'object' ? style : {}) as Record<string, unknown>;
+    return Object.fromEntries(fields.map(k => [k, typeof source[k] === 'string' ? source[k] : ''])) as Style;
+  };
   const inputClass = 'min-h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm';
   async function load() {
     try {
-      assets = (await get('/assets')).filter((a: any) => /\.(png|jpe?g|gif|webp|mp4|mov|webm)$/i.test(a.file_path ?? ''));
+      assets = (await get<Asset[]>('/assets')).filter(a => /\.(png|jpe?g|gif|webp|mp4|mov|webm)$/i.test(a.file_path ?? ''));
     } catch (e) {
       error = String(e);
     }
@@ -56,7 +61,7 @@
       const data = new FormData();
       data.set('file', file);
       data.set('type', 'other');
-      const asset = await upload('/assets/upload', data);
+      const asset = await upload<Asset>('/assets/upload', data);
       assets = [asset, ...assets];
       assetId = asset.id;
       url = '';
@@ -74,10 +79,10 @@
     notice = '';
     draft = null;
     try {
-      const current = await get('/style');
+      const current = await get<StyleGuide>('/style');
       project = current.project_id;
       baseline = JSON.stringify(clean(current));
-      await runBackgroundOp(
+      await runBackgroundOp<ReferenceAnalysis>(
         '/style/reference',
         url.trim() ? { url: url.trim(), instruction: focus } : { asset_id: assetId, instruction: focus },
         {
@@ -112,11 +117,11 @@
     busy = true;
     error = '';
     try {
-      const current = await get('/style');
+      const current = await get<StyleGuide>('/style');
       if (current.project_id !== project || JSON.stringify(clean(current)) !== baseline)
         throw Error('Project style changed while analyzing. Analyze again before replacing it.');
       await patch('/style', { ...current, ...draft, project_id: project });
-      const catalog = await get('/style-presets');
+      const catalog = await get<StyleCatalog>('/style-presets');
       if (!catalog.project_style) throw Error('Style saved. Refresh styles to select the project default.');
       baseline = JSON.stringify(draft);
       notice = 'Reference style saved as your project default. Existing stories keep their saved look.';

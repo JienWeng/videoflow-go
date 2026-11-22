@@ -4,6 +4,7 @@
   import { subscribeJobs } from '$lib/sse';
   import { Button } from '$lib/components/ui/button';
   import { Images, Plus, X, Check, TriangleAlert } from '@lucide/svelte';
+  import type { Asset, Character, SceneReferenceState } from '$lib/api-types';
   let {
     sceneId,
     characters = [],
@@ -11,12 +12,12 @@
     onstate
   }: {
     sceneId: string;
-    characters?: any[];
+    characters?: Character[];
     onchanged?: () => void | Promise<void>;
-    onstate?: (value: any) => void;
+    onstate?: (value: SceneReferenceState) => void;
   } = $props();
-  let referenceState: any = $state(null),
-    library: any[] = $state([]),
+  let referenceState = $state<SceneReferenceState | null>(null),
+    library: Asset[] = $state([]),
     error = $state(''),
     loading = $state(true),
     busy = $state(false),
@@ -31,7 +32,10 @@
   async function load() {
     const request = ++sequence;
     try {
-      const [next, assets] = await Promise.all([get(`/scenes/${sceneId}/references`), get('/assets')]);
+      const [next, assets] = await Promise.all([
+        get<SceneReferenceState>(`/scenes/${sceneId}/references`),
+        get<Asset[]>('/assets')
+      ]);
       if (!alive || request !== sequence) return;
       referenceState = next;
       onstate?.(next);
@@ -71,19 +75,19 @@
     )
   );
   const board = $derived(
-    referenceState?.storyboards?.find((a: any) => a.metadata_json?.consistency_review !== 'rejected')
+    referenceState?.storyboards?.find(a => a.metadata_json?.consistency_review !== 'rejected')
   );
   const currentBoard = $derived(
     referenceState?.storyboards?.find(
-      (a: any) =>
+      a =>
         a.metadata_json?.consistency_review !== 'rejected' &&
-        (!referenceState.context_revision ||
+        (!referenceState?.context_revision ||
           a.metadata_json?.director_context_revision === referenceState.context_revision)
     )
   );
-  const group = (asset: any) => asset.metadata_json?.variant_group_id ?? asset.id;
-  const replacement = (asset: any) =>
-    referenceState?.references?.find((a: any) => selected.has(a.id) && group(a) === group(asset))?.id;
+  const group = (asset: Asset) => asset.metadata_json?.variant_group_id ?? asset.id;
+  const replacement = (asset: Asset) =>
+    referenceState?.references?.find(a => selected.has(a.id) && group(a) === group(asset))?.id;
   async function change(id: string, attach: boolean, replace?: string) {
     if (busy || !referenceState) return;
     busy = true;
@@ -91,8 +95,8 @@
     try {
       const body = { expected_updated_at: referenceState.updated_at, replace_asset_id: replace ?? '' };
       const next = attach
-        ? await post(`/scenes/${sceneId}/references/${id}`, body)
-        : await del(`/scenes/${sceneId}/references/${id}`, body);
+        ? await post<SceneReferenceState>(`/scenes/${sceneId}/references/${id}`, body)
+        : await del<SceneReferenceState>(`/scenes/${sceneId}/references/${id}`, body);
       if (!alive) return;
       referenceState = next;
       onstate?.(next);
@@ -148,7 +152,7 @@
    onclick={()=>change(asset.id,false)}
    aria-label={`Remove ${asset.name} from scene`}>Remove</Button>{:else}<span
      class="text-xs text-muted-foreground">From cast</span>{/if}{#if Object.keys(asset.metadata_json?.locked_traits??{}).length}<p
-     class="basis-full text-xs text-muted-foreground">Locked: {Object.entries(asset.metadata_json.locked_traits)
+     class="basis-full text-xs text-muted-foreground">Locked: {Object.entries(asset.metadata_json?.locked_traits ?? {})
          .map(([key, value]) => `${key}: ${value}`)
          .join(' · ')}</p>{/if}</li>{/each}</ul>
  {:else if !loading}<p class="text-xs text-muted-foreground">No references selected yet.</p>{/if}

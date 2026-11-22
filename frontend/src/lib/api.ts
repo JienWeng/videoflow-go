@@ -21,7 +21,7 @@ export class APIError extends Error {
   }
 }
 
-async function handle(resp: Response) {
+async function handle<T>(resp: Response): Promise<T> {
   if (!resp.ok) {
     const text = await resp.text();
     let detail: unknown = text || resp.statusText;
@@ -39,7 +39,7 @@ async function handle(resp: Response) {
       }
     throw new APIError(resp.status, formatDetail(detail), code);
   }
-  return resp.json();
+  return resp.json() as Promise<T>;
 }
 
 function formatDetail(detail: unknown): string {
@@ -61,10 +61,11 @@ function formatDetail(detail: unknown): string {
   return String(detail);
 }
 
-export const get = (path: string) => fetch(`${API_BASE}${path}`).then(handle);
+/** Response bodies are typed by the caller: `get<Scene[]>('/scenes')`. */
+export const get = <T = unknown>(path: string): Promise<T> => fetch(`${API_BASE}${path}`).then(r => handle<T>(r));
 
 // Keep the same request key after a lost response, including page reloads.
-async function localPost(path: string, body?: unknown) {
+async function localPost<T>(path: string, body?: unknown): Promise<T> {
   const payload = body === undefined ? undefined : JSON.stringify(body);
   const bytes = new TextEncoder().encode(path + ':' + (payload ?? ''));
   let fingerprint: string;
@@ -98,32 +99,32 @@ async function localPost(path: string, body?: unknown) {
   } catch {
     /* storage may be unavailable */
   }
-  return handle(response);
+  return handle<T>(response);
 }
-export const post = (path: string, body?: unknown) => localPost(path, body);
+export const post = <T = unknown>(path: string, body?: unknown): Promise<T> => localPost<T>(path, body);
 
-export const put = (path: string, body: unknown) =>
+export const put = <T = unknown>(path: string, body: unknown): Promise<T> =>
   fetch(`${API_BASE}${path}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
-  }).then(handle);
+  }).then(r => handle<T>(r));
 
-export const patch = (path: string, body: unknown) =>
+export const patch = <T = unknown>(path: string, body: unknown): Promise<T> =>
   fetch(`${API_BASE}${path}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
-  }).then(handle);
+  }).then(r => handle<T>(r));
 
-export const del = (path: string, body?: unknown) =>
+export const del = <T = unknown>(path: string, body?: unknown): Promise<T> =>
   fetch(`${API_BASE}${path}`, {
     method: 'DELETE',
     ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-  }).then(handle);
+  }).then(r => handle<T>(r));
 
-export const upload = (path: string, form: FormData) =>
-  fetch(`${API_BASE}${path}`, { method: 'POST', body: form }).then(handle);
+export const upload = <T = unknown>(path: string, form: FormData): Promise<T> =>
+  fetch(`${API_BASE}${path}`, { method: 'POST', body: form }).then(r => handle<T>(r));
 
 /** Map a stored file_path (absolute or relative) onto the /storage mount. */
 export function mediaUrl(filePath: string | null | undefined): string | null {

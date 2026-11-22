@@ -31,36 +31,18 @@
   import { protectDraft } from '$lib/protect-draft';
   import { onMount } from 'svelte';
   import { get, post, upload, API_BASE, mediaUrl } from '$lib/api';
-  type Clip = {
-    id: string;
-    asset_id: string;
-    start: number;
-    trim: number;
-    duration: number;
-    speed: number;
-    [key: string]: any;
-  };
-  type Cue = {
-    id: string;
-    utterance_id: string;
-    start: number;
-    end: number;
-    text: string;
-    character_id?: string;
-    language?: string;
-  };
-  type Draft = {
-    version: number;
-    width: number;
-    height: number;
-    fps: number;
-    duration: number;
-    caption_style: string;
-    clips: Clip[];
-    audio: Clip[];
-    captions: Cue[];
-    [key: string]: any;
-  };
+  import type { Asset, Project, Script } from '$lib/api-types';
+  import type {
+    Clip,
+    ClipAdjustments,
+    CompositionManifest as Draft,
+    CompositionRuntime,
+    CompositionSource,
+    CompositionSourceInfo,
+    Cue,
+    SavedComposition,
+    VoiceLine
+  } from '$lib/composition/types';
   let draft: Draft = {
     version: 1,
     width: 640,
@@ -72,9 +54,9 @@
     audio: [],
     captions: []
   };
-  let assets: any[] = [];
+  let assets: CompositionSource[] = [];
   let sourcesLoaded = false;
-  let runtime: any = null;
+  let runtime: CompositionRuntime | null = null;
   let error = '';
   let log = '';
   let busy = false;
@@ -92,11 +74,11 @@
     () => (dirty && JSON.stringify(draft) !== baseline) || advancedDirty,
     'You have unsaved composition changes. Discard them and leave?'
   );
-  let savedEdits: any[] = [];
+  let savedEdits: SavedComposition[] = [];
   let indexError = '';
   async function refreshIndex() {
     try {
-      savedEdits = await get('/compositions');
+      savedEdits = await get<SavedComposition[]>('/compositions');
       indexError = '';
     } catch (e) {
       indexError = 'Could not load saved edits. ' + String(e);
@@ -205,18 +187,18 @@
     notice = '';
   }
   async function sourceInfo(id: string) {
-    const result = await get('/compositions/sources/' + encodeURIComponent(id));
+    const result = await get<CompositionSourceInfo>('/compositions/sources/' + encodeURIComponent(id));
     assets = assets.map(a => (a.id === id ? { ...a, ...result.source, ...result } : a));
     return result;
   }
   onMount(async () => {
     void refreshIndex();
     try {
-      let project: any;
+      let project: Project;
       [assets, runtime, project] = await Promise.all([
-        get('/compositions/sources'),
-        get('/compositions/runtime'),
-        get('/projects/active')
+        get<CompositionSource[]>('/compositions/sources'),
+        get<CompositionRuntime>('/compositions/runtime'),
+        get<Project>('/projects/active')
       ]);
       sourcesLoaded = true;
       const params = new URL(window.location.href).searchParams;
@@ -234,8 +216,8 @@
         (params.get('scene_id') ?? params.get('script_id') ?? params.get('source') ?? 'default');
       const saved = params.get('revision');
       if (saved) {
-        draft = await get('/compositions/' + encodeURIComponent(saved));
-        revision = draft.revision;
+        draft = await get<Draft>('/compositions/' + encodeURIComponent(saved));
+        revision = draft.revision ?? '';
         notice = 'Saved edit loaded.';
         dirty = false;
       }
@@ -244,7 +226,7 @@
       const scene = params.get('scene_id');
       const story = params.get('script_id');
       if (!saved && story) {
-        draft = await get('/scripts/' + encodeURIComponent(story) + '/composition-draft');
+        draft = await get<Draft>('/scripts/' + encodeURIComponent(story) + '/composition-draft');
         resetHistory();
         invalidate();
         notice = 'Story scenes assembled in order. Add a continuous soundtrack below.';
@@ -253,7 +235,7 @@
         if (!item) throw Error('This source is unavailable in the active project.');
         await add(item.media_kind === 'audio' ? 'audio' : 'clips', seed);
       } else if (!saved && scene) {
-        draft = await get('/scenes/' + encodeURIComponent(scene) + '/composition-draft');
+        draft = await get<Draft>('/scenes/' + encodeURIComponent(scene) + '/composition-draft');
         resetHistory();
         invalidate();
         notice =
@@ -278,8 +260,8 @@
         try {
           if (savedEdits.length) {
             const latest = [...savedEdits].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0];
-            draft = await get('/compositions/' + encodeURIComponent(latest.revision));
-            revision = draft.revision;
+            draft = await get<Draft>('/compositions/' + encodeURIComponent(latest.revision));
+            revision = draft.revision ?? '';
             dirty = false;
             notice = 'Your latest saved edit is open.';
             resetHistory();
@@ -287,9 +269,9 @@
             url.searchParams.set('revision', revision);
             window.history.replaceState({}, '', url);
           } else {
-            const scripts = await get('/scripts');
+            const scripts = await get<Script[] | null>('/scripts');
             if (scripts?.length) {
-              draft = await get('/scripts/' + encodeURIComponent(scripts[0].id) + '/composition-draft');
+              draft = await get<Draft>('/scripts/' + encodeURIComponent(scripts[0].id) + '/composition-draft');
               resetHistory();
               dirty = false;
               autoStarted = true;
@@ -303,9 +285,9 @@
       }
       if (!saved && !draft.clips.length && !draft.audio.length && draft.width === 640 && draft.height === 360) {
         try {
-          const app = await get('/settings/app');
+          const app = await get<{ default_aspect_ratio?: string } | null>('/settings/app');
           const size = ({ '9:16': [1080, 1920], '16:9': [1920, 1080], '1:1': [1080, 1080] } as Record<string, number[]>)[
-            app?.default_aspect_ratio
+            app?.default_aspect_ratio ?? ''
           ];
           if (size) {
             draft = { ...draft, width: size[0], height: size[1] };
@@ -374,9 +356,9 @@
       form.append('file', file);
       form.append('type', 'audio_reference');
       form.append('name', file.name);
-      const asset = await upload('/assets/upload', form);
+      const asset = await upload<Asset>('/assets/upload', form);
       id = asset.id;
-      assets = await get('/compositions/sources');
+      assets = await get<CompositionSource[]>('/compositions/sources');
     } catch (e) {
       error = String(e);
     } finally {
@@ -386,9 +368,9 @@
     if (id) await add('audio', id);
   }
   // Voice lines replace earlier voice lines; music and other sounds stay. Video sound can be lowered under them.
-  async function addVoices(items: any[], lower: boolean, replace = true) {
+  async function addVoices(items: VoiceLine[], lower: boolean, replace = true) {
     try {
-      assets = await get('/compositions/sources');
+      assets = await get<CompositionSource[]>('/compositions/sources');
     } catch {}
     draft.audio = [
       ...draft.audio.filter(a => !replace || !String(a.asset_id).startsWith('voiceover_')),
@@ -452,8 +434,8 @@
     busy = true;
     error = '';
     try {
-      draft = await post('/compositions', draft);
-      revision = draft.revision;
+      draft = await post<Draft>('/compositions', draft);
+      revision = draft.revision ?? '';
       historyCurrent = JSON.stringify(draft);
       dirty = false;
       advancedDirty = false;
@@ -477,10 +459,13 @@
     busy = true;
     error = '';
     try {
-      const result = await post(`/compositions/${revision}/run`, { operation, revision });
+      const result = await post<{ log: string; asset_url?: string; snapshots?: string[] }>(`/compositions/${revision}/run`, {
+        operation,
+        revision
+      });
       log = result.log;
       if (result.asset_url) rendered = API_BASE + result.asset_url;
-      if (result.snapshots) snapshots = result.snapshots.map((p: string) => API_BASE + p);
+      if (result.snapshots) snapshots = result.snapshots.map(p => API_BASE + p);
       notice = operation === 'render' ? 'Rendered video added to your project assets.' : 'Review complete.';
     } catch (e) {
       // Edits saved with an older renderer are refused; save the current edit again and retry once.
@@ -513,7 +498,7 @@
           ? 'captions'
           : ''
   ) as Track | '';
-  $: selIndex = selTrack ? draft[selTrack].findIndex((c: any) => c.id === activeClip) : -1;
+  $: selIndex = selTrack ? draft[selTrack].findIndex((c: Clip | Cue) => c.id === activeClip) : -1;
   $: firstClipName = (assets.find(a => a.id === draft.clips[0]?.asset_id)?.name ?? '')
     .replace(/\.[a-z0-9]{2,4}$/i, '')
     .trim();
@@ -521,7 +506,7 @@
     ? (firstClipName || 'Saved edit') +
       ' · ' +
       (savedEdits.find(e => e.revision === revision)?.created_at
-        ? new Date(savedEdits.find(e => e.revision === revision).created_at).toLocaleDateString([], {
+        ? new Date(savedEdits.find(e => e.revision === revision)!.created_at).toLocaleDateString([], {
             month: 'short',
             day: 'numeric'
           })
@@ -547,7 +532,7 @@
         const at = Math.max(0, Math.round(start * draft.fps) / draft.fps);
         draft.captions = draft.captions.map(c => (c.id === id ? { ...c, start: at, end: at + len } : c));
       } else {
-        const clip = draft[track].find((c: any) => c.id === id);
+        const clip = draft[track].find((c: Clip) => c.id === id);
         if (clip) draft.duration = Math.max(draft.duration, start + clip.duration);
         draft = moveClip(draft, track, id, start, true);
       }
@@ -572,8 +557,9 @@
         const clip = list.find(c => c.id === id);
         if (!clip) return;
         const src = assets.find(a => a.id === clip.asset_id);
+        const sourceLength = src?.duration ?? 0;
         const limit =
-          src?.media_kind === 'image' ? 0 : src?.duration > 0 ? (src.duration - clip.trim) / (clip.speed || 1) : 0;
+          src?.media_kind === 'image' ? 0 : sourceLength > 0 ? (sourceLength - clip.trim) / (clip.speed || 1) : 0;
         const next = edge === 'start' ? trimStart(clip, value, draft.fps) : trimEnd(clip, value, draft.fps, limit);
         draft[track] = list.map(c => (c.id === id ? next : c));
       }
@@ -642,8 +628,11 @@
     error = '';
     scriptNote = '';
     try {
-      const r = await post('/compositions/captions/from-script', { clips: draft.clips, audio: draft.audio });
-      const skipped = (r.skipped ?? []) as { reason: string }[];
+      const r = await post<{ captions?: Cue[]; skipped?: { reason: string }[]; voice_timed?: boolean }>(
+        '/compositions/captions/from-script',
+        { clips: draft.clips, audio: draft.audio }
+      );
+      const skipped = r.skipped ?? [];
       if (!r.captions?.length) {
         scriptNote =
           skipped[0]?.reason ??
@@ -667,7 +656,7 @@
       busy = false;
     }
   }
-  function dragAsset(e: DragEvent, asset: any) {
+  function dragAsset(e: DragEvent, asset: CompositionSource) {
     e.dataTransfer?.setData('application/x-videoflow-asset', asset.id);
     e.dataTransfer?.setData('application/x-videoflow-kind-' + asset.media_kind, '1');
     if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy';
@@ -955,7 +944,7 @@
         min={o.min}
         max={o.max}
         step={o.step}
-        value={draft.clips[selIndex].adjustments?.[o.key]??(defaults() as Record<string,any>)[o.key]}
+        value={draft.clips[selIndex].adjustments?.[o.key as keyof ClipAdjustments]??defaults()[o.key as keyof ClipAdjustments]}
         oninput={e=>adjust(selIndex,o.key,e.currentTarget.value)}/></label>{/each}
      </fieldset>
      <fieldset class="space-y-2"><legend class="text-xs font-medium">Color</legend>
@@ -970,7 +959,7 @@
         min={o.min}
         max={o.max}
         step={o.step}
-        value={draft.clips[selIndex].adjustments?.[o.key]??(defaults() as Record<string,any>)[o.key]}
+        value={draft.clips[selIndex].adjustments?.[o.key as keyof ClipAdjustments]??defaults()[o.key as keyof ClipAdjustments]}
         oninput={e=>adjust(selIndex,o.key,e.currentTarget.value)}/></label>{/each}
       <div class="flex flex-wrap items-center gap-3"><label class="flex items-center gap-2 text-xs"><input
         type="checkbox"

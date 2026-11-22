@@ -1,20 +1,25 @@
 import { get, post, put } from '$lib/api';
 import { subscribeJobs } from '$lib/sse';
 import { toast } from 'svelte-sonner';
+import type { OpResult, OpStarted } from '$lib/api-types';
 
-export type Op = {
+/** A background op (models.Op). R is the shape of result_json for the op kind being read. */
+export type Op<R = OpResult> = {
   id: string;
   kind: string;
   status: 'running' | 'succeeded' | 'failed' | 'reconciliation_required';
   scene_id?: string | null;
   output_id?: string | null;
+  project_id?: string | null;
   error?: string | null;
-  result_json?: Record<string, any> | null;
+  result_json?: R | null;
+  created_at?: string;
+  updated_at?: string;
 };
 
-type OpHandlers = {
-  onDone?: (op: Op) => unknown;
-  onFail?: (op: Op) => unknown;
+type OpHandlers<R> = {
+  onDone?: (op: Op<R>) => unknown;
+  onFail?: (op: Op<R>) => unknown;
   label: string;
   method?: 'POST' | 'PUT';
   signal?: AbortSignal;
@@ -26,14 +31,14 @@ type OpHandlers = {
  * on GET /ops/{op_id}. Toasts start/success/failure; cleans up when terminal.
  * Throws only if the initial request fails.
  */
-export async function runBackgroundOp(
+export async function runBackgroundOp<R = OpResult>(
   path: string,
   body: unknown,
-  { onDone, onFail, label, method = 'POST', signal }: OpHandlers
+  { onDone, onFail, label, method = 'POST', signal }: OpHandlers<R>
 ): Promise<void> {
   const sep = path.includes('?') ? '&' : '?';
   const send = method === 'PUT' ? put : post;
-  const started = await send(`${path}${sep}background=true`, body);
+  const started = await send<OpStarted>(`${path}${sep}background=true`, body);
   const opId: string = started.op_id;
   toast.info(`${label} started`);
 
@@ -51,7 +56,7 @@ export async function runBackgroundOp(
     settled = true;
     cleanup();
   };
-  function settle(op: Op) {
+  function settle(op: Op<R>) {
     if (settled) return;
     settled = true;
     cleanup();
@@ -74,7 +79,7 @@ export async function runBackgroundOp(
       return;
     }
     try {
-      const op: Op = await get(`/ops/${opId}`);
+      const op = await get<Op<R>>(`/ops/${opId}`);
       failures = 0;
       if (op.status !== 'running') settle(op);
     } catch {

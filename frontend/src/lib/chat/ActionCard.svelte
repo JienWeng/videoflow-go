@@ -13,6 +13,8 @@
   import { del as apiDel, get, patch as apiPatch, post as apiPost } from '$lib/api';
   import { normalizeChatIntent } from './intent.mjs';
   import { runBackgroundOp, type Op } from '$lib/ops';
+  import type { AssetPlan, PlannedAsset, ProjectStylePreset, Scene, Shot, StyleFields } from '$lib/api-types';
+  import type { ChatIntent, ChatOptions, ChatProjectState, RunContext } from './types';
 
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
@@ -23,37 +25,6 @@
   import Play from '@lucide/svelte/icons/play';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import { toast } from 'svelte-sonner';
-
-  interface Option {
-    id: string;
-    title?: string;
-    name?: string;
-    video?: string | null;
-  }
-
-  interface Intent {
-    editor_panel?: string;
-    character_changes?: Record<string, string>;
-    creation_brief?: any;
-    action: string;
-    asset_type?: string;
-    director_proposal?: string;
-    scene_id?: string | null;
-    character_id?: string | null;
-    shot_id?: string | null;
-    output_id?: string | null;
-    language?: string | null;
-    idea?: string | null;
-    scene_count?: number | null;
-    confidence?: number;
-    reply?: string;
-  }
-
-  interface Options {
-    scenes: Option[];
-    characters: Option[];
-    outputs: Option[];
-  }
 
   interface IdeaOption {
     title: string;
@@ -66,30 +37,6 @@
     options: IdeaOption[];
     recommended_index: number;
     reasoning: string;
-  }
-
-  /** Passed up with the result so the chat can propose the next step. */
-  interface RunContext {
-    action: string;
-    characterId?: string;
-    sceneId?: string;
-    outputId?: string;
-  }
-
-  /** Backend project-state snapshot attached to the chat reply. */
-  interface ProjectState {
-    characters: number;
-    has_style: boolean;
-    scripts: number;
-    scenes: {
-      id: string;
-      title: string;
-      expanded: boolean;
-      has_shots: boolean;
-      has_storyboard: boolean;
-      rendered: boolean;
-    }[];
-    next_steps: string[];
   }
 
   /** Settles the chat's in-conversation progress row for a background op. */
@@ -114,16 +61,16 @@
     /** Auto mode: run this step right away when it is free and ready. */
     auto?: boolean;
     onautostart?: () => void;
-    intent: Intent;
-    options: Options;
-    projectState?: ProjectState | null;
-    onran?: (result: any, ctx?: RunContext) => void | Promise<void>;
+    intent: ChatIntent;
+    options: ChatOptions;
+    projectState?: ChatProjectState | null;
+    onran?: (result: unknown, ctx?: RunContext) => void | Promise<void>;
     onfocus?: (id: string) => void;
     /** Called when a background op launches; returns done/fail callbacks. */
     onop?: (label: string, ctx: RunContext) => OpHandle | undefined;
     onsuggest?: (text: string) => void;
     onbriefchange?: (brief: ReturnType<typeof normalizeBrief>) => void;
-    onreference?: (preset: any, style: any) => void;
+    onreference?: (preset: ProjectStylePreset, style: StyleFields) => void;
   } = $props();
 
   let intent = $derived(normalizeChatIntent(rawIntent));
@@ -132,9 +79,9 @@
       ? `${path}${path.includes('?') ? '&' : '?'}director_proposal=${encodeURIComponent(intent.director_proposal)}`
       : path;
   }
-  const post = (path: string, body?: unknown) => apiPost(proposalPath(path), body);
-  const del = (path: string) => apiDel(proposalPath(path));
-  const patch = (path: string, body: unknown) => apiPatch(proposalPath(path), body);
+  const post = <T = unknown>(path: string, body?: unknown) => apiPost<T>(proposalPath(path), body);
+  const del = <T = unknown>(path: string) => apiDel<T>(proposalPath(path));
+  const patch = <T = unknown>(path: string, body: unknown) => apiPatch<T>(proposalPath(path), body);
 
   // Each card gets one fixed intent, so plain init from props is fine.
   let busy = $state(false);
@@ -158,13 +105,13 @@
   ] as const;
   let characterDraft = $state<Record<string, string>>(untrack(() => ({ ...(intent.character_changes ?? {}) })));
   let remakeReference = $state(true);
-  const changedCharacter = $derived(options.characters.find((c: any) => c.id === characterId) as any);
+  const changedCharacter = $derived(options.characters.find(c => c.id === characterId));
   let storyFormat = $state(untrack(() => (intent.action === 'generate_image' ? '1:1' : '9:16')));
   let imageType = $state(untrack(() => intent.asset_type ?? 'other'));
   // svelte-ignore state_referenced_locally
   let castIds: string[] = $state(
-    Array.isArray((intent as any).cast_ids) && (intent as any).cast_ids.length
-      ? [...(intent as any).cast_ids]
+    Array.isArray(intent.cast_ids) && intent.cast_ids.length
+      ? [...intent.cast_ids]
       : intent.character_id
         ? [intent.character_id]
         : []
@@ -178,7 +125,7 @@
   let shots = $state<{ id: string; shot_order: number; prompt: string }[]>([]);
   let maxAssets = $state(4);
   let autoAssets = $state(true);
-  let plannedAssets = $state<{ name: string; asset_type: string; shot_orders: number[] }[] | null>(null);
+  let plannedAssets = $state<PlannedAsset[] | null>(null);
   // Ideation phase for generate_script: null = phase 1 (raw idea),
   // set = phase 2 (pick one of the developed concepts).
   let ideaOptions = $state<IdeaOptions | null>(null);
@@ -299,7 +246,7 @@
     }
   });
 
-  function videoLabel(o: Option): string {
+  function videoLabel(o: ChatOptions['outputs'][number]): string {
     const file = o.video?.split('/').pop();
     return file ?? o.id;
   }
@@ -308,7 +255,7 @@
   async function developIdeas() {
     developing = true;
     try {
-      const result: IdeaOptions = await post('/ideas/develop', { idea: idea.trim() });
+      const result = await post<IdeaOptions>('/ideas/develop', { idea: idea.trim() });
       ideaOptions = result;
       selectedIdea = result.recommended_index ?? 0;
       idea = composedIdea();
@@ -492,51 +439,69 @@
     }
     busy = true;
     try {
-      let result: any;
+      let result: unknown;
       let focusId: string | undefined;
       switch (intent.action) {
-        case 'generate_scenes':
-          result = await post(`/scenes/${sceneId}/generate`, {});
-          focusId = result.id ?? sceneId;
+        case 'generate_scenes': {
+          const scene = await post<Partial<Scene>>(`/scenes/${sceneId}/generate`, {});
+          result = scene;
+          focusId = scene.id ?? sceneId;
           toast.success('Scene expanded');
           break;
-        case 'render_shot':
-          result = await post('/render/from-shot', { scene_id: sceneId, shot_id: shotId });
-          focusId = result.job_id;
-          toast.success(`Render started — job ${result.job_id}`);
+        }
+        case 'render_shot': {
+          const started = await post<{ job_id: string }>('/render/from-shot', { scene_id: sceneId, shot_id: shotId });
+          result = started;
+          focusId = started.job_id;
+          toast.success(`Render started — job ${started.job_id}`);
           break;
-        case 'refine_scene':
-          result = await post(`/scenes/${sceneId}/refine`, { instruction: idea.trim() });
+        }
+        case 'refine_scene': {
+          const refined = await post<{ scene: Scene; note?: string }>(`/scenes/${sceneId}/refine`, {
+            instruction: idea.trim()
+          });
+          result = refined;
           focusId = sceneId;
-          toast.success(result.note || 'Scene refined');
+          toast.success(refined.note || 'Scene refined');
           break;
-        case 'refine_shot':
-          result = await post(`/shots/${shotId}/refine`, { instruction: idea.trim() });
+        }
+        case 'refine_shot': {
+          const refined = await post<{ shot: Shot; note?: string }>(`/shots/${shotId}/refine`, {
+            instruction: idea.trim()
+          });
+          result = refined;
           focusId = shotId;
-          toast.success(result.note || 'Shot refined');
+          toast.success(refined.note || 'Shot refined');
           break;
-        case 'delete_scene':
-          result = await del(`/scenes/${sceneId}`);
-          toast.success(`Scene deleted — ${result.shots_deleted ?? 0} shots removed`);
+        }
+        case 'delete_scene': {
+          const deleted = await del<{ shots_deleted?: number }>(`/scenes/${sceneId}`);
+          result = deleted;
+          toast.success(`Scene deleted — ${deleted.shots_deleted ?? 0} shots removed`);
           break;
+        }
         case 'style_ingest':
           result = await post('/style/ingest');
           toast.success('Style updated');
           break;
-        case 'plan_assets':
-          result = await post(`/scenes/${sceneId}/assets/plan`, {
+        case 'plan_assets': {
+          const plan = await post<AssetPlan>(`/scenes/${sceneId}/assets/plan`, {
             instruction: idea.trim(),
             max_assets: maxAssets
           });
-          plannedAssets = result.assets ?? [];
+          result = plan;
+          plannedAssets = plan.assets ?? [];
           focusId = sceneId;
-          toast.success(`${result.assets?.length ?? 0} asset suggestions`);
+          toast.success(`${plan.assets?.length ?? 0} asset suggestions`);
           break;
-        case 'retry_render':
-          result = await post(`/outputs/${outputId}/retry`);
-          focusId = result.job_id;
-          toast.success(`Corrective re-render started — job ${result.job_id}`);
+        }
+        case 'retry_render': {
+          const started = await post<{ job_id: string }>(`/outputs/${outputId}/retry`);
+          result = started;
+          focusId = started.job_id;
+          toast.success(`Corrective re-render started — job ${started.job_id}`);
           break;
+        }
       }
       await onran?.(result, ctx); // let the canvas refresh before zooming to the new node
       if (focusId) onfocus?.(focusId);

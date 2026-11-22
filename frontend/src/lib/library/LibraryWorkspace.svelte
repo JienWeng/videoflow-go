@@ -6,6 +6,7 @@
   import { Users, Images } from '@lucide/svelte';
   import CharacterLibrary from './CharacterLibrary.svelte';
   import AssetLibrary from './AssetLibrary.svelte';
+  import type { Project } from '$lib/api-types';
   const prefix = $props.id();
   const tab = $derived(
     (page.state as { libraryTab?: 'characters' | 'media' }).libraryTab ??
@@ -43,7 +44,7 @@
     replaceState(url, { ...page.state, libraryTab: value });
   }
   onMount(() => {
-    get('/projects/active')
+    get<Project>('/projects/active')
       .then(project => (projectName = project.name ?? ''))
       .catch(() => {});
   });

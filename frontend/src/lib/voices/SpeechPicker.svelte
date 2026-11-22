@@ -3,6 +3,10 @@
   import { Button } from '$lib/components/ui/button';
   type Model = { id: string; name: string; default: boolean };
   type Voice = { id: string; name: string; description: string; preview_url?: string };
+  /** GET /voice/catalog/{provider}/models (speech_catalog.go). */
+  type ModelCatalog = { models: Model[]; checked_at: string; source?: string; stale: boolean; warning?: string };
+  /** GET /voice/catalog/{provider}/voices */
+  type VoicePage = { voices: Voice[]; next_page?: string; suggested?: Voice | null; reason: string; checked_at?: string };
   let {
     provider,
     character,
@@ -28,7 +32,7 @@
     modelLoading = true;
     error = '';
     try {
-      const c = await get(`/voice/catalog/${p}/models${refresh ? '?refresh=true' : ''}`);
+      const c = await get<ModelCatalog>(`/voice/catalog/${p}/models${refresh ? '?refresh=true' : ''}`);
       if (seq !== sequence) return;
       models = c.models;
       checked = c.checked_at;
@@ -64,12 +68,12 @@
     loading = true;
     error = '';
     try {
-      const result = await get(
+      const result = await get<VoicePage>(
         `/voice/catalog/${p}/voices?character_id=${encodeURIComponent(character)}&search=${encodeURIComponent(query)}&language=${encodeURIComponent(language)}${more ? '&page=' + encodeURIComponent(next) : ''}`
       );
       if (seq !== voiceSequence || p !== provider) return;
       voices = more
-        ? [...voices, ...result.voices.filter((v: Voice) => !voices.some(old => old.id === v.id))]
+        ? [...voices, ...result.voices.filter(v => !voices.some(old => old.id === v.id))]
         : result.voices;
       next = result.next_page ?? '';
       if (match) {

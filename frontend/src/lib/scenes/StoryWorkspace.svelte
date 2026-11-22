@@ -34,17 +34,30 @@
   } from '@lucide/svelte';
   import SceneListItem from '$lib/scenes/SceneListItem.svelte';
   import SceneDetail from '$lib/scenes/SceneDetail.svelte';
+  import type { SceneRenderRequest } from '$lib/scenes/types';
+  import type {
+    Asset,
+    AssetPlan,
+    Character,
+    PlannedAsset,
+    ProjectProgress,
+    RenderJob,
+    Scene,
+    Script,
+    Shot,
+    StyleGuide
+  } from '$lib/api-types';
 
-  let scenes: any[] = $state([]);
-  let scripts: any[] = $state([]);
-  let progress: any = $state(null);
-  const progressFor = (id: string) => progress?.scenes?.find((p: any) => p.scene_id === id) ?? null;
-  let characters: any[] = $state([]);
-  let shotsByScene: Record<string, any[]> = $state({});
-  let storyboards: Record<string, any> = $state({});
+  let scenes: Scene[] = $state([]);
+  let scripts: Script[] = $state([]);
+  let progress = $state<ProjectProgress | null>(null);
+  const progressFor = (id: string) => progress?.scenes?.find(p => p.scene_id === id) ?? null;
+  let characters: Character[] = $state([]);
+  let shotsByScene: Record<string, Shot[]> = $state({});
+  let storyboards: Record<string, Asset> = $state({});
   // A scene's small picture: its storyboard, or a connected picture when it has none (its
   // clips may use connected pictures and never get a storyboard).
-  let previews: Record<string, any> = $state({});
+  let previews: Record<string, Asset | null> = $state({});
   // The scene's clips use its connected pictures, so nothing waits on a storyboard.
   const usesReferences = (id: string) => !!progressFor(id)?.reference_mode;
   let renderedScenes: Record<string, boolean> = $state({});
@@ -61,19 +74,19 @@
   let targetDuration: number | '' = $state('');
   let sceneCount: number | '' = $state('');
   let castSelection: Record<string, string[]> = $state({});
-  let deleteTarget: any = $state(null);
+  let deleteTarget = $state<Scene | null>(null);
   let sceneRefine: Record<string, string> = $state({});
   let shotRefine: Record<string, string> = $state({});
   let autoProps: Record<string, boolean> = $state({});
   let assetInstr: Record<string, string> = $state({});
   let assetMax: Record<string, number> = $state({});
-  let generatedAssets: Record<string, any[]> = $state({});
-  let assetPlans: Record<string, { assets: any[]; reasoning: string } | null> = $state({});
+  let generatedAssets: Record<string, Asset[]> = $state({});
+  let assetPlans: Record<string, AssetPlan | null> = $state({});
   let planSelected: Record<string, boolean[]> = $state({});
-  let style: any = $state(null);
+  let style = $state<StyleGuide | null>(null);
   let conversationInstruction = $state('');
   // Storyboard lightbox: the asset currently shown enlarged in a Dialog.
-  let lightbox: any = $state(null);
+  let lightbox = $state<Asset | null>(null);
   // Destructive-confirm: { title, message, run } shown in a dialog when content
   // would be overwritten (regenerate shots / re-expand / regenerate storyboard).
   let confirmAction: { title: string; message: string; run: () => void } | null = $state(null);
@@ -85,25 +98,23 @@
   // discards typing) and guard navigation while anything is unsaved.
   const SCENE_FIELDS = ['title', 'summary', 'duration', 'aspect_ratio'] as const;
   const SHOT_FIELDS = ['prompt', 'duration', 'camera', 'movement'] as const;
-  let sceneBaseline: Record<string, Record<string, any>> = $state({});
-  let shotBaseline: Record<string, Record<string, any>> = $state({});
+  type SceneSnapshot = Pick<Scene, (typeof SCENE_FIELDS)[number]>;
+  type ShotSnapshot = Pick<Shot, (typeof SHOT_FIELDS)[number]>;
+  let sceneBaseline: Record<string, SceneSnapshot> = $state({});
+  let shotBaseline: Record<string, ShotSnapshot> = $state({});
 
-  function snapScene(s: any): Record<string, any> {
-    const out: Record<string, any> = {};
-    for (const f of SCENE_FIELDS) out[f] = s[f];
-    return out;
+  function snapScene(s: Scene): SceneSnapshot {
+    return { title: s.title, summary: s.summary, duration: s.duration, aspect_ratio: s.aspect_ratio };
   }
-  function snapShot(sh: any): Record<string, any> {
-    const out: Record<string, any> = {};
-    for (const f of SHOT_FIELDS) out[f] = sh[f];
-    return out;
+  function snapShot(sh: Shot): ShotSnapshot {
+    return { prompt: sh.prompt, duration: sh.duration, camera: sh.camera, movement: sh.movement };
   }
-  function sceneDirty(s: any): boolean {
+  function sceneDirty(s: Scene): boolean {
     const base = sceneBaseline[s.id];
     if (!base) return false;
     return SCENE_FIELDS.some(f => s[f] !== base[f]);
   }
-  function shotDirty(sh: any): boolean {
+  function shotDirty(sh: Shot): boolean {
     const base = shotBaseline[sh.id];
     if (!base) return false;
     return SHOT_FIELDS.some(f => sh[f] !== base[f]);
@@ -113,7 +124,7 @@
     scenes.filter(s => sceneDirty(s)).length +
       Object.values(shotsByScene)
         .flat()
-        .filter((sh: any) => shotDirty(sh)).length
+        .filter(sh => shotDirty(sh)).length
   );
 
   // Master–detail selection (in-memory). The "Create story" generator opens in a
@@ -177,7 +188,7 @@
     });
   });
 
-  function stageOf(s: any): 'new' | 'expanded' | 'shots' | 'storyboard' | 'rendered' {
+  function stageOf(s: Scene): 'new' | 'expanded' | 'shots' | 'storyboard' | 'rendered' {
     if (renderedScenes[s.id]) return 'rendered';
     if (storyboards[s.id]) return 'storyboard';
     if ((shotsByScene[s.id]?.length ?? 0) > 0) return 'shots';
@@ -191,9 +202,9 @@
       .slice()
       .sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''))
       .filter(script => scenes.some(scene => scene.script_id === script.id))
-      .map((script, i) => ({ id: script.id as string, number: i + 1, title: (script.title || 'Untitled') as string }))
+      .map((script, i) => ({ id: script.id, number: i + 1, title: script.title || 'Untitled' }))
   );
-  const episodeOf = (scene: any) => episodes.find(e => e.id === scene.script_id);
+  const episodeOf = (scene: Scene) => episodes.find(e => e.id === scene.script_id);
   let episodeFilter = $state('');
   let episodeSortSet = false;
   $effect(() => {
@@ -234,10 +245,10 @@
   // A stage is "done" if it OR any later stage is done. Expansion can't be told
   // apart from a stub by scene_json key-count alone (manual scenes, partial
   // specs), so the presence of shots / a storyboard / a render IMPLIES expanded.
-  function hasExpandJson(s: any): boolean {
+  function hasExpandJson(s: Scene): boolean {
     return !!(s.scene_json && Object.keys(s.scene_json).length > 1);
   }
-  function isExpanded(s: any): boolean {
+  function isExpanded(s: Scene): boolean {
     return hasExpandJson(s) || (shotsByScene[s.id]?.length ?? 0) > 0 || !!storyboards[s.id] || !!renderedScenes[s.id];
   }
 
@@ -245,9 +256,9 @@
   // edits: a dirty scene/shot keeps its in-memory field values; everything else
   // (and all non-editable fields) take the server's values, and the baseline is
   // (re)set to the server snapshot so saved rows go clean.
-  function mergeScenes(fresh: any[]) {
+  function mergeScenes(fresh: Scene[]) {
     const prevById = new Map(scenes.map(s => [s.id, s]));
-    const baseline: Record<string, Record<string, any>> = {};
+    const baseline: Record<string, SceneSnapshot> = {};
     const merged = fresh.map(srv => {
       // Snapshot the baseline from the UNTOUCHED server row first, so it always
       // reflects the latest server field values — never the kept edits below.
@@ -263,7 +274,7 @@
     sceneBaseline = baseline;
     return merged;
   }
-  function mergeShots(sceneId: string, fresh: any[]) {
+  function mergeShots(sceneId: string, fresh: Shot[]) {
     const prevById = new Map((shotsByScene[sceneId] ?? []).map(s => [s.id, s]));
     const merged = fresh.map(srv => {
       // Snapshot the baseline from the UNTOUCHED server row first (before the
@@ -281,20 +292,24 @@
   }
 
   async function refresh() {
-    const [freshScenes, chars, freshScripts] = await Promise.all([get('/scenes'), get('/characters'), get('/scripts')]);
+    const [freshScenes, chars, freshScripts] = await Promise.all([
+      get<Scene[]>('/scenes'),
+      get<Character[]>('/characters'),
+      get<Script[]>('/scripts')
+    ]);
     characters = chars;
     scripts = freshScripts;
     const [allAssets, jobs, freshProgress] = await Promise.all([
-      get('/assets'),
-      get('/render-jobs').catch(() => []),
-      get('/production/progress').catch(() => null)
+      get<Asset[]>('/assets'),
+      get<RenderJob[]>('/render-jobs').catch((): RenderJob[] => []),
+      get<ProjectProgress>('/production/progress').catch(() => null)
     ]);
     progress = freshProgress;
     generatedAssets = Object.fromEntries(
-      freshScenes.map((scene: any) => [
+      freshScenes.map(scene => [
         scene.id,
         allAssets.filter(
-          (a: any) =>
+          a =>
             a.type !== 'storyboard' && (scene.asset_ids_json?.includes(a.id) || a.metadata_json?.scene_id === scene.id)
         )
       ])
@@ -303,26 +318,26 @@
     for (const a of allAssets) {
       const sid = a.metadata_json?.scene_id;
       if (
+        sid &&
         !storyboards[sid] &&
         a.type === 'storyboard' &&
-        sid &&
-        freshScenes.find((scene: any) => scene.id === sid)?.asset_ids_json?.includes(a.id)
+        freshScenes.find(scene => scene.id === sid)?.asset_ids_json?.includes(a.id)
       )
         storyboards[sid] = a;
     }
-    const picture = (a: any) =>
+    const picture = (a: Asset) =>
       /\.(png|jpe?g|webp|gif)$/i.test(a.file_path ?? '') &&
       a.type !== 'storyboard' &&
       a.metadata_json?.consistency_review !== 'rejected';
     previews = Object.fromEntries(
-      freshScenes.map((scene: any) => [
+      freshScenes.map(scene => [
         scene.id,
         storyboards[scene.id] ??
           allAssets.find(
-            (a: any) =>
+            a =>
               picture(a) &&
               (scene.asset_ids_json?.includes(a.id) ||
-                (a.type === 'character_reference' && scene.character_ids_json?.includes(a.character_id)))
+                (a.type === 'character_reference' && !!a.character_id && scene.character_ids_json?.includes(a.character_id)))
           ) ??
           null
       ])
@@ -332,7 +347,7 @@
     await Promise.all(
       scenes.map(async s => {
         // One scene's shots failing must not blank the whole list.
-        const fresh = await get(`/scenes/${s.id}/shots`).catch(() => []);
+        const fresh = await get<Shot[]>(`/scenes/${s.id}/shots`).catch((): Shot[] => []);
         shotsByScene[s.id] = mergeShots(s.id, fresh);
       })
     );
@@ -346,7 +361,7 @@
       })
       .catch(e => (error = e.message))
       .finally(() => (loaded = true));
-    get('/style')
+    get<StyleGuide>('/style')
       .then(s => (style = s))
       .catch(() => {});
 
@@ -378,11 +393,11 @@
     }
   }
 
-  const expandScene = (s: any) =>
+  const expandScene = (s: Scene) =>
     run(`expand-${s.id}`, () => post(`/scenes/${s.id}/generate`, { character_ids: castSelection[s.id] ?? [] }));
 
   // Re-expand overwrites the expanded scene + drops its shots → confirm first.
-  function expandSceneGuarded(s: any) {
+  function expandSceneGuarded(s: Scene) {
     if (isExpanded(s)) {
       confirmAction = {
         title: 'Re-expand scene?',
@@ -395,7 +410,7 @@
     }
   }
 
-  async function generateShots(s: any) {
+  async function generateShots(s: Scene) {
     const key = `shots-${s.id}`;
     opBusy[key] = true;
     try {
@@ -409,7 +424,7 @@
             opBusy[key] = false;
             // Shots changed (and auto props may have generated assets) — refetch
             // this scene's shots and drop any now-stale suggestion plan.
-            shotsByScene[s.id] = mergeShots(s.id, await get(`/scenes/${s.id}/shots`));
+            shotsByScene[s.id] = mergeShots(s.id, await get<Shot[]>(`/scenes/${s.id}/shots`));
             shotsByScene = shotsByScene;
             assetPlans[s.id] = null;
           },
@@ -423,7 +438,7 @@
   }
 
   // Regenerating replaces every existing shot → confirm when shots exist.
-  function generateShotsGuarded(s: any) {
+  function generateShotsGuarded(s: Scene) {
     if ((shotsByScene[s.id]?.length ?? 0) > 0) {
       confirmAction = {
         title: 'Regenerate shots?',
@@ -436,7 +451,7 @@
     }
   }
 
-  async function generateStoryboard(s: any) {
+  async function generateStoryboard(s: Scene) {
     const key = `sb-${s.id}`;
     opBusy[key] = true;
     try {
@@ -456,7 +471,7 @@
   }
 
   // Regenerating replaces the existing 分镜图 → confirm when one exists.
-  function generateStoryboardGuarded(s: any) {
+  function generateStoryboardGuarded(s: Scene) {
     if (storyboards[s.id]) {
       confirmAction = {
         title: 'Regenerate storyboard?',
@@ -469,7 +484,7 @@
     }
   }
 
-  async function renderScene(s: any) {
+  async function renderScene(s: SceneRenderRequest) {
     const key = `render-${s.id}`;
     if (busy[key]) return;
     busy[key] = true;
@@ -510,7 +525,7 @@
   // Pipeline stepper: one entry per stage, computed from data already loaded.
   // Each stage's "done" uses the later-done rule so the stepper never shows an
   // earlier stage as incomplete once a later one exists.
-  function sceneSteps(s: any) {
+  function sceneSteps(s: Scene) {
     const hasShots = (shotsByScene[s.id]?.length ?? 0) > 0;
     const hasStoryboard = !!storyboards[s.id];
     const hasRender = !!renderedScenes[s.id];
@@ -557,7 +572,7 @@
 
   // Furthest-completed stage index (-1 = nothing done) → drives the left accent
   // colour and the at-a-glance status line.
-  function progressIndex(s: any) {
+  function progressIndex(s: Scene) {
     const steps = sceneSteps(s);
     let last = -1;
     for (let i = 0; i < steps.length; i++) if (steps[i].done) last = i;
@@ -571,13 +586,13 @@
     'bg-amber-500/80', // storyboard
     'bg-emerald-500/80' // rendered
   ];
-  function accentDot(s: any) {
+  function accentDot(s: Scene) {
     const i = progressIndex(s);
     return i >= 0 ? DOT[i] : 'bg-border';
   }
 
   // One-line, human status derived purely from already-loaded data.
-  function statusLine(s: any): string {
+  function statusLine(s: Scene): string {
     const shots = shotsByScene[s.id]?.length ?? 0;
     const parts: string[] = [];
     const p = progressFor(s.id);
@@ -602,7 +617,7 @@
     castSelection[sceneId] = cur.includes(charId) ? cur.filter(c => c !== charId) : [...cur, charId];
   }
 
-  const saveScene = (s: any) =>
+  const saveScene = (s: Scene) =>
     run(
       `save-${s.id}`,
       () => patch(`/scenes/${s.id}`, changedFields(s, sceneBaseline[s.id], SCENE_FIELDS)),
@@ -614,7 +629,7 @@
     if (!s) return;
     busy[`delete-${s.id}`] = true;
     try {
-      const r = await del(`/scenes/${s.id}`);
+      const r = await del<{ deleted: string; shots_deleted: number }>(`/scenes/${s.id}`);
       deleteTarget = null;
       // If we just deleted the selected scene, drop selection so the $effect
       // falls back to the first remaining scene (or the empty state).
@@ -628,13 +643,13 @@
     }
   }
 
-  async function deleteShot(scene: any, shot: any) {
+  async function deleteShot(scene: Scene, shot: Shot) {
     busy[`delete-${shot.id}`] = true;
     try {
       await del(`/shots/${shot.id}`);
       delete shotBaseline[shot.id];
       toast.success('Shot deleted.');
-      shotsByScene[scene.id] = mergeShots(scene.id, await get(`/scenes/${scene.id}/shots`));
+      shotsByScene[scene.id] = mergeShots(scene.id, await get<Shot[]>(`/scenes/${scene.id}/shots`));
       shotsByScene = shotsByScene;
     } catch (e) {
       toast.error(errorMessage(e));
@@ -643,12 +658,12 @@
     }
   }
 
-  async function addShot(scene: any) {
+  async function addShot(scene: Scene) {
     busy[`add-${scene.id}`] = true;
     try {
       await post(`/scenes/${scene.id}/shots`, {});
       toast.success('Shot added.');
-      shotsByScene[scene.id] = mergeShots(scene.id, await get(`/scenes/${scene.id}/shots`));
+      shotsByScene[scene.id] = mergeShots(scene.id, await get<Shot[]>(`/scenes/${scene.id}/shots`));
       shotsByScene = shotsByScene;
     } catch (e) {
       toast.error(errorMessage(e));
@@ -658,7 +673,7 @@
   }
 
   // Move a shot up/down by swapping with its neighbour, then persist the order.
-  async function moveShot(scene: any, shot: any, dir: -1 | 1) {
+  async function moveShot(scene: Scene, shot: Shot, dir: -1 | 1) {
     const list = (shotsByScene[scene.id] ?? []).slice();
     const i = list.findIndex(s => s.id === shot.id);
     const j = i + dir;
@@ -666,7 +681,7 @@
     [list[i], list[j]] = [list[j], list[i]];
     busy[`reorder-${scene.id}`] = true;
     try {
-      const ordered = await put(`/scenes/${scene.id}/shots/order`, {
+      const ordered = await put<Shot[]>(`/scenes/${scene.id}/shots/order`, {
         ordered_ids: list.map(s => s.id)
       });
       shotsByScene[scene.id] = mergeShots(scene.id, ordered);
@@ -678,12 +693,12 @@
     }
   }
 
-  async function refineScene(s: any) {
+  async function refineScene(s: Scene) {
     const instruction = (sceneRefine[s.id] ?? '').trim();
     if (!instruction) return;
     busy[`refine-${s.id}`] = true;
     try {
-      const r = await post(`/scenes/${s.id}/refine`, { instruction });
+      const r = await post<{ scene: Scene; note?: string }>(`/scenes/${s.id}/refine`, { instruction });
       Object.assign(s, r.scene);
       sceneBaseline[s.id] = snapScene(s); // refined values are the new clean baseline
       sceneRefine[s.id] = '';
@@ -695,7 +710,7 @@
     }
   }
 
-  async function refineShot(scene: any, shot: any) {
+  async function refineShot(scene: Scene, shot: Shot) {
     const instruction = (shotRefine[scene.id] ?? '').trim();
     if (!instruction) {
       toast.error('Type an instruction in the shot refine box first.');
@@ -703,7 +718,7 @@
     }
     busy[`refine-${shot.id}`] = true;
     try {
-      const r = await post(`/shots/${shot.id}/refine`, { instruction });
+      const r = await post<{ shot: Shot; note?: string }>(`/shots/${shot.id}/refine`, { instruction });
       Object.assign(shot, r.shot);
       shotBaseline[shot.id] = snapShot(shot);
       toast.success(r.note || 'Refined');
@@ -776,7 +791,7 @@
     };
   }
 
-  async function startAssetGeneration(s: any, instruction: string, maxAssets: number, items?: any[]) {
+  async function startAssetGeneration(s: Scene, instruction: string, maxAssets: number, items?: PlannedAsset[]) {
     const key = `assets-${s.id}`;
     opBusy[key] = true;
     try {
@@ -788,12 +803,12 @@
           label: 'Asset generation',
           onDone: async op => {
             opBusy[key] = false;
-            const ids: string[] = op.result_json?.asset_ids ?? [];
-            const all = await get('/assets');
-            generatedAssets[s.id] = all.filter((a: any) => ids.includes(a.id));
+            const ids = op.result_json?.asset_ids ?? [];
+            const all = await get<Asset[]>('/assets');
+            generatedAssets[s.id] = all.filter(a => ids.includes(a.id));
             assetPlans[s.id] = null; // any pending suggestion plan is now out of date
             // Generation binds reviewed references to the scene; refresh its shots.
-            shotsByScene[s.id] = mergeShots(s.id, await get(`/scenes/${s.id}/shots`));
+            shotsByScene[s.id] = mergeShots(s.id, await get<Shot[]>(`/scenes/${s.id}/shots`));
             shotsByScene = shotsByScene;
           },
           onFail: () => (opBusy[key] = false)
@@ -805,13 +820,13 @@
     }
   }
 
-  const generateAssets = (s: any) => startAssetGeneration(s, (assetInstr[s.id] ?? '').trim(), assetMax[s.id] ?? 4);
+  const generateAssets = (s: Scene) => startAssetGeneration(s, (assetInstr[s.id] ?? '').trim(), assetMax[s.id] ?? 4);
 
-  async function suggestAssets(s: any) {
+  async function suggestAssets(s: Scene) {
     busy[`plan-${s.id}`] = true;
     assetPlans[s.id] = null; // hide any stale plan while re-planning
     try {
-      const plan = await post(`/scenes/${s.id}/assets/plan`, {
+      const plan = await post<AssetPlan>(`/scenes/${s.id}/assets/plan`, {
         instruction: (assetInstr[s.id] ?? '').trim(),
         max_assets: assetMax[s.id] ?? 4
       });
@@ -825,7 +840,7 @@
     }
   }
 
-  async function generateSelectedAssets(s: any) {
+  async function generateSelectedAssets(s: Scene) {
     const plan = assetPlans[s.id];
     if (!plan) return;
     const selected = plan.assets.filter((_, i) => planSelected[s.id]?.[i]);
@@ -838,7 +853,7 @@
     await startAssetGeneration(s, instruction, selected.length, selected);
   }
 
-  const saveShot = (shot: any) =>
+  const saveShot = (shot: Shot) =>
     run(
       `save-${shot.id}`,
       () => patch(`/shots/${shot.id}`, changedFields(shot, shotBaseline[shot.id], SHOT_FIELDS)),
@@ -893,10 +908,10 @@
             style:width={`${Math.round(100 * progress.video_ready / progress.total)}%`}></div></div>
           <p class="text-sm">{progress.summary}</p>
         </div>
-        {#if progress.next}<Button
+        {#if progress.next}{@const next = progress.next}<Button
           size="sm"
-          variant={progress.next.stage === 'needs_attention' ? 'default' : 'outline'}
-          onclick={() => { selectedId = progress.next.scene_id; mobileDetail = true; }}>Next: {progress.next.next.label} · {progress.next.title}</Button>
+          variant={next.stage === 'needs_attention' ? 'default' : 'outline'}
+          onclick={() => { selectedId = next.scene_id; mobileDetail = true; }}>Next: {next.next.label} · {next.title}</Button>
         {:else if progress.video_ready === progress.total}<Button size="sm" href="/?view=edit">Open editor</Button>{/if}
       </div>
     {/if}
@@ -1044,7 +1059,7 @@
                 selected={s.id === selectedId}
                 statusLine={statusLine(s)}
                 accentDot={accentDot(s)}
-                dirty={sceneDirty(s) || (shotsByScene[s.id] ?? []).some((sh: any) => shotDirty(sh))}
+                dirty={sceneDirty(s) || (shotsByScene[s.id] ?? []).some(sh => shotDirty(sh))}
                 storyboard={previews[s.id] ?? null}
                 onselect={() => selectScene(s.id)}
               />
@@ -1083,7 +1098,7 @@
               {busy}
               {opBusy}
               sceneDirty={sceneDirty(selectedScene)}
-              shotDirty={(sh: any) => shotDirty(sh)}
+              shotDirty={(sh: Shot) => shotDirty(sh)}
               storyboard={storyboards[selectedScene.id] ?? null}
               preview={previews[selectedScene.id] ?? null}
               shots={shotsByScene[selectedScene.id] ?? []}
@@ -1111,8 +1126,8 @@
               onGenerateSelectedAssets={generateSelectedAssets}
               onGenerateStoryboard={generateStoryboardGuarded}
               onRenderScene={renderScene}
-              onDelete={(s: any) => (deleteTarget = s)}
-              onLightbox={(a: any) => (lightbox = a)}
+              onDelete={(s: Scene) => (deleteTarget = s)}
+              onLightbox={(a: Asset | null) => (lightbox = a)}
               onReferencesChanged={refresh}
               progress={progressFor(selectedScene.id)}
             />
@@ -1162,7 +1177,7 @@
   <Dialog.Content>
     <Dialog.Header>
       <Dialog.Title>
-        Delete scene and its {shotsByScene[deleteTarget?.id]?.length ?? 0} shots?
+        Delete scene and its {(deleteTarget && shotsByScene[deleteTarget.id]?.length) ?? 0} shots?
       </Dialog.Title>
       <Dialog.Description>
         "{deleteTarget?.title}" and all of its shots will be permanently deleted.

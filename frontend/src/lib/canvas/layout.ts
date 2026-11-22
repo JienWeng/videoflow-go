@@ -60,7 +60,9 @@ export function layout(nodes: Node[], edges: Edge[]): Node[] {
   const owner = new Map<string, string>();
   // Explicit scene ownership wins. Shared hubs never move another scene's shots.
   for (const n of sorted) {
-    const id = String(n.data?.scene_id ?? (n.data?.metadata_json as any)?.scene_id ?? '');
+    const meta = n.data?.metadata_json;
+    const metaScene = meta && typeof meta === 'object' && 'scene_id' in meta ? meta.scene_id : undefined;
+    const id = String(n.data?.scene_id ?? metaScene ?? '');
     if (scenes.some(s => s.id === id) && kind(n) !== 'character' && !references.has(n.id)) owner.set(n.id, id);
   }
   for (const scene of scenes) owner.set(scene.id, scene.id);

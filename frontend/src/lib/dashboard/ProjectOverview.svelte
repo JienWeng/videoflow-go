@@ -5,9 +5,13 @@
   import { Button } from '$lib/components/ui/button';
   import { ArrowRight } from '@lucide/svelte';
   import { makeOverview } from './overview.mjs';
+  import type { ApiGraph } from '$lib/canvas/transform';
+  import type { SavedComposition } from '$lib/composition/types';
+  import type { Op } from '$lib/ops';
+  import type { Asset, DirectorSession, DirectorStatus, Project, RenderJob } from '$lib/api-types';
 
   let { onopenStudio, active = true }: { onopenStudio: () => void; active?: boolean } = $props();
-  let project: any = $state(null);
+  let project = $state<Project | null>(null);
   let model = $state<ReturnType<typeof makeOverview> | null>(null);
   let busy = $state(false),
     error = $state('');
@@ -31,15 +35,15 @@
     error = '';
     try {
       const [active, graph, assets, ops, jobs, sessions, aiHealth, appHealth, compositions] = await Promise.all([
-        get('/projects/active'),
-        get('/graph'),
-        get('/assets'),
-        get('/ops?limit=all'),
-        get('/render-jobs'),
-        get('/director/sessions').catch(() => null),
-        get('/director/status').catch(() => null),
+        get<Project>('/projects/active'),
+        get<ApiGraph>('/graph'),
+        get<Asset[]>('/assets'),
+        get<Op[]>('/ops?limit=all'),
+        get<RenderJob[]>('/render-jobs'),
+        get<DirectorSession[]>('/director/sessions').catch(() => null),
+        get<DirectorStatus>('/director/status').catch(() => null),
         get('/health').catch(() => null),
-        get('/compositions').catch(() => null)
+        get<SavedComposition[]>('/compositions').catch(() => null)
       ]);
       const next = makeOverview({ graph, assets, ops, jobs, sessions, aiHealth, appHealth, compositions });
       project = active;

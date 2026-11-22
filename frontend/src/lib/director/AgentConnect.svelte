@@ -7,6 +7,8 @@
 
   type Login = { status: string; url?: string; code?: string; needs_code?: boolean; message?: string };
   type Engine = { engine: string; installed: boolean; signed_in?: boolean; method?: string };
+  /** An AI tool's sign-in state (GET /director/auth/{engine}). */
+  type AuthState = { signed_in?: boolean; login?: Login | null };
   let { engines = [], highlight = '', onchange = () => {} }: { engines?: Engine[]; highlight?: string; onchange?: () => void } = $props();
 
   const NAMES: Record<string, string> = { codex: 'Codex', claude: 'Claude Code' };
@@ -24,7 +26,7 @@
     clearInterval(timers[engine]);
     timers[engine] = setInterval(async () => {
       try {
-        const state = await get(`/director/auth/${engine}`);
+        const state = await get<AuthState>(`/director/auth/${engine}`);
         logins[engine] = state.login ?? null;
         if (state.signed_in || !active(state.login)) {
           clearInterval(timers[engine]);
@@ -38,7 +40,7 @@
   async function start(engine: string) {
     busy[engine] = true; errors[engine] = ''; pasted[engine] = '';
     try {
-      const login: Login = await post(`/director/auth/${engine}/start`, {});
+      const login = await post<Login>(`/director/auth/${engine}/start`, {});
       logins[engine] = login;
       if (active(login)) poll(engine);
       else errors[engine] = login.message ?? 'Sign-in could not start.';
@@ -49,7 +51,7 @@
     event.preventDefault();
     if (!pasted[engine]?.trim()) return;
     busy[engine] = true; errors[engine] = '';
-    try { const state = await post(`/director/auth/${engine}/code`, { code: pasted[engine] }); logins[engine] = state.login ?? null; poll(engine); }
+    try { const state = await post<AuthState>(`/director/auth/${engine}/code`, { code: pasted[engine] }); logins[engine] = state.login ?? null; poll(engine); }
     catch (e) { errors[engine] = errorMessage(e, String(e)); }
     finally { busy[engine] = false; }
   }

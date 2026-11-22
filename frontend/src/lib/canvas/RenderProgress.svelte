@@ -61,7 +61,7 @@
       if (inFlight) return;
       inFlight = true;
       try {
-        const response = await get(`/render-jobs/${encodeURIComponent(jobId)}`);
+        const response = await get<Detail | null>(`/render-jobs/${encodeURIComponent(jobId)}`);
         if (!response?.job?.status) throw Error('Render details were not returned');
         if (live) {
           detail = response;

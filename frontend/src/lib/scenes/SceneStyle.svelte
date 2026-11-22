@@ -6,8 +6,8 @@
   import { protectDraft } from '$lib/protect-draft';
 
   let { scene, projectStyle, cast, disabled = false, onchanged, onstoryboard }: {
-    scene: { id: string; updated_at: string; scene_json?: { generation_brief?: { style?: string } } };
-    projectStyle?: { name?: string; style_prompt?: string };
+    scene: { id: string; updated_at: string; scene_json?: { generation_brief?: { style?: string } } | null };
+    projectStyle?: { name?: string; style_prompt?: string } | null;
     cast: { id: string; name: string }[];
     onstoryboard: () => void;
     disabled?: boolean;
@@ -30,7 +30,7 @@
     loading = true;
     catalogError = '';
     try {
-      catalog = (await get('/style-presets')).presets ?? [];
+      catalog = (await get<{ presets?: { id: string; name: string }[] }>('/style-presets')).presets ?? [];
     } catch {
       catalogError = 'Could not load presets. You can still enter a custom look.';
     } finally {

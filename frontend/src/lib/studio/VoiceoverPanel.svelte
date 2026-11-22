@@ -2,7 +2,8 @@
   import { get, post } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
   import Mic from '@lucide/svelte/icons/mic';
-  type Item = { asset_id: string; start: number; duration: number; text: string; speaker: string; cached: boolean };
+  import type { Clip, VoiceLine as Item, VoiceoverResult } from '$lib/composition/types';
+  import type { ProviderInfo } from '$lib/api-types';
   let {
     clips,
     disabled = false,
@@ -11,7 +12,7 @@
     onbusy,
     onvoices
   }: {
-    clips: any[];
+    clips: Clip[];
     disabled?: boolean;
     hasVoice?: boolean;
     playhead?: number;
@@ -38,8 +39,8 @@
     /* Defaults are fine. */
   }
   // Only offer providers that can actually speak (have a saved key).
-  get('/settings/providers')
-    .then((list: any[]) => {
+  get<ProviderInfo[]>('/settings/providers')
+    .then(list => {
       connected = ['elevenlabs', 'fish'].filter(n => list.some(p => p.name === n && p.configured));
       provider = connected.includes(saved.provider ?? '') ? saved.provider! : (connected[0] ?? '');
       if (provider === saved.provider && saved.voice) voice = saved.voice;
@@ -55,7 +56,9 @@
     loadingVoices = true;
     error = '';
     try {
-      const r = await get(`/voice/catalog/${p}/voices?language=en`);
+      const r = await get<{ voices?: { id: string; name: string; description?: string }[] }>(
+        `/voice/catalog/${p}/voices?language=en`
+      );
       if (seq !== sequence) return;
       voices = r.voices ?? [];
       if (voice && !voices.some(v => v.id === voice)) voices = [{ id: voice, name: 'Saved voice' }, ...voices];
@@ -88,9 +91,12 @@
     note = '';
     remember();
     try {
-      const r = await post('/compositions/voiceover', { clips, narrator: voice ? { provider, voice_id: voice } : {} });
-      const items = (r.items ?? []) as Item[];
-      const skipped = (r.skipped ?? []) as { reason: string }[];
+      const r = await post<VoiceoverResult>('/compositions/voiceover', {
+        clips,
+        narrator: voice ? { provider, voice_id: voice } : {}
+      });
+      const items = r.items ?? [];
+      const skipped = r.skipped ?? [];
       if (!items.length) {
         note = skipped[0]?.reason ?? 'No script lines found. Add rendered scene videos from Media first.';
         return;
@@ -122,12 +128,12 @@
     note = '';
     remember();
     try {
-      const r = await post('/compositions/voiceover', {
+      const r = await post<VoiceoverResult>('/compositions/voiceover', {
         clips: [],
         narrator: { provider, voice_id: voice },
         lines: [{ text, start: Math.max(0, Math.round(playhead * 1000) / 1000) }]
       });
-      const items = (r.items ?? []) as Item[];
+      const items = r.items ?? [];
       if (!items.length) {
         note = (r.skipped ?? [])[0]?.reason ?? 'Nothing was spoken.';
         return;

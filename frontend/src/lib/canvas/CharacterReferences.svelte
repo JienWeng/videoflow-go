@@ -6,13 +6,14 @@
   import { Button } from '$lib/components/ui/button';
   import LibraryPreview from '$lib/library/LibraryPreview.svelte';
   import { runBackgroundOp } from '$lib/ops';
+  import type { Asset, Character } from '$lib/api-types';
   let {
     characterId,
     disabled = false,
     onchanged
   }: { characterId: string; disabled?: boolean; onchanged: () => void } = $props();
-  let character: any = $state(null),
-    assets: any[] = $state([]),
+  let character = $state<Character | null>(null),
+    assets: Asset[] = $state([]),
     loading = $state(true),
     error = $state(''),
     notice = $state(''),
@@ -38,11 +39,11 @@
     loading = true;
     error = '';
     try {
-      const [c, all] = await Promise.all([get(`/characters/${id}`), get('/assets')]);
+      const [c, all] = await Promise.all([get<Character>(`/characters/${id}`), get<Asset[]>('/assets')]);
       if (scope.signal.aborted || token !== sequence || characterId !== id) return;
       character = c;
       assets = all.filter(
-        (a: any) => isImage(a.file_path) && (a.character_id === id || c.reference_asset_ids_json?.includes(a.id))
+        a => isImage(a.file_path) && (a.character_id === id || c.reference_asset_ids_json?.includes(a.id))
       );
     } catch (e) {
       if (token === sequence) error = String(e);
@@ -93,14 +94,14 @@
       if (characterId === id) error = String(e);
     }
   }
-  const reviewLabel = (a: any) => (a.metadata_json?.consistency_review === 'rejected' ? 'Excluded' : 'Ready to use');
-  let fullImage: any = $state(null),
+  const reviewLabel = (a: Asset) => (a.metadata_json?.consistency_review === 'rejected' ? 'Excluded' : 'Ready to use');
+  let fullImage = $state<Asset | null>(null),
     reviewing = $state(false);
   async function reviewFull(approved: boolean) {
     if (!fullImage || reviewing) return;
     reviewing = true;
     try {
-      fullImage = await post(`/assets/${fullImage.id}/review`, { approved, expected_updated_at: fullImage.updated_at });
+      fullImage = await post<Asset>(`/assets/${fullImage.id}/review`, { approved, expected_updated_at: fullImage.updated_at });
       await refresh();
       await onchanged();
       notice = approved ? 'Image available for reuse.' : 'Image excluded from generation.';
@@ -176,4 +177,4 @@
   alt={fullImage.name}/><p class="text-sm">{reviewLabel(fullImage)}</p><details><summary class="cursor-pointer py-2 text-sm">Image options</summary><Button
   variant="outline"
   disabled={reviewing||disabled}
-  onclick={()=>reviewFull(fullImage.metadata_json?.consistency_review==='rejected')}>{fullImage.metadata_json?.consistency_review==='rejected'?'Allow reuse':'Exclude from generation'}</Button></details>{/if}</Dialog.Content></Dialog.Root>
+  onclick={()=>reviewFull(fullImage?.metadata_json?.consistency_review==='rejected')}>{fullImage.metadata_json?.consistency_review==='rejected'?'Allow reuse':'Exclude from generation'}</Button></details>{/if}</Dialog.Content></Dialog.Root>

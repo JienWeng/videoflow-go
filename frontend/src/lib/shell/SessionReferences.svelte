@@ -3,10 +3,13 @@
   import { get, put } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
   import * as Dialog from '$lib/components/ui/dialog';
+  import type { Asset, Character } from '$lib/api-types';
+  /** A conversation's chosen references (GET/PUT /director/sessions/{id}/selection). */
+  type Selection = { character_ids?: string[]; asset_ids?: string[]; warnings?: string[] } | null;
   let { open = $bindable(false), session }: { open?: boolean; session: { id: string; title?: string; status?: string } } =
     $props();
-  let characters: any[] = $state([]),
-    assets: any[] = $state([]),
+  let characters: Character[] = $state([]),
+    assets: Asset[] = $state([]),
     characterIDs: string[] = $state([]),
     assetIDs: string[] = $state([]);
   let saved = $state(''),
@@ -27,9 +30,9 @@
     warnings = [];
     try {
       const [selection, cast, media] = await Promise.all([
-        get(`/director/sessions/${encodeURIComponent(id)}/selection`),
-        get('/characters'),
-        get('/assets')
+        get<Selection>(`/director/sessions/${encodeURIComponent(id)}/selection`),
+        get<Character[] | null>('/characters'),
+        get<Asset[] | null>('/assets')
       ]);
       if (current !== generation) return;
       characters = cast ?? [];
@@ -53,7 +56,7 @@
     error = '';
     notice = '';
     try {
-      const snapshot = await put(`/director/sessions/${encodeURIComponent(session.id)}/selection`, {
+      const snapshot = await put<Selection>(`/director/sessions/${encodeURIComponent(session.id)}/selection`, {
         character_ids: characterIDs,
         asset_ids: assetIDs
       });

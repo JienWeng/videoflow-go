@@ -24,6 +24,18 @@
   import { Button } from '$lib/components/ui/button';
   import GenerationProgress from '$lib/create/GenerationProgress.svelte';
   import { get, post, mediaUrl } from '$lib/api';
+  import type { Op } from '$lib/ops';
+  import type {
+    Asset,
+    Character,
+    OpStarted,
+    Project,
+    RenderJobDetail,
+    StoryGenerationResult,
+    StyleCatalog,
+    StylePreset,
+    VideoPreflight
+  } from '$lib/api-types';
 
   let idea = $state('');
   let submitted = $state(false);
@@ -47,11 +59,11 @@
   let style = $state('2d-picture-book');
   let defaultStyle = $state('2d-picture-book');
   let styleTouched = false;
-  let styleOptions: any[] = $state([]);
+  let styleOptions: StylePreset[] = $state([]);
   let presetError = $state('');
   async function loadStyles() {
     try {
-      const result = await get('/style-presets');
+      const result = await get<StyleCatalog | null>('/style-presets');
       if (!Array.isArray(result?.presets)) return;
       styleOptions = result.presets;
       if (result.has_project_style && !styleTouched && !submitted) {
@@ -69,7 +81,7 @@
   let sceneCount = $state(1);
   let language = $state('English');
   const conversationMode = 'dialogue';
-  let characters: any[] = $state([]);
+  let characters: Character[] = $state([]);
   let selectedCharacters: string[] = $state([]);
   let createCharacters = $state(true);
   let instruction = $state('');
@@ -83,17 +95,17 @@
   const characterReferenceIds = () =>
     lastResult?.cast_character_ids?.length
       ? lastResult.cast_character_ids.flatMap(
-          (id: string) => characters.find(c => c.id === id)?.reference_asset_ids_json ?? []
+          id => characters.find(c => c.id === id)?.reference_asset_ids_json ?? []
         )
       : (lastResult?.character_reference_ids ?? []);
   const missingCharacterReferences = () =>
     lastResult?.cast_character_ids?.some(
-      (id: string) => !characters.find(c => c.id === id)?.reference_asset_ids_json?.length
+      id => !characters.find(c => c.id === id)?.reference_asset_ids_json?.length
     );
   const referenceIds = () => [...new Set<string>([...characterReferenceIds(), ...(lastResult?.story_asset_ids ?? [])])];
   const charactersApproved = () =>
     !missingCharacterReferences() &&
-    referenceIds().every((id: string) => {
+    referenceIds().every(id => {
       const a = reviewAssets.find(a => a.id === id);
       const review = a?.metadata_json?.consistency_review;
       return !!a && review !== 'rejected';
@@ -103,7 +115,7 @@
     continuingStory = true;
     opError = '';
     try {
-      lastResult = await post(`/videos/generate/${opId}/assets/exclude`, { asset_id: id });
+      lastResult = await post<StoryGenerationResult>(`/videos/generate/${opId}/assets/exclude`, { asset_id: id });
       await refreshReviewAssets();
     } catch (e) {
       opError = String(e);
@@ -130,16 +142,16 @@
       continuingStory = false;
     }
   }
-  let preflight: any = $state(null);
+  let preflight = $state<VideoPreflight | null>(null);
   let preflightError = $state('');
-  let activeProject: any = $state(null);
-  let lastResult: any = $state(null);
-  let reviewAssets: any[] = $state([]);
+  let activeProject = $state<Project | null>(null);
+  let lastResult = $state<StoryGenerationResult | null | undefined>(null);
+  let reviewAssets: Asset[] = $state([]);
   let reviewLoading = $state(false);
   async function refreshReviewAssets() {
     reviewLoading = true;
     try {
-      const [assets, cast] = await Promise.all([get('/assets'), get('/characters')]);
+      const [assets, cast] = await Promise.all([get<Asset[]>('/assets'), get<Character[]>('/characters')]);
       reviewAssets = assets;
       characters = cast;
       return true;
@@ -168,14 +180,17 @@
   let readingOperation = false;
 
   async function checkRenderJobs() {
-    if (['awaiting_reference_review', 'awaiting_character_review', 'ready_to_render'].includes(lastResult?.status)) {
+    if (
+      lastResult &&
+      ['awaiting_reference_review', 'awaiting_character_review', 'ready_to_render'].includes(lastResult.status)
+    ) {
       busy = false;
       opStatus = lastResult.status;
       stopRenderPolling();
       await refreshReviewAssets();
       return;
     }
-    const ids: string[] = lastResult?.render_job_ids ?? [];
+    const ids = lastResult?.render_job_ids ?? [];
     if (!ids.length) {
       busy = false;
       opStatus = 'completed';
@@ -185,7 +200,7 @@
     if (readingJobs) return;
     readingJobs = true;
     try {
-      const jobs = await Promise.all(ids.map(id => get(`/render-jobs/${id}`)));
+      const jobs = await Promise.all(ids.map(id => get<RenderJobDetail>(`/render-jobs/${id}`)));
       opError = '';
       const states = jobs.map(item => item.job.status);
       if (states.some(state => state === 'failed' || state === 'reconciliation_required')) {
@@ -213,7 +228,7 @@
     if (!opId || readingOperation) return;
     readingOperation = true;
     try {
-      const op = await get(`/ops/${opId}`);
+      const op = await get<Op<StoryGenerationResult>>(`/ops/${opId}`);
       opError = '';
       opStatus = op.status;
       stages = op.result_json?.stages ?? stages;
@@ -222,7 +237,7 @@
         stopPolling();
         lastResult = op.result_json;
         if (lastResult?.created_character_ids?.length)
-          void get('/characters')
+          void get<Character[]>('/characters')
             .then(result => (characters = result))
             .catch(() => {});
         opStatus = 'rendering';
@@ -232,7 +247,7 @@
         stopPolling();
         lastResult = op.result_json;
         if (lastResult?.created_character_ids?.length)
-          void get('/characters')
+          void get<Character[]>('/characters')
             .then(result => (characters = result))
             .catch(() => {});
         opError = op.error || 'The generation failed.';
@@ -254,7 +269,7 @@
     startingSession = true;
     sessionError = '';
     try {
-      const ensured = await post('/director/sessions/ensure', {});
+      const ensured = await post<{ session: unknown; switched_from?: string } | null>('/director/sessions/ensure', {});
       if (!ensured?.session) {
         sessionError = 'Connect Claude Code or Codex first (Settings → AI setup).';
         return;
@@ -278,7 +293,7 @@
       params.set('scene_count', String(sceneCount));
       params.set('target_duration', duration || '0');
       params.set('character_ids', selectedCharacters.join(','));
-      const result = await get(`/videos/preflight?${params}`);
+      const result = await get<VideoPreflight>(`/videos/preflight?${params}`);
       if (sequence !== preflightSequence) return null;
       preflight = result;
       return preflight;
@@ -296,12 +311,17 @@
   async function restoreOperation(explicit = '') {
     const requested = explicit || new URL(window.location.href).searchParams.get('op_id');
     try {
-      activeProject = await get('/projects/active');
+      const project = await get<Project>('/projects/active');
+      activeProject = project;
       const op = requested
-        ? await get(`/ops/${encodeURIComponent(requested)}`)
-        : (await get(`/ops?project_id=${encodeURIComponent(activeProject.id)}&kind=video_generation&limit=1`))?.[0];
+        ? await get<Op<StoryGenerationResult>>(`/ops/${encodeURIComponent(requested)}`)
+        : (
+            await get<Op<StoryGenerationResult>[] | null>(
+              `/ops?project_id=${encodeURIComponent(project.id)}&kind=video_generation&limit=1`
+            )
+          )?.[0];
       if (!op) return;
-      if (op.kind !== 'video_generation' || (op.project_id && op.project_id !== activeProject.id))
+      if (op.kind !== 'video_generation' || (op.project_id && op.project_id !== project.id))
         throw new Error('That generation does not belong to this project.');
       if (!requested && (op.status === 'failed' || op.status === 'reconciliation_required')) {
         earlierFailure = { id: op.id, error: op.error || '' };
@@ -333,7 +353,7 @@
   onMount(() => {
     void loadStyles();
     void restoreOperation();
-    get('/characters')
+    get<Character[]>('/characters')
       .then(result => (characters = result))
       .catch(() => {});
   });
@@ -361,7 +381,9 @@
       return;
     }
     try {
-      const response = await post('/videos/generate?background=true', {
+      const response = await post<OpStarted & { status: string; character_references?: boolean }>(
+        '/videos/generate?background=true',
+        {
         ...confirmedBriefRequest({ ...creativeBrief, idea: idea.trim() }, briefConfirmed),
         review_before_render: true,
         character_ids: selectedCharacters,
@@ -371,7 +393,7 @@
       opId = response.op_id;
       opStatus = response.status;
       automaticReferences = response.character_references ?? false;
-      activeProject = activeProject ?? (await get('/projects/active'));
+      activeProject = activeProject ?? (await get<Project>('/projects/active'));
       poller = setInterval(() => void checkOperation(), 2500);
       await checkOperation();
     } catch (e) {
@@ -408,7 +430,7 @@
             {#if missingCharacterReferences()}<p role="alert" class="mt-3 text-sm">Some story characters need reference images. <a
               class="underline underline-offset-4"
               href="/library?tab=characters">Open Characters</a> to add or generate them, then refresh here.</p>{/if}<ul
-                class="mt-4 space-y-3">{#each referenceIds() as id}{@const asset=reviewAssets.find(a=>a.id===id)}{@const character=characters.find(c=>c.id===asset?.character_id)}{@const decision=lastResult.story_assets?.find((item:any)=>item.asset_id===id)}<li
+                class="mt-4 space-y-3">{#each referenceIds() as id}{@const asset=reviewAssets.find(a=>a.id===id)}{@const character=characters.find(c=>c.id===asset?.character_id)}{@const decision=lastResult.story_assets?.find(item=>item.asset_id===id)}<li
                 class="flex flex-wrap items-center justify-between gap-3"><a
               class="inline-flex min-h-11 items-center gap-3 underline underline-offset-4"
               href={`/library?tab=media&asset_id=${encodeURIComponent(id)}`}>{#if asset?.file_path}<img
@@ -547,7 +569,7 @@
        <p class="text-xs text-muted-foreground">Select existing characters to reuse them. Their saved identities stay unchanged.</p>
        {/if}
       </fieldset>
-      {#if styleOptions.find(p=>p.id===style)}{@const selected=styleOptions.find(p=>p.id===style)}<details
+      {#if styleOptions.find(p=>p.id===style)}{@const selected=styleOptions.find(p=>p.id===style)!}<details
         class="text-sm"><summary
         class="cursor-pointer text-muted-foreground">About {selected.name}</summary><p
         class="mt-2">{selected.description}</p><dl

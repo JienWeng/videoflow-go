@@ -32,6 +32,7 @@
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
   import { get, post, del } from '$lib/api';
+  import type { Character, Scene } from '$lib/api-types';
   import {
     toFlow,
     loadPositions,
@@ -167,7 +168,7 @@
    * given list so it can run both reactively and right after a refresh. */
   function styleEdges(list: Edge[], sel: string | null, hov: string | null, selE: string | null): Edge[] {
     return list.map(e => {
-      const rel = String((e.data as any)?.rel ?? '');
+      const rel = String(e.data?.rel ?? '');
       const color = edgeColor(rel || undefined);
       const incident = !sel || e.source === sel || e.target === sel;
       const dim = sel != null && !incident;
@@ -189,7 +190,7 @@
         style: `stroke: ${color}; stroke-opacity: ${dim ? 0.12 : 1}; stroke-width: ${
           (incident && sel != null) || active ? 2 : 1.5
         }px;`,
-        markerEnd: { ...(e.markerEnd as any), color, width: 16, height: 16 }
+        markerEnd: { ...(typeof e.markerEnd === 'object' ? e.markerEnd : {}), color, width: 16, height: 16 }
       } as Edge;
     });
   }
@@ -368,7 +369,9 @@
     }
     connectionBusy = true;
     try {
-      const body = route.scene ? { expected_updated_at: (await get(`/scenes/${route.scene}`)).updated_at } : undefined;
+      const body = route.scene
+        ? { expected_updated_at: (await get<Scene>(`/scenes/${route.scene}`)).updated_at }
+        : undefined;
       await post(route.path, body);
       toast.success(route.label + ' connected');
       await refresh();
@@ -387,7 +390,9 @@
       nodes.find(n => n.id === edge.target)
     );
     if (!route) return false;
-    const body = route.scene ? { expected_updated_at: (await get(`/scenes/${route.scene}`)).updated_at } : undefined;
+    const body = route.scene
+      ? { expected_updated_at: (await get<Scene>(`/scenes/${route.scene}`)).updated_at }
+      : undefined;
     await del(route.path, body);
     return true;
   }
@@ -491,7 +496,10 @@
     if (!name || addBusy) return;
     addBusy = true;
     try {
-      const created = addMode === 'scene' ? await post('/scenes', { title: name }) : await post('/characters', { name });
+      const created =
+        addMode === 'scene'
+          ? await post<Scene>('/scenes', { title: name })
+          : await post<Character>('/characters', { name });
       toast.success(`${addMode === 'scene' ? 'Scene' : 'Character'} "${name}" created`);
       closeAddMenu();
       await refresh();

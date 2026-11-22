@@ -4,16 +4,16 @@
   // price per second, so it always waits for the owner, even in Full auto.
   import { put } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
-
-  type Choice = { mode: 'manual' | 'cheapest'; model: string; provider: string; label: string; per_second: number };
+  import type { VideoServicesState } from '$lib/api-types';
+  import type { VideoSwitchChoice as Choice } from './types';
   let { choice, onswitched }: { choice: Choice; onswitched: (text: string) => void } = $props();
   let busy = $state(false), error = $state('');
   const usd = (v: number) => '$' + v.toFixed(3).replace(/0$/, '');
   async function use() {
     busy = true; error = '';
     try {
-      const r = await put('/video-services/routing', { mode: choice.mode, model: choice.model, provider: choice.provider });
-      const row = (r.services ?? []).find((s: any) => s.in_use);
+      const r = await put<Partial<VideoServicesState>>('/video-services/routing', { mode: choice.mode, model: choice.model, provider: choice.provider });
+      const row = (r.services ?? []).find(s => s.in_use);
       const price = row ? ` at ${usd(row.per_second)} per second` : '';
       onswitched(`${r.current?.label ?? choice.label} makes your videos now${price}. Say “make the videos” when you are ready.`);
     } catch (e) { error = errorMessage(e).replace(/^\d{3}: /, ''); } finally { busy = false; }

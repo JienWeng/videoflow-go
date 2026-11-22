@@ -11,31 +11,7 @@
   import * as Table from '$lib/components/ui/table';
   import { LoaderCircle } from '@lucide/svelte';
 
-  type Service = {
-    provider: string;
-    label: string;
-    model: string;
-    per_second: number;
-    total: number;
-    checked: string;
-    connected: boolean;
-    usable: boolean;
-    checked_at?: string;
-    problem?: string;
-    cheapest: boolean;
-    in_use: boolean;
-    note?: string;
-    key_check?: { state: string; message?: string };
-  };
-  type State = {
-    families: { id: string; label: string }[];
-    model: string;
-    resolution: string;
-    seconds: number;
-    routing: string;
-    current: { provider: string; label: string; model: string; family: string };
-    services: Service[];
-  };
+  import type { VideoService as Service, VideoServicesState as State } from '$lib/api-types';
 
   let data = $state<State | null>(null),
     error = $state(''),
@@ -65,8 +41,9 @@
       const q = new URLSearchParams({ resolution, seconds: '10' });
       if (fresh) q.set('refresh', '1');
       if (model) q.set('model', model);
-      data = await get('/video-services?' + q);
-      model = data!.model;
+      const next = await get<State>('/video-services?' + q);
+      data = next;
+      model = next.model;
       error = '';
     } catch (e) {
       error = errorMessage(e);
@@ -102,7 +79,7 @@
     busy = provider;
     error = '';
     try {
-      const r = await post('/settings/providers/' + provider + '/test');
+      const r = await post<{ ok: boolean; error?: string }>('/settings/providers/' + provider + '/test');
       await load();
       if (!r.ok && r.error) error = r.error;
     } catch (e) {

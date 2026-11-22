@@ -4,6 +4,7 @@
   import { onMount } from 'svelte';
   import { get } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
+  import type { CostEstimate } from '$lib/api-types';
 
   type Line = { scene_id: string; title: string; seconds: number; amount: number; note?: string };
   let { scenes, onstart }: { scenes: { id: string; title: string; duration?: number }[]; onstart: () => void } = $props();
@@ -11,7 +12,7 @@
   const usd = (v: number) => '$' + v.toFixed(2);
   onMount(async () => {
     try {
-      const e = await get('/costs/estimate?scene_ids=' + encodeURIComponent(scenes.map((s) => s.id).join(',')));
+      const e = await get<CostEstimate>('/costs/estimate?scene_ids=' + encodeURIComponent(scenes.map((s) => s.id).join(',')));
       lines = e.scenes ?? []; total = e.total; seconds = e.seconds; known = e.known;
     } catch { failed = true; }
   });

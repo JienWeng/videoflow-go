@@ -4,13 +4,14 @@
   import { Button } from '$lib/components/ui/button';
   import * as Dialog from '$lib/components/ui/dialog';
   import History from '@lucide/svelte/icons/history';
+  import type { DirectorSession, DirectorTurn } from '$lib/api-types';
   let { disabled = false, oncontinue }: { disabled?: boolean; oncontinue: (id: string) => Promise<void> } = $props();
   let open = $state(false),
     loading = $state(false),
     error = $state(''),
-    sessions: any[] = $state([]),
+    sessions: DirectorSession[] = $state([]),
     chosen = $state(''),
-    turns: any[] = $state([]),
+    turns: DirectorTurn[] = $state([]),
     switching = $state(false);
   let generation = 0;
   async function loadTurns(id: string) {
@@ -20,7 +21,7 @@
     error = '';
     loading = true;
     try {
-      const result = await get(`/director/sessions/${encodeURIComponent(id)}/turns`);
+      const result = await get<DirectorTurn[]>(`/director/sessions/${encodeURIComponent(id)}/turns`);
       if (current === generation) turns = conversationTurns(result);
     } catch (e) {
       if (current === generation) error = String(e);
@@ -36,10 +37,10 @@
     loading = true;
     const current = ++generation;
     try {
-      const list = await get('/director/sessions');
+      const list = await get<DirectorSession[]>('/director/sessions');
       if (current !== generation) return;
       sessions = list;
-      const id = list.find((s: any) => s.selected)?.id ?? list[0]?.id;
+      const id = list.find(s => s.selected)?.id ?? list[0]?.id;
       chosen = id ?? '';
       if (id) await loadTurns(id);
     } catch (e) {

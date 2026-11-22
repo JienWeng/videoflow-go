@@ -1,6 +1,7 @@
 <script lang="ts">
   import { mediaUrl } from '$lib/api';
   import { Film } from '@lucide/svelte';
+  import type { Asset, Scene } from '$lib/api-types';
 
   // A compact, selectable scene row for the master list. All derivation is done
   // by the parent and passed in so the list and detail share one source of truth.
@@ -13,12 +14,12 @@
     storyboard = null,
     onselect
   }: {
-    scene: any;
+    scene: Scene;
     selected?: boolean;
     statusLine: string;
     accentDot: string;
     dirty?: boolean;
-    storyboard?: any;
+    storyboard?: Asset | null;
     onselect: () => void;
   } = $props();
 
