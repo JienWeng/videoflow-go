@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -199,7 +200,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 			}
 		}
 		// Only fields in the provider contract are forwarded. Local IDs never leave the app.
-		allowed := map[string]bool{"final_prompt": true, "prompt": true, "duration": true, "aspect_ratio": true, "resolution": true, "generate_audio": true, "seed": true, "frame_images": true, "input_references": true, "provider": true, "director_context": true, "director_keyframe": true, "voice_policy": true, "request_fingerprint": true, "audio_mode": true, "music_prompt": true, "render_unit": true, "render_plan_id": true, "scene_input_revision": true, "image_urls": true, "video_input": true, "reference_pictures": true}
+		allowed := map[string]bool{"final_prompt": true, "prompt": true, "duration": true, "aspect_ratio": true, "resolution": true, "generate_audio": true, "seed": true, "frame_images": true, "input_references": true, "provider": true, "director_context": true, "director_keyframe": true, "voice_policy": true, "request_fingerprint": true, "audio_mode": true, "music_prompt": true, "render_unit": true, "render_plan_id": true, "scene_input_revision": true, "image_urls": true, "video_input": true, "reference_pictures": true, "audio_urls": true, "reference_voices": true}
 		for key := range payload {
 			if !allowed[key] {
 				delete(payload, key)
@@ -360,6 +361,23 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 						return e
 					}
 					refs[i] = encoded
+				}
+			}
+		}
+		// Voice samples too: each is the app's own short MP3.
+		if voices, ok := payload["audio_urls"].([]any); ok {
+			for i, voice := range voices {
+				path, _ := voice.(string)
+				if path != "" && !strings.HasPrefix(path, "https://") && !strings.HasPrefix(path, "data:") {
+					full, e := media.StoragePath(w.cfg.StorageRoot, path)
+					if e != nil {
+						return e
+					}
+					data, e := os.ReadFile(full)
+					if e != nil {
+						return fmt.Errorf("a character's voice sample is missing; save it again in Voices")
+					}
+					voices[i] = "data:audio/mpeg;base64," + base64.StdEncoding.EncodeToString(data)
 				}
 			}
 		}

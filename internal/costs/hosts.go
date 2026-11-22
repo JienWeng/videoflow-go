@@ -36,6 +36,8 @@ type Host struct {
 	// References is how many reference pictures one clip may be given instead of a first
 	// frame (Seedance's omni reference mode); 0 when the service does not take them.
 	References int
+	// Voices is how many voice recordings a reference-mode clip may also be given.
+	Voices int
 	// Checked says where the price came from.
 	Checked string
 }
@@ -43,7 +45,7 @@ type Host struct {
 // Prices were read from each service's public pricing page on 19 Nov 2026, or from the
 // comparison supplied by the user where a page gave no per-second figure.
 var Hosts = []Host{
-	{Name: "argolink", Label: "ArgoLink", URL: "https://argolink.io/v1", EnvKey: "ARGOLINK_API_KEY", References: 9, Checked: "argolink.io model page",
+	{Name: "argolink", Label: "ArgoLink", URL: "https://argolink.io/v1", EnvKey: "ARGOLINK_API_KEY", References: 9, Voices: 3, Checked: "argolink.io model page",
 		Models: map[string]string{"seedance-2.0": "seedance-2.0", "seedance-2.0-fast": "seedance-2.0-fast", "seedance-2.0-mini": "seedance-2.0-mini", "seedance-2.5": "seedance-2.5", "seedance-2.5-flash": "seedance-2.5-flash"},
 		PerSecond: map[string]map[string]float64{"seedance-2.0": {"480p": 0.0598, "720p": 0.129, "1080p": 0.318}, "seedance-2.0-fast": {"480p": 0.0478, "720p": 0.103},
 			"seedance-2.0-mini": {"480p": 0.0299, "720p": 0.0643}, "seedance-2.5": {"480p": 0.0874, "720p": 0.196, "1080p": 0.483}, "seedance-2.5-flash": {"480p": 0.0572, "720p": 0.129}}},

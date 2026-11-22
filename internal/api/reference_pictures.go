@@ -34,6 +34,8 @@ type referencePicture struct {
 	Name    string `json:"name"`
 	Kind    string `json:"kind"` // character, place or prop
 	Sheet   bool   `json:"sheet,omitempty"`
+	// CharacterID is whose picture it is, for a character.
+	CharacterID string `json:"character_id,omitempty"`
 }
 
 // referencePictures are the pictures a clip of the scene is sent. With a unit, only the
@@ -92,7 +94,7 @@ func (s *Server) referencePictures(scene *models.Scene, unit *renderUnit, limit 
 		_ = json.Unmarshal(character.ReferenceAssetIDsJSON, &refs)
 		for _, ref := range refs {
 			if asset := usable(ref); asset != nil {
-				out = append(out, referencePicture{AssetID: asset.ID, Name: character.Name, Kind: "character", Sheet: asset.Type == "character_reference"})
+				out = append(out, referencePicture{AssetID: asset.ID, Name: character.Name, Kind: "character", Sheet: asset.Type == "character_reference", CharacterID: id})
 				characters++
 				break
 			}
@@ -156,6 +158,66 @@ func clipReferences(payload map[string]any) []seedance.Reference {
 		out = append(out, seedance.Reference{Kind: p.Kind, Name: p.Name, Sheet: p.Sheet})
 	}
 	return out
+}
+
+// attachReferenceVoices adds the voice samples of the characters who speak in a
+// reference-mode clip: the files in audio_urls, in order, and whose each one is in
+// reference_voices, which the prompt writer binds to @Audio 1, @Audio 2, ... Only a
+// clip with sound, sent its speakers' pictures, through a service that takes voice
+// recordings, gets any.
+func (s *Server) attachReferenceVoices(ctx context.Context, job *models.RenderJob) {
+	var payload map[string]any
+	if json.Unmarshal(job.RequestJSON, &payload) != nil || job.SceneID == nil || job.ProjectID == nil {
+		return
+	}
+	delete(payload, "audio_urls")
+	delete(payload, "reference_voices")
+	defer func() { job.RequestJSON = voiceJSON(payload) }()
+	raw, _ := json.Marshal(payload["reference_pictures"])
+	var pictures []referencePicture
+	_ = json.Unmarshal(raw, &pictures)
+	policy, _ := payload["voice_policy"].(map[string]any)
+	scene, err := s.database.GetScene(*job.SceneID)
+	if err != nil || len(pictures) == 0 || policy["mode"] != "native" || sceneBrief(scene).ConversationMode == "narration" {
+		return
+	}
+	client, _, err := s.routes().Media(job.Provider, job.Model, job.ProviderEndpoint)
+	if err != nil {
+		return
+	}
+	model, err := client.Model(ctx, job.Model, "video")
+	if err != nil || model.ReferenceAudios == 0 {
+		return
+	}
+	// Who speaks in this clip: a line pinned to a shot is spoken only in that shot's clip.
+	unit, settings := renderRequestUnit(job.RequestJSON), sceneProduction(scene)
+	mine := map[string]bool{}
+	for _, id := range unit.ShotIDs {
+		mine[id] = true
+	}
+	var script struct {
+		Lines []SpokenLine `json:"spoken_lines"`
+	}
+	_ = json.Unmarshal(scene.SceneJSON, &script)
+	speaks := map[string]bool{}
+	for _, line := range script.Lines {
+		target := settings.DialogueShots[line.ID]
+		if strings.TrimSpace(line.Text) != "" && (target == "" || len(mine) == 0 || mine[target]) {
+			speaks[line.CharacterID] = true
+		}
+	}
+	files, names := []string{}, []string{}
+	for _, p := range pictures {
+		if p.CharacterID == "" || !speaks[p.CharacterID] || len(files) == model.ReferenceAudios {
+			continue
+		}
+		if sample := s.voiceSample(*job.ProjectID, p.CharacterID); sample != nil {
+			files, names = append(files, sample.FilePath), append(names, p.Name)
+		}
+	}
+	if len(files) > 0 {
+		payload["audio_urls"], payload["reference_voices"] = files, names
+	}
 }
 
 // attachReferencePictures puts a reference-mode clip's pictures into its request: the

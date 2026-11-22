@@ -60,6 +60,7 @@ func (c *HostClient) Models(_ context.Context, kind string) ([]Model, error) {
 		m.FrameImages = []string{"first_frame", "last_frame"}
 		m.Architecture.Input = append(m.Architecture.Input, "image")
 		m.ReferenceImages = c.host.References
+		m.ReferenceAudios = c.host.Voices
 		out = append(out, m)
 	}
 	return out, nil
@@ -97,7 +98,7 @@ func (c *HostClient) ValidateVideo(ctx context.Context, p map[string]any) error 
 	}
 	for key := range p {
 		switch key {
-		case "model", "prompt", "duration", "aspect_ratio", "resolution", "generate_audio", "seed", "frame_images", "image_urls":
+		case "model", "prompt", "duration", "aspect_ratio", "resolution", "generate_audio", "seed", "frame_images", "image_urls", "audio_urls":
 		default:
 			return fmt.Errorf("%s does not support video field %s", c.host.Label, key)
 		}
@@ -108,6 +109,11 @@ func (c *HostClient) ValidateVideo(ctx context.Context, p map[string]any) error 
 	}
 	if len(refs) > m.ReferenceImages {
 		return fmt.Errorf("%s takes at most %d reference pictures per clip", c.host.Label, m.ReferenceImages)
+	}
+	if voices := textList(p["audio_urls"]); len(voices) > m.ReferenceAudios {
+		return fmt.Errorf("%s takes at most %d voice recordings per clip", c.host.Label, m.ReferenceAudios)
+	} else if len(voices) > 0 && len(refs) == 0 {
+		return fmt.Errorf("voice recordings are sent only with reference pictures")
 	}
 	if len(refs) > 0 && len(frames) > 0 {
 		return fmt.Errorf("a clip is made either from reference pictures or from a first frame, not both")
@@ -169,7 +175,7 @@ func (c *HostClient) CreateVideo(ctx context.Context, p map[string]any) (string,
 	frames, _ := videoFrames(p)
 	first, last := "", ""
 	for _, f := range frames {
-		link, err := c.publicImage(ctx, f.ImageURL.URL, stringValue(p["model"]))
+		link, err := c.publicMedia(ctx, f.ImageURL.URL, stringValue(p["model"]), "image")
 		if err != nil {
 			return "", err
 		}
@@ -183,11 +189,19 @@ func (c *HostClient) CreateVideo(ctx context.Context, p map[string]any) (string,
 	refs, _ := referenceImageURLs(p)
 	references := []map[string]string{}
 	for _, ref := range refs {
-		link, err := c.publicImage(ctx, ref, model)
+		link, err := c.publicMedia(ctx, ref, model, "image")
 		if err != nil {
 			return "", err
 		}
 		references = append(references, map[string]string{"url": link})
+	}
+	voices := []map[string]string{}
+	for _, voice := range textList(p["audio_urls"]) {
+		link, err := c.publicMedia(ctx, voice, model, "audio")
+		if err != nil {
+			return "", err
+		}
+		voices = append(voices, map[string]string{"url": link})
 	}
 	resolution, aspect := stringValue(p["resolution"]), stringValue(p["aspect_ratio"])
 	if resolution == "" {
@@ -208,6 +222,9 @@ func (c *HostClient) CreateVideo(ctx context.Context, p map[string]any) (string,
 	}
 	if len(references) > 0 {
 		body["reference_images"] = references // named @Image 1, @Image 2, ... in the prompt
+	}
+	if len(voices) > 0 {
+		body["reference_audios"] = voices // named @Audio 1, @Audio 2, ... in the prompt
 	}
 	raw, err := c.request(ctx, "POST", "/videos/generations", body)
 	if err != nil {
@@ -339,34 +356,50 @@ func (c *HostClient) VideoContent(ctx context.Context, id string, index int) ([]
 	return videoBytes(ctx, c, id, index, c.base)
 }
 
-// publicImage gives the service a picture it can read. Pictures made in the app are held
-// as inline data; ArgoLink only accepts web addresses, so the picture is uploaded to its
-// storage first.
-func (c *HostClient) publicImage(ctx context.Context, image, model string) (string, error) {
-	if !strings.HasPrefix(image, "data:") {
-		return image, nil
+// publicMedia gives the service an address for a picture or recording held as the file
+// itself: it is uploaded to the service first. An address is passed through unchanged.
+func (c *HostClient) publicMedia(ctx context.Context, media, model, kind string) (string, error) {
+	if !strings.HasPrefix(media, "data:") {
+		return media, nil
 	}
-	header, encoded, ok := strings.Cut(strings.TrimPrefix(image, "data:"), ",")
-	kind := strings.TrimSuffix(header, ";base64")
-	if !ok || kind == header || !strings.HasPrefix(kind, "image/") {
-		return "", fmt.Errorf("picture is not in a format %s can read", c.host.Label)
+	what := map[string]string{"image": "picture", "audio": "voice recording"}[kind]
+	header, encoded, ok := strings.Cut(strings.TrimPrefix(media, "data:"), ",")
+	mime := strings.TrimSuffix(header, ";base64")
+	if !ok || mime == header || !strings.HasPrefix(mime, kind+"/") {
+		return "", fmt.Errorf("%s is not in a format %s can read", what, c.host.Label)
 	}
 	data, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return "", fmt.Errorf("picture data is damaged")
+		return "", fmt.Errorf("%s data is damaged", what)
 	}
-	raw, err := c.request(ctx, "POST", "/media/uploads", map[string]any{"model": model, "type": "image", "content_type": kind, "size_bytes": len(data)})
+	raw, err := c.request(ctx, "POST", "/media/uploads", map[string]any{"model": model, "type": kind, "content_type": mime, "size_bytes": len(data)})
 	if err != nil {
 		return "", err
 	}
-	if err = putBytes(ctx, jsonText(raw, "upload_url"), kind, data); err != nil {
-		return "", fmt.Errorf("%s picture upload failed: %w", c.host.Label, err)
+	if err = putBytes(ctx, jsonText(raw, "upload_url"), mime, data); err != nil {
+		return "", fmt.Errorf("%s %s upload failed: %w", c.host.Label, what, err)
 	}
 	link := jsonText(raw, "media_url")
 	if link == "" {
-		return "", fmt.Errorf("%s accepted the picture but returned no address for it", c.host.Label)
+		return "", fmt.Errorf("%s accepted the %s but returned no address for it", c.host.Label, what)
 	}
 	return link, nil
+}
+
+// textList reads a list of strings from a request field.
+func textList(v any) []string {
+	out := []string{}
+	switch list := v.(type) {
+	case []string:
+		return list
+	case []any:
+		for _, item := range list {
+			if text, ok := item.(string); ok && text != "" {
+				out = append(out, text)
+			}
+		}
+	}
+	return out
 }
 
 // putBytes sends a file to a one-time upload address. The service key is never sent there.

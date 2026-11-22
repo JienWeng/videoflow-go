@@ -113,3 +113,42 @@ func TestArgoLinkSendsReferencePictures(t *testing.T) {
 		t.Fatalf("ten references: %v", err)
 	}
 }
+
+// A reference-mode clip may also carry voice recordings: uploaded like a picture and sent
+// as reference_audios, never without a reference picture.
+func TestArgoLinkSendsVoiceRecordings(t *testing.T) {
+	var body, ticket map[string]any
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		switch r.URL.Path {
+		case "/media/uploads":
+			_ = json.Unmarshal(raw, &ticket)
+			_, _ = w.Write([]byte(`{"upload_url":"` + server.URL + `/put","media_url":"https://media.example.com/voice.mp3"}`))
+		case "/put":
+		case "/videos/generations":
+			_ = json.Unmarshal(raw, &body)
+			_, _ = w.Write([]byte(`{"request_id":"job1"}`))
+		}
+	}))
+	defer server.Close()
+	client := NewHostClient("argolink", "secret", server.URL)
+	request := map[string]any{"model": "seedance-2.0", "prompt": "Define the person in @Image 1 as Chen Wei. Chen Wei speaks with the voice in @Audio 1.", "duration": 5,
+		"image_urls": []any{"https://example.com/chen.png"}, "audio_urls": []any{"data:audio/mpeg;base64,SUQz"}}
+	if _, err := client.CreateVideo(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	voices, _ := body["reference_audios"].([]any)
+	if len(voices) != 1 || voices[0].(map[string]any)["url"] != "https://media.example.com/voice.mp3" || ticket["type"] != "audio" || ticket["content_type"] != "audio/mpeg" || body["audio_urls"] != nil {
+		t.Fatalf("argolink body = %v ticket = %v", body, ticket)
+	}
+	request["audio_urls"] = []any{"a", "b", "c", "d"}
+	if err := client.ValidateVideo(context.Background(), request); err == nil || !strings.Contains(err.Error(), "at most 3 voice") {
+		t.Fatalf("too many voices: %v", err)
+	}
+	delete(request, "image_urls")
+	request["audio_urls"] = []any{"a"}
+	if err := client.ValidateVideo(context.Background(), request); err == nil || !strings.Contains(err.Error(), "only with reference pictures") {
+		t.Fatalf("voice without a picture: %v", err)
+	}
+}

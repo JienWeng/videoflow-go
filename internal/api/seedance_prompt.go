@@ -99,6 +99,7 @@ func (s *Server) writeScenePrompt(ctx context.Context, job *models.RenderJob, wr
 		clip.Audio = seedance.Native
 	}
 	clip.References = clipReferences(payload)
+	clip.Voices = textValues(payload["reference_voices"])
 	if clip.Music, _ = payload["music_prompt"].(string); clip.Music == "" {
 		clip.Music = settings.MusicPrompt
 	}
@@ -171,4 +172,16 @@ func (s *Server) writeScenePrompt(ctx context.Context, job *models.RenderJob, wr
 		payload[finalPromptKey], payload["prompt_writer"] = written, "ai"
 	}
 	job.RequestJSON = voiceJSON(payload)
+}
+
+// textValues reads a list of strings from a saved request.
+func textValues(v any) []string {
+	out := []string{}
+	list, _ := v.([]any)
+	for _, item := range list {
+		if text, ok := item.(string); ok {
+			out = append(out, text)
+		}
+	}
+	return out
 }

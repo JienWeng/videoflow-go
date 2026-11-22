@@ -32,7 +32,7 @@ func providerVideoPayload(payload map[string]any) map[string]any {
 	out := map[string]any{}
 	for key, value := range payload {
 		switch key {
-		case "director_context", "director_keyframe", "voice_policy", "request_fingerprint", "audio_mode", "music_prompt", "render_unit", "render_plan_id", "scene_input_revision", "video_input", "reference_pictures":
+		case "director_context", "director_keyframe", "voice_policy", "request_fingerprint", "audio_mode", "music_prompt", "render_unit", "render_plan_id", "scene_input_revision", "video_input", "reference_pictures", "reference_voices":
 			continue
 		}
 		out[key] = value

@@ -57,12 +57,15 @@ type Thing struct {
 type Reference struct {
 	Kind string `json:"kind"` // "character", "place" or "prop"
 	Name string `json:"name"`
-	// Sheet is true for a character reference sheet: one person drawn from several angles.
+	// Sheet is true for a character reference sheet: one person drawn more than once.
 	Sheet bool `json:"sheet,omitempty"`
 }
 
 // Tag is how the prompt names the i-th reference picture (counted from 0).
 func Tag(i int) string { return fmt.Sprintf("@Image %d", i+1) }
+
+// VoiceTag is how the prompt names the i-th voice recording (counted from 0).
+func VoiceTag(i int) string { return fmt.Sprintf("@Audio %d", i+1) }
 
 // Audio modes.
 const (
@@ -81,11 +84,14 @@ type Clip struct {
 	Things    []Thing // places and props connected to the scene
 	// References are pictures sent instead of a first frame, in the order they are sent.
 	References []Reference
-	Shots      []Shot
-	Lines      []Line
-	Language   string
-	Audio      string
-	Music      string // music direction; empty means no music
+	// Voices are the characters whose voice recording is sent with the clip, in the order
+	// they are sent: the first is @Audio 1.
+	Voices   []string
+	Shots    []Shot
+	Lines    []Line
+	Language string
+	Audio    string
+	Music    string // music direction; empty means no music
 }
 
 func (c Clip) timed() bool { return strings.Contains(c.Family, "2.5") }
@@ -95,7 +101,7 @@ func (c Clip) timed() bool { return strings.Contains(c.Family, "2.5") }
 func (r Reference) binding(i int) string {
 	switch {
 	case r.Kind == "character" && r.Sheet:
-		return fmt.Sprintf("Define the person in %s as %s; the picture is a reference sheet of this one person seen from several angles, so keep exactly this face, build and clothing.", Tag(i), r.Name)
+		return fmt.Sprintf("Define the person in %s as %s; the picture is a reference sheet that shows this one person more than once (a face close-up and the whole body), so there is only one %s: keep exactly this face, build and clothing.", Tag(i), r.Name, r.Name)
 	case r.Kind == "character":
 		return fmt.Sprintf("Define the person in %s as %s; keep exactly this face, build and clothing.", Tag(i), r.Name)
 	case r.Kind == "place":
@@ -112,6 +118,9 @@ func Compose(c Clip) string {
 	line("%s", sentence(join(". ", c.Style, c.Summary)))
 	for i, ref := range c.References {
 		line("%s", ref.binding(i))
+	}
+	for i, name := range c.Voices {
+		line("%s speaks with the voice in %s; keep exactly this voice, its pitch and its accent, for everything %s says.", name, VoiceTag(i), name)
 	}
 	used := strings.ToLower(c.Summary)
 	for _, shot := range c.Shots {

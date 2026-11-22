@@ -95,6 +95,13 @@ func Brief(c Clip) (system, facts string) {
 		delete(doc, "first_frame")
 		doc["reference_pictures"] = pictures
 	}
+	if len(c.Voices) > 0 {
+		voices := []map[string]any{}
+		for i, name := range c.Voices {
+			voices = append(voices, map[string]any{"tag": VoiceTag(i), "is_the_voice_of": name})
+		}
+		doc["voice_recordings_sent_name_each_by_its_tag"] = voices
+	}
 	if c.Audio == Native && c.Music == "" {
 		doc["music"] = "none"
 	}
@@ -130,6 +137,11 @@ func imageTag(n int) *regexp.Regexp {
 	return regexp.MustCompile(fmt.Sprintf(`(?i)@?\bimage ?%d\b`, n))
 }
 
+// audioTag finds a mention of the n-th voice recording: "@Audio 1".
+func audioTag(n int) *regexp.Regexp {
+	return regexp.MustCompile(fmt.Sprintf(`(?i)@audio ?%d\b`, n))
+}
+
 var internalID = regexp.MustCompile(`\b(char|asset|scene|shot|project|job|script|output)_[0-9a-f]{6,}\b`)
 
 // Check says whether a written prompt may be sent for this clip. It guards the facts
@@ -161,6 +173,14 @@ func Check(c Clip, prompt string) error {
 	}
 	if imageTag(len(c.References) + 1).MatchString(prompt) {
 		return fmt.Errorf("prompt names a picture past the %d that are sent", len(c.References))
+	}
+	for i := range c.Voices {
+		if !audioTag(i + 1).MatchString(prompt) {
+			return fmt.Errorf("voice recording %s is never named", VoiceTag(i))
+		}
+	}
+	if audioTag(len(c.Voices) + 1).MatchString(prompt) {
+		return fmt.Errorf("prompt names a voice recording past the %d that are sent", len(c.Voices))
 	}
 	for _, l := range c.Lines {
 		text := strings.TrimSpace(l.Text)

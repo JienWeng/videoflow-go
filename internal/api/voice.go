@@ -24,6 +24,8 @@ func (s *Server) RegisterVoiceCaptionRoutes() {
 	s.router.Get("/voice/preferences", s.handleVoicePreferences)
 	s.router.Put("/voice/preferences", s.handleVoicePreferences)
 	s.router.Put("/voice/profiles/{character}", s.handleVoiceProfile)
+	s.router.Post("/voice/samples/{character}", s.handleVoiceSample)
+	s.router.Delete("/voice/samples/{character}", s.handleDeleteVoiceSample)
 }
 
 // VoiceProfile is the saved voice of one character. Profiles saved by earlier
@@ -120,7 +122,7 @@ func (s *Server) handleVoiceState(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"project_id": project, "profiles": profiles, "primary_provider": s.primaryVoiceProvider()})
+	writeJSON(w, 200, map[string]any{"project_id": project, "profiles": profiles, "samples": s.voiceSamples(project), "primary_provider": s.primaryVoiceProvider()})
 }
 func (s *Server) handleVoiceProfile(w http.ResponseWriter, r *http.Request) {
 	project, ok := s.voiceProject(w, r)

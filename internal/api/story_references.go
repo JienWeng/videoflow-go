@@ -79,7 +79,9 @@ func (s *Server) generateCharacterSheet(ctx context.Context, c *models.Character
 		binding.Selection.referenceCandidate = c.ID
 		ctx = context.WithValue(ctx, directorBindingKey{}, binding)
 	}
-	prompt := fmt.Sprintf("Character reference sheet showing front, side and full body views of %s. Arrange a clear head close-up plus front, right-side and back full-body views of the same character in a simple reference board. Keep proportions, clothing, colors and identifying features identical across views. Show the entire character from head to feet/paws, including ears and tail; leave margins and never crop limbs. Adapt views to the actual species and anatomy; do not invent limbs. Use a neutral pose and uncluttered background, without story action, extra characters or labels. Appearance: %s. Description: %s. Visual rules: %s", c.Name, c.Appearance, c.Description, c.VisualRulesJSON)
+	// The Seedance guides ask for one face close-up and one full-body view of a character,
+	// not a board of many angles, which the video model can read as several people.
+	prompt := fmt.Sprintf("Character reference sheet of %s with exactly two views of the same character side by side on a plain, light, uncluttered background. Left: a large, sharp head-and-shoulders close-up, facing the camera, neutral expression, even lighting. Right: one full-body front view in a neutral standing pose, the entire character visible from head to feet/paws, including ears and tail, with margins and no cropped limbs. Face, proportions, clothing, colors and identifying features are identical in both views. No side or back views, no other poses, no story action, no extra characters, no text or labels. Adapt to the actual species and anatomy; do not invent limbs. Appearance: %s. Description: %s. Visual rules: %s", c.Name, c.Appearance, c.Description, c.VisualRulesJSON)
 	if style != "" {
 		prompt += "\nVisual style: " + style
 	}

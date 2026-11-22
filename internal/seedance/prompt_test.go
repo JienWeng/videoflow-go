@@ -144,7 +144,7 @@ func TestReferencePicturesAreBoundAndChecked(t *testing.T) {
 		References: []Reference{{Kind: "character", Name: "Chen Wei", Sheet: true}, {Kind: "place", Name: "Dusk City Rooftop"}},
 		Shots:      []Shot{{Seconds: 5, Framing: "wide shot", Move: "slow push-in", Action: "Chen Wei stands at the railing"}}}
 	draft := Compose(c)
-	for _, want := range []string{"Define the person in @Image 1 as Chen Wei", "seen from several angles", "@Image 2 is the place Dusk City Rooftop"} {
+	for _, want := range []string{"Define the person in @Image 1 as Chen Wei", "there is only one Chen Wei", "@Image 2 is the place Dusk City Rooftop"} {
 		if !strings.Contains(draft, want) {
 			t.Fatalf("draft lacks %q:\n%s", want, draft)
 		}
@@ -168,5 +168,29 @@ func TestReferencePicturesAreBoundAndChecked(t *testing.T) {
 	c.References = nil
 	if got := Sections(c); got[2] != "first-frame" {
 		t.Fatalf("sections without pictures = %v", got)
+	}
+}
+
+// A voice recording sent with the clip is bound to its character once, and the check
+// refuses a prompt that leaves it out or names one that was not sent.
+func TestVoiceRecordingsAreBoundAndChecked(t *testing.T) {
+	c := Clip{Family: "seedance-2.0", Summary: "Chen Wei on a rooftop", Audio: Native,
+		References: []Reference{{Kind: "character", Name: "Chen Wei"}}, Voices: []string{"Chen Wei"},
+		Shots: []Shot{{Seconds: 5, Action: "Chen Wei stands at the railing"}}, Lines: []Line{{Speaker: "Chen Wei", Text: "The city never sleeps", Shot: 1}}}
+	draft := Compose(c)
+	if !strings.Contains(draft, "Chen Wei speaks with the voice in @Audio 1") {
+		t.Fatalf("draft does not bind the voice:\n%s", draft)
+	}
+	if err := Check(c, draft); err != nil {
+		t.Fatalf("draft refused: %v", err)
+	}
+	if err := Check(c, strings.Replace(draft, "@Audio 1", "the recording", 1)); err == nil || !strings.Contains(err.Error(), "@Audio 1 is never named") {
+		t.Fatalf("missing voice: %v", err)
+	}
+	if err := Check(c, draft+" Like @Audio 2."); err == nil || !strings.Contains(err.Error(), "past the 1") {
+		t.Fatalf("extra voice: %v", err)
+	}
+	if _, facts := Brief(c); !strings.Contains(facts, "@Audio 1") {
+		t.Fatalf("the writer is not told about the voice recording:\n%s", facts)
 	}
 }

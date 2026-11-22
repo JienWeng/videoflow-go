@@ -14,6 +14,7 @@ func (s *Server) applyDirectorVoicePolicy(ctx context.Context, job *models.Rende
 	if err := s.voicePolicy(ctx, job); err != nil {
 		return err
 	}
+	s.attachReferenceVoices(ctx, job)
 	s.writeScenePrompt(ctx, job, true)
 	return nil
 }
