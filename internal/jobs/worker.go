@@ -294,8 +294,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 				}
 				approved := map[string]bool{}
 				if scene, e := w.database.GetScene(*job.SceneID); e == nil {
-					var ids []string
-					json.Unmarshal(scene.AssetIDsJSON, &ids)
+					ids := models.IDList(scene.AssetIDsJSON)
 					for _, id := range ids {
 						approved[id] = true
 					}

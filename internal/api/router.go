@@ -93,7 +93,19 @@ func (s *Server) setupRoutes() {
 	s.router.Use(middleware.RealIP)
 	s.router.Use(middleware.Logger)
 	s.router.Use(middleware.Recoverer)
-	s.router.Use(middleware.Timeout(5 * time.Minute))
+	// Every request is cut off after five minutes except the event stream, which stays
+	// open for as long as the page does.
+	limit := middleware.Timeout(5 * time.Minute)
+	s.router.Use(func(next http.Handler) http.Handler {
+		limited := limit(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/events" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			limited.ServeHTTP(w, r)
+		})
+	})
 
 	// CORS matching SvelteKit frontend origins
 	s.router.Use(cors.Handler(cors.Options{

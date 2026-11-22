@@ -47,8 +47,7 @@ func (s *Server) changeSceneCast(sceneID, characterID string, add bool) (*models
 	if err != nil {
 		return nil, err
 	}
-	var ids []string
-	json.Unmarshal(scene.CharacterIDsJSON, &ids)
+	ids := models.IDList(scene.CharacterIDsJSON)
 	next := []string{}
 	found := false
 	for _, id := range ids {

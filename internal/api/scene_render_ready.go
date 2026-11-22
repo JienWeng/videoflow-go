@@ -79,8 +79,7 @@ func (s *Server) storyboardCandidates(ctx context.Context, scene *models.Scene, 
 }
 
 func (s *Server) attachStoryboard(scene *models.Scene, assets []models.Asset) (any, error) {
-	ids := []string{}
-	_ = json.Unmarshal(scene.AssetIDsJSON, &ids)
+	ids := models.IDList(scene.AssetIDsJSON)
 	for _, asset := range assets {
 		ids = append(ids, asset.ID)
 	}

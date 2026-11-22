@@ -110,8 +110,7 @@ func (s *Server) prepareBrief(project string, b *generationBrief) error {
 	seen := map[string]bool{}
 	for _, id := range b.CharacterIDs {
 		c, _ := s.database.GetCharacter(id)
-		var ids []string
-		json.Unmarshal(c.ReferenceAssetIDsJSON, &ids)
+		ids := models.IDList(c.ReferenceAssetIDsJSON)
 		for _, assetID := range ids {
 			if !seen[assetID] && len(b.ReferenceAssetIDs) < 8 {
 				a, err := s.database.GetAsset(assetID)

@@ -504,8 +504,7 @@ func (s *Server) handleGenerateSceneAssets(w http.ResponseWriter, r *http.Reques
 func (s *Server) sceneReferences(scene *models.Scene) ([]string, error) {
 	assetIDs := []string{}
 	{
-		var characterIDs []string
-		json.Unmarshal(scene.CharacterIDsJSON, &characterIDs)
+		characterIDs := models.IDList(scene.CharacterIDsJSON)
 		if _, err := s.characterNotes(scene.ProjectID, scene.CharacterIDsJSON); err != nil {
 			return nil, err
 		}
@@ -514,8 +513,7 @@ func (s *Server) sceneReferences(scene *models.Scene) ([]string, error) {
 			if err != nil {
 				return nil, err
 			}
-			var ids []string
-			json.Unmarshal(c.ReferenceAssetIDsJSON, &ids)
+			ids := models.IDList(c.ReferenceAssetIDsJSON)
 			assetIDs = append(assetIDs, ids...)
 		}
 	}

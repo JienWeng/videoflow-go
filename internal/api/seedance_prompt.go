@@ -105,8 +105,7 @@ func (s *Server) writeScenePrompt(ctx context.Context, job *models.RenderJob, wr
 	}
 
 	names := map[string]string{}
-	ids := []string{}
-	_ = json.Unmarshal(scene.CharacterIDsJSON, &ids)
+	ids := models.IDList(scene.CharacterIDsJSON)
 	for _, id := range append(ids, brief.CharacterIDs...) {
 		character, e := s.database.GetCharacter(id)
 		if e != nil || character == nil || names[id] != "" {
@@ -121,8 +120,7 @@ func (s *Server) writeScenePrompt(ctx context.Context, job *models.RenderJob, wr
 	connected := append([]string{}, s.sceneBoundAssets(scene)...)
 	for _, id := range unit.ShotIDs {
 		if shot, e := s.database.GetShot(id); e == nil {
-			used := []string{}
-			_ = json.Unmarshal(shot.AssetIDsJSON, &used)
+			used := models.IDList(shot.AssetIDsJSON)
 			connected = append(connected, used...)
 		}
 	}

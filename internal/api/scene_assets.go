@@ -11,8 +11,7 @@ import (
 )
 
 func (s *Server) sceneReferenceState(ctx context.Context, scene *models.Scene) (map[string]any, error) {
-	var cast []string
-	_ = json.Unmarshal(scene.CharacterIDsJSON, &cast)
+	cast := models.IDList(scene.CharacterIDsJSON)
 	ids := append([]string{}, s.sceneBoundAssets(scene)...)
 	missingCharacters := []string{}
 	for _, id := range cast {
@@ -21,8 +20,7 @@ func (s *Server) sceneReferenceState(ctx context.Context, scene *models.Scene) (
 			missingCharacters = append(missingCharacters, id)
 			continue
 		}
-		var refs []string
-		_ = json.Unmarshal(c.ReferenceAssetIDsJSON, &refs)
+		refs := models.IDList(c.ReferenceAssetIDsJSON)
 		if len(refs) == 0 {
 			missingCharacters = append(missingCharacters, id)
 		}
@@ -74,8 +72,7 @@ func (s *Server) sceneReferenceState(ctx context.Context, scene *models.Scene) (
 	}
 	boardReady := false
 	activeBoard := ""
-	var active []string
-	_ = json.Unmarshal(scene.AssetIDsJSON, &active)
+	active := models.IDList(scene.AssetIDsJSON)
 	activeIDs := map[string]bool{}
 	for _, id := range active {
 		activeIDs[id] = true
@@ -232,8 +229,7 @@ func (s *Server) sceneBoundAssets(scene *models.Scene) []string {
 	for _, id := range ids {
 		seen[id] = true
 	}
-	var attached []string
-	_ = json.Unmarshal(scene.AssetIDsJSON, &attached)
+	attached := models.IDList(scene.AssetIDsJSON)
 	for _, id := range attached {
 		if seen[id] {
 			continue

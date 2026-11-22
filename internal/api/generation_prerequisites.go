@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"videoflow-go/internal/models"
 )
 
 func (s *Server) generationPrerequisites(ctx context.Context, brief generationBrief) []map[string]string {
@@ -35,8 +36,7 @@ func (s *Server) generationPrerequisites(ctx context.Context, brief generationBr
 		if e != nil {
 			continue
 		}
-		var refs []string
-		json.Unmarshal(c.ReferenceAssetIDsJSON, &refs)
+		refs := models.IDList(c.ReferenceAssetIDsJSON)
 		needsSheets = needsSheets || len(refs) == 0
 	}
 	nativeImages := s.preferCodexImages(ctx)

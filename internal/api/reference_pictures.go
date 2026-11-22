@@ -76,8 +76,7 @@ func (s *Server) referencePictures(scene *models.Scene, unit *renderUnit, limit 
 	}
 
 	out := []referencePicture{}
-	cast := []string{}
-	_ = json.Unmarshal(scene.CharacterIDsJSON, &cast)
+	cast := models.IDList(scene.CharacterIDsJSON)
 	cast = append(cast, sceneBrief(scene).CharacterIDs...)
 	seen := map[string]bool{}
 	characters := 0
@@ -87,8 +86,7 @@ func (s *Server) referencePictures(scene *models.Scene, unit *renderUnit, limit 
 			continue
 		}
 		seen[id] = true
-		refs := []string{}
-		_ = json.Unmarshal(character.ReferenceAssetIDsJSON, &refs)
+		refs := models.IDList(character.ReferenceAssetIDsJSON)
 		for _, ref := range refs {
 			if asset := usable(ref); asset != nil {
 				out = append(out, referencePicture{AssetID: asset.ID, Name: character.Name, Kind: "character", Sheet: asset.Type == "character_reference", CharacterID: id})

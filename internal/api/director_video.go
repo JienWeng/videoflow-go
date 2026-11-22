@@ -116,8 +116,7 @@ func (s *Server) freezeDirectorVideo(ctx context.Context, job *models.RenderJob)
 	}
 	if sceneID != "" {
 		scene, _ := s.database.GetScene(sceneID)
-		var ids []string
-		json.Unmarshal(scene.AssetIDsJSON, &ids)
+		ids := models.IDList(scene.AssetIDsJSON)
 		for i := len(ids) - 1; i >= 0; i-- {
 			id := ids[i]
 			asset, e := s.database.GetAsset(id)

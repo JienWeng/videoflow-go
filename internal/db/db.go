@@ -1351,8 +1351,7 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 	chars, err := d.ListCharacters(projectID)
 	if err == nil {
 		for _, c := range chars {
-			refs := []string{}
-			json.Unmarshal(c.ReferenceAssetIDsJSON, &refs)
+			refs := models.IDList(c.ReferenceAssetIDsJSON)
 			activeReferenceIDs[c.ID] = map[string]bool{}
 			for _, id := range refs {
 				activeReferenceIDs[c.ID][id] = true
@@ -1427,8 +1426,7 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 			})
 
 			// Add casts / uses edges
-			var charIDs []string
-			_ = json.Unmarshal(s.CharacterIDsJSON, &charIDs)
+			charIDs := models.IDList(s.CharacterIDsJSON)
 			for _, cid := range charIDs {
 				edges = append(edges, models.GraphEdge{
 					Source: s.ID,
@@ -1436,8 +1434,7 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 					Label:  "casts",
 				})
 			}
-			var assetIDs []string
-			_ = json.Unmarshal(s.AssetIDsJSON, &assetIDs)
+			assetIDs := models.IDList(s.AssetIDsJSON)
 			for _, aid := range assetIDs {
 				edges = append(edges, models.GraphEdge{
 					Source: s.ID,
@@ -1468,8 +1465,7 @@ func (d *DB) GetGraphData(projectID string) (*models.GraphResponse, error) {
 					Label:  "shot",
 				})
 
-				var shotAssetIDs []string
-				_ = json.Unmarshal(sh.AssetIDsJSON, &shotAssetIDs)
+				shotAssetIDs := models.IDList(sh.AssetIDsJSON)
 				for _, aid := range shotAssetIDs {
 					edges = append(edges, models.GraphEdge{
 						Source: sh.ID,
@@ -1763,8 +1759,7 @@ func (d *DB) AttachShotAsset(shotID, assetID string) error {
 	if err != nil {
 		return err
 	}
-	var assetIDs []string
-	_ = json.Unmarshal(shot.AssetIDsJSON, &assetIDs)
+	assetIDs := models.IDList(shot.AssetIDsJSON)
 	for _, aid := range assetIDs {
 		if aid == assetID {
 			return nil
@@ -1781,8 +1776,7 @@ func (d *DB) DetachShotAsset(shotID, assetID string) error {
 	if err != nil {
 		return err
 	}
-	var assetIDs []string
-	_ = json.Unmarshal(shot.AssetIDsJSON, &assetIDs)
+	assetIDs := models.IDList(shot.AssetIDsJSON)
 	filtered := make([]string, 0, len(assetIDs))
 	for _, aid := range assetIDs {
 		if aid != assetID {

@@ -153,8 +153,7 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 		for i := range scenes {
 			scene := &scenes[i]
 			savedSceneIDs = append(savedSceneIDs, scene.ID)
-			var ids []string
-			json.Unmarshal(scene.CharacterIDsJSON, &ids)
+			ids := models.IDList(scene.CharacterIDsJSON)
 			for _, id := range ids {
 				if !seenCast[id] {
 					cast = append(cast, id)

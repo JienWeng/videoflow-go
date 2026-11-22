@@ -114,7 +114,7 @@ func (s *Server) materializeStoryAssets(ctx context.Context, scene *models.Scene
 		}
 		var refs, all []string
 		_ = json.Unmarshal(metadata["story_asset_ids"], &refs)
-		_ = json.Unmarshal(current.AssetIDsJSON, &all)
+		all = models.IDList(current.AssetIDsJSON)
 		appendUnique := func(ids []string, id string) []string {
 			for _, existing := range ids {
 				if existing == id {

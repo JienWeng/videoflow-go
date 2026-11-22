@@ -33,8 +33,7 @@ func (s *Server) seriesEpisodes(project string) []seriesEpisode {
 				continue
 			}
 			e.SceneCount++
-			ids := []string{}
-			_ = json.Unmarshal(scene.CharacterIDsJSON, &ids)
+			ids := models.IDList(scene.CharacterIDsJSON)
 			for _, id := range ids {
 				if !seen[id] {
 					seen[id] = true

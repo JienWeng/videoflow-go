@@ -35,8 +35,7 @@ func (s *Server) projectState(projectID string) (map[string]any, error) {
 			return nil, err
 		}
 		storyboard, rendered := false, false
-		var approved []string
-		json.Unmarshal(sc.AssetIDsJSON, &approved)
+		approved := models.IDList(sc.AssetIDsJSON)
 		approvedSet := map[string]bool{}
 		for _, id := range approved {
 			approvedSet[id] = true
