@@ -106,139 +106,182 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to save operation", 500)
 		return
 	}
+	run := &videoGeneration{
+		s: s, op: op, project: project, brief: brief, routes: routes,
+		stages: []string{}, createdCharacters: []string{}, savedSceneIDs: []string{}, cast: []string{},
+		characterReferences: []string{}, storyAssets: []string{}, assetDecisions: []plannedAsset{},
+	}
+	binding := r.Context().Value(directorBindingKey{})
 	s.tasks.Add(1)
 	go func() {
 		defer s.tasks.Done()
 		defer func() { <-s.operationSlots }()
 		ctx, cancel := context.WithTimeout(s.ctx, 45*time.Minute)
 		defer cancel()
-		if binding := r.Context().Value(directorBindingKey{}); binding != nil {
+		if binding != nil {
 			ctx = context.WithValue(ctx, directorBindingKey{}, binding)
 		}
 		ctx = guidedStoryContext(ctx, project, brief.CharacterIDs)
 		ctx = context.WithValue(brief.context(ctx), mediaRoutesKey{}, routes)
-		stages := []string{}
-		createdCharacters := []string{}
-		savedScriptID := ""
-		savedSceneIDs := []string{}
-		cast := []string{}
-		characterReferences := []string{}
-		storyAssets := []string{}
-		assetDecisions := []plannedAsset{}
-		fail := func(err error) {
-			message := err.Error()
-			raw, _ := json.Marshal(map[string]any{"stages": stages, "brief": brief, "created_character_ids": createdCharacters, "script_id": savedScriptID, "scene_ids": savedSceneIDs, "project_id": project, "cast_character_ids": cast, "character_reference_ids": characterReferences, "story_asset_ids": storyAssets, "story_assets": assetDecisions, "automatic_assets": true, "character_references": true, "media_routes": routes})
-			s.database.UpdateOp(op.ID, models.StatusFailed, raw, &message)
-		}
-		record := func(stage string) {
-			stages = append(stages, stage)
-			raw, _ := json.Marshal(map[string]any{"stages": stages, "brief": brief, "media_routes": routes, "created_character_ids": createdCharacters, "script_id": savedScriptID, "scene_ids": savedSceneIDs, "project_id": project, "cast_character_ids": cast, "character_reference_ids": characterReferences, "story_asset_ids": storyAssets, "story_assets": assetDecisions, "automatic_assets": true, "character_references": true})
-			s.database.UpdateOp(op.ID, "running", raw, nil)
-			s.broker.Publish(map[string]any{"type": "pipeline_stage", "op_id": op.ID, "stage": stage, "stages": stages, "project_id": project})
-		}
-		draft, err := s.agents.GenerateScript(ctx, brief.prompt(), brief.SceneCount, brief.TargetDuration, brief.AspectRatio)
-		if err != nil {
-			fail(err)
-			return
-		}
-		script, scenes, err := s.persistDraft(project, brief, draft)
-		if err != nil {
-			fail(err)
-			return
-		}
-		// Persisted scene/speaker references now use real project character IDs.
-		savedScriptID = script.ID
-		cast = []string{}
-		seenCast := map[string]bool{}
-		for i := range scenes {
-			scene := &scenes[i]
-			savedSceneIDs = append(savedSceneIDs, scene.ID)
-			ids := models.IDList(scene.CharacterIDsJSON)
-			for _, id := range ids {
-				if !seenCast[id] {
-					cast = append(cast, id)
-					seenCast[id] = true
-				}
-			}
-		}
-		originalCast := map[string]bool{}
-		for _, id := range brief.CharacterIDs {
-			originalCast[id] = true
-		}
-		for _, id := range cast {
-			if !originalCast[id] {
-				createdCharacters = append(createdCharacters, id)
-			}
-		}
-		record("story")
-		record("scenes")
-		for i := range scenes {
-			scene := &scenes[i]
-			localBrief := sceneBrief(scene)
-			sceneCtx := localBrief.context(guidedStoryContext(ctx, project, localBrief.CharacterIDs))
-			drafts, err := s.agents.GenerateShots(sceneCtx, scene.Title, scene.Summary+"\n"+localBrief.prompt(), scene.Duration)
-			if err != nil {
-				fail(err)
-				return
-			}
-			shots := []models.Shot{}
-			for _, d := range drafts {
-				camera, movement := d.Camera, d.Movement
-				shots = append(shots, models.Shot{ShotOrder: d.Order, Duration: d.Duration, Prompt: d.Prompt, Camera: &camera, Movement: &movement})
-			}
-			if err = s.database.ReplaceSceneShots(scene, shots); err != nil {
-				fail(err)
-				return
-			}
-		}
-		record("shots")
-
-		var approved bool
-		for i := range scenes {
-			scene := &scenes[i]
-			plan, planErr := s.planAssets(ctx, scene, brief.Style, 3)
-			if planErr != nil {
-				fail(planErr)
-				return
-			}
-			assets, assetErr := s.materializeStoryAssets(ctx, scene, plan)
-			assetDecisions = append(assetDecisions, plan.Assets...)
-			for _, asset := range assets {
-				storyAssets = append(storyAssets, asset.ID)
-			}
-			if assetErr != nil {
-				fail(assetErr)
-				return
-			}
-		}
-		record("assets")
-		style := brief.Style
-		characterReferences, approved, err = s.storyCharacterReferences(ctx, project, cast, style)
-		if err != nil {
-			fail(err)
-			return
-		}
-		record("characters")
-		if !approved {
-			fail(fmt.Errorf("story references are unavailable or excluded"))
-			return
-		}
-		storyboardsMade, err := s.storyboardStory(ctx, scenes)
-		if err != nil {
-			fail(err)
-			return
-		}
-
-		record("visuals")
-		sceneIDs := []string{}
-		for i := range scenes {
-			scene := &scenes[i]
-			sceneIDs = append(sceneIDs, scene.ID)
-		}
-		raw, _ := json.Marshal(map[string]any{"project_id": project, "script_id": script.ID, "scene_ids": sceneIDs, "stages": stages, "status": "ready_to_render", "storyboards_made": storyboardsMade, "cast_character_ids": cast, "character_reference_ids": characterReferences, "story_asset_ids": storyAssets, "story_assets": assetDecisions, "automatic_assets": true, "character_references": true, "brief": brief, "media_routes": routes, "created_character_ids": createdCharacters})
-		if err = s.database.UpdateOp(op.ID, "succeeded", raw, nil); err != nil {
-			fail(err)
+		if err := run.run(ctx); err != nil {
+			run.fail(err)
 		}
 	}()
 	writeJSON(w, 202, map[string]any{"op_id": op.ID, "status": models.StatusRunning, "automatic_assets": true, "character_references": true})
+}
+
+// videoGeneration is one guided run from an idea to storyboarded scenes ready to
+// render. It records what it has made on its operation after every stage, so a failed
+// run still shows what was created.
+type videoGeneration struct {
+	s                   *Server
+	op                  *models.Op
+	project             string
+	brief               generationBrief
+	routes              map[string]mediaRoute
+	stages              []string
+	createdCharacters   []string
+	savedScriptID       string
+	savedSceneIDs       []string
+	cast                []string
+	characterReferences []string
+	storyAssets         []string
+	assetDecisions      []plannedAsset
+}
+
+func (g *videoGeneration) run(ctx context.Context) error {
+	script, scenes, err := g.writeStory(ctx)
+	if err != nil {
+		return err
+	}
+	g.record("story")
+	g.record("scenes")
+	if err = g.writeShots(ctx, scenes); err != nil {
+		return err
+	}
+	g.record("shots")
+	if err = g.makeStoryAssets(ctx, scenes); err != nil {
+		return err
+	}
+	g.record("assets")
+	var approved bool
+	g.characterReferences, approved, err = g.s.storyCharacterReferences(ctx, g.project, g.cast, g.brief.Style)
+	if err != nil {
+		return err
+	}
+	g.record("characters")
+	if !approved {
+		return fmt.Errorf("story references are unavailable or excluded")
+	}
+	storyboardsMade, err := g.s.storyboardStory(ctx, scenes)
+	if err != nil {
+		return err
+	}
+	g.record("visuals")
+	return g.finish(script, scenes, storyboardsMade)
+}
+
+func (g *videoGeneration) fail(err error) {
+	message := err.Error()
+	raw, _ := json.Marshal(map[string]any{"stages": g.stages, "brief": g.brief, "created_character_ids": g.createdCharacters, "script_id": g.savedScriptID, "scene_ids": g.savedSceneIDs, "project_id": g.project, "cast_character_ids": g.cast, "character_reference_ids": g.characterReferences, "story_asset_ids": g.storyAssets, "story_assets": g.assetDecisions, "automatic_assets": true, "character_references": true, "media_routes": g.routes})
+	g.s.database.UpdateOp(g.op.ID, models.StatusFailed, raw, &message)
+}
+
+func (g *videoGeneration) record(stage string) {
+	g.stages = append(g.stages, stage)
+	raw, _ := json.Marshal(map[string]any{"stages": g.stages, "brief": g.brief, "media_routes": g.routes, "created_character_ids": g.createdCharacters, "script_id": g.savedScriptID, "scene_ids": g.savedSceneIDs, "project_id": g.project, "cast_character_ids": g.cast, "character_reference_ids": g.characterReferences, "story_asset_ids": g.storyAssets, "story_assets": g.assetDecisions, "automatic_assets": true, "character_references": true})
+	g.s.database.UpdateOp(g.op.ID, "running", raw, nil)
+	g.s.broker.Publish(map[string]any{"type": "pipeline_stage", "op_id": g.op.ID, "stage": stage, "stages": g.stages, "project_id": g.project})
+}
+
+// writeStory drafts and saves the script and its scenes, then notes the cast, including
+// characters the draft created.
+func (g *videoGeneration) writeStory(ctx context.Context) (*models.Script, []models.Scene, error) {
+	draft, err := g.s.agents.GenerateScript(ctx, g.brief.prompt(), g.brief.SceneCount, g.brief.TargetDuration, g.brief.AspectRatio)
+	if err != nil {
+		return nil, nil, err
+	}
+	script, scenes, err := g.s.persistDraft(g.project, g.brief, draft)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Persisted scene/speaker references now use real project character IDs.
+	g.savedScriptID = script.ID
+	g.cast = []string{}
+	seenCast := map[string]bool{}
+	for i := range scenes {
+		scene := &scenes[i]
+		g.savedSceneIDs = append(g.savedSceneIDs, scene.ID)
+		ids := models.IDList(scene.CharacterIDsJSON)
+		for _, id := range ids {
+			if !seenCast[id] {
+				g.cast = append(g.cast, id)
+				seenCast[id] = true
+			}
+		}
+	}
+	originalCast := map[string]bool{}
+	for _, id := range g.brief.CharacterIDs {
+		originalCast[id] = true
+	}
+	for _, id := range g.cast {
+		if !originalCast[id] {
+			g.createdCharacters = append(g.createdCharacters, id)
+		}
+	}
+	return script, scenes, nil
+}
+
+// writeShots breaks each scene into shots.
+func (g *videoGeneration) writeShots(ctx context.Context, scenes []models.Scene) error {
+	for i := range scenes {
+		scene := &scenes[i]
+		localBrief := sceneBrief(scene)
+		sceneCtx := localBrief.context(guidedStoryContext(ctx, g.project, localBrief.CharacterIDs))
+		drafts, err := g.s.agents.GenerateShots(sceneCtx, scene.Title, scene.Summary+"\n"+localBrief.prompt(), scene.Duration)
+		if err != nil {
+			return err
+		}
+		shots := []models.Shot{}
+		for _, d := range drafts {
+			camera, movement := d.Camera, d.Movement
+			shots = append(shots, models.Shot{ShotOrder: d.Order, Duration: d.Duration, Prompt: d.Prompt, Camera: &camera, Movement: &movement})
+		}
+		if err = g.s.database.ReplaceSceneShots(scene, shots); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// makeStoryAssets plans and makes each scene's places and props, keeping what was made
+// even when a later one fails.
+func (g *videoGeneration) makeStoryAssets(ctx context.Context, scenes []models.Scene) error {
+	for i := range scenes {
+		scene := &scenes[i]
+		plan, planErr := g.s.planAssets(ctx, scene, g.brief.Style, 3)
+		if planErr != nil {
+			return planErr
+		}
+		assets, assetErr := g.s.materializeStoryAssets(ctx, scene, plan)
+		g.assetDecisions = append(g.assetDecisions, plan.Assets...)
+		for _, asset := range assets {
+			g.storyAssets = append(g.storyAssets, asset.ID)
+		}
+		if assetErr != nil {
+			return assetErr
+		}
+	}
+	return nil
+}
+
+// finish marks the run ready to render.
+func (g *videoGeneration) finish(script *models.Script, scenes []models.Scene, storyboardsMade int) error {
+	sceneIDs := []string{}
+	for i := range scenes {
+		scene := &scenes[i]
+		sceneIDs = append(sceneIDs, scene.ID)
+	}
+	raw, _ := json.Marshal(map[string]any{"project_id": g.project, "script_id": script.ID, "scene_ids": sceneIDs, "stages": g.stages, "status": "ready_to_render", "storyboards_made": storyboardsMade, "cast_character_ids": g.cast, "character_reference_ids": g.characterReferences, "story_asset_ids": g.storyAssets, "story_assets": g.assetDecisions, "automatic_assets": true, "character_references": true, "brief": g.brief, "media_routes": g.routes})
+	return g.s.database.UpdateOp(g.op.ID, "succeeded", raw, nil)
 }

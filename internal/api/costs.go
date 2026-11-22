@@ -16,6 +16,7 @@ import (
 
 	"videoflow-go/internal/costs"
 	"videoflow-go/internal/db"
+	"videoflow-go/internal/models"
 	"videoflow-go/internal/providers"
 )
 
@@ -139,108 +140,164 @@ func (s *Server) handleCosts(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "couldn't read the costs", 500)
 		return
 	}
+	sum := s.newCostSummary(project)
+	for _, e := range entries {
+		sum.add(e)
+	}
+	out := map[string]any{
+		"currency": "USD", "total": money(sum.total), "estimated": money(sum.uncertain),
+		"categories": flatCostGroups(sum.categories, []string{"video", "image", "voice", "text"}),
+		"services":   flatCostGroups(sum.services, []string{"fal", "openai", "fish"}),
+		"episodes":   sum.byEpisode(), "included": s.includedCosts(project, sum.included),
+		"unconfirmed": sum.unconfirmed, "unpriced": sum.unpriced, "items": entries,
+	}
+	if !sum.first.IsZero() {
+		out["since"] = sum.first
+	}
+	s.addAllProjectCosts(out, project)
+	if sum.hasFal && r.URL.Query().Get("reconcile") == "1" {
+		if billed, ok := s.falBilled(r.Context(), sum.first); ok {
+			out["fal_billed"] = map[string]any{"amount": billed, "since": sum.first}
+		} else {
+			out["fal_billed"] = map[string]any{"unavailable": true}
+		}
+	}
+	writeJSON(w, 200, out)
+}
+
+// costSummary totals one project's cost entries by category, service and episode.
+type costSummary struct {
+	episodeOf                      map[string]*costGroup
+	episodes                       []*costGroup
+	other                          *costGroup
+	categories, services, included map[string]*costGroup
+	unconfirmed                    []db.CostEntry
+	unpriced                       int
+	total, uncertain               float64
+	first                          time.Time
+	hasFal                         bool
+}
+
+func (s *Server) newCostSummary(project string) *costSummary {
+	sum := &costSummary{
+		episodeOf:   map[string]*costGroup{},
+		episodes:    []*costGroup{},
+		other:       &costGroup{Key: "", Label: "Shared across episodes (cast, places, props, voice)", Exact: true},
+		categories:  map[string]*costGroup{},
+		services:    map[string]*costGroup{},
+		included:    map[string]*costGroup{},
+		unconfirmed: []db.CostEntry{},
+	}
 	episodes := s.seriesEpisodes(project)
-	episodeOf := map[string]*costGroup{}
-	episodeList := []*costGroup{}
 	for _, e := range episodes {
 		g := &costGroup{Key: e.ScriptID, Label: fmt.Sprintf("Episode %d: %s", e.Number, e.Title), Exact: true}
 		if len(episodes) == 1 {
 			g.Label = e.Title
 		}
-		episodeOf[e.ScriptID] = g
-		episodeList = append(episodeList, g)
+		sum.episodeOf[e.ScriptID] = g
+		sum.episodes = append(sum.episodes, g)
 	}
-	other := &costGroup{Key: "", Label: "Shared across episodes (cast, places, props, voice)", Exact: true}
-	categories, services := map[string]*costGroup{}, map[string]*costGroup{}
-	included := map[string]*costGroup{}
-	unconfirmed, unpriced := []db.CostEntry{}, 0
-	total, uncertain := 0.0, 0.0
-	var first time.Time
-	hasFal := false
-	for _, e := range entries {
-		if first.IsZero() || e.CreatedAt.Before(first) {
-			first = e.CreatedAt
-		}
-		switch e.Basis {
-		case "unconfirmed":
-			unconfirmed = append(unconfirmed, e)
-			continue
-		case costs.Included:
-			key := e.Category + ":" + e.Provider
-			g := included[key]
-			if g == nil {
-				g = &costGroup{Key: key, Label: costLabels[e.Category] + " made by " + serviceLabel(e.Provider), Unit: e.Unit}
-				included[key] = g
-			}
-			g.Count++
-			g.Quantity += e.Quantity
-			continue
-		case costs.Unpriced:
-			unpriced++
-			continue
-		}
-		hasFal = hasFal || e.Provider == "fal"
-		total += e.Amount
-		if e.Basis == costs.Estimate {
-			uncertain += e.Amount
-		}
-		add := func(g *costGroup) {
-			g.Amount += e.Amount
-			g.Count++
-			g.Quantity += e.Quantity
-			g.Exact = g.Exact && e.Basis != costs.Estimate
-		}
-		c := categories[e.Category]
-		if c == nil {
-			c = &costGroup{Key: e.Category, Label: costLabels[e.Category], Unit: e.Unit, Exact: true}
-			categories[e.Category] = c
-		}
-		add(c)
-		sv := services[e.Provider]
-		if sv == nil {
-			sv = &costGroup{Key: e.Provider, Label: serviceLabel(e.Provider), Exact: true}
-			services[e.Provider] = sv
-		}
-		add(sv)
-		sv.Quantity = 0
-		if g := episodeOf[e.ScriptID]; g != nil {
-			add(g)
-		} else {
-			add(other)
-		}
+	return sum
+}
+
+// add counts one entry: set aside if unconfirmed, unpriced or included in a plan,
+// otherwise added to its category, service and episode.
+func (sum *costSummary) add(e db.CostEntry) {
+	if sum.first.IsZero() || e.CreatedAt.Before(sum.first) {
+		sum.first = e.CreatedAt
 	}
-	flat := func(m map[string]*costGroup, order []string) []costGroup {
-		out := []costGroup{}
-		seen := map[string]bool{}
-		for _, k := range order {
-			if g := m[k]; g != nil {
-				seen[k] = true
-				g.Amount = money(g.Amount)
-				out = append(out, *g)
-			}
+	switch e.Basis {
+	case "unconfirmed":
+		sum.unconfirmed = append(sum.unconfirmed, e)
+		return
+	case costs.Included:
+		key := e.Category + ":" + e.Provider
+		g := sum.included[key]
+		if g == nil {
+			g = &costGroup{Key: key, Label: costLabels[e.Category] + " made by " + serviceLabel(e.Provider), Unit: e.Unit}
+			sum.included[key] = g
 		}
-		rest := []string{}
-		for k := range m {
-			if !seen[k] {
-				rest = append(rest, k)
-			}
-		}
-		sort.Strings(rest)
-		for _, k := range rest {
-			m[k].Amount = money(m[k].Amount)
-			out = append(out, *m[k])
-		}
-		return out
+		g.Count++
+		g.Quantity += e.Quantity
+		return
+	case costs.Unpriced:
+		sum.unpriced++
+		return
 	}
-	if other.Count > 0 {
-		episodeList = append(episodeList, other)
+	sum.hasFal = sum.hasFal || e.Provider == "fal"
+	sum.total += e.Amount
+	if e.Basis == costs.Estimate {
+		sum.uncertain += e.Amount
 	}
-	byEpisode := []costGroup{}
-	for _, g := range episodeList {
+	add := func(g *costGroup) {
+		g.Amount += e.Amount
+		g.Count++
+		g.Quantity += e.Quantity
+		g.Exact = g.Exact && e.Basis != costs.Estimate
+	}
+	c := sum.categories[e.Category]
+	if c == nil {
+		c = &costGroup{Key: e.Category, Label: costLabels[e.Category], Unit: e.Unit, Exact: true}
+		sum.categories[e.Category] = c
+	}
+	add(c)
+	sv := sum.services[e.Provider]
+	if sv == nil {
+		sv = &costGroup{Key: e.Provider, Label: serviceLabel(e.Provider), Exact: true}
+		sum.services[e.Provider] = sv
+	}
+	add(sv)
+	sv.Quantity = 0
+	if g := sum.episodeOf[e.ScriptID]; g != nil {
+		add(g)
+	} else {
+		add(sum.other)
+	}
+}
+
+// byEpisode lists each episode's spend, then what is shared across them.
+func (sum *costSummary) byEpisode() []costGroup {
+	list := sum.episodes
+	if sum.other.Count > 0 {
+		list = append(list, sum.other)
+	}
+	out := []costGroup{}
+	for _, g := range list {
 		g.Amount = money(g.Amount)
-		byEpisode = append(byEpisode, *g)
+		out = append(out, *g)
 	}
-	free := flat(included, nil)
+	return out
+}
+
+// flatCostGroups lists groups in the given order, then the rest by key, with amounts
+// rounded to cents.
+func flatCostGroups(m map[string]*costGroup, order []string) []costGroup {
+	out := []costGroup{}
+	seen := map[string]bool{}
+	for _, k := range order {
+		if g := m[k]; g != nil {
+			seen[k] = true
+			g.Amount = money(g.Amount)
+			out = append(out, *g)
+		}
+	}
+	rest := []string{}
+	for k := range m {
+		if !seen[k] {
+			rest = append(rest, k)
+		}
+	}
+	sort.Strings(rest)
+	for _, k := range rest {
+		m[k].Amount = money(m[k].Amount)
+		out = append(out, *m[k])
+	}
+	return out
+}
+
+// includedCosts lists work covered by a plan, including assistant replies.
+func (s *Server) includedCosts(project string, included map[string]*costGroup) []costGroup {
+	free := flatCostGroups(included, nil)
 	if replies, e := s.database.AssistantReplies(project); e == nil {
 		for _, engine := range []string{"claude", "codex"} {
 			if n := replies[engine]; n > 0 {
@@ -248,17 +305,12 @@ func (s *Server) handleCosts(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	out := map[string]any{
-		"currency": "USD", "total": money(total), "estimated": money(uncertain),
-		"categories": flat(categories, []string{"video", "image", "voice", "text"}),
-		"services":   flat(services, []string{"fal", "openai", "fish"}),
-		"episodes":   byEpisode, "included": free,
-		"unconfirmed": unconfirmed, "unpriced": unpriced, "items": entries,
-	}
-	if !first.IsZero() {
-		out["since"] = first
-	}
-	// Every project side by side, so the whole spend is visible from any of them.
+	return free
+}
+
+// addAllProjectCosts puts every project side by side, so the whole spend is visible
+// from any of them.
+func (s *Server) addAllProjectCosts(out map[string]any, project string) {
 	projects, _ := s.database.ListProjects()
 	for _, p := range projects {
 		if p.ID != project {
@@ -282,33 +334,31 @@ func (s *Server) handleCosts(w http.ResponseWriter, r *http.Request) {
 		out["all_items"] = everything
 	}
 	if totals, e := s.database.CostTotals(); e == nil {
-		all, sum := []costGroup{}, 0.0
-		for _, p := range projects {
-			if amount := totals[p.ID]; amount > 0 {
-				all = append(all, costGroup{Key: p.ID, Label: p.Name, Amount: money(amount), Exact: p.ID == project})
-				sum += amount
-				delete(totals, p.ID)
-			}
-		}
-		gone := 0.0
-		for _, amount := range totals {
-			gone += amount
-		}
-		if gone > 0 {
-			all = append(all, costGroup{Key: "deleted", Label: "Deleted projects", Amount: money(gone)})
-			sum += gone
-		}
-		sort.SliceStable(all, func(i, j int) bool { return all[i].Amount > all[j].Amount })
-		out["projects"], out["all_total"] = all, money(sum)
+		out["projects"], out["all_total"] = projectCostTotals(projects, project, totals)
 	}
-	if hasFal && r.URL.Query().Get("reconcile") == "1" {
-		if billed, ok := s.falBilled(r.Context(), first); ok {
-			out["fal_billed"] = map[string]any{"amount": billed, "since": first}
-		} else {
-			out["fal_billed"] = map[string]any{"unavailable": true}
+}
+
+// projectCostTotals ranks projects by spend, with deleted projects together at the end
+// of the ranking, and returns the grand total.
+func projectCostTotals(projects []models.Project, project string, totals map[string]float64) ([]costGroup, float64) {
+	all, sum := []costGroup{}, 0.0
+	for _, p := range projects {
+		if amount := totals[p.ID]; amount > 0 {
+			all = append(all, costGroup{Key: p.ID, Label: p.Name, Amount: money(amount), Exact: p.ID == project})
+			sum += amount
+			delete(totals, p.ID)
 		}
 	}
-	writeJSON(w, 200, out)
+	gone := 0.0
+	for _, amount := range totals {
+		gone += amount
+	}
+	if gone > 0 {
+		all = append(all, costGroup{Key: "deleted", Label: "Deleted projects", Amount: money(gone)})
+		sum += gone
+	}
+	sort.SliceStable(all, func(i, j int) bool { return all[i].Amount > all[j].Amount })
+	return all, money(sum)
 }
 
 // handleCostEstimate prices finishing one story before any money is spent.
