@@ -119,20 +119,7 @@ func (s *Server) handleAutopilotFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.JoinOnly {
-		jobs, _ := s.database.ListRenderJobs(project)
-		done, missing := completedSceneRenders(jobs), []string{}
-		for _, scene := range scenes {
-			if !done[scene.ID] {
-				missing = append(missing, "“"+scene.Title+"”")
-			}
-		}
-		if body.VideosOnly || len(missing) > 0 {
-			problem := "Joining only works on a whole episode."
-			if len(missing) == 1 {
-				problem = missing[0] + " has no finished video yet. Make its video first, then join the episode."
-			} else if len(missing) > 1 {
-				problem = strings.Join(missing, ", ") + " have no finished video yet. Make their videos first, then join the episode."
-			}
+		if problem := s.autopilotJoinOnlyProblem(project, body, scenes); problem != "" {
 			http.Error(w, problem, 409)
 			return
 		}
@@ -140,11 +127,7 @@ func (s *Server) handleAutopilotFinish(w http.ResponseWriter, r *http.Request) {
 	// The same run asked for twice (two tabs, a double click, the assistant and a button)
 	// is one run: the second caller follows the first instead of colliding with it.
 	background := r.URL.Query().Get("background") == "true"
-	ids := []string{}
-	for _, scene := range scenes {
-		ids = append(ids, scene.ID)
-	}
-	run := fmt.Sprintf("%s|%s|%t|%s", project, body.ScriptID, body.VideosOnly, strings.Join(ids, ","))
+	run := autopilotRunKey(project, body, scenes)
 	if background {
 		autopilotRuns.Lock()
 		defer autopilotRuns.Unlock()
@@ -167,158 +150,267 @@ func (s *Server) handleAutopilotFinish(w http.ResponseWriter, r *http.Request) {
 				autopilotRuns.Unlock()
 			}()
 		}
-		stage := func(text string) {
-			raw, _ := json.Marshal(map[string]any{"stage": text, "script_id": body.ScriptID, "videos_only": body.VideosOnly})
-			_ = s.database.UpdateOp(op.ID, "running", raw, nil)
+		runner := &autopilotRunner{s: s, op: op, project: project, body: body, scenes: scenes}
+		return runner.run(ctx)
+	})
+}
+
+// autopilotJoinOnlyProblem says why a join-only run is refused, or "" when it may go
+// ahead: every scene needs a finished video, and only a whole episode can be joined.
+func (s *Server) autopilotJoinOnlyProblem(project string, body autopilotRequest, scenes []models.Scene) string {
+	jobs, _ := s.database.ListRenderJobs(project)
+	done, missing := completedSceneRenders(jobs), []string{}
+	for _, scene := range scenes {
+		if !done[scene.ID] {
+			missing = append(missing, "“"+scene.Title+"”")
 		}
-		sameProject := func() error {
-			if active, e := s.database.GetActiveProjectID(); e != nil || active != project {
-				return fmt.Errorf("the open project changed while the video was being finished; reopen it and continue from Story")
-			}
-			return nil
-		}
-		// 1. An earlier request with no answer blocks its scene. Ask the service about each
-		// one first (free), so the run stops before spending anything if one stays unanswered.
-		adopted := map[string][]string{} // scene id → jobs the service turned out to have
-		jobs, _ := s.database.ListRenderJobs(project)
-		for i := range scenes {
-			for j := range jobs {
-				if job := &jobs[j]; job.SceneID != nil && *job.SceneID == scenes[i].ID && job.Status == models.StatusReconciliationRequired {
-					stage("Asking " + videoServiceLabel(job.Provider) + " about an earlier request for " + scenes[i].Title)
-					switch check := s.checkUncertainRender(ctx, job); check.Outcome {
-					case "found":
-						adopted[scenes[i].ID] = append(adopted[scenes[i].ID], job.ID)
-					case "unknown":
-						return stuckScene(scenes[i].Title, check)
-					}
+	}
+	if !body.VideosOnly && len(missing) == 0 {
+		return ""
+	}
+	problem := "Joining only works on a whole episode."
+	if len(missing) == 1 {
+		problem = missing[0] + " has no finished video yet. Make its video first, then join the episode."
+	} else if len(missing) > 1 {
+		problem = strings.Join(missing, ", ") + " have no finished video yet. Make their videos first, then join the episode."
+	}
+	return problem
+}
+
+// autopilotRunKey names what a run makes, so the same run asked for twice is found.
+func autopilotRunKey(project string, body autopilotRequest, scenes []models.Scene) string {
+	ids := []string{}
+	for _, scene := range scenes {
+		ids = append(ids, scene.ID)
+	}
+	return fmt.Sprintf("%s|%s|%t|%s", project, body.ScriptID, body.VideosOnly, strings.Join(ids, ","))
+}
+
+// autopilotRunner carries one autopilot run through its stages.
+type autopilotRunner struct {
+	s       *Server
+	op      *models.Op
+	project string
+	body    autopilotRequest
+	scenes  []models.Scene
+}
+
+// stage records the step the run is on, for the progress shown to the owner.
+func (a *autopilotRunner) stage(text string) {
+	raw, _ := json.Marshal(map[string]any{"stage": text, "script_id": a.body.ScriptID, "videos_only": a.body.VideosOnly})
+	_ = a.s.database.UpdateOp(a.op.ID, "running", raw, nil)
+}
+
+// sameProject stops the run when the owner opened another project meanwhile.
+func (a *autopilotRunner) sameProject() error {
+	if active, e := a.s.database.GetActiveProjectID(); e != nil || active != a.project {
+		return fmt.Errorf("the open project changed while the video was being finished; reopen it and continue from Story")
+	}
+	return nil
+}
+
+// run goes through the stages in order and returns the operation's result.
+func (a *autopilotRunner) run(ctx context.Context) (any, error) {
+	adopted, stuck, err := a.askAboutEarlierRequests(ctx)
+	if err != nil {
+		return stuck, err
+	}
+	waiting, err := a.startSceneVideos(ctx, adopted)
+	if err != nil {
+		return nil, err
+	}
+	if stuck, err := a.waitForSceneVideos(ctx, waiting); err != nil {
+		return stuck, err
+	}
+	if a.body.VideosOnly {
+		return a.videosOnlyResult(waiting), nil
+	}
+	return a.joinAndExport(ctx)
+}
+
+// askAboutEarlierRequests is step 1. An earlier request with no answer blocks its scene.
+// Ask the service about each one first (free), so the run stops before spending anything
+// if one stays unanswered. It returns, by scene id, the jobs the service turned out to
+// have; a scene that stays unanswered ends the run with stuckScene's result.
+func (a *autopilotRunner) askAboutEarlierRequests(ctx context.Context) (map[string][]string, any, error) {
+	scenes := a.scenes
+	adopted := map[string][]string{} // scene id → jobs the service turned out to have
+	jobs, _ := a.s.database.ListRenderJobs(a.project)
+	for i := range scenes {
+		for j := range jobs {
+			if job := &jobs[j]; job.SceneID != nil && *job.SceneID == scenes[i].ID && job.Status == models.StatusReconciliationRequired {
+				a.stage("Asking " + videoServiceLabel(job.Provider) + " about an earlier request for " + scenes[i].Title)
+				switch check := a.s.checkUncertainRender(ctx, job); check.Outcome {
+				case "found":
+					adopted[scenes[i].ID] = append(adopted[scenes[i].ID], job.ID)
+				case "unknown":
+					stuck, err := stuckScene(scenes[i].Title, check)
+					return nil, stuck, err
 				}
 			}
 		}
-		// 2. Start every scene that has no finished video yet. The video service makes
-		// them side by side while the run moves on to the next scene.
-		waiting := map[string][]string{} // scene id → job ids
-		for i := range scenes {
-			scene := &scenes[i]
-			if err := sameProject(); err != nil {
-				return nil, err
-			}
-			stage(fmt.Sprintf("Making video %d of %d: %s", i+1, len(scenes), scene.Title))
-			plan, e := s.sceneProductionPlan(ctx, scene)
-			if e != nil {
-				return nil, fmt.Errorf("%s isn't ready for video: %w", scene.Title, e)
-			}
-			if plan.Blocked != "" && len(adopted[scene.ID]) > 0 {
-				waiting[scene.ID] = adopted[scene.ID] // the service already has this scene's video
-				continue
-			}
-			if plan.Blocked != "" {
-				return nil, fmt.Errorf("%s isn't ready for video: %s", scene.Title, plan.Blocked)
-			}
-			spend := productionSpend(plan, false)
-			code, raw := s.internalCall(ctx, "POST", "/scenes/"+scene.ID+"/render", map[string]any{"prepare_storyboard": true, "use_scene_cast": true, "confirmed_plan_id": plan.ID, "confirmed_calls": spend.Calls, "confirmed_seconds": spend.Seconds, "confirmed_storyboard_calls": spend.Storyboards})
-			if code >= 300 {
-				return nil, fmt.Errorf("couldn't start the video for %s: %s", scene.Title, strings.TrimSpace(string(raw)))
-			}
-			var started struct {
-				JobID  string   `json:"job_id"`
-				JobIDs []string `json:"job_ids"`
-			}
-			_ = json.Unmarshal(raw, &started)
-			if len(started.JobIDs) == 0 && started.JobID != "" {
-				started.JobIDs = []string{started.JobID}
-			}
-			waiting[scene.ID] = started.JobIDs
-		}
-		// 3. Wait for the video service. A request that loses its answer is asked about again.
-		for {
-			pending, done := 0, 0
-			for i := range scenes {
-				for _, id := range waiting[scenes[i].ID] {
-					job, e := s.database.GetRenderJob(id)
-					if e != nil {
-						return nil, e
-					}
-					if job.Status == models.StatusReconciliationRequired {
-						if check := s.checkUncertainRender(ctx, job); check.Outcome == "unknown" {
-							return stuckScene(scenes[i].Title, check)
-						}
-						job, _ = s.database.GetRenderJob(id)
-					}
-					switch job.Status {
-					case models.StatusSucceeded:
-						done++
-					case models.StatusFailed, "canceled", models.StatusReconciliationRequired:
-						return nil, fmt.Errorf("the video for %s didn't finish. %s", scenes[i].Title, friendlyFailure(*job))
-					default:
-						pending++
-					}
-				}
-			}
-			if pending == 0 {
-				break
-			}
-			stage(fmt.Sprintf("Waiting for the video service: %d of %d clips done", done, done+pending))
-			select {
-			case <-ctx.Done():
-				return nil, fmt.Errorf("the video service is taking too long; your clips keep rendering. Ask me again in a few minutes")
-			case <-time.After(autopilotPoll):
-			}
-		}
-		if body.VideosOnly {
-			ids, titles, jobIDs := []string{}, []string{}, []string{}
-			for _, scene := range scenes {
-				ids, titles = append(ids, scene.ID), append(titles, scene.Title)
-				jobIDs = append(jobIDs, waiting[scene.ID]...)
-			}
-			return map[string]any{"stage": "Done", "videos_only": true, "script_id": body.ScriptID, "scene_ids": ids, "scene_titles": titles, "job_ids": jobIDs, "scene_count": len(scenes)}, nil
-		}
-		// 4. Put the clips in story order, caption them, save and export.
-		if err := sameProject(); err != nil {
+	}
+	return adopted, nil, nil
+}
+
+// startSceneVideos is step 2. Start every scene that has no finished video yet. The
+// video service makes them side by side while the run moves on to the next scene. It
+// returns the job ids to wait on, by scene id.
+func (a *autopilotRunner) startSceneVideos(ctx context.Context, adopted map[string][]string) (map[string][]string, error) {
+	scenes := a.scenes
+	waiting := map[string][]string{} // scene id → job ids
+	for i := range scenes {
+		scene := &scenes[i]
+		if err := a.sameProject(); err != nil {
 			return nil, err
 		}
-		stage("Putting the scenes together")
-		code, raw := s.internalCall(ctx, "GET", "/scripts/"+body.ScriptID+"/composition-draft", nil)
-		if code != 200 {
-			return nil, fmt.Errorf("couldn't line up the scenes: %s", strings.TrimSpace(string(raw)))
+		a.stage(fmt.Sprintf("Making video %d of %d: %s", i+1, len(scenes), scene.Title))
+		plan, e := a.s.sceneProductionPlan(ctx, scene)
+		if e != nil {
+			return nil, fmt.Errorf("%s isn't ready for video: %w", scene.Title, e)
 		}
-		var manifest map[string]any
-		if json.Unmarshal(raw, &manifest) != nil {
-			return nil, fmt.Errorf("couldn't read the assembled video plan")
+		if plan.Blocked != "" && len(adopted[scene.ID]) > 0 {
+			waiting[scene.ID] = adopted[scene.ID] // the service already has this scene's video
+			continue
 		}
-		if code, raw = s.internalCall(ctx, "POST", "/compositions/captions/from-script", map[string]any{"clips": manifest["clips"], "audio": manifest["audio"]}); code == 200 {
-			var captions struct {
-				Captions []any `json:"captions"`
+		if plan.Blocked != "" {
+			return nil, fmt.Errorf("%s isn't ready for video: %s", scene.Title, plan.Blocked)
+		}
+		spend := productionSpend(plan, false)
+		code, raw := a.s.internalCall(ctx, "POST", "/scenes/"+scene.ID+"/render", map[string]any{"prepare_storyboard": true, "use_scene_cast": true, "confirmed_plan_id": plan.ID, "confirmed_calls": spend.Calls, "confirmed_seconds": spend.Seconds, "confirmed_storyboard_calls": spend.Storyboards})
+		if code >= 300 {
+			return nil, fmt.Errorf("couldn't start the video for %s: %s", scene.Title, strings.TrimSpace(string(raw)))
+		}
+		var started struct {
+			JobID  string   `json:"job_id"`
+			JobIDs []string `json:"job_ids"`
+		}
+		_ = json.Unmarshal(raw, &started)
+		if len(started.JobIDs) == 0 && started.JobID != "" {
+			started.JobIDs = []string{started.JobID}
+		}
+		waiting[scene.ID] = started.JobIDs
+	}
+	return waiting, nil
+}
+
+// waitForSceneVideos is step 3. Wait for the video service. A request that loses its
+// answer is asked about again.
+func (a *autopilotRunner) waitForSceneVideos(ctx context.Context, waiting map[string][]string) (any, error) {
+	for {
+		pending, done, stuck, err := a.countSceneVideos(ctx, waiting)
+		if err != nil {
+			return stuck, err
+		}
+		if pending == 0 {
+			return nil, nil
+		}
+		a.stage(fmt.Sprintf("Waiting for the video service: %d of %d clips done", done, done+pending))
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("the video service is taking too long; your clips keep rendering. Ask me again in a few minutes")
+		case <-time.After(autopilotPoll):
+		}
+	}
+}
+
+// countSceneVideos looks at every started job once and counts the clips still being
+// made and those finished. A failed or unanswered clip ends the run.
+func (a *autopilotRunner) countSceneVideos(ctx context.Context, waiting map[string][]string) (pending, done int, stuck any, err error) {
+	scenes := a.scenes
+	for i := range scenes {
+		for _, id := range waiting[scenes[i].ID] {
+			job, e := a.s.database.GetRenderJob(id)
+			if e != nil {
+				return 0, 0, nil, e
 			}
-			if json.Unmarshal(raw, &captions) == nil && len(captions.Captions) > 0 {
-				manifest["captions"] = captions.Captions
+			if job.Status == models.StatusReconciliationRequired {
+				if check := a.s.checkUncertainRender(ctx, job); check.Outcome == "unknown" {
+					stuck, err := stuckScene(scenes[i].Title, check)
+					return 0, 0, stuck, err
+				}
+				job, _ = a.s.database.GetRenderJob(id)
+			}
+			switch job.Status {
+			case models.StatusSucceeded:
+				done++
+			case models.StatusFailed, "canceled", models.StatusReconciliationRequired:
+				return 0, 0, nil, fmt.Errorf("the video for %s didn't finish. %s", scenes[i].Title, friendlyFailure(*job))
+			default:
+				pending++
 			}
 		}
-		code, raw = s.internalCall(ctx, "POST", "/compositions", manifest)
-		var saved struct {
-			Revision string `json:"revision"`
+	}
+	return pending, done, nil, nil
+}
+
+// videosOnlyResult is how a videos-only run ends once the scene videos are made.
+func (a *autopilotRunner) videosOnlyResult(waiting map[string][]string) map[string]any {
+	ids, titles, jobIDs := []string{}, []string{}, []string{}
+	for _, scene := range a.scenes {
+		ids, titles = append(ids, scene.ID), append(titles, scene.Title)
+		jobIDs = append(jobIDs, waiting[scene.ID]...)
+	}
+	return map[string]any{"stage": "Done", "videos_only": true, "script_id": a.body.ScriptID, "scene_ids": ids, "scene_titles": titles, "job_ids": jobIDs, "scene_count": len(a.scenes)}
+}
+
+// joinAndExport is step 4. Put the clips in story order, caption them, save and export.
+func (a *autopilotRunner) joinAndExport(ctx context.Context) (any, error) {
+	if err := a.sameProject(); err != nil {
+		return nil, err
+	}
+	a.stage("Putting the scenes together")
+	revision, err := a.saveCaptionedComposition(ctx)
+	if err != nil {
+		return nil, err
+	}
+	a.stage("Exporting the final video")
+	code, raw := a.s.internalCall(ctx, "POST", "/compositions/"+revision+"/run", map[string]string{"operation": "render", "revision": revision})
+	var exported struct {
+		AssetURL string        `json:"asset_url"`
+		Asset    *models.Asset `json:"asset"`
+		Error    string        `json:"error"`
+	}
+	_ = json.Unmarshal(raw, &exported)
+	if code >= 300 || exported.AssetURL == "" {
+		detail := exported.Error
+		if detail == "" {
+			detail = strings.TrimSpace(string(raw))
 		}
-		if code >= 300 || json.Unmarshal(raw, &saved) != nil || saved.Revision == "" {
-			return nil, fmt.Errorf("couldn't save the edit: %s", strings.TrimSpace(string(raw)))
+		return nil, fmt.Errorf("the scenes are ready but the export failed (%s). Open Edit video and press Export", detail)
+	}
+	result := map[string]any{"stage": "Done", "script_id": a.body.ScriptID, "revision": revision, "video_url": exported.AssetURL, "scene_count": len(a.scenes)}
+	if exported.Asset != nil {
+		result["asset_id"] = exported.Asset.ID
+	}
+	return result, nil
+}
+
+// saveCaptionedComposition lines the story's clips up, adds captions from the script
+// when they can be made, and saves the edit. It returns the saved revision.
+func (a *autopilotRunner) saveCaptionedComposition(ctx context.Context) (string, error) {
+	code, raw := a.s.internalCall(ctx, "GET", "/scripts/"+a.body.ScriptID+"/composition-draft", nil)
+	if code != 200 {
+		return "", fmt.Errorf("couldn't line up the scenes: %s", strings.TrimSpace(string(raw)))
+	}
+	var manifest map[string]any
+	if json.Unmarshal(raw, &manifest) != nil {
+		return "", fmt.Errorf("couldn't read the assembled video plan")
+	}
+	if code, raw = a.s.internalCall(ctx, "POST", "/compositions/captions/from-script", map[string]any{"clips": manifest["clips"], "audio": manifest["audio"]}); code == 200 {
+		var captions struct {
+			Captions []any `json:"captions"`
 		}
-		stage("Exporting the final video")
-		code, raw = s.internalCall(ctx, "POST", "/compositions/"+saved.Revision+"/run", map[string]string{"operation": "render", "revision": saved.Revision})
-		var exported struct {
-			AssetURL string        `json:"asset_url"`
-			Asset    *models.Asset `json:"asset"`
-			Error    string        `json:"error"`
+		if json.Unmarshal(raw, &captions) == nil && len(captions.Captions) > 0 {
+			manifest["captions"] = captions.Captions
 		}
-		_ = json.Unmarshal(raw, &exported)
-		if code >= 300 || exported.AssetURL == "" {
-			detail := exported.Error
-			if detail == "" {
-				detail = strings.TrimSpace(string(raw))
-			}
-			return nil, fmt.Errorf("the scenes are ready but the export failed (%s). Open Edit video and press Export", detail)
-		}
-		result := map[string]any{"stage": "Done", "script_id": body.ScriptID, "revision": saved.Revision, "video_url": exported.AssetURL, "scene_count": len(scenes)}
-		if exported.Asset != nil {
-			result["asset_id"] = exported.Asset.ID
-		}
-		return result, nil
-	})
+	}
+	code, raw = a.s.internalCall(ctx, "POST", "/compositions", manifest)
+	var saved struct {
+		Revision string `json:"revision"`
+	}
+	if code >= 300 || json.Unmarshal(raw, &saved) != nil || saved.Revision == "" {
+		return "", fmt.Errorf("couldn't save the edit: %s", strings.TrimSpace(string(raw)))
+	}
+	return saved.Revision, nil
 }
