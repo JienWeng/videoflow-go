@@ -12,8 +12,12 @@ import (
 	"time"
 )
 
-// FalNativeVoiceModel makes a video from reference pictures, clips and sound.
-const FalNativeVoiceModel = "bytedance/seedance-2.0/fast/reference-to-video"
+// RetiredFalReferenceVideoModel is the model of the removed "generate from references"
+// clips. Jobs made with it are still stored and shown; nothing new is sent to it.
+const RetiredFalReferenceVideoModel = "bytedance/seedance-2.0/fast/reference-to-video"
+
+// ErrRetiredClip is returned when a stored request of that removed kind is sent again.
+var ErrRetiredClip = errors.New("this kind of clip (made directly from reference pictures, videos and audio) is no longer available; make a scene and render it instead")
 
 type FalClient struct {
 	mediaHTTP
@@ -113,13 +117,6 @@ func (c *FalClient) CreateVideo(ctx context.Context, p map[string]any) (string, 
 		return "", err
 	}
 	out := map[string]any{"prompt": p["prompt"]}
-	if stringValue(p["model"]) == FalNativeVoiceModel {
-		for _, key := range []string{"image_urls", "video_urls", "audio_urls"} {
-			if p[key] != nil {
-				out[key] = p[key]
-			}
-		}
-	}
 	for _, k := range []string{"aspect_ratio", "resolution", "generate_audio", "seed"} {
 		if v, ok := p[k]; ok {
 			out[k] = v

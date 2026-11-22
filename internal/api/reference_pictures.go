@@ -139,8 +139,8 @@ func (s *Server) sceneUsesReferences(ctx context.Context, scene *models.Scene) b
 	if plan, err := s.sceneProductionPlan(ctx, scene); err == nil {
 		return plan.VideoInput == inputReferences
 	}
-	provider, model, err := s.productionVideoModel(ctx)
-	if err != nil || (provider == "fal" && model.ID == providers.FalNativeVoiceModel) {
+	_, model, err := s.productionVideoModel(ctx)
+	if err != nil {
 		return false
 	}
 	return len(s.referenceModePictures(scene, sceneProduction(scene), model)) > 0

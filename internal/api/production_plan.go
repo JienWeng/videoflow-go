@@ -221,9 +221,6 @@ func (s *Server) sceneProductionPlan(ctx context.Context, scene *models.Scene) (
 		return p, err
 	}
 	p.Provider, p.Model, p.AudioSupported = provider, model.ID, model.GenerateAudio
-	if provider == "fal" && model.ID == providers.FalNativeVoiceModel {
-		return p, fmt.Errorf("reference-to-video uses explicit media roles; use Generate from references in the editing workspace, or choose an image-to-video model for scene rendering")
-	}
 	p.Resolution = sceneBrief(scene).Resolution
 	if p.Resolution == "" {
 		p.Resolution = "auto"

@@ -139,6 +139,11 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	action := canonicalChatAction(res.Action)
+	if res.Action == "make_clip" {
+		// The one-off clip from a picture was removed; a planner that still answers
+		// with it must not leave its promise standing.
+		res.Reply = retiredClipReply
+	}
 	// retry_render redoes a finished video. When there is no finished video to redo (the
 	// scene's video failed or was never made), "try again" means making the scene video.
 	if action == "retry_render" && !(body.Selected != nil && body.Selected.Kind == "output") {
@@ -276,18 +281,6 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			intent["video_switch"] = choice
 		}
 	}
-	if action == "make_clip" {
-		clip := s.chatClip(projectID, res, attachments)
-		if clip == nil {
-			action = "unknown"
-			intent["action"] = action
-			if len(attachments) == 0 {
-				intent["reply"] = "I need a picture or clip to work from. Paste, drag in or attach a photo (the paperclip), then tell me what should happen in the video."
-			}
-		} else {
-			intent["clip"] = clip
-		}
-	}
 	if action == "open_editor" {
 		switch res.EditorPanel {
 		case "voice", "music", "captions", "export":
@@ -423,7 +416,7 @@ func canonicalChatAction(action string) string {
 	switch action {
 	case "create_script", "add_scene":
 		return "generate_script"
-	case "open_editor", "make_clip", "finish_video", "render_scenes", "check_video", "stop_waiting", "switch_video_service", "clear_failed_videos", "set_music", "update_character", "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
+	case "open_editor", "finish_video", "render_scenes", "check_video", "stop_waiting", "switch_video_service", "clear_failed_videos", "set_music", "update_character", "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
 		return action
 	default:
 		return "unknown"
@@ -438,46 +431,8 @@ func sceneScopedAction(action string) bool {
 	return false
 }
 
-// chatClip turns the planner's make_clip answer into a checked request for one
-// reference clip. Only this project's usable media can be referenced.
-func (s *Server) chatClip(project string, res *agents.ChatIntentResponse, attachments []chatAttachment) map[string]any {
-	ids := res.ClipReferenceIDs
-	if len(ids) == 0 {
-		for _, a := range attachments {
-			ids = append(ids, a.ID)
-		}
-	}
-	references := []map[string]string{}
-	seen := map[string]bool{}
-	visual := false
-	for _, id := range ids {
-		asset, err := s.database.GetAsset(id)
-		if seen[id] || len(references) >= 12 || err != nil || asset.ProjectID == nil || *asset.ProjectID != project || !models.ReferenceApproved(asset.MetadataJSON) {
-			continue
-		}
-		seen[id] = true
-		kind := mediaKindForPath(asset.FilePath)
-		purpose := map[string]string{"image": "Who or what appears: keep this look", "video": "Movement and camera to follow", "audio": "Sound and rhythm"}[kind]
-		if kind == "" || kind == "audio" && !strings.HasSuffix(strings.ToLower(asset.FilePath), ".mp3") && !strings.HasSuffix(strings.ToLower(asset.FilePath), ".wav") {
-			continue
-		}
-		visual = visual || kind != "audio"
-		references = append(references, map[string]string{"asset_id": asset.ID, "kind": kind, "purpose": purpose, "name": asset.Name, "file_path": asset.FilePath})
-	}
-	prompt := strings.TrimSpace(res.ClipPrompt)
-	if !visual || prompt == "" || len(prompt) > 4000 {
-		return nil
-	}
-	duration := res.ClipDuration
-	if duration < 4 || duration > 15 {
-		duration = 8
-	}
-	aspect := res.ClipAspect
-	if aspect != "9:16" && aspect != "16:9" && aspect != "1:1" {
-		aspect = "9:16"
-	}
-	return map[string]any{"prompt": prompt, "duration": duration, "aspect_ratio": aspect, "generate_audio": res.ClipAudio, "references": references}
-}
+// retiredClipReply is what the user is told when a one-off clip from a picture is asked for.
+const retiredClipReply = "I can't make a one-off clip straight from a picture any more. Clips are made by rendering a scene: tell me what should happen and I'll write a short scene for it. Your picture is saved in the Library; connect it to the scene's character or place and the clip is made from it."
 
 func chatMode(auto, full bool) string {
 	if full {

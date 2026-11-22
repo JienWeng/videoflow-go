@@ -20,8 +20,6 @@ var compositionSlots = make(chan struct{}, 1)
 var compositionImportMu sync.Mutex
 
 func (s *Server) registerCompositionRoutes() {
-	s.router.Post("/reference-videos/plan", s.handleReferenceVideo)
-	s.router.Post("/reference-videos/render", s.handleReferenceVideo)
 	s.router.Get("/studio/brand", s.handleStudioBrand)
 	s.router.Put("/studio/brand", s.handleStudioBrand)
 	s.router.Post("/compositions/localize", s.handleLocalizeComposition)

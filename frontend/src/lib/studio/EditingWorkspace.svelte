@@ -1,5 +1,4 @@
 <script lang="ts">
- import ReferenceGeneration from "./ReferenceGeneration.svelte";
  import FinishingPanel from "./FinishingPanel.svelte";
  import VoiceoverPanel from "./VoiceoverPanel.svelte";
  import ChatPanel from "$lib/chat/ChatPanel.svelte";
@@ -118,7 +117,7 @@
    <div class="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
     {#if leftTab==='media'}
      <p class="text-xs text-muted-foreground">Drag onto the Video track, or press + to add at the end.</p>
-     {#if !sourcesLoaded}<p class="text-muted-foreground">Loading media…</p>{:else if !visualSources.length}<p class="rounded-md border border-dashed border-border p-4 text-center text-muted-foreground">No images or clips yet. Render a scene in Story, or generate a clip below.</p>{/if}
+     {#if !sourcesLoaded}<p class="text-muted-foreground">Loading media…</p>{:else if !visualSources.length}<p class="rounded-md border border-dashed border-border p-4 text-center text-muted-foreground">No images or clips yet. Render a scene in Story first.</p>{/if}
      <div class="grid grid-cols-2 gap-2" role="list" aria-label="Images and clips">
       {#each visualSources as asset (asset.id)}
        <div role="listitem" aria-label={asset.name} class="group relative overflow-hidden rounded-md border border-border bg-muted/40" draggable="true" ondragstart={e=>dragAsset(e,asset)} title={asset.name}>
@@ -128,7 +127,6 @@
        </div>
       {/each}
      </div>
-     <ReferenceGeneration onready={async id=>{assets=await get("/compositions/sources");await add("clips","output-"+id);fitLength()}}/>
     {:else if leftTab==='audio'}
      <VoiceoverPanel clips={draft.clips} disabled={busy} hasVoice={draft.audio.some(a=>String(a.asset_id).startsWith('voiceover_'))} {playhead} onbusy={value=>busy=value} onvoices={addVoices}/>
      <label class="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-border px-3 hover:bg-accent"><Upload class="size-4"/>Upload music or sound<input class="sr-only" type="file" accept="audio/*" onchange={uploadMusic}/></label>

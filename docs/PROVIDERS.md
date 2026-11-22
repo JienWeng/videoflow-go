@@ -33,7 +33,6 @@ Create story shows this route and fallback policy. Saved asset metadata identifi
 | fal.ai images | `fal-ai/nano-banana-2` | Text-only requests use this endpoint. Reference-conditioned requests use its documented `/edit` sibling with `image_urls`; at most 14 references. Explicit `/edit` selection requires references. |
 | fal.ai video | `bytedance/seedance-2.0/fast/image-to-video` | Uses the approved scene keyframe as `image_url`; optional last frame maps to `end_image_url`. 4–15 seconds, 480p/720p. |
 | fal.ai video alternative | `bytedance/seedance-2.0/fast/text-to-video` | For renders without a keyframe; reference frames are not silently discarded. |
-| fal.ai multimodal reference video | `bytedance/seedance-2.0/fast/reference-to-video` | Dedicated checked reference-video flow: actual image/video/audio arrays with numbered roles, not strict frames. See docs/INTEGRATED-EDITING-STUDIO.md for bounded media and duration limits. |
 | BytePlus video | `dreamina-seedance-2-0-260128` | Direct international ModelArk task API, with typed text/image content and explicit frame roles. This profile exposes 4–15 seconds and 480p/720p. |
 | OpenRouter | Existing configured models | Discovered/validated through the existing modality-specific catalogs. |
 

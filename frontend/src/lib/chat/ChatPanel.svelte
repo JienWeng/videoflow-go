@@ -8,7 +8,6 @@
  import ScenesCard from './ScenesCard.svelte';
  import VideoSwitchCard from './VideoSwitchCard.svelte';
  import StuckVideo from '$lib/production/StuckVideo.svelte';
-  import ClipCard from './ClipCard.svelte';
  import {upload as apiUpload} from '$lib/api';
  // Auto: the assistant carries out free planning steps itself. Manual: every step waits for a click.
  // Full auto: after one confirmation the app also renders, edits and exports the video.
@@ -1023,8 +1022,6 @@
               <StuckVideo jobId={m.intent.job_id} service={m.intent.service} reason={m.intent.waiting_reason} autoCheck={m.intent.action==='check_video'&&!!m.autoRun&&autoMode} askStop={m.intent.action==='stop_waiting'} onsettled={check=>{m.autoRun=false;void onmutate?.();void refreshChips();offerMakeAgain(check,m.intent.scene_title)}} />
             {:else if !editing && m.intent?.action === 'switch_video_service' && m.intent.video_switch && !m.dismissed}
               <VideoSwitchCard choice={m.intent.video_switch} onswitched={text=>{m.dismissed=true;messages.push({role:'assistant',text});void onmutate?.();void refreshChips()}} />
-            {:else if !editing && m.intent?.action === 'make_clip' && m.intent.clip && !m.dismissed}
-              <ClipCard clip={m.intent.clip} onjob={id=>m.intent={...m.intent,clip:{...m.intent.clip,job_id:id}}} ondismiss={()=>m.dismissed=true} />
             {:else if !editing && m.intent && m.intent.action !== 'unknown' && !m.dismissed}
               <ActionCard
                 auto={!!m.autoRun&&autoMode}
@@ -1068,11 +1065,11 @@
     <input bind:this={filePicker} type="file" class="hidden" multiple accept="image/png,image/jpeg,image/gif,image/webp,video/mp4,video/quicktime,video/webm" onchange={e=>{void attachFiles([...(e.currentTarget.files??[])]);e.currentTarget.value=''}} />
     <form class={dragging?'rounded-2xl outline-2 outline-dashed outline-ring':''} onsubmit={e=>{e.preventDefault();void send();}} ondragover={e=>{if(!editing&&e.dataTransfer?.types.some(t=>t==='Files'||t==='text/uri-list')){e.preventDefault();dragging=true}}} ondragleave={()=>dragging=false} ondrop={onComposerDrop}>
       <InputGroup.Root class="rounded-2xl bg-background shadow-none has-disabled:opacity-100 has-disabled:bg-background dark:has-disabled:bg-background">
-        <InputGroup.Textarea aria-label="Message story assistant" bind:value={input} class="min-h-24 max-h-40 px-3 pt-3" placeholder={editing?'Describe an edit to this video…':selected ? `What should change in ${selected.label}?` : attachments.length?'What should I do with this? e.g. “make him dance”':'Tell me your idea… paste a picture or link to use it'} onpaste={onComposerPaste} onkeydown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();void send();}}} />
+        <InputGroup.Textarea aria-label="Message story assistant" bind:value={input} class="min-h-24 max-h-40 px-3 pt-3" placeholder={editing?'Describe an edit to this video…':selected ? `What should change in ${selected.label}?` : attachments.length?'What should I do with this? e.g. “write a scene about him”':'Tell me your idea… paste a picture or link to use it'} onpaste={onComposerPaste} onkeydown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();void send();}}} />
         <InputGroup.Addon align="block-end" class="gap-2">
           <DropdownMenu.Root><DropdownMenu.Trigger>{#snippet child({props})}<InputGroup.Button {...props} type="button" size="icon-sm" aria-label="Attach" title="Attach a picture or video. You can also paste or drag one in." disabled={busy||pendingOps.length>0}><Paperclip class="size-4"/></InputGroup.Button>{/snippet}</DropdownMenu.Trigger>
             <DropdownMenu.Content align="start" side="top" class="w-72 max-w-[calc(100vw-2rem)]">
-              <DropdownMenu.Item disabled={!!editing} onclick={()=>filePicker?.click()}><span class="grid"><span>Picture or video</span><span class="text-xs text-muted-foreground">Show it to the assistant or turn it into a clip. Paste and drag-and-drop work too.</span></span></DropdownMenu.Item>
+              <DropdownMenu.Item disabled={!!editing} onclick={()=>filePicker?.click()}><span class="grid"><span>Picture or video</span><span class="text-xs text-muted-foreground">Show it to the assistant or build a scene around it. Paste and drag-and-drop work too.</span></span></DropdownMenu.Item>
               <DropdownMenu.Item onclick={()=>{referenceURL='';referenceOpen=true}}><span class="grid"><span>Match a look</span><span class="text-xs text-muted-foreground">Copy the art style of an image, video or link</span></span></DropdownMenu.Item>
             </DropdownMenu.Content>
           </DropdownMenu.Root>

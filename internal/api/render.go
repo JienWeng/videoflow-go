@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"videoflow-go/internal/models"
+	"videoflow-go/internal/providers"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -129,6 +130,11 @@ func (s *Server) handleResubmitJob(w http.ResponseWriter, r *http.Request) {
 	}
 	if job.Status != "failed" && job.Status != "succeeded" {
 		http.Error(w, "Wait for the active job, or reconcile an uncertain provider submission before retrying", 409)
+		return
+	}
+	if job.Provider == "fal" && job.Model == providers.RetiredFalReferenceVideoModel {
+		// Made by the removed "generate from references" step: kept for viewing, never re-sent.
+		http.Error(w, "This kind of clip (made directly from reference pictures, videos and audio) is no longer available, so it cannot be made again. Make a scene and render it instead.", 410)
 		return
 	}
 	// Explicit retry starts a new generation; only restart reconciliation reuses the upstream ID.

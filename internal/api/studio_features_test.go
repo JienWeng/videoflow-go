@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -32,46 +31,6 @@ func TestStudioBrandCASAndProjectScope(t *testing.T) {
 	brand.Logo = asset.ID
 	if r := call(t, s, "PUT", "/studio/brand", string(voiceJSON(brand))); r.Code != 400 {
 		t.Fatal("foreign logo accepted")
-	}
-}
-func TestReferenceVideoPlanConfirmAndDeduplicate(t *testing.T) {
-	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) {
-		t.Errorf("unexpected provider call %s", r.URL)
-		w.WriteHeader(500)
-	})
-	project, _ := s.database.GetActiveProjectID()
-	s.cfg.FalAPIKey = "fixture-key"
-	s.cfg.FalBaseURL = s.cfg.OpenRouterBaseURL
-	data, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
-	os.WriteFile(filepath.Join(s.cfg.StorageRoot, "look.png"), data, 0600)
-	asset := &models.Asset{ProjectID: &project, Type: "other", Name: "Look", FilePath: "storage/look.png"}
-	s.database.CreateAsset(asset)
-	request := referenceVideoRequest{Prompt: "Puppy waves", Duration: 8, Aspect: "9:16", Resolution: "480p", References: []generationReference{{AssetID: asset.ID, Kind: "image", Purpose: "Appearance"}}}
-	response := call(t, s, "POST", "/reference-videos/plan", string(voiceJSON(request)))
-	if response.Code != 200 {
-		t.Fatal(response.Code, response.Body.String())
-	}
-	var plan struct {
-		ID string `json:"id"`
-	}
-	json.Unmarshal(response.Body.Bytes(), &plan)
-	request.Confirmed = "stale"
-	if r := call(t, s, "POST", "/reference-videos/render", string(voiceJSON(request))); r.Code != 409 {
-		t.Fatal("changed plan accepted", r.Body.String())
-	}
-	request.Confirmed = plan.ID
-	for i := 0; i < 2; i++ {
-		r := call(t, s, "POST", "/reference-videos/render", string(voiceJSON(request)))
-		if r.Code != 202 {
-			t.Fatal(r.Code, r.Body.String())
-		}
-	}
-	jobs, _ := s.database.ListRenderJobs(project)
-	if len(jobs) != 1 {
-		t.Fatal("duplicate generation queued", len(jobs))
-	}
-	if !strings.Contains(string(jobs[0].RequestJSON), "image_urls") {
-		t.Fatal("lost actual reference input")
 	}
 }
 func TestCaptionLocalizationKeepsIDsAndTiming(t *testing.T) {
