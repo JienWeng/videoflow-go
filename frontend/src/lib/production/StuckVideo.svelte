@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '$lib/errors';
   // A scene video the video service took but never answered about. Check again asks the
   // service (free); Stop waiting closes it on the owner's word so the scene can be made again.
   import { onMount } from 'svelte';
@@ -36,7 +37,7 @@
       result = await post(`/render-jobs/${encodeURIComponent(jobId)}/${kind}`, {});
       confirming = false;
       if (result && result.outcome !== 'unknown') onsettled?.(result);
-    } catch (e) { error = (e as Error).message; }
+    } catch (e) { error = errorMessage(e); }
     busy = '';
   }
   onMount(() => { if (autoCheck) void run('check'); });
@@ -50,7 +51,11 @@
       <div class="grid gap-2 rounded-md border border-border p-3">
         <p>{name} may still have the earlier request and might bill it, even though VideoFlow stops waiting for it. Making the scene again is a new charge.</p>
         <div class="flex flex-wrap gap-2">
-          <Button size="sm" variant="destructive" disabled={!!busy} onclick={() => run('stop-waiting')}>{busy === 'stop-waiting' ? 'Stopping…' : 'Stop waiting'}</Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={!!busy}
+            onclick={() => run('stop-waiting')}>{busy === 'stop-waiting' ? 'Stopping…' : 'Stop waiting'}</Button>
           <Button size="sm" variant="outline" disabled={!!busy} onclick={() => (confirming = false)}>Keep waiting</Button>
         </div>
       </div>

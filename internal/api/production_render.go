@@ -90,7 +90,7 @@ func (s *Server) renderProductionPlan(ctx context.Context, scene *models.Scene, 
 		job.RequestJSON = voiceJSON(map[string]any{"duration": unit.Duration, "aspect_ratio": current.AspectRatio, "audio_mode": plan.Settings.AudioMode, "music_prompt": plan.Settings.MusicPrompt, "render_plan_id": plan.ID, "render_unit": unit, "video_input": plan.VideoInput, "prompt": current.Title + ". " + current.Summary + "\nRender only this consecutive part of the scene. Follow this local shot schedule:" + unit.Prompt})
 		if plan.Resolution != "" && plan.Resolution != "auto" {
 			var payload map[string]any
-			_ = json.Unmarshal(job.RequestJSON, &payload)
+			_ = json.Unmarshal(job.RequestJSON, &payload) // marshalled from a map just above
 			payload["resolution"] = plan.Resolution
 			job.RequestJSON = voiceJSON(payload)
 		}
@@ -140,7 +140,7 @@ type renderRef struct {
 
 func renderRequestRef(raw json.RawMessage) renderRef {
 	var r renderRef
-	_ = json.Unmarshal(raw, &r)
+	_ = json.Unmarshal(raw, &r) // a request without a render unit has the zero ref
 	return r
 }
 

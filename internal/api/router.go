@@ -87,6 +87,23 @@ func (s *Server) Database() *db.DB {
 }
 
 func (s *Server) setupRoutes() {
+	s.useMiddleware()
+	s.registerDirectorRoutes()
+	s.registerCompositionRoutes()
+	s.RegisterVoiceCaptionRoutes()
+	s.registerServiceRoutes()
+	s.registerProjectRoutes()
+	s.registerSceneRoutes()
+	s.registerAssetRoutes()
+	s.registerRenderRoutes()
+	s.registerStyleRoutes()
+	s.registerSettingsRoutes()
+	s.registerPipelineRoutes()
+}
+
+// useMiddleware installs the middleware every route runs through. chi requires it to be
+// installed before any route.
+func (s *Server) useMiddleware() {
 	s.router.Use(middleware.RequestID)
 	s.router.Use(s.bindDirectorRequest)
 	s.router.Use(s.requestReplay)
@@ -115,11 +132,10 @@ func (s *Server) setupRoutes() {
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
+}
 
-	s.registerDirectorRoutes()
-	s.registerCompositionRoutes()
-	s.RegisterVoiceCaptionRoutes()
-
+// registerServiceRoutes serves stored files, request recovery, health and the event stream.
+func (s *Server) registerServiceRoutes() {
 	// Static storage server
 	_ = os.MkdirAll(s.cfg.StorageRoot, 0755)
 	fileServer := http.FileServer(http.Dir(s.cfg.StorageRoot))
@@ -129,46 +145,53 @@ func (s *Server) setupRoutes() {
 	s.router.Get("/generation-requests", s.handlePendingRequests)
 	s.router.Post("/generation-requests/{key}/acknowledge", s.handleAcknowledgeRequest)
 
-	// Health
-	s.router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		resp := map[string]interface{}{
-			"status":      "ok",
-			"media_ready": s.media.Available(),
-			"missing_keys": func() []string {
-				missing := []string{}
-				if _, err := s.routes().Client("openrouter"); err != nil {
-					missing = append(missing, "OPENROUTER_API_KEY")
-				}
-				seen := map[string]bool{}
-				for _, kind := range []string{"image", "video"} {
-					provider, _ := s.routes().MediaSelection(kind)
-					if provider == "openrouter" || seen[provider] {
-						continue
-					}
-					seen[provider] = true
-					if _, _, _, err := s.routes().Credentials(provider); err != nil {
-						if provider == "fal" {
-							missing = append(missing, "FAL_KEY")
-						} else if provider == "byteplus" {
-							missing = append(missing, "BYTEPLUS_API_KEY")
-						}
-					}
-				}
-				return missing
-			}(),
-			"image_provider": func() string { p, _ := s.routes().MediaSelection("image"); return p }(),
-			"video_provider": func() string { p, _ := s.routes().MediaSelection("video"); return p }(),
-			"text_model":     s.cfg.OpenRouterTextModel,
-			"image_model":    s.routes().MediaModel("image"),
-			"video_model":    s.routes().MediaModel("video"),
-			"server":         "videoflow-go-v1",
-		}
-		writeJSON(w, http.StatusOK, resp)
-	})
+	s.router.Get("/health", s.handleHealth)
 
 	// Server-Sent Events (SSE)
 	s.router.Get("/events", s.handleEvents)
+}
 
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	resp := map[string]interface{}{
+		"status":         "ok",
+		"media_ready":    s.media.Available(),
+		"missing_keys":   s.missingKeys(),
+		"image_provider": func() string { p, _ := s.routes().MediaSelection("image"); return p }(),
+		"video_provider": func() string { p, _ := s.routes().MediaSelection("video"); return p }(),
+		"text_model":     s.cfg.OpenRouterTextModel,
+		"image_model":    s.routes().MediaModel("image"),
+		"video_model":    s.routes().MediaModel("video"),
+		"server":         "videoflow-go-v1",
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// missingKeys names the API keys the selected text, image and video services still need.
+func (s *Server) missingKeys() []string {
+	missing := []string{}
+	if _, err := s.routes().Client("openrouter"); err != nil {
+		missing = append(missing, "OPENROUTER_API_KEY")
+	}
+	seen := map[string]bool{}
+	for _, kind := range []string{"image", "video"} {
+		provider, _ := s.routes().MediaSelection(kind)
+		if provider == "openrouter" || seen[provider] {
+			continue
+		}
+		seen[provider] = true
+		if _, _, _, err := s.routes().Credentials(provider); err != nil {
+			if provider == "fal" {
+				missing = append(missing, "FAL_KEY")
+			} else if provider == "byteplus" {
+				missing = append(missing, "BYTEPLUS_API_KEY")
+			}
+		}
+	}
+	return missing
+}
+
+// registerProjectRoutes serves projects and their characters.
+func (s *Server) registerProjectRoutes() {
 	// Projects
 	s.router.Get("/projects", s.handleListProjects)
 	s.router.Post("/projects", s.handleCreateProject)
@@ -187,7 +210,10 @@ func (s *Server) setupRoutes() {
 	s.router.Delete("/characters/{id}", s.handleDeleteCharacter)
 	s.router.Post("/characters/{id}/bible", s.handleCharacterBible)
 	s.router.Post("/characters/{id}/reference-sheets", s.handleCharacterRefSheets)
+}
 
+// registerSceneRoutes serves scenes, shots, revisions, ideas and scripts.
+func (s *Server) registerSceneRoutes() {
 	// Scenes, Shots, Scripts & Ideas
 	s.router.Get("/scenes", s.handleListScenes)
 	s.router.Get("/production/progress", s.handleProjectProgress)
@@ -227,7 +253,10 @@ func (s *Server) setupRoutes() {
 
 	s.router.Post("/ideas/develop", s.handleDevelopIdea)
 	s.router.Get("/scripts", s.handleListScripts)
+}
 
+// registerAssetRoutes serves the asset library.
+func (s *Server) registerAssetRoutes() {
 	// Assets
 	s.router.Post("/assets/generate", s.handleGenerateImage)
 	s.router.Get("/assets", s.handleListAssets)
@@ -240,7 +269,10 @@ func (s *Server) setupRoutes() {
 	s.router.Get("/assets/{id}", s.handleGetAsset)
 	s.router.Delete("/assets/{id}", s.handleDeleteAsset)
 	s.router.Post("/assets/{id}/recognise", s.handleRecogniseAsset)
+}
 
+// registerRenderRoutes serves render jobs and their outputs.
+func (s *Server) registerRenderRoutes() {
 	// Render & Outputs
 	s.router.Post("/render/from-shot", s.handleRenderFromShot)
 	s.router.Get("/render-jobs", s.handleListRenderJobs)
@@ -250,7 +282,10 @@ func (s *Server) setupRoutes() {
 
 	s.router.Post("/outputs/{id}/retry", s.handleRetryOutput)
 	s.router.Get("/outputs/{id}/download", s.handleDownloadOutput)
+}
 
+// registerStyleRoutes serves style presets, preset packs and the project style.
+func (s *Server) registerStyleRoutes() {
 	// Style Guide
 	s.router.Get("/style-presets", s.handlePresetCatalog)
 	s.router.Post("/preset-packs/preview", s.handlePresetPack)
@@ -261,7 +296,10 @@ func (s *Server) setupRoutes() {
 	s.router.Patch("/style", s.handleUpdateStyle)
 	s.router.Post("/style/ingest", s.handleIngestStyle)
 	s.router.Post("/style/reference", s.handleAnalyzeStyleReference)
+}
 
+// registerSettingsRoutes serves app settings, providers and connections.
+func (s *Server) registerSettingsRoutes() {
 	// Settings
 	s.router.Get("/settings/app", s.handleGetAppSettings)
 	s.router.Put("/settings/app", s.handlePutAppSettings)
@@ -273,7 +311,10 @@ func (s *Server) setupRoutes() {
 	s.router.Post("/settings/providers/{name}/verify-model", s.handleVerifyModel)
 	s.router.Get("/settings/connection-presets", s.handleConnectionPresets)
 	s.router.Post("/settings/connections", s.handleCreateConnection)
+}
 
+// registerPipelineRoutes serves chat, the guided video pipeline, operations and the graph.
+func (s *Server) registerPipelineRoutes() {
 	// Chat Assistant
 	s.router.Post("/chat", s.handleChat)
 

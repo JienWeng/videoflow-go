@@ -530,7 +530,7 @@ func (s *Server) writeChatResponse(w http.ResponseWriter, turn *chatTurn, intent
 
 	currentSelectionRaw, _ := s.database.GetDirectorSelection(binding.SessionID)
 	var currentSelection directorSelection
-	_ = json.Unmarshal(currentSelectionRaw, &currentSelection)
+	_ = json.Unmarshal(currentSelectionRaw, &currentSelection) // a missing or unreadable selection reads as none; the revision check rejects it
 	current, err := s.buildDirectorContext(projectID, currentSelection)
 	if err != nil || current.Revision != snapshot.Revision {
 		http.Error(w, errDirectorContextChanged.Error(), 409)

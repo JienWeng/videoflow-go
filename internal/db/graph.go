@@ -68,7 +68,7 @@ func (d *DB) addAssetNodes(g *graphBuilder, projectID string, activeReferenceIDs
 		var review struct {
 			Status string `json:"consistency_review"`
 		}
-		json.Unmarshal(a.MetadataJSON, &review)
+		_ = json.Unmarshal(a.MetadataJSON, &review) // unreadable metadata has no review verdict
 		g.nodes = append(g.nodes, models.GraphNode{
 			ID:    a.ID,
 			Type:  "asset",
@@ -189,7 +189,7 @@ func (d *DB) addRenderNodes(g *graphBuilder, projectID string) {
 		var request struct {
 			Unit json.RawMessage `json:"render_unit"`
 		}
-		_ = json.Unmarshal(j.RequestJSON, &request)
+		_ = json.Unmarshal(j.RequestJSON, &request) // a request without a render unit is drawn without one
 		modelName := j.Model
 		if idx := strings.LastIndex(modelName, "/"); idx >= 0 {
 			modelName = modelName[idx+1:]

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '$lib/errors';
   // Join an episode's finished scene videos into one final video, from the canvas.
   // Free: it never makes a video, and says which scene is missing one instead.
   import { onDestroy } from 'svelte';
@@ -21,13 +22,18 @@
         stage = (op.result_json?.stage ?? 'Working') + '…';
         await new Promise((r) => setTimeout(r, 3000));
       }
-    } catch (e) { problem = (e as Error).message; }
+    } catch (e) { problem = errorMessage(e); }
     finally { busy = false; }
   }
 </script>
 
 <span class="inline-flex flex-wrap items-center gap-2">
-  <Button variant="ghost" size="sm" disabled={busy} onclick={join} title="Free. Joins the finished scene videos in story order, adds captions and exports one video.">
+  <Button
+    variant="ghost"
+    size="sm"
+    disabled={busy}
+    onclick={join}
+    title="Free. Joins the finished scene videos in story order, adds captions and exports one video.">
     <Combine class="size-3.5" />{busy ? stage : again ? 'Join again' : episode ? `Join ${episode}` : 'Join episode'}
   </Button>
   {#if done}<span role="status" class="text-xs text-muted-foreground">Joined. The final video is on the canvas.</span>{/if}

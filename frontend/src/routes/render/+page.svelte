@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { errorMessage } from '$lib/errors';
+  import { friendlyError } from '$lib/errors';
   import { editOutputHref } from '$lib/editor/links';
-  import { onMount,onDestroy } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { get, post, API_BASE, mediaUrl } from '$lib/api';
   import { subscribeJobs } from '$lib/sse';
   import VideoPreview from '$lib/components/VideoPreview.svelte';
@@ -47,32 +49,6 @@
     return `${API_BASE}/outputs/${outId}/download?variant=${variant}`;
   }
 
-  // --- Friendly error mapping (raw provider error -> short human line) ---
-  function friendlyError(raw: string | null | undefined): string {
-    const text = (raw ?? '').trim();
-    if (!text) return 'Something went wrong (no detail provided).';
-    const t = text.toLowerCase();
-    if (t.includes('timeout') || t.includes('timed out'))
-      return 'The provider took too long to respond — try again.';
-    if (t.includes('rate limit') || t.includes('429') || t.includes('too many requests'))
-      return 'Rate limited by the provider — wait a moment and retry.';
-    if (t.includes('insufficient') && (t.includes('balance') || t.includes('credit') || t.includes('quota')))
-      return 'The provider account is out of credit/quota.';
-    if (t.includes('401') || t.includes('unauthorized') || t.includes('api key') || t.includes('forbidden') || t.includes('403'))
-      return 'Provider rejected the API key — check Settings.';
-    if (t.includes('content') && (t.includes('policy') || t.includes('moderation') || t.includes('blocked') || t.includes('safety')))
-      return 'The prompt was blocked by the provider content filter.';
-    if (t.includes('download failed'))
-      return 'The finished video could not be downloaded — try again.';
-    if (t.includes('ffmpeg') || t.includes('no frames'))
-      return 'Could not process the video file (ffmpeg).';
-    if (t.includes('connection') || t.includes('network') || t.includes('econn') || t.includes('failed to fetch'))
-      return 'Network error reaching the provider — check the connection.';
-    if (t.includes('500') || t.includes('internal server error') || t.includes('bad gateway') || t.includes('502') || t.includes('503'))
-      return 'The provider had a server error — try again shortly.';
-    return text.length > 160 ? text.slice(0, 157) + '…' : text;
-  }
-
   function elapsed(iso: string | null): string {
     if (!iso) return '';
     const t = new Date(iso.endsWith('Z') ? iso : iso + 'Z').getTime();
@@ -111,12 +87,15 @@
   async function refresh() {
     let allAssets: any[] = [];
     [jobs, scenes, scripts, allAssets] = await Promise.all([
-      get('/render-jobs'), get('/scenes'), get('/scripts'), get('/assets').catch(() => [])
+      get('/render-jobs'),
+      get('/scenes'),
+      get('/scripts'),
+      get('/assets').catch(() => [])
     ]);
     editedVideos = (allAssets ?? [])
       .filter((a: any) => a.type === 'output_video' && a.metadata_json?.composition_revision)
       .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)));
-    const done = jobs.filter((j) => j.status === 'succeeded');
+    const done = jobs.filter(j => j.status === 'succeeded');
     for (const j of done) {
       if (!outputs[j.id]) {
         const detail = await get(`/render-jobs/${j.id}`);
@@ -128,18 +107,24 @@
 
   // Failed attempts are records, not queued work: clearing puts them away (free, nothing
   // is deleted) and every scene can still be made again.
-  const failedCount = $derived(jobs.filter((j) => j.status === 'failed' || j.status === 'canceled').length);
+  const failedCount = $derived(jobs.filter(j => j.status === 'failed' || j.status === 'canceled').length);
   let clearing = $state(false);
   async function clearFailed() {
     clearing = true;
-    try { const r = await post('/render-jobs/clear-failed', {}); toast.success(r.message); await refresh(); }
-    catch (e) { toast.error(`Could not clear the failed videos. ${(e as Error).message}`); }
-    finally { clearing = false; }
+    try {
+      const r = await post('/render-jobs/clear-failed', {});
+      toast.success(r.message);
+      await refresh();
+    } catch (e) {
+      toast.error(`Could not clear the failed videos. ${errorMessage(e)}`);
+    } finally {
+      clearing = false;
+    }
   }
 
   onMount(() => {
     refresh()
-      .catch((e) => (error = e.message))
+      .catch(e => (error = e.message))
       .finally(() => (loaded = true));
     const ticker = setInterval(() => (now = Date.now()), 1000);
     const unsubscribe = subscribeJobs(
@@ -157,17 +142,16 @@
   async function reRenderJob(j: any) {
     rerunning = j.id;
     try {
-      if(!confirm('Start a new paid video generation using this job’s saved inputs?'))return;
-      await post(`/render-jobs/${j.id}/resubmit`,{});
+      if (!confirm('Start a new paid video generation using this job’s saved inputs?')) return;
+      await post(`/render-jobs/${j.id}/resubmit`, {});
       toast.success('Re-render started');
       await refresh();
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e) {
+      toast.error(errorMessage(e));
     } finally {
       rerunning = '';
     }
   }
-
 
   // Group jobs by scene — humans browse renders per scene, not per job id. Only
   // scenes WITH render activity appear in the master list.
@@ -186,15 +170,16 @@
   let groups: SceneGroup[] = $derived.by(() => {
     const titles = new Map(scenes.map((s: any) => [s.id, s.title]));
     const storyPositions = new Map<string, { time: number; order: number }>();
-    const sortedScripts = scripts.slice().sort((a, b) =>
-      (a.created_at ?? '').localeCompare(b.created_at ?? '')
-    );
+    const sortedScripts = scripts.slice().sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
     for (let scriptIndex = 0; scriptIndex < sortedScripts.length; scriptIndex += 1) {
       const script = sortedScripts[scriptIndex];
       const scriptScenes = scenes
         .filter((scene: any) => scene.script_id === script.id)
-        .sort((a: any, b: any) => (a.scene_order ?? Number.MAX_SAFE_INTEGER) - (b.scene_order ?? Number.MAX_SAFE_INTEGER) ||
-          (a.created_at ?? '').localeCompare(b.created_at ?? ''));
+        .sort(
+          (a: any, b: any) =>
+            (a.scene_order ?? Number.MAX_SAFE_INTEGER) - (b.scene_order ?? Number.MAX_SAFE_INTEGER) ||
+            (a.created_at ?? '').localeCompare(b.created_at ?? '')
+        );
       for (const [sceneIndex, scene] of scriptScenes.entries()) {
         storyPositions.set(scene.id, {
           time: new Date(script.created_at ?? scene.created_at ?? 0).getTime(),
@@ -215,34 +200,37 @@
         sceneId: key,
         title: key === '__other__' ? 'Other renders' : (titles.get(key) ?? key),
         jobs: list,
-        active: list.filter((j) => isActive(j.status)),
-        succeeded: list.filter((j) => j.status === 'succeeded').length,
-        failed: list.filter((j) => j.status === 'failed').length,
+        active: list.filter(j => isActive(j.status)),
+        succeeded: list.filter(j => j.status === 'succeeded').length,
+        failed: list.filter(j => j.status === 'failed').length,
         latest: list[0]?.created_at ?? '',
-        storyTime: storyPositions.get(key)?.time ?? new Date(scenes.find((s: any) => s.id === key)?.created_at ?? 0).getTime(),
+        storyTime:
+          storyPositions.get(key)?.time ?? new Date(scenes.find((s: any) => s.id === key)?.created_at ?? 0).getTime(),
         storyOrder: storyPositions.get(key)?.order ?? 0
       });
     }
     if (groupSort === 'latest') {
       out.sort((a, b) => b.latest.localeCompare(a.latest));
     } else {
-      out.sort((a, b) =>
-        (a.sceneId === '__other__' ? Number.MAX_SAFE_INTEGER : a.storyTime) -
-          (b.sceneId === '__other__' ? Number.MAX_SAFE_INTEGER : b.storyTime) ||
-        a.storyOrder - b.storyOrder || a.title.localeCompare(b.title)
+      out.sort(
+        (a, b) =>
+          (a.sceneId === '__other__' ? Number.MAX_SAFE_INTEGER : a.storyTime) -
+            (b.sceneId === '__other__' ? Number.MAX_SAFE_INTEGER : b.storyTime) ||
+          a.storyOrder - b.storyOrder ||
+          a.title.localeCompare(b.title)
       );
     }
     return out;
   });
 
-  const selectedGroup = $derived(groups.find((g) => g.sceneId === selectedId) ?? null);
+  const selectedGroup = $derived(groups.find(g => g.sceneId === selectedId) ?? null);
 
   // Keep selection valid as activity changes: default to first group, fall back
   // when the selected scene's activity disappears.
   $effect(() => {
     if (!loaded) return;
     if (selectedId === '__edited__' && editedVideos.length) return;
-    if (selectedId !== null && groups.some((g) => g.sceneId === selectedId)) return;
+    if (selectedId !== null && groups.some(g => g.sceneId === selectedId)) return;
     selectedId = groups.length ? groups[0].sceneId : editedVideos.length ? '__edited__' : null;
   });
 
@@ -276,7 +264,18 @@
   }
 
   function statusLabel(status: string): string {
-    return ({ succeeded: 'Done', failed: 'Failed', running: 'Rendering', queued: 'Waiting', pending: 'Waiting', reconciliation_required: 'Needs a check' } as Record<string, string>)[status] ?? status;
+    return (
+      (
+        {
+          succeeded: 'Done',
+          failed: 'Failed',
+          running: 'Rendering',
+          queued: 'Waiting',
+          pending: 'Waiting',
+          reconciliation_required: 'Needs a check'
+        } as Record<string, string>
+      )[status] ?? status
+    );
   }
 
   function selectGroup(id: string) {
@@ -287,7 +286,7 @@
   function listKeydown(e: KeyboardEvent) {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     if (!groups.length) return;
-    const i = groups.findIndex((g) => g.sceneId === selectedId);
+    const i = groups.findIndex(g => g.sceneId === selectedId);
     const next = e.key === 'ArrowDown' ? Math.min(groups.length - 1, i + 1) : Math.max(0, i - 1);
     if (next !== i || i === -1) {
       e.preventDefault();
@@ -305,7 +304,11 @@
       <span class="text-muted-foreground" title={j.model}>{j.provider || 'Video'} render</span>
       <span class="text-muted-foreground">{relativeTime(j.created_at)}</span>
       {#if j.status === 'reconciliation_required'}
-      <div class="basis-full"><StuckVideo jobId={j.id} service={serviceName(j.provider)} reason={`${serviceName(j.provider)} took this request but has not said whether it made the video.`} onsettled={() => refresh().catch(() => {})} /></div>
+      <div class="basis-full"><StuckVideo
+        jobId={j.id}
+        service={serviceName(j.provider)}
+        reason={`${serviceName(j.provider)} took this request but has not said whether it made the video.`}
+        onsettled={() => refresh().catch(() => {})} /></div>
     {/if}
     {#if j.status === 'failed'}
         <Button
@@ -347,8 +350,13 @@
   <!-- Page header -->
   <div class="shrink-0 px-6 pt-6 pb-4">
     <div class="flex flex-wrap items-start justify-between gap-3">
-      <div><h1 class="text-lg font-semibold">Videos</h1><p class="mt-0.5 text-sm text-muted-foreground">Your scene videos and edited exports. Watch, download, or combine them in the editor.</p></div>
-      <div class="flex flex-wrap gap-2">{#if failedCount}<Button variant="outline" disabled={clearing} onclick={clearFailed}>{clearing ? 'Clearing…' : `Clear ${failedCount} failed`}</Button>{/if}<Button variant="ghost" href="/voices">Voices</Button><Button href="/?view=edit"><Clapperboard class="size-4" />Edit & combine</Button></div>
+      <div><h1 class="text-lg font-semibold">Videos</h1><p
+        class="mt-0.5 text-sm text-muted-foreground">Your scene videos and edited exports. Watch, download, or combine them in the editor.</p></div>
+      <div class="flex flex-wrap gap-2">{#if failedCount}<Button
+        variant="outline"
+        disabled={clearing}
+        onclick={clearFailed}>{clearing ? 'Clearing…' : `Clear ${failedCount} failed`}</Button>{/if}<Button
+          variant="ghost" href="/voices">Voices</Button><Button href="/?view=edit"><Clapperboard class="size-4" />Edit & combine</Button></div>
     </div>
   </div>
   <PaneGroup direction="horizontal" class="flex-1 min-h-0 border-t border-border">
@@ -360,7 +368,9 @@
           <div class="flex items-center gap-1" role="group" aria-label="Render scene order">
             <span class="mr-1 text-[11px] text-muted-foreground">Order:</span>
             {#each [{ value: 'latest', label: 'Latest' }, { value: 'story', label: 'Story order' }] as option}
-              <button type="button" aria-pressed={groupSort === option.value}
+              <button
+                type="button"
+                aria-pressed={groupSort === option.value}
                 class="rounded-full px-2 py-0.5 text-[11px] transition-colors {groupSort === option.value ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-accent'}"
                 onclick={() => (groupSort = option.value as 'latest' | 'story')}>
                 {option.label}
@@ -372,8 +382,12 @@
         <!-- The list itself -->
         <!-- Named button group also supports arrow-key selection from its container. -->
         <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-        <div class="min-h-0 flex-1 overflow-y-auto p-2 space-y-1.5 focus:outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2"
-          tabindex="0" role="group" aria-label="Scenes with renders" onkeydown={listKeydown}>
+        <div
+          class="min-h-0 flex-1 overflow-y-auto p-2 space-y-1.5 focus:outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2"
+          tabindex="0"
+          role="group"
+          aria-label="Scenes with renders"
+          onkeydown={listKeydown}>
           {#if !loaded}
             {#each Array(5) as _, i (i)}
               <div class="flex items-start gap-2.5 rounded-lg border border-transparent px-2.5 py-2">
@@ -402,10 +416,17 @@
             </div>
           {:else}
             {#if editedVideos.length}
-              <button type="button" aria-pressed={selectedId === '__edited__'} onclick={() => selectGroup('__edited__')}
+              <button
+                type="button"
+                aria-pressed={selectedId === '__edited__'}
+                onclick={() => selectGroup('__edited__')}
                 class="flex w-full items-start gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors {selectedId === '__edited__' ? 'border-primary/60 bg-accent' : 'border-transparent hover:border-border hover:bg-accent/50'}">
-                <div class="flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-muted/30 text-muted-foreground"><Film class="size-4" /></div>
-                <div class="min-w-0 flex-1"><span class="block truncate text-sm font-medium">Edited videos</span><p class="mt-0.5 truncate text-xs text-muted-foreground">{editedVideos.length} exported from the editor</p></div>
+                <div
+                  class="flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-muted/30 text-muted-foreground"><Film
+                  class="size-4" /></div>
+                <div class="min-w-0 flex-1"><span
+                  class="block truncate text-sm font-medium">Edited videos</span><p
+                  class="mt-0.5 truncate text-xs text-muted-foreground">{editedVideos.length} exported from the editor</p></div>
               </button>
             {/if}
             {#each groups as g (g.sceneId)}
@@ -419,11 +440,19 @@
                     ? 'border-primary/60 bg-accent'
                     : 'border-transparent hover:border-border hover:bg-accent/50'}"
               >
-                <div class="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/30 text-muted-foreground/50">
+                <div
+                  class="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/30 text-muted-foreground/50">
                   {#if sceneOutputs(g)[0]?.out?.thumbnail_path && !g.active.length}
                     <img src={mediaUrl(sceneOutputs(g)[0].out.thumbnail_path) ?? ''} alt="" class="size-full object-cover" />
                   {:else if sceneOutputs(g)[0]?.out?.video_path && !g.active.length}
-                    <video src={(mediaUrl(sceneOutputs(g)[0].out.video_path) ?? '') + '#t=0.5'} class="size-full object-cover" preload="metadata" muted playsinline tabindex="-1" aria-hidden="true"></video>
+                    <video
+                      src={(mediaUrl(sceneOutputs(g)[0].out.video_path) ?? '') + '#t=0.5'}
+                      class="size-full object-cover"
+                      preload="metadata"
+                      muted
+                      playsinline
+                      tabindex="-1"
+                      aria-hidden="true"></video>
                   {:else if g.active.length}
                     <Loader2 class="size-4 animate-spin text-amber-500/80" />
                   {:else}
@@ -459,13 +488,21 @@
           </div>
         {:else if selectedId === '__edited__' && editedVideos.length}
           <div class="p-5">
-            <div class="mb-4 flex flex-wrap items-center gap-2"><h2 class="truncate text-base font-semibold">Edited videos</h2><Button size="sm" variant="ghost" href="/?view=edit">Open editor</Button><Badge variant="secondary" class="ml-auto">{editedVideos.length} video{editedVideos.length === 1 ? '' : 's'}</Badge></div>
+            <div class="mb-4 flex flex-wrap items-center gap-2"><h2
+              class="truncate text-base font-semibold">Edited videos</h2><Button size="sm" variant="ghost"
+              href="/?view=edit">Open editor</Button><Badge variant="secondary"
+              class="ml-auto">{editedVideos.length} video{editedVideos.length === 1 ? '' : 's'}</Badge></div>
             <div class="flex flex-wrap gap-4">
               {#each editedVideos as v (v.id)}
                 <div class="w-[320px] flex-none">
                   <VideoPreview path={v.file_path} />
                   <p class="mt-2 truncate text-sm font-medium" title={v.name}>{v.name}</p>
-                  <div class="mt-1.5 flex gap-1"><Button size="sm" variant="secondary" class="flex-1" href={mediaUrl(v.file_path) ?? ''} download><Download class="mr-1 size-3" />Download</Button></div>
+                  <div class="mt-1.5 flex gap-1"><Button
+                    size="sm"
+                    variant="secondary"
+                    class="flex-1"
+                    href={mediaUrl(v.file_path) ?? ''}
+                    download><Download class="mr-1 size-3" />Download</Button></div>
                 </div>
               {/each}
             </div>
@@ -476,7 +513,12 @@
             <div class="p-5">
               <!-- Header: scene title + at-a-glance counts -->
               <div class="flex flex-wrap items-center gap-2 mb-4">
-                <h2 class="font-semibold text-base truncate" title={g.title}>{g.title}</h2>{#if g.sceneId!=='__other__'}<Button size="sm" variant="ghost" href={`/?view=story&scene_id=${encodeURIComponent(g.sceneId)}`}>Open scene</Button>{/if}
+                <h2
+                  class="font-semibold text-base truncate"
+                  title={g.title}>{g.title}</h2>{#if g.sceneId!=='__other__'}<Button
+                  size="sm"
+                  variant="ghost"
+                  href={`/?view=story&scene_id=${encodeURIComponent(g.sceneId)}`}>Open scene</Button>{/if}
                 <div class="flex items-center gap-1.5 ml-auto">
                   {#if g.active.length}
                     <Badge variant="secondary" class="animate-pulse">{g.active.length} in progress</Badge>

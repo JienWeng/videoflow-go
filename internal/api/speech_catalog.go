@@ -30,7 +30,7 @@ func (s *Server) speechModels(ctx context.Context, provider string, refresh bool
 	}
 	cacheKey := "voice_catalog_" + provider + "_" + voiceHash([]byte(key + base))[:16]
 	raw, _ := s.database.GetAppSetting(cacheKey)
-	_ = json.Unmarshal([]byte(raw), &cat)
+	_ = json.Unmarshal([]byte(raw), &cat) // an unreadable cache is fetched again
 	if !refresh && len(cat.Models) > 0 && time.Since(cat.Checked) < 24*time.Hour {
 		return cat, nil
 	}

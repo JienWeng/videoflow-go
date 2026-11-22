@@ -22,12 +22,12 @@ func (s *Server) sceneInputRevision(scene *models.Scene) (string, error) {
 		shotInputs = append(shotInputs, map[string]any{"order": shot.ShotOrder, "duration": shot.Duration, "prompt": shot.Prompt, "camera": shot.Camera, "movement": shot.Movement, "spec": shot.ShotJSON})
 	}
 	var document map[string]json.RawMessage
-	_ = json.Unmarshal(scene.SceneJSON, &document)
+	_ = json.Unmarshal(scene.SceneJSON, &document) // unreadable scene metadata contributes nothing
 	if document == nil {
 		document = map[string]json.RawMessage{}
 	}
 	var brief map[string]json.RawMessage
-	_ = json.Unmarshal(document["generation_brief"], &brief)
+	_ = json.Unmarshal(document["generation_brief"], &brief) // a missing or unreadable brief contributes nothing
 	if brief != nil {
 		delete(brief, "character_notes")
 		delete(brief, "character_ids")

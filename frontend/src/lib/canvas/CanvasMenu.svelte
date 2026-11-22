@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '$lib/errors';
   import { editOutputHref } from '$lib/editor/links';
   /** Right-click context menu for canvas nodes: open / link / delink / delete.
    * Submenus stay simple — clicking a parent item swaps the menu content to a
@@ -115,8 +116,8 @@
     try {
       await op();
       toast.success(ok);
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err) {
+      toast.error(errorMessage(err));
     } finally {
       busy = false;
       onclose();

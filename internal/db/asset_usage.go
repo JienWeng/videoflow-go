@@ -94,9 +94,7 @@ func (d *DB) SetSceneReference(project, sceneID, assetID string, attach bool, re
 	if metadata == nil {
 		metadata = map[string]json.RawMessage{}
 	}
-	var refs, all []string
-	_ = json.Unmarshal(metadata["story_asset_ids"], &refs)
-	_ = json.Unmarshal(allRaw, &all)
+	refs, all := models.IDList(metadata["story_asset_ids"]), models.IDList(allRaw)
 	update := func(ids []string) []string {
 		result := []string{}
 		seen := false

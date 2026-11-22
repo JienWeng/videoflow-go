@@ -76,7 +76,7 @@ func speechCode(language string) string {
 // time and remembering the answer on the clip so it is paid for once.
 func (s *Server) heardWords(ctx context.Context, out *models.RenderOutput, job *models.RenderJob, language, hint string) []providers.SpokenWord {
 	notes := map[string]json.RawMessage{}
-	_ = json.Unmarshal(out.QAJSON, &notes)
+	_ = json.Unmarshal(out.QAJSON, &notes) // unreadable notes mean the clip is listened to again
 	var saved struct {
 		Video string                 `json:"video"`
 		Words []providers.SpokenWord `json:"words"`

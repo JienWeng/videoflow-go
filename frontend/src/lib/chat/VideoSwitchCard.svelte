@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '$lib/errors';
   // Switch the service that makes the videos with one click. Free, but it changes the
   // price per second, so it always waits for the owner, even in Full auto.
   import { put } from '$lib/api';
@@ -15,7 +16,7 @@
       const row = (r.services ?? []).find((s: any) => s.in_use);
       const price = row ? ` at ${usd(row.per_second)} per second` : '';
       onswitched(`${r.current?.label ?? choice.label} makes your videos now${price}. Say “make the videos” when you are ready.`);
-    } catch (e) { error = (e as Error).message.replace(/^\d{3}: /, ''); } finally { busy = false; }
+    } catch (e) { error = errorMessage(e).replace(/^\d{3}: /, ''); } finally { busy = false; }
   }
 </script>
 
@@ -24,7 +25,8 @@
     <Button size="sm" class="rounded-full px-4" disabled={busy} onclick={use}>
       {choice.mode === 'cheapest' ? 'Always use the cheapest service' : `Use ${choice.label} for videos`} · {usd(choice.per_second)} per second
     </Button>
-    <span class="text-xs text-muted-foreground">Free to switch. Nothing is made yet.{choice.mode === 'cheapest' ? ` Right now that is ${choice.label}.` : ''}</span>
+    <span
+      class="text-xs text-muted-foreground">Free to switch. Nothing is made yet.{choice.mode === 'cheapest' ? ` Right now that is ${choice.label}.` : ''}</span>
   </div>
   {#if error}<p role="alert" class="text-xs text-destructive">{error}</p>{/if}
 </div>

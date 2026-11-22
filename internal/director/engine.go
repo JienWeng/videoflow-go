@@ -65,70 +65,11 @@ func (r *Runner) Run(ctx context.Context, request Request, saveNative func(strin
 	if err != nil {
 		return nil, err
 	}
-	args := CodexArgs(request.NativeID)
-	if request.ImageGeneration {
-		if request.Engine != "codex" || request.NativeID != "" {
-			return nil, fmt.Errorf("image generation requires an isolated Codex turn")
-		}
-		args = CodexImageArgs(request.Images)
+	args, stdin, err := turnArgs(request)
+	if err != nil {
+		return nil, err
 	}
-	if request.Engine == "claude" {
-		args = []string{"--restricted", "-p", "--output-format", "stream-json", "--verbose", "--tools", "", "--disallowedTools", "mcp__*", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--setting-sources", ""}
-		if request.NativeID != "" {
-			args = append(args, "--resume", request.NativeID)
-		}
-	}
-	if !request.ImageGeneration && ValidModel(request.Model) && ValidEffort(request.Engine, request.Effort) {
-		if request.Engine == "claude" {
-			if request.Model != "" {
-				args = append(args, "--model", request.Model)
-			}
-			if request.Effort != "" {
-				args = append(args, "--effort", request.Effort)
-			}
-		} else {
-			overrides := []string{}
-			if request.Model != "" {
-				overrides = append(overrides, "-c", `model="`+request.Model+`"`)
-			}
-			if request.Effort != "" {
-				overrides = append(overrides, "-c", `model_reasoning_effort="`+request.Effort+`"`)
-			}
-			args = append(overrides, args...) // global options go before "exec"
-		}
-	}
-	stdin := request.Prompt
-	if !request.ImageGeneration && len(request.Images) > 0 {
-		// Attached media for the planner to look at. It never gains tools or file access.
-		if request.Engine == "claude" {
-			if stdin, err = claudeImageInput(request.Prompt, request.Images); err != nil {
-				return nil, err
-			}
-			args = append(args, "--input-format", "stream-json")
-		} else {
-			last := len(args) - 1 // keep the trailing "-" (prompt from stdin)
-			withImages := append([]string{}, args[:last]...)
-			for _, path := range request.Images {
-				withImages = append(withImages, "--image="+path)
-			}
-			args = append(withImages, "-")
-		}
-	}
-	cmd := exec.CommandContext(ctx, executable, args...)
-	cmd.Dir = request.Workspace
-	cmd.Env = SafeEnvironment(os.Environ())
-	if request.ImageGeneration {
-		filtered := []string{}
-		for _, entry := range cmd.Env {
-			key, _, _ := strings.Cut(entry, "=")
-			if key != "OPENAI_API_KEY" && key != "ANTHROPIC_API_KEY" {
-				filtered = append(filtered, entry)
-			}
-		}
-		cmd.Env = filtered
-	}
-	cmd.Stdin = strings.NewReader(stdin)
-	cmd.WaitDelay = 2 * time.Second
+	cmd := turnCommand(ctx, executable, args, request, stdin)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -145,65 +86,12 @@ func (r *Runner) Run(ctx context.Context, request Request, saveNative func(strin
 	}()
 	scanner := bufio.NewScanner(io.LimitReader(stdout, 8<<20))
 	scanner.Buffer(make([]byte, 64<<10), 2<<20)
-	var result string
-	native := request.NativeID
-	completed := false
+	turn := &turnReader{engine: request.Engine, native: request.NativeID, saveNative: saveNative}
 	for scanner.Scan() {
-		var event struct {
-			Type      string `json:"type"`
-			ThreadID  string `json:"thread_id"`
-			SessionID string `json:"session_id"`
-			Subtype   string `json:"subtype"`
-			IsError   bool   `json:"is_error"`
-			Result    string `json:"result"`
-			Item      struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			} `json:"item"`
-		}
-		if json.Unmarshal(scanner.Bytes(), &event) != nil {
+		if err = turn.read(scanner.Bytes()); err != nil {
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
-			return nil, fmt.Errorf("%s returned an invalid protocol event", request.Engine)
-		}
-		id := event.ThreadID
-		if request.Engine == "claude" {
-			id = event.SessionID
-		}
-		if id != "" {
-			if len(id) > 160 || (native != "" && native != id) {
-				_ = cmd.Process.Kill()
-				_ = cmd.Wait()
-				return nil, fmt.Errorf("native session identity mismatch")
-			}
-			if native == "" {
-				native = id
-			}
-			if err = saveNative(id); err != nil {
-				_ = cmd.Process.Kill()
-				_ = cmd.Wait()
-				return nil, err
-			}
-		}
-		switch event.Type {
-		case "item.completed":
-			if event.Item.Type == "agent_message" {
-				result = event.Item.Text
-			}
-		case "turn.completed":
-			completed = true
-		case "turn.failed", "error":
-			_ = cmd.Process.Kill()
-			_ = cmd.Wait()
-			return nil, fmt.Errorf("%s couldn't answer. It may be signed out or out of usage: check it in Settings → AI connections, or switch the conversation to another AI, then try again", engineLabel(request.Engine))
-		case "result":
-			if event.IsError || event.Subtype != "success" {
-				_ = cmd.Process.Kill()
-				_ = cmd.Wait()
-				return nil, fmt.Errorf("Claude Code couldn't answer. It may be signed out or out of usage: check it in Settings → AI connections, or switch the conversation to another AI, then try again")
-			}
-			result = event.Result
-			completed = true
+			return nil, err
 		}
 	}
 	scanErr := scanner.Err()
@@ -214,12 +102,164 @@ func (r *Runner) Run(ctx context.Context, request Request, saveNative func(strin
 	if scanErr != nil || waitErr != nil {
 		return nil, fmt.Errorf("%s process failed or protocol output exceeded limits; check CLI version/authentication", request.Engine)
 	}
-	if !completed || native == "" || strings.TrimSpace(result) == "" {
-		return nil, fmt.Errorf("%s turn was interrupted or returned no result; it will not be replayed automatically", request.Engine)
+	return turn.answer()
+}
+
+// turnArgs builds the CLI arguments for one turn and the text sent on its stdin.
+func turnArgs(request Request) ([]string, string, error) {
+	args := CodexArgs(request.NativeID)
+	if request.ImageGeneration {
+		if request.Engine != "codex" || request.NativeID != "" {
+			return nil, "", fmt.Errorf("image generation requires an isolated Codex turn")
+		}
+		args = CodexImageArgs(request.Images)
 	}
-	structured, ok := structuredJSON(result)
+	if request.Engine == "claude" {
+		args = []string{"--restricted", "-p", "--output-format", "stream-json", "--verbose", "--tools", "", "--disallowedTools", "mcp__*", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--setting-sources", ""}
+		if request.NativeID != "" {
+			args = append(args, "--resume", request.NativeID)
+		}
+	}
+	if !request.ImageGeneration && ValidModel(request.Model) && ValidEffort(request.Engine, request.Effort) {
+		args = withModelArgs(request, args)
+	}
+	if !request.ImageGeneration && len(request.Images) > 0 {
+		return withAttachedImages(request, args)
+	}
+	return args, request.Prompt, nil
+}
+
+// withModelArgs adds the chosen model and reasoning effort.
+func withModelArgs(request Request, args []string) []string {
+	if request.Engine == "claude" {
+		if request.Model != "" {
+			args = append(args, "--model", request.Model)
+		}
+		if request.Effort != "" {
+			args = append(args, "--effort", request.Effort)
+		}
+		return args
+	}
+	overrides := []string{}
+	if request.Model != "" {
+		overrides = append(overrides, "-c", `model="`+request.Model+`"`)
+	}
+	if request.Effort != "" {
+		overrides = append(overrides, "-c", `model_reasoning_effort="`+request.Effort+`"`)
+	}
+	return append(overrides, args...) // global options go before "exec"
+}
+
+// withAttachedImages attaches media for the planner to look at. It never gains tools or
+// file access.
+func withAttachedImages(request Request, args []string) ([]string, string, error) {
+	if request.Engine == "claude" {
+		stdin, err := claudeImageInput(request.Prompt, request.Images)
+		if err != nil {
+			return nil, "", err
+		}
+		return append(args, "--input-format", "stream-json"), stdin, nil
+	}
+	last := len(args) - 1 // keep the trailing "-" (prompt from stdin)
+	withImages := append([]string{}, args[:last]...)
+	for _, path := range request.Images {
+		withImages = append(withImages, "--image="+path)
+	}
+	return append(withImages, "-"), request.Prompt, nil
+}
+
+// turnCommand prepares the CLI process without the service API keys in its environment.
+func turnCommand(ctx context.Context, executable string, args []string, request Request, stdin string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, executable, args...)
+	cmd.Dir = request.Workspace
+	cmd.Env = SafeEnvironment(os.Environ())
+	if request.ImageGeneration {
+		filtered := []string{}
+		for _, entry := range cmd.Env {
+			key, _, _ := strings.Cut(entry, "=")
+			if key != "OPENAI_API_KEY" && key != "ANTHROPIC_API_KEY" {
+				filtered = append(filtered, entry)
+			}
+		}
+		cmd.Env = filtered
+	}
+	cmd.Stdin = strings.NewReader(stdin)
+	cmd.WaitDelay = 2 * time.Second
+	return cmd
+}
+
+// turnEvent is one line of the CLI's JSON protocol output (Codex or Claude Code).
+type turnEvent struct {
+	Type      string `json:"type"`
+	ThreadID  string `json:"thread_id"`
+	SessionID string `json:"session_id"`
+	Subtype   string `json:"subtype"`
+	IsError   bool   `json:"is_error"`
+	Result    string `json:"result"`
+	Item      struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"item"`
+}
+
+// turnReader follows a turn's protocol events: the native session it belongs to, the
+// answer so far and whether the turn completed.
+type turnReader struct {
+	engine     string
+	native     string
+	result     string
+	completed  bool
+	saveNative func(string) error
+}
+
+// read handles one protocol event. An error ends the turn.
+func (t *turnReader) read(line []byte) error {
+	var event turnEvent
+	if json.Unmarshal(line, &event) != nil {
+		return fmt.Errorf("%s returned an invalid protocol event", t.engine)
+	}
+	id := event.ThreadID
+	if t.engine == "claude" {
+		id = event.SessionID
+	}
+	if id != "" {
+		if len(id) > 160 || (t.native != "" && t.native != id) {
+			return fmt.Errorf("native session identity mismatch")
+		}
+		if t.native == "" {
+			t.native = id
+		}
+		if err := t.saveNative(id); err != nil {
+			return err
+		}
+	}
+	switch event.Type {
+	case "item.completed":
+		if event.Item.Type == "agent_message" {
+			t.result = event.Item.Text
+		}
+	case "turn.completed":
+		t.completed = true
+	case "turn.failed", "error":
+		return fmt.Errorf("%s couldn't answer. It may be signed out or out of usage: check it in Settings → AI connections, or switch the conversation to another AI, then try again", engineLabel(t.engine))
+	case "result":
+		if event.IsError || event.Subtype != "success" {
+			return fmt.Errorf("Claude Code couldn't answer. It may be signed out or out of usage: check it in Settings → AI connections, or switch the conversation to another AI, then try again")
+		}
+		t.result = event.Result
+		t.completed = true
+	}
+	return nil
+}
+
+// answer is the structured JSON a finished turn replied with.
+func (t *turnReader) answer() (json.RawMessage, error) {
+	if !t.completed || t.native == "" || strings.TrimSpace(t.result) == "" {
+		return nil, fmt.Errorf("%s turn was interrupted or returned no result; it will not be replayed automatically", t.engine)
+	}
+	structured, ok := structuredJSON(t.result)
 	if !ok {
-		return nil, fmt.Errorf("%s returned invalid structured JSON; review the session before retrying", request.Engine)
+		return nil, fmt.Errorf("%s returned invalid structured JSON; review the session before retrying", t.engine)
 	}
 	return structured, nil
 }

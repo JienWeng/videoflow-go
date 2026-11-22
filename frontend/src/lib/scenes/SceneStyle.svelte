@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '$lib/errors';
   import { page } from '$app/state';
   import { get, put } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
@@ -52,21 +53,28 @@
       status = 'Scene look saved.';
       await onchanged();
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e, String(e));
     } finally {
       saving = false;
     }
   }
 </script>
 
-<details open={page.url.searchParams.get('focus') === 'look'} class="my-3 rounded-lg border border-border p-3" ontoggle={(event) => { if (event.currentTarget.open) void load(); }}>
+<details
+  open={page.url.searchParams.get('focus') === 'look'}
+  class="my-3 rounded-lg border border-border p-3"
+  ontoggle={(event) => { if (event.currentTarget.open) void load(); }}>
   <summary class="cursor-pointer py-1 text-sm font-medium">Scene look</summary>
   <div class="mt-3 space-y-3">
     {#if current}<p class="whitespace-pre-line break-words text-sm text-muted-foreground">{current}</p>{/if}
     <form class="space-y-3" onsubmit={(event) => { event.preventDefault(); void save(); }}>
       <label class="grid gap-1 text-sm">
         Change look
-        <select bind:value={preset} disabled={saving || disabled} class="min-h-11 w-full rounded-md border border-input bg-background px-3 text-sm" onchange={() => { if (preset === 'custom' && !prompt) prompt = current; }}>
+        <select
+          bind:value={preset}
+          disabled={saving || disabled}
+          class="min-h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+          onchange={() => { if (preset === 'custom' && !prompt) prompt = current; }}>
           <option value="">Choose a look…</option>
           <option value="custom">Write a custom look</option>
           <option value="project-style">Use current project look</option>
@@ -78,13 +86,24 @@
       {#if preset === 'custom'}
         <label class="grid gap-1 text-sm">
           Visual direction
-          <textarea bind:value={prompt} required maxlength="5000" rows="4" disabled={saving || disabled} class="w-full rounded-md border border-input bg-background p-2" placeholder="Describe the medium, lighting, materials and composition"></textarea>
+          <textarea
+            bind:value={prompt}
+            required
+            maxlength="5000"
+            rows="4"
+            disabled={saving || disabled}
+            class="w-full rounded-md border border-input bg-background p-2"
+            placeholder="Describe the medium, lighting, materials and composition"></textarea>
         </label>
       {/if}
-      {#if catalogError}<p role="status" class="text-sm text-muted-foreground">{catalogError} <button type="button" class="underline" onclick={load}>Retry</button></p>{/if}
+      {#if catalogError}<p role="status" class="text-sm text-muted-foreground">{catalogError} <button
+        type="button" class="underline" onclick={load}>Retry</button></p>{/if}
       {#if preset}
         <p class="text-xs text-muted-foreground">This changes future generation for this scene. Existing shots, references and videos stay saved.</p>
-        <Button type="submit" size="sm" disabled={saving || disabled || (preset === 'custom' && !prompt.trim())}>{saving ? 'Saving…' : 'Save scene look'}</Button>
+        <Button
+          type="submit"
+          size="sm"
+          disabled={saving || disabled || (preset === 'custom' && !prompt.trim())}>{saving ? 'Saving…' : 'Save scene look'}</Button>
       {/if}
     </form>
     {#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}
@@ -94,7 +113,10 @@
         <p class="text-sm text-muted-foreground">If a character still has the old look, update their appearance and reference first.</p>
         <div class="flex flex-wrap gap-2">
           {#each cast as character (character.id)}
-            <Button size="sm" variant="outline" href={`/characters/${encodeURIComponent(character.id)}?scene_id=${encodeURIComponent(scene.id)}`}>Edit {character.name}</Button>
+            <Button
+              size="sm"
+              variant="outline"
+              href={`/characters/${encodeURIComponent(character.id)}?scene_id=${encodeURIComponent(scene.id)}`}>Edit {character.name}</Button>
           {/each}
         </div>
       {/if}

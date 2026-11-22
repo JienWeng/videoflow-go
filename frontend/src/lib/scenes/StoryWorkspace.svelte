@@ -1,12 +1,13 @@
 <script lang="ts">
- import {completeSceneRenders} from "$lib/production/completion.mjs";
-  let { embedded = false }:{embedded?:boolean}=$props();
- const operationScope=new AbortController();
- onDestroy(()=>operationScope.abort());
-  import { onMount,onDestroy } from 'svelte';
-  import {changedFields,mergeDraft} from './drafts.mjs';
-  import { afterNavigate,beforeNavigate,replaceState } from '$app/navigation';
-  import {page} from '$app/state';
+  import { errorMessage } from '$lib/errors';
+  import { completeSceneRenders } from '$lib/production/completion.mjs';
+  let { embedded = false }: { embedded?: boolean } = $props();
+  const operationScope = new AbortController();
+  onDestroy(() => operationScope.abort());
+  import { onMount, onDestroy } from 'svelte';
+  import { changedFields, mergeDraft } from './drafts.mjs';
+  import { afterNavigate, beforeNavigate, replaceState } from '$app/navigation';
+  import { page } from '$app/state';
   import { storyCreation } from '$lib/create/story-creation.svelte';
   import { get, patch, post, put, del, mediaUrl } from '$lib/api';
   import { runBackgroundOp } from '$lib/ops';
@@ -56,7 +57,7 @@
   let opBusy: Record<string, boolean> = $state({});
 
   let idea = $state('');
-  let storyCast:string[]=$state([]);
+  let storyCast: string[] = $state([]);
   let targetDuration: number | '' = $state('');
   let sceneCount: number | '' = $state('');
   let castSelection: Record<string, string[]> = $state({});
@@ -100,16 +101,16 @@
   function sceneDirty(s: any): boolean {
     const base = sceneBaseline[s.id];
     if (!base) return false;
-    return SCENE_FIELDS.some((f) => s[f] !== base[f]);
+    return SCENE_FIELDS.some(f => s[f] !== base[f]);
   }
   function shotDirty(sh: any): boolean {
     const base = shotBaseline[sh.id];
     if (!base) return false;
-    return SHOT_FIELDS.some((f) => sh[f] !== base[f]);
+    return SHOT_FIELDS.some(f => sh[f] !== base[f]);
   }
   // Any unsaved scene OR shot edit anywhere — drives the nav/unload guard.
   const dirtyCount = $derived(
-    scenes.filter((s) => sceneDirty(s)).length +
+    scenes.filter(s => sceneDirty(s)).length +
       Object.values(shotsByScene)
         .flat()
         .filter((sh: any) => shotDirty(sh)).length
@@ -118,11 +119,28 @@
   // Master–detail selection (in-memory). The "Create story" generator opens in a
   // dedicated dialog; null selectedId = empty workspace.
   let selectedId: string | null = $state(null);
-  let mobileDetail=$state(false);
-  export async function openScene(id:string){await reload();if(scenes.some(s=>s.id===id)){selectScene(id);}}
-  export async function reload(){try{await refresh();error='';}catch(e){error=String(e);}}
+  let mobileDetail = $state(false);
+  export async function openScene(id: string) {
+    await reload();
+    if (scenes.some(s => s.id === id)) {
+      selectScene(id);
+    }
+  }
+  export async function reload() {
+    try {
+      await refresh();
+      error = '';
+    } catch (e) {
+      error = String(e);
+    }
+  }
   // A link to /?view=story&scene_id=… while Story is already open selects that scene with fresh data.
-  afterNavigate(()=>{if(!loaded||page.url.searchParams.get('view')!=='story')return;const id=page.url.searchParams.get('scene_id');if(id&&id!==selectedId)void openScene(id);else void reload();});
+  afterNavigate(() => {
+    if (!loaded || page.url.searchParams.get('view') !== 'story') return;
+    const id = page.url.searchParams.get('scene_id');
+    if (id && id !== selectedId) void openScene(id);
+    else void reload();
+  });
 
   // ── List UX: search + stage filter + keyboard nav ──────────────────────────
   let search = $state('');
@@ -132,15 +150,16 @@
 
   const orderedScenes = $derived.by(() => {
     const storyPosition = new Map<string, { time: number; order: number }>();
-    const sortedScripts = scripts.slice().sort((a, b) =>
-      (a.created_at ?? '').localeCompare(b.created_at ?? '')
-    );
+    const sortedScripts = scripts.slice().sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
     for (let scriptIndex = 0; scriptIndex < sortedScripts.length; scriptIndex += 1) {
       const script = sortedScripts[scriptIndex];
       const scriptScenes = scenes
-        .filter((scene) => scene.script_id === script.id)
-        .sort((a, b) => (a.scene_order ?? Number.MAX_SAFE_INTEGER) - (b.scene_order ?? Number.MAX_SAFE_INTEGER) ||
-          (a.created_at ?? '').localeCompare(b.created_at ?? ''));
+        .filter(scene => scene.script_id === script.id)
+        .sort(
+          (a, b) =>
+            (a.scene_order ?? Number.MAX_SAFE_INTEGER) - (b.scene_order ?? Number.MAX_SAFE_INTEGER) ||
+            (a.created_at ?? '').localeCompare(b.created_at ?? '')
+        );
       for (const [sceneIndex, scene] of scriptScenes.entries()) {
         storyPosition.set(scene.id, {
           time: new Date(script.created_at ?? scene.created_at ?? 0).getTime(),
@@ -167,34 +186,47 @@
   }
 
   // Each story with scenes is one episode of the project's series, oldest first.
-  const episodes = $derived(scripts.slice().sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? '')).filter((script) => scenes.some((scene) => scene.script_id === script.id)).map((script, i) => ({ id: script.id as string, number: i + 1, title: (script.title || 'Untitled') as string })));
-  const episodeOf = (scene: any) => episodes.find((e) => e.id === scene.script_id);
+  const episodes = $derived(
+    scripts
+      .slice()
+      .sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''))
+      .filter(script => scenes.some(scene => scene.script_id === script.id))
+      .map((script, i) => ({ id: script.id as string, number: i + 1, title: (script.title || 'Untitled') as string }))
+  );
+  const episodeOf = (scene: any) => episodes.find(e => e.id === scene.script_id);
   let episodeFilter = $state('');
   let episodeSortSet = false;
-  $effect(() => { if (episodes.length > 1 && !episodeSortSet) { episodeSortSet = true; sceneSort = 'story'; } });
-  $effect(() => { if (episodeFilter && !episodes.some((e) => e.id === episodeFilter)) episodeFilter = ''; });
-  const nextEpisode = () => window.dispatchEvent(new CustomEvent('videoflow-ask-assistant', { detail: { text: 'Make the next episode of this series. ' } }));
+  $effect(() => {
+    if (episodes.length > 1 && !episodeSortSet) {
+      episodeSortSet = true;
+      sceneSort = 'story';
+    }
+  });
+  $effect(() => {
+    if (episodeFilter && !episodes.some(e => e.id === episodeFilter)) episodeFilter = '';
+  });
+  const nextEpisode = () =>
+    window.dispatchEvent(
+      new CustomEvent('videoflow-ask-assistant', { detail: { text: 'Make the next episode of this series. ' } })
+    );
 
   const visibleScenes = $derived(
-    orderedScenes.filter((s) => {
+    orderedScenes.filter(s => {
       if (stageFilter && stageOf(s) !== stageFilter) return false;
       if (episodeFilter && s.script_id !== episodeFilter) return false;
       const q = search.trim().toLowerCase();
       if (!q) return true;
-      return (
-        (s.title ?? '').toLowerCase().includes(q) ||
-        (s.summary ?? '').toLowerCase().includes(q)
-      );
+      return (s.title ?? '').toLowerCase().includes(q) || (s.summary ?? '').toLowerCase().includes(q);
     })
   );
 
-  const selectedScene = $derived(scenes.find((s) => s.id === selectedId) ?? null);
+  const selectedScene = $derived(scenes.find(s => s.id === selectedId) ?? null);
 
   // Keep selection valid as scenes change: default to first visible, fall back
   // on delete. Never auto-switch away from a still-present selection.
   $effect(() => {
     if (!loaded) return;
-    if (selectedId !== null && scenes.some((s) => s.id === selectedId)) return;
+    if (selectedId !== null && scenes.some(s => s.id === selectedId)) return;
     selectedId = visibleScenes.length ? visibleScenes[0].id : null;
   });
 
@@ -206,12 +238,7 @@
     return !!(s.scene_json && Object.keys(s.scene_json).length > 1);
   }
   function isExpanded(s: any): boolean {
-    return (
-      hasExpandJson(s) ||
-      (shotsByScene[s.id]?.length ?? 0) > 0 ||
-      !!storyboards[s.id] ||
-      !!renderedScenes[s.id]
-    );
+    return hasExpandJson(s) || (shotsByScene[s.id]?.length ?? 0) > 0 || !!storyboards[s.id] || !!renderedScenes[s.id];
   }
 
   // Merge fresh server rows over the previous state WITHOUT clobbering unsaved
@@ -219,9 +246,9 @@
   // (and all non-editable fields) take the server's values, and the baseline is
   // (re)set to the server snapshot so saved rows go clean.
   function mergeScenes(fresh: any[]) {
-    const prevById = new Map(scenes.map((s) => [s.id, s]));
+    const prevById = new Map(scenes.map(s => [s.id, s]));
     const baseline: Record<string, Record<string, any>> = {};
-    const merged = fresh.map((srv) => {
+    const merged = fresh.map(srv => {
       // Snapshot the baseline from the UNTOUCHED server row first, so it always
       // reflects the latest server field values — never the kept edits below.
       baseline[srv.id] = snapScene(srv);
@@ -229,7 +256,7 @@
       if (prev && sceneDirty(prev)) {
         // keep edits; the baseline (captured above) stays at the server snapshot
         // so the row remains dirty until the user actually Saves.
-        Object.assign(srv,mergeDraft(srv,prev,sceneBaseline[srv.id],SCENE_FIELDS));
+        Object.assign(srv, mergeDraft(srv, prev, sceneBaseline[srv.id], SCENE_FIELDS));
       }
       return srv;
     });
@@ -237,15 +264,15 @@
     return merged;
   }
   function mergeShots(sceneId: string, fresh: any[]) {
-    const prevById = new Map((shotsByScene[sceneId] ?? []).map((s) => [s.id, s]));
-    const merged = fresh.map((srv) => {
+    const prevById = new Map((shotsByScene[sceneId] ?? []).map(s => [s.id, s]));
+    const merged = fresh.map(srv => {
       // Snapshot the baseline from the UNTOUCHED server row first (before the
       // dirty-keep loop overwrites srv), so a kept edit still reads as dirty.
-      const oldBaseline=shotBaseline[srv.id];
+      const oldBaseline = shotBaseline[srv.id];
       shotBaseline[srv.id] = snapShot(srv);
       const prev = prevById.get(srv.id);
       if (prev && shotDirty(prev)) {
-        Object.assign(srv,mergeDraft(srv,prev,oldBaseline,SHOT_FIELDS));
+        Object.assign(srv, mergeDraft(srv, prev, oldBaseline, SHOT_FIELDS));
       }
       return srv;
     });
@@ -254,9 +281,7 @@
   }
 
   async function refresh() {
-    const [freshScenes, chars, freshScripts] = await Promise.all([
-      get('/scenes'), get('/characters'), get('/scripts')
-    ]);
+    const [freshScenes, chars, freshScripts] = await Promise.all([get('/scenes'), get('/characters'), get('/scripts')]);
     characters = chars;
     scripts = freshScripts;
     const [allAssets, jobs, freshProgress] = await Promise.all([
@@ -265,18 +290,47 @@
       get('/production/progress').catch(() => null)
     ]);
     progress = freshProgress;
-    generatedAssets=Object.fromEntries(freshScenes.map((scene:any)=>[scene.id,allAssets.filter((a:any)=>a.type!=='storyboard'&&(scene.asset_ids_json?.includes(a.id)||a.metadata_json?.scene_id===scene.id))]));
+    generatedAssets = Object.fromEntries(
+      freshScenes.map((scene: any) => [
+        scene.id,
+        allAssets.filter(
+          (a: any) =>
+            a.type !== 'storyboard' && (scene.asset_ids_json?.includes(a.id) || a.metadata_json?.scene_id === scene.id)
+        )
+      ])
+    );
     storyboards = {};
     for (const a of allAssets) {
       const sid = a.metadata_json?.scene_id;
-      if (!storyboards[sid] && a.type === 'storyboard' && sid && freshScenes.find((scene:any)=>scene.id===sid)?.asset_ids_json?.includes(a.id)) storyboards[sid] = a;
+      if (
+        !storyboards[sid] &&
+        a.type === 'storyboard' &&
+        sid &&
+        freshScenes.find((scene: any) => scene.id === sid)?.asset_ids_json?.includes(a.id)
+      )
+        storyboards[sid] = a;
     }
-    const picture=(a:any)=>/\.(png|jpe?g|webp|gif)$/i.test(a.file_path??'')&&a.type!=='storyboard'&&a.metadata_json?.consistency_review!=='rejected';
-    previews=Object.fromEntries(freshScenes.map((scene:any)=>[scene.id,storyboards[scene.id]??allAssets.find((a:any)=>picture(a)&&(scene.asset_ids_json?.includes(a.id)||(a.type==='character_reference'&&scene.character_ids_json?.includes(a.character_id))))??null]));
-    renderedScenes=Object.fromEntries([...completeSceneRenders(jobs)].map(id=>[id,true]));
+    const picture = (a: any) =>
+      /\.(png|jpe?g|webp|gif)$/i.test(a.file_path ?? '') &&
+      a.type !== 'storyboard' &&
+      a.metadata_json?.consistency_review !== 'rejected';
+    previews = Object.fromEntries(
+      freshScenes.map((scene: any) => [
+        scene.id,
+        storyboards[scene.id] ??
+          allAssets.find(
+            (a: any) =>
+              picture(a) &&
+              (scene.asset_ids_json?.includes(a.id) ||
+                (a.type === 'character_reference' && scene.character_ids_json?.includes(a.character_id)))
+          ) ??
+          null
+      ])
+    );
+    renderedScenes = Object.fromEntries([...completeSceneRenders(jobs)].map(id => [id, true]));
     scenes = mergeScenes(freshScenes);
     await Promise.all(
-      scenes.map(async (s) => {
+      scenes.map(async s => {
         // One scene's shots failing must not blank the whole list.
         const fresh = await get(`/scenes/${s.id}/shots`).catch(() => []);
         shotsByScene[s.id] = mergeShots(s.id, fresh);
@@ -285,10 +339,16 @@
     shotsByScene = shotsByScene;
   }
   onMount(() => {
-    refresh().then(()=>{const sceneID=new URL(window.location.href).searchParams.get('scene_id');if(sceneID&&scenes.some(s=>s.id===sceneID))selectScene(sceneID)})
-      .catch((e) => (error = e.message))
+    refresh()
+      .then(() => {
+        const sceneID = new URL(window.location.href).searchParams.get('scene_id');
+        if (sceneID && scenes.some(s => s.id === sceneID)) selectScene(sceneID);
+      })
+      .catch(e => (error = e.message))
       .finally(() => (loaded = true));
-    get('/style').then((s) => (style = s)).catch(() => {});
+    get('/style')
+      .then(s => (style = s))
+      .catch(() => {});
 
     const onUnload = (e: BeforeUnloadEvent) => {
       if (dirtyCount > 0) {
@@ -300,9 +360,8 @@
     return () => window.removeEventListener('beforeunload', onUnload);
   });
 
-  beforeNavigate((nav) => {
-    if (dirtyCount > 0 && !confirm('You have unsaved scene/shot edits. Leave anyway?'))
-      nav.cancel();
+  beforeNavigate(nav => {
+    if (dirtyCount > 0 && !confirm('You have unsaved scene/shot edits. Leave anyway?')) nav.cancel();
   });
 
   async function run(key: string, fn: () => Promise<unknown>, doneMsg = '') {
@@ -312,17 +371,15 @@
       await fn();
       await refresh();
       if (doneMsg) toast.success(doneMsg);
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e) {
+      toast.error(errorMessage(e));
     } finally {
       busy[key] = false;
     }
   }
 
   const expandScene = (s: any) =>
-    run(`expand-${s.id}`, () =>
-      post(`/scenes/${s.id}/generate`, { character_ids: castSelection[s.id] ?? [] })
-    );
+    run(`expand-${s.id}`, () => post(`/scenes/${s.id}/generate`, { character_ids: castSelection[s.id] ?? [] }));
 
   // Re-expand overwrites the expanded scene + drops its shots → confirm first.
   function expandSceneGuarded(s: any) {
@@ -346,7 +403,7 @@
         `/scenes/${s.id}/shots/generate`,
         { auto_assets: autoProps[s.id] ?? true },
         {
-          signal:operationScope.signal,
+          signal: operationScope.signal,
           label: 'Shot generation',
           onDone: async () => {
             opBusy[key] = false;
@@ -359,9 +416,9 @@
           onFail: () => (opBusy[key] = false)
         }
       );
-    } catch (e: any) {
+    } catch (e) {
       opBusy[key] = false;
-      toast.error(e.message);
+      toast.error(errorMessage(e));
     }
   }
 
@@ -384,17 +441,17 @@
     opBusy[key] = true;
     try {
       await runBackgroundOp(`/scenes/${s.id}/storyboard`, undefined, {
-        signal:operationScope.signal,
-          label: 'Storyboard',
+        signal: operationScope.signal,
+        label: 'Storyboard',
         onDone: async () => {
           opBusy[key] = false;
           await refresh();
         },
         onFail: () => (opBusy[key] = false)
       });
-    } catch (e: any) {
+    } catch (e) {
       opBusy[key] = false;
-      toast.error(e.message);
+      toast.error(errorMessage(e));
     }
   }
 
@@ -412,7 +469,43 @@
     }
   }
 
-  async function renderScene(s:any){const key=`render-${s.id}`;if(busy[key])return;busy[key]=true;error='';try{await runBackgroundOp(`/scenes/${s.id}/render`,{prepare_storyboard:true,use_scene_cast:true,confirmed_plan_id:s.production_plan_id,new_version:!!s.new_version,confirmed_calls:s.confirmed_calls,confirmed_seconds:s.confirmed_seconds,confirmed_storyboard_calls:s.confirmed_storyboard_calls},{signal:operationScope.signal,label:'Update storyboard & render',onDone:async()=>{busy[key]=false;await refresh();toast.success('Render queued. Track it in Videos.')},onFail:op=>{busy[key]=false;error=op.error??'Render preparation failed.'}})}catch(e){busy[key]=false;error=String(e);toast.error(error)}}
+  async function renderScene(s: any) {
+    const key = `render-${s.id}`;
+    if (busy[key]) return;
+    busy[key] = true;
+    error = '';
+    try {
+      await runBackgroundOp(
+        `/scenes/${s.id}/render`,
+        {
+          prepare_storyboard: true,
+          use_scene_cast: true,
+          confirmed_plan_id: s.production_plan_id,
+          new_version: !!s.new_version,
+          confirmed_calls: s.confirmed_calls,
+          confirmed_seconds: s.confirmed_seconds,
+          confirmed_storyboard_calls: s.confirmed_storyboard_calls
+        },
+        {
+          signal: operationScope.signal,
+          label: 'Update storyboard & render',
+          onDone: async () => {
+            busy[key] = false;
+            await refresh();
+            toast.success('Render queued. Track it in Videos.');
+          },
+          onFail: op => {
+            busy[key] = false;
+            error = op.error ?? 'Render preparation failed.';
+          }
+        }
+      );
+    } catch (e) {
+      busy[key] = false;
+      error = String(e);
+      toast.error(error);
+    }
+  }
 
   // Pipeline stepper: one entry per stage, computed from data already loaded.
   // Each stage's "done" uses the later-done rule so the stepper never shows an
@@ -442,8 +535,8 @@
       },
       {
         key: 'storyboard',
-        signal:operationScope.signal,
-          label: 'Storyboard',
+        signal: operationScope.signal,
+        label: 'Storyboard',
         icon: Images,
         done: hasStoryboard || hasRender || (hasShots && usesReferences(s.id)),
         busy: !!opBusy[`sb-${s.id}`],
@@ -506,15 +599,15 @@
 
   function toggleCast(sceneId: string, charId: string) {
     const cur = castSelection[sceneId] ?? [];
-    castSelection[sceneId] = cur.includes(charId)
-      ? cur.filter((c) => c !== charId)
-      : [...cur, charId];
+    castSelection[sceneId] = cur.includes(charId) ? cur.filter(c => c !== charId) : [...cur, charId];
   }
 
   const saveScene = (s: any) =>
-    run(`save-${s.id}`, () =>
-      patch(`/scenes/${s.id}`, changedFields(s,sceneBaseline[s.id],SCENE_FIELDS))
-    , 'Scene saved.');
+    run(
+      `save-${s.id}`,
+      () => patch(`/scenes/${s.id}`, changedFields(s, sceneBaseline[s.id], SCENE_FIELDS)),
+      'Scene saved.'
+    );
 
   async function confirmDeleteScene() {
     const s = deleteTarget;
@@ -528,8 +621,8 @@
       if (selectedId === s.id) selectedId = null;
       toast.success(`Scene deleted (${r.shots_deleted} shots removed).`);
       await refresh();
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e) {
+      toast.error(errorMessage(e));
     } finally {
       busy[`delete-${s.id}`] = false;
     }
@@ -543,8 +636,8 @@
       toast.success('Shot deleted.');
       shotsByScene[scene.id] = mergeShots(scene.id, await get(`/scenes/${scene.id}/shots`));
       shotsByScene = shotsByScene;
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e) {
+      toast.error(errorMessage(e));
     } finally {
       busy[`delete-${shot.id}`] = false;
     }
@@ -557,8 +650,8 @@
       toast.success('Shot added.');
       shotsByScene[scene.id] = mergeShots(scene.id, await get(`/scenes/${scene.id}/shots`));
       shotsByScene = shotsByScene;
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e) {
+      toast.error(errorMessage(e));
     } finally {
       busy[`add-${scene.id}`] = false;
     }
@@ -567,19 +660,19 @@
   // Move a shot up/down by swapping with its neighbour, then persist the order.
   async function moveShot(scene: any, shot: any, dir: -1 | 1) {
     const list = (shotsByScene[scene.id] ?? []).slice();
-    const i = list.findIndex((s) => s.id === shot.id);
+    const i = list.findIndex(s => s.id === shot.id);
     const j = i + dir;
     if (i < 0 || j < 0 || j >= list.length) return;
     [list[i], list[j]] = [list[j], list[i]];
     busy[`reorder-${scene.id}`] = true;
     try {
       const ordered = await put(`/scenes/${scene.id}/shots/order`, {
-        ordered_ids: list.map((s) => s.id)
+        ordered_ids: list.map(s => s.id)
       });
       shotsByScene[scene.id] = mergeShots(scene.id, ordered);
       shotsByScene = shotsByScene;
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e) {
+      toast.error(errorMessage(e));
     } finally {
       busy[`reorder-${scene.id}`] = false;
     }
@@ -595,8 +688,8 @@
       sceneBaseline[s.id] = snapScene(s); // refined values are the new clean baseline
       sceneRefine[s.id] = '';
       toast.success(r.note || 'Refined');
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e) {
+      toast.error(errorMessage(e));
     } finally {
       busy[`refine-${s.id}`] = false;
     }
@@ -614,15 +707,15 @@
       Object.assign(shot, r.shot);
       shotBaseline[shot.id] = snapShot(shot);
       toast.success(r.note || 'Refined');
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e) {
+      toast.error(errorMessage(e));
     } finally {
       busy[`refine-${shot.id}`] = false;
     }
   }
 
   async function convertAllScenesConversational() {
-    const ids = scenes.map((s) => s.id);
+    const ids = scenes.map(s => s.id);
     if (!ids.length) {
       toast.info('No scenes to convert.');
       return;
@@ -631,24 +724,30 @@
     busy[key] = true;
     error = '';
     try {
-      await runBackgroundOp('/scenes/conversationalize', {
-        scene_ids: ids,
-        include_shots: true,
-        instruction: conversationInstruction.trim(),
-        brief: conversationBrief(conversationInstruction.trim()),
-        preview: false
-      }, {
-        signal:operationScope.signal,
-          label: 'Conversational conversion',
-        onDone: async () => {
-          busy[key] = false;
-          await refresh();
+      await runBackgroundOp(
+        '/scenes/conversationalize',
+        {
+          scene_ids: ids,
+          include_shots: true,
+          instruction: conversationInstruction.trim(),
+          brief: conversationBrief(conversationInstruction.trim()),
+          preview: false
         },
-        onFail: () => { busy[key] = false; }
-      });
-    } catch (e: any) {
+        {
+          signal: operationScope.signal,
+          label: 'Conversational conversion',
+          onDone: async () => {
+            busy[key] = false;
+            await refresh();
+          },
+          onFail: () => {
+            busy[key] = false;
+          }
+        }
+      );
+    } catch (e) {
       busy[key] = false;
-      toast.error(e.message);
+      toast.error(errorMessage(e));
     }
   }
 
@@ -685,9 +784,9 @@
         `/scenes/${s.id}/assets/generate`,
         { instruction, max_assets: maxAssets, items },
         {
-          signal:operationScope.signal,
+          signal: operationScope.signal,
           label: 'Asset generation',
-          onDone: async (op) => {
+          onDone: async op => {
             opBusy[key] = false;
             const ids: string[] = op.result_json?.asset_ids ?? [];
             const all = await get('/assets');
@@ -700,14 +799,13 @@
           onFail: () => (opBusy[key] = false)
         }
       );
-    } catch (e: any) {
+    } catch (e) {
       opBusy[key] = false;
-      toast.error(e.message);
+      toast.error(errorMessage(e));
     }
   }
 
-  const generateAssets = (s: any) =>
-    startAssetGeneration(s, (assetInstr[s.id] ?? '').trim(), assetMax[s.id] ?? 4);
+  const generateAssets = (s: any) => startAssetGeneration(s, (assetInstr[s.id] ?? '').trim(), assetMax[s.id] ?? 4);
 
   async function suggestAssets(s: any) {
     busy[`plan-${s.id}`] = true;
@@ -720,8 +818,8 @@
       assetPlans[s.id] = plan;
       planSelected[s.id] = (plan.assets ?? []).map(() => true);
       if (!plan.assets?.length) toast.info('No new assets suggested for this scene.');
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e) {
+      toast.error(errorMessage(e));
     } finally {
       busy[`plan-${s.id}`] = false;
     }
@@ -735,20 +833,24 @@
     const userInstruction = (assetInstr[s.id] ?? '').trim();
     const instruction =
       'Generate exactly these assets: ' +
-      selected.map((a) => `${a.name} — ${a.description}`).join('; ') +
+      selected.map(a => `${a.name} — ${a.description}`).join('; ') +
       (userInstruction ? `. ${userInstruction}` : '');
     await startAssetGeneration(s, instruction, selected.length, selected);
   }
 
   const saveShot = (shot: any) =>
-    run(`save-${shot.id}`, () =>
-      patch(`/shots/${shot.id}`, changedFields(shot,shotBaseline[shot.id],SHOT_FIELDS))
-    , 'Shot saved.');
+    run(
+      `save-${shot.id}`,
+      () => patch(`/shots/${shot.id}`, changedFields(shot, shotBaseline[shot.id], SHOT_FIELDS)),
+      'Shot saved.'
+    );
 
   function selectScene(id: string) {
     selectedId = id;
     mobileDetail = true;
-    const url=new URL(page.url);url.searchParams.set('scene_id',id);replaceState(url,{...page.state});
+    const url = new URL(page.url);
+    url.searchParams.set('scene_id', id);
+    replaceState(url, { ...page.state });
   }
 
   // Arrow-key navigation in the left list (when not typing in a field).
@@ -756,7 +858,7 @@
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     const list = visibleScenes;
     if (!list.length) return;
-    const i = list.findIndex((s) => s.id === selectedId);
+    const i = list.findIndex(s => s.id === selectedId);
     const next = e.key === 'ArrowDown' ? Math.min(list.length - 1, i + 1) : Math.max(0, i - 1);
     if (next !== i || i === -1) {
       e.preventDefault();
@@ -784,14 +886,24 @@
     {#if progress?.total}
       <div data-tour="progress" class="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2" role="status" aria-label="Project progress">
         <div class="flex min-w-0 items-center gap-3">
-          <div class="h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-muted" aria-hidden="true"><div class="h-full rounded-full bg-emerald-500/80" style:width={`${Math.round(100 * progress.video_ready / progress.total)}%`}></div></div>
+          <div
+            class="h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-muted"
+            aria-hidden="true"><div
+            class="h-full rounded-full bg-emerald-500/80"
+            style:width={`${Math.round(100 * progress.video_ready / progress.total)}%`}></div></div>
           <p class="text-sm">{progress.summary}</p>
         </div>
-        {#if progress.next}<Button size="sm" variant={progress.next.stage === 'needs_attention' ? 'default' : 'outline'} onclick={() => { selectedId = progress.next.scene_id; mobileDetail = true; }}>Next: {progress.next.next.label} · {progress.next.title}</Button>
+        {#if progress.next}<Button
+          size="sm"
+          variant={progress.next.stage === 'needs_attention' ? 'default' : 'outline'}
+          onclick={() => { selectedId = progress.next.scene_id; mobileDetail = true; }}>Next: {progress.next.next.label} · {progress.next.title}</Button>
         {:else if progress.video_ready === progress.total}<Button size="sm" href="/?view=edit">Open editor</Button>{/if}
       </div>
     {/if}
-    <details class="dialogue-tools relative ml-auto"><summary class="inline-flex min-h-9 cursor-pointer list-none items-center gap-1.5 rounded-md px-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"><Sparkles class="size-3.5" />Dialogue tools</summary><div class="absolute right-0 top-full z-30 mt-1 w-80 max-w-[calc(100vw-2rem)] space-y-2 rounded-lg border border-border bg-popover p-3 shadow-lg">
+    <details class="dialogue-tools relative ml-auto"><summary
+      class="inline-flex min-h-9 cursor-pointer list-none items-center gap-1.5 rounded-md px-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"><Sparkles
+      class="size-3.5" />Dialogue tools</summary><div
+      class="absolute right-0 top-full z-30 mt-1 w-80 max-w-[calc(100vw-2rem)] space-y-2 rounded-lg border border-border bg-popover p-3 shadow-lg">
       <p class="text-xs text-muted-foreground">Rewrite every scene so characters talk to each other. Uses the AI writer.</p>
       <input
         bind:value={conversationInstruction}
@@ -836,12 +948,20 @@
           {#if episodes.length}
             <div class="flex items-center gap-2">
               {#if episodes.length > 1}
-                <select bind:value={episodeFilter} aria-label="Episode" class="min-h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm">
+                <select
+                  bind:value={episodeFilter}
+                  aria-label="Episode"
+                  class="min-h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm">
                   <option value="">All {episodes.length} episodes</option>
                   {#each episodes as e (e.id)}<option value={e.id}>Episode {e.number} · {e.title}</option>{/each}
                 </select>
               {:else}<span class="min-w-0 flex-1 truncate text-xs text-muted-foreground">Episode 1 · {episodes[0].title}</span>{/if}
-              <Button size="sm" variant="secondary" class="shrink-0" title="Ask the assistant to write the next episode with the same characters and format" onclick={nextEpisode}><Plus class="size-4 mr-1" />Next episode</Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                class="shrink-0"
+                title="Ask the assistant to write the next episode with the same characters and format"
+                onclick={nextEpisode}><Plus class="size-4 mr-1" />Next episode</Button>
             </div>
           {/if}
           <details class="rounded-md border border-border px-2.5">
@@ -867,8 +987,12 @@
         <!-- The list itself -->
         <!-- Named button group also supports arrow-key selection from its container. -->
         <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-        <div class="min-h-0 flex-1 overflow-y-auto p-2 space-y-1.5 focus:outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2"
-          tabindex="0" role="group" aria-label="Scenes" onkeydown={listKeydown}>
+        <div
+          class="min-h-0 flex-1 overflow-y-auto p-2 space-y-1.5 focus:outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2"
+          tabindex="0"
+          role="group"
+          aria-label="Scenes"
+          onkeydown={listKeydown}>
           {#if !loaded}
             {#each Array(5) as _, i (i)}
               <div class="flex items-start gap-2.5 rounded-lg border border-transparent px-2.5 py-2">
@@ -910,7 +1034,11 @@
             </div>
           {:else}
             {#each visibleScenes as s, i (s.id)}
-              {#if episodes.length > 1 && sceneSort === 'story' && !episodeFilter && (i === 0 || visibleScenes[i - 1].script_id !== s.script_id)}{@const e = episodeOf(s)}{#if e}<p class="px-1 pt-2 text-xs font-medium text-muted-foreground">Episode {e.number} · {e.title}</p>{/if}{/if}
+              {#if episodes.length > 1 &&
+                sceneSort === 'story' &&
+                !episodeFilter &&
+                (i === 0 || visibleScenes[i - 1].script_id !== s.script_id)}{@const e = episodeOf(s)}{#if e}<p
+                class="px-1 pt-2 text-xs font-medium text-muted-foreground">Episode {e.number} · {e.title}</p>{/if}{/if}
               <SceneListItem
                 scene={s}
                 selected={s.id === selectedId}
@@ -1051,5 +1179,20 @@
 </Dialog.Root>
 
 <style>
-@media(max-width:767px){.story-workspace :global(.scene-list-pane){flex:1!important}.story-workspace :global(.scene-detail-pane),.story-workspace :global([data-slot="resizable-handle"]){display:none}.story-workspace.show-detail :global(.scene-list-pane){display:none}.story-workspace.show-detail :global(.scene-detail-pane){display:block;flex:1!important}}
+  @media (max-width: 767px) {
+    .story-workspace :global(.scene-list-pane) {
+      flex: 1 !important;
+    }
+    .story-workspace :global(.scene-detail-pane),
+    .story-workspace :global([data-slot='resizable-handle']) {
+      display: none;
+    }
+    .story-workspace.show-detail :global(.scene-list-pane) {
+      display: none;
+    }
+    .story-workspace.show-detail :global(.scene-detail-pane) {
+      display: block;
+      flex: 1 !important;
+    }
+  }
 </style>

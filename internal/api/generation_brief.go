@@ -172,7 +172,7 @@ func (s *Server) persistDraft(project string, b generationBrief, draft *agents.S
 	raw, _ := json.Marshal(draft)
 	if len(bindings) > 0 {
 		var document map[string]any
-		json.Unmarshal(raw, &document)
+		_ = json.Unmarshal(raw, &document) // marshalled from a struct just above
 		document["character_bindings"] = bindings
 		raw, _ = json.Marshal(document)
 	}
@@ -200,6 +200,6 @@ func sceneBrief(scene *models.Scene) generationBrief {
 	var snapshot struct {
 		Brief generationBrief `json:"generation_brief"`
 	}
-	json.Unmarshal(scene.SceneJSON, &snapshot)
+	_ = json.Unmarshal(scene.SceneJSON, &snapshot) // unreadable scene metadata has the zero brief
 	return snapshot.Brief
 }

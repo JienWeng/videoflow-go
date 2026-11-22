@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { friendlyError } from '$lib/errors';
   import { editOutputHref } from '$lib/editor/links';
   import { fade } from 'svelte/transition';
   import {
@@ -14,37 +15,6 @@
   } from '@lucide/svelte';
   import { Badge } from '$lib/components/ui/badge';
   import { activity, type ActivityItem } from '$lib/activity.svelte';
-
-  /**
-   * Map a raw provider/transport error onto a short, human-friendly line.
-   * Falls back to the original text (trimmed) when nothing matches, so we never
-   * hide a real message — we only soften the noisy ones.
-   */
-  function friendlyError(raw: string | null | undefined): string {
-    const text = (raw ?? '').trim();
-    if (!text) return 'Something went wrong (no detail provided).';
-    const t = text.toLowerCase();
-    if (t.includes('timeout') || t.includes('timed out'))
-      return 'The provider took too long to respond — try again.';
-    if (t.includes('rate limit') || t.includes('429') || t.includes('too many requests'))
-      return 'Rate limited by the provider — wait a moment and retry.';
-    if (t.includes('insufficient') && (t.includes('balance') || t.includes('credit') || t.includes('quota')))
-      return 'The provider account is out of credit/quota.';
-    if (t.includes('401') || t.includes('unauthorized') || t.includes('api key') || t.includes('forbidden') || t.includes('403'))
-      return 'Provider rejected the API key — check Settings.';
-    if (t.includes('content') && (t.includes('policy') || t.includes('moderation') || t.includes('blocked') || t.includes('safety')))
-      return 'The prompt was blocked by the provider content filter.';
-    if (t.includes('download failed'))
-      return 'The finished video could not be downloaded — try again.';
-    if (t.includes('ffmpeg') || t.includes('no frames'))
-      return 'Could not process the video file (ffmpeg).';
-    if (t.includes('connection') || t.includes('network') || t.includes('econn') || t.includes('failed to fetch'))
-      return 'Network error reaching the provider — check the connection.';
-    if (t.includes('500') || t.includes('internal server error') || t.includes('bad gateway') || t.includes('502') || t.includes('503'))
-      return 'The provider had a server error — try again shortly.';
-    // Unknown — surface the original, capped so the tray stays tidy.
-    return text.length > 160 ? text.slice(0, 157) + '…' : text;
-  }
 
   /** Where a "retry" CTA should take the user for a failed item. */
   function retryHref(item: ActivityItem): string {
@@ -69,7 +39,7 @@
   };
 
   // Map kinds to lucide icon components
-  const KIND_ICONS: Record<string, any> = {
+  const KIND_ICONS: Record<string, typeof History> = {
     storyboard: Images,
     assets: ImagePlus,
     shots: LayoutGrid,
@@ -82,7 +52,7 @@
     return LABELS[item.kind] ?? item.kind;
   }
 
-  function kindIcon(item: ActivityItem): any {
+  function kindIcon(item: ActivityItem): typeof History {
     return KIND_ICONS[item.kind] ?? History;
   }
 

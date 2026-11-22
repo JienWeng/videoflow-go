@@ -379,10 +379,8 @@ func (w *WorkerPool) attachStoryboardFirstFrame(ctx context.Context, job *models
 	if !supports {
 		if scene, e := w.database.GetScene(*job.SceneID); e == nil {
 			var brief map[string]map[string]json.RawMessage
-			json.Unmarshal(scene.SceneJSON, &brief)
-			var refs []string
-			json.Unmarshal(brief["generation_brief"]["reference_asset_ids"], &refs)
-			if len(refs) > 0 {
+			_ = json.Unmarshal(scene.SceneJSON, &brief) // unreadable scene metadata has no references
+			if refs := models.IDList(brief["generation_brief"]["reference_asset_ids"]); len(refs) > 0 {
 				return fmt.Errorf("selected video model cannot use the character-conditioned keyframe; select a first-frame model")
 			}
 		}
@@ -404,7 +402,7 @@ func (w *WorkerPool) attachStoryboardFirstFrame(ctx context.Context, job *models
 			var meta struct {
 				SceneID string `json:"scene_id"`
 			}
-			_ = json.Unmarshal(asset.MetadataJSON, &meta)
+			_ = json.Unmarshal(asset.MetadataJSON, &meta) // unreadable metadata belongs to no scene
 			if asset.Type == "storyboard" && meta.SceneID == *job.SceneID && approved[asset.ID] {
 				if !models.ReferenceApproved(asset.MetadataJSON) {
 					blockedReview = true
@@ -631,7 +629,7 @@ func (w *WorkerPool) assembledPrompt(job *models.RenderJob, payload map[string]a
 	if scene != nil {
 		// Explicit tags below preserve the persisted brief across later settings changes.
 		var raw map[string]map[string]any
-		json.Unmarshal(scene.SceneJSON, &raw)
+		_ = json.Unmarshal(scene.SceneJSON, &raw) // unreadable scene metadata has no saved brief
 		brief := raw["generation_brief"]
 		if data, err := json.Marshal(brief["creative_preset"]); err == nil {
 			var preset *presets.Preset

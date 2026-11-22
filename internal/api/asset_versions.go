@@ -15,7 +15,7 @@ func assetVariantGroup(asset *models.Asset) string {
 	var metadata struct {
 		Group string `json:"variant_group_id"`
 	}
-	_ = json.Unmarshal(asset.MetadataJSON, &metadata)
+	_ = json.Unmarshal(asset.MetadataJSON, &metadata) // an asset with unreadable metadata is its own group
 	if metadata.Group != "" {
 		return metadata.Group
 	}
@@ -58,12 +58,12 @@ func (s *Server) handleRegenerateAsset(w http.ResponseWriter, r *http.Request) {
 			return nil, fmt.Errorf("asset changed before generation")
 		}
 		var identity map[string]any
-		_ = json.Unmarshal(source.MetadataJSON, &identity)
+		_ = json.Unmarshal(source.MetadataJSON, &identity) // unreadable metadata has no locked traits
 		ctx = guidedStoryContext(ctx, project, nil)
 		var snapshot struct {
 			Preset *presets.Preset `json:"creative_preset"`
 		}
-		_ = json.Unmarshal(source.MetadataJSON, &snapshot)
+		_ = json.Unmarshal(source.MetadataJSON, &snapshot) // unreadable metadata has no creative preset
 		ctx = presets.With(ctx, snapshot.Preset)
 		references := []string{}
 		if models.ReferenceApproved(source.MetadataJSON) {
@@ -83,7 +83,12 @@ func (s *Server) handleRegenerateAsset(w http.ResponseWriter, r *http.Request) {
 		for i := range assets {
 			a := &assets[i]
 			var metadata map[string]any
-			_ = json.Unmarshal(a.MetadataJSON, &metadata)
+			if e = json.Unmarshal(a.MetadataJSON, &metadata); e != nil {
+				return nil, fmt.Errorf("new version %s has unreadable metadata: %w", a.ID, e)
+			}
+			if metadata == nil {
+				metadata = map[string]any{}
+			}
 			metadata["source_asset_id"] = source.ID
 			metadata["source_updated_at"] = source.UpdatedAt
 			metadata["variant_group_id"] = assetVariantGroup(source)

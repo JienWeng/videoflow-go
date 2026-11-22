@@ -153,7 +153,7 @@ func (d *DB) SyncCosts(project string) error {
 			Resolution string  `json:"resolution"`
 			Aspect     string  `json:"aspect_ratio"`
 		}
-		_ = json.Unmarshal(j.RequestJSON, &req)
+		_ = json.Unmarshal(j.RequestJSON, &req) // an unreadable request is listed without a duration
 		e := CostEntry{Ref: "job:" + j.ID, ProjectID: project, Category: "video", Provider: j.Provider, Model: j.Model, Quantity: req.Duration, Unit: "seconds", CreatedAt: j.CreatedAt, Label: "Video clip"}
 		if j.SceneID != nil {
 			e.SceneID, e.ScriptID = *j.SceneID, script[*j.SceneID]

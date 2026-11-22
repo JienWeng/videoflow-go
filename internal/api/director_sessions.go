@@ -41,7 +41,7 @@ func (s *Server) bindDirectorRequest(next http.Handler) http.Handler {
 				if session.Selected {
 					binding.SessionID = session.ID
 					raw, _ := s.database.GetDirectorSelection(session.ID)
-					_ = json.Unmarshal(raw, &binding.Selection)
+					_ = json.Unmarshal(raw, &binding.Selection) // an unreadable selection binds the session with none
 					break
 				}
 			}
@@ -197,177 +197,205 @@ func (s *Server) registerDirectorRoutes() {
 	s.router.Post("/director/sessions/{id}/repair-context", s.handleRepairChatContext)
 	s.router.Post("/director/composition-plan", s.handleDirectorCompositionPlan)
 	s.router.Post("/assets/{id}/review", s.handleAssetReview)
-	s.router.Put("/director/sessions/{id}/selection", func(w http.ResponseWriter, r *http.Request) {
-		binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)
-		var selection directorSelection
-		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&selection) != nil {
-			http.Error(w, "invalid selection", 400)
-			return
-		}
-		snapshot, err := s.buildDirectorContext(binding.ProjectID, selection)
-		if err != nil {
-			http.Error(w, err.Error(), 400)
-			return
-		}
-		raw, _ := json.Marshal(selection)
-		if err = s.database.SetDirectorSelection(chi.URLParam(r, "id"), binding.ProjectID, raw); err != nil {
-			http.Error(w, err.Error(), 409)
-			return
-		}
-		writeJSON(w, 200, snapshot)
-	})
-	s.router.Get("/director/sessions/{id}/selection", func(w http.ResponseWriter, r *http.Request) {
-		binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)
-		id := chi.URLParam(r, "id")
-		if _, err := s.database.GetDirectorSession(id, binding.ProjectID); err != nil {
-			http.Error(w, "session not found", 404)
-			return
-		}
-		raw, _ := s.database.GetDirectorSelection(id)
-		writeJSON(w, 200, raw)
-	})
-	s.router.Get("/director/auth/{engine}", func(w http.ResponseWriter, r *http.Request) {
-		engine, ok := authEngine(w, r)
-		if ok {
-			writeJSON(w, 200, s.authManager().Status(r.Context(), engine))
-		}
-	})
-	s.router.Post("/director/auth/{engine}/start", func(w http.ResponseWriter, r *http.Request) {
-		engine, ok := authEngine(w, r)
-		if !ok {
-			return
-		}
-		login, err := s.authManager().Start(engine)
-		if err != nil {
-			http.Error(w, err.Error(), 409)
-			return
-		}
-		writeJSON(w, 200, login)
-	})
-	s.router.Post("/director/auth/{engine}/code", func(w http.ResponseWriter, r *http.Request) {
-		engine, ok := authEngine(w, r)
-		if !ok {
-			return
-		}
-		var body struct {
-			Code string `json:"code"`
-		}
-		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body) != nil {
-			http.Error(w, "paste the code from the sign-in page", 400)
-			return
-		}
-		if err := s.authManager().SubmitCode(engine, body.Code); err != nil {
-			http.Error(w, err.Error(), 409)
-			return
-		}
+	s.router.Put("/director/sessions/{id}/selection", s.handleSetDirectorSelection)
+	s.router.Get("/director/sessions/{id}/selection", s.handleGetDirectorSelection)
+	s.router.Get("/director/auth/{engine}", s.handleDirectorAuthStatus)
+	s.router.Post("/director/auth/{engine}/start", s.handleDirectorAuthStart)
+	s.router.Post("/director/auth/{engine}/code", s.handleDirectorAuthCode)
+	s.router.Post("/director/auth/{engine}/cancel", s.handleDirectorAuthCancel)
+	s.router.Get("/director/status", s.handleDirectorStatus)
+	s.router.Get("/director/sessions", s.handleListDirectorSessions)
+	s.router.Get("/director/models", s.handleDirectorModels)
+	s.router.Put("/director/sessions/{id}/model", s.handleSetDirectorSessionModel)
+	s.router.Post("/director/sessions", s.handleCreateDirectorSession)
+	s.router.Get("/director/sessions/{id}/turns", s.handleListDirectorTurns)
+	s.router.Post("/director/sessions/{id}/select", s.handleSelectDirectorSession)
+	s.router.Post("/director/sessions/{id}/cancel", s.handleCancelDirectorTurn)
+}
+
+func (s *Server) handleSetDirectorSelection(w http.ResponseWriter, r *http.Request) {
+	binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)
+	var selection directorSelection
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&selection) != nil {
+		http.Error(w, "invalid selection", 400)
+		return
+	}
+	snapshot, err := s.buildDirectorContext(binding.ProjectID, selection)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	raw, _ := json.Marshal(selection)
+	if err = s.database.SetDirectorSelection(chi.URLParam(r, "id"), binding.ProjectID, raw); err != nil {
+		http.Error(w, err.Error(), 409)
+		return
+	}
+	writeJSON(w, 200, snapshot)
+}
+
+func (s *Server) handleGetDirectorSelection(w http.ResponseWriter, r *http.Request) {
+	binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)
+	id := chi.URLParam(r, "id")
+	if _, err := s.database.GetDirectorSession(id, binding.ProjectID); err != nil {
+		http.Error(w, "session not found", 404)
+		return
+	}
+	raw, _ := s.database.GetDirectorSelection(id)
+	writeJSON(w, 200, raw)
+}
+
+func (s *Server) handleDirectorAuthStatus(w http.ResponseWriter, r *http.Request) {
+	engine, ok := authEngine(w, r)
+	if ok {
 		writeJSON(w, 200, s.authManager().Status(r.Context(), engine))
-	})
-	s.router.Post("/director/auth/{engine}/cancel", func(w http.ResponseWriter, r *http.Request) {
-		engine, ok := authEngine(w, r)
-		if ok {
-			s.authManager().Cancel(engine)
-			writeJSON(w, 200, s.authManager().Status(r.Context(), engine))
-		}
-	})
-	s.router.Get("/director/status", func(w http.ResponseWriter, r *http.Request) {
-		engines := []map[string]any{}
-		for _, name := range []string{"codex", "claude"} {
-			_, err := s.directorRunner.Available(name)
-			reason := ""
-			if err != nil {
-				reason = err.Error()
-			}
-			auth := s.authManager().Status(r.Context(), name)
-			engines = append(engines, map[string]any{"engine": name, "installed": err == nil, "signed_in": auth.SignedIn, "method": auth.Method, "reason": reason})
-		}
-		writeJSON(w, 200, map[string]any{"all_text_local": true, "engines": engines, "voice_default": "saved_character_voice", "host_requirement": "Sign in under the backend's OS account. Docker builds use their bundled CLIs and private agent-auth volume; native backends use locally installed CLIs."})
-	})
-	s.router.Get("/director/sessions", func(w http.ResponseWriter, r *http.Request) {
-		binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)
-		sessions, err := s.database.ListDirectorSessions(binding.ProjectID)
+	}
+}
+
+func (s *Server) handleDirectorAuthStart(w http.ResponseWriter, r *http.Request) {
+	engine, ok := authEngine(w, r)
+	if !ok {
+		return
+	}
+	login, err := s.authManager().Start(engine)
+	if err != nil {
+		http.Error(w, err.Error(), 409)
+		return
+	}
+	writeJSON(w, 200, login)
+}
+
+func (s *Server) handleDirectorAuthCode(w http.ResponseWriter, r *http.Request) {
+	engine, ok := authEngine(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Code string `json:"code"`
+	}
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body) != nil {
+		http.Error(w, "paste the code from the sign-in page", 400)
+		return
+	}
+	if err := s.authManager().SubmitCode(engine, body.Code); err != nil {
+		http.Error(w, err.Error(), 409)
+		return
+	}
+	writeJSON(w, 200, s.authManager().Status(r.Context(), engine))
+}
+
+func (s *Server) handleDirectorAuthCancel(w http.ResponseWriter, r *http.Request) {
+	engine, ok := authEngine(w, r)
+	if ok {
+		s.authManager().Cancel(engine)
+		writeJSON(w, 200, s.authManager().Status(r.Context(), engine))
+	}
+}
+
+func (s *Server) handleDirectorStatus(w http.ResponseWriter, r *http.Request) {
+	engines := []map[string]any{}
+	for _, name := range []string{"codex", "claude"} {
+		_, err := s.directorRunner.Available(name)
+		reason := ""
 		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
+			reason = err.Error()
 		}
-		writeJSON(w, 200, sessions)
+		auth := s.authManager().Status(r.Context(), name)
+		engines = append(engines, map[string]any{"engine": name, "installed": err == nil, "signed_in": auth.SignedIn, "method": auth.Method, "reason": reason})
+	}
+	writeJSON(w, 200, map[string]any{"all_text_local": true, "engines": engines, "voice_default": "saved_character_voice", "host_requirement": "Sign in under the backend's OS account. Docker builds use their bundled CLIs and private agent-auth volume; native backends use locally installed CLIs."})
+}
+
+func (s *Server) handleListDirectorSessions(w http.ResponseWriter, r *http.Request) {
+	binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)
+	sessions, err := s.database.ListDirectorSessions(binding.ProjectID)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, 200, sessions)
+}
+
+func (s *Server) handleDirectorModels(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, map[string]any{
+		"claude": map[string]any{"models": []string{"fable", "opus", "sonnet", "haiku"}, "efforts": director.Efforts("claude")},
+		"codex":  map[string]any{"models": codexModelSlugs(), "efforts": director.Efforts("codex")},
 	})
-	s.router.Get("/director/models", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{
-			"claude": map[string]any{"models": []string{"fable", "opus", "sonnet", "haiku"}, "efforts": director.Efforts("claude")},
-			"codex":  map[string]any{"models": codexModelSlugs(), "efforts": director.Efforts("codex")},
-		})
-	})
-	s.router.Put("/director/sessions/{id}/model", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Model  string `json:"model"`
-			Effort string `json:"effort"`
-		}
-		binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)
-		session, err := s.database.GetDirectorSession(chi.URLParam(r, "id"), binding.ProjectID)
-		if err != nil {
-			http.Error(w, "session not found", 404)
-			return
-		}
-		body.Model, body.Effort = strings.TrimSpace(body.Model), strings.TrimSpace(body.Effort)
-		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&body) != nil || !director.ValidModel(strings.TrimSpace(body.Model)) || !director.ValidEffort(session.Engine, strings.TrimSpace(body.Effort)) {
-			http.Error(w, "choose a listed model and reasoning level", 400)
-			return
-		}
-		if err = s.database.SetDirectorSessionModel(session.ID, binding.ProjectID, strings.TrimSpace(body.Model), strings.TrimSpace(body.Effort)); err != nil {
-			http.Error(w, err.Error(), 400)
-			return
-		}
-		session.Model, session.Effort = strings.TrimSpace(body.Model), strings.TrimSpace(body.Effort)
-		writeJSON(w, 200, session)
-	})
-	s.router.Post("/director/sessions", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Engine string `json:"engine"`
-			Title  string `json:"title"`
-		}
-		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body) != nil {
-			http.Error(w, "invalid session", 400)
-			return
-		}
-		binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)
-		session, err := s.database.CreateDirectorSession(binding.ProjectID, body.Engine, body.Title)
-		if err != nil {
-			http.Error(w, err.Error(), 400)
-			return
-		}
-		writeJSON(w, 201, session)
-	})
-	s.router.Get("/director/sessions/{id}/turns", func(w http.ResponseWriter, r *http.Request) {
-		binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)
-		turns, err := s.database.ListDirectorTurns(chi.URLParam(r, "id"), binding.ProjectID)
-		if err != nil {
-			http.Error(w, "session not found", 404)
-			return
-		}
-		writeJSON(w, 200, turns)
-	})
-	s.router.Post("/director/sessions/{id}/select", func(w http.ResponseWriter, r *http.Request) {
-		binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)
-		if err := s.database.SelectDirectorSession(chi.URLParam(r, "id"), binding.ProjectID); err != nil {
-			http.Error(w, err.Error(), 404)
-			return
-		}
-		writeJSON(w, 200, map[string]bool{"selected": true})
-	})
-	s.router.Post("/director/sessions/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
-		binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)
-		id := chi.URLParam(r, "id")
-		if _, err := s.database.GetDirectorSession(id, binding.ProjectID); err != nil {
-			http.Error(w, "session not found", 404)
-			return
-		}
-		if cancel, ok := s.directorCancels.Load(id); ok {
-			cancel.(context.CancelFunc)()
-			writeJSON(w, 202, map[string]bool{"cancelling": true})
-			return
-		}
-		http.Error(w, "no active turn", 409)
-	})
+}
+
+func (s *Server) handleSetDirectorSessionModel(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Model  string `json:"model"`
+		Effort string `json:"effort"`
+	}
+	binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)
+	session, err := s.database.GetDirectorSession(chi.URLParam(r, "id"), binding.ProjectID)
+	if err != nil {
+		http.Error(w, "session not found", 404)
+		return
+	}
+	body.Model, body.Effort = strings.TrimSpace(body.Model), strings.TrimSpace(body.Effort)
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&body) != nil || !director.ValidModel(strings.TrimSpace(body.Model)) || !director.ValidEffort(session.Engine, strings.TrimSpace(body.Effort)) {
+		http.Error(w, "choose a listed model and reasoning level", 400)
+		return
+	}
+	if err = s.database.SetDirectorSessionModel(session.ID, binding.ProjectID, strings.TrimSpace(body.Model), strings.TrimSpace(body.Effort)); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	session.Model, session.Effort = strings.TrimSpace(body.Model), strings.TrimSpace(body.Effort)
+	writeJSON(w, 200, session)
+}
+
+func (s *Server) handleCreateDirectorSession(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Engine string `json:"engine"`
+		Title  string `json:"title"`
+	}
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body) != nil {
+		http.Error(w, "invalid session", 400)
+		return
+	}
+	binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)
+	session, err := s.database.CreateDirectorSession(binding.ProjectID, body.Engine, body.Title)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	writeJSON(w, 201, session)
+}
+
+func (s *Server) handleListDirectorTurns(w http.ResponseWriter, r *http.Request) {
+	binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)
+	turns, err := s.database.ListDirectorTurns(chi.URLParam(r, "id"), binding.ProjectID)
+	if err != nil {
+		http.Error(w, "session not found", 404)
+		return
+	}
+	writeJSON(w, 200, turns)
+}
+
+func (s *Server) handleSelectDirectorSession(w http.ResponseWriter, r *http.Request) {
+	binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)
+	if err := s.database.SelectDirectorSession(chi.URLParam(r, "id"), binding.ProjectID); err != nil {
+		http.Error(w, err.Error(), 404)
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"selected": true})
+}
+
+func (s *Server) handleCancelDirectorTurn(w http.ResponseWriter, r *http.Request) {
+	binding, _ := r.Context().Value(directorBindingKey{}).(directorBinding)
+	id := chi.URLParam(r, "id")
+	if _, err := s.database.GetDirectorSession(id, binding.ProjectID); err != nil {
+		http.Error(w, "session not found", 404)
+		return
+	}
+	if cancel, ok := s.directorCancels.Load(id); ok {
+		cancel.(context.CancelFunc)()
+		writeJSON(w, 202, map[string]bool{"cancelling": true})
+		return
+	}
+	http.Error(w, "no active turn", 409)
 }
 
 // activeProjectID uses the request snapshot so concurrent tab/project changes cannot redirect writes.

@@ -32,7 +32,7 @@ func (s *Server) storyAssetCatalog(project *string) ([]models.Asset, error) {
 			continue
 		}
 		var metadata map[string]any
-		_ = json.Unmarshal(a.MetadataJSON, &metadata)
+		_ = json.Unmarshal(a.MetadataJSON, &metadata) // unreadable metadata has no review verdict
 		if metadata["consistency_review"] == "rejected" {
 			continue
 		}
@@ -112,9 +112,7 @@ func (s *Server) materializeStoryAssets(ctx context.Context, scene *models.Scene
 		if json.Unmarshal(current.SceneJSON, &metadata) != nil || metadata == nil {
 			metadata = map[string]json.RawMessage{}
 		}
-		var refs, all []string
-		_ = json.Unmarshal(metadata["story_asset_ids"], &refs)
-		all = models.IDList(current.AssetIDsJSON)
+		refs, all := models.IDList(metadata["story_asset_ids"]), models.IDList(current.AssetIDsJSON)
 		appendUnique := func(ids []string, id string) []string {
 			for _, existing := range ids {
 				if existing == id {
@@ -141,7 +139,7 @@ func sceneStoryAssetIDs(scene *models.Scene) []string {
 	var metadata struct {
 		IDs []string `json:"story_asset_ids"`
 	}
-	_ = json.Unmarshal(scene.SceneJSON, &metadata)
+	_ = json.Unmarshal(scene.SceneJSON, &metadata) // unreadable scene metadata has no story assets
 	return metadata.IDs
 }
 
