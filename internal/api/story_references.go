@@ -26,6 +26,9 @@ type storyContinuation struct {
 	AutomaticAssets     bool                  `json:"automatic_assets,omitempty"`
 	AssetReferences     []string              `json:"story_asset_ids,omitempty"`
 	Status              string                `json:"status"`
+	// StoryboardsMade is how many storyboard pictures the visuals stage made; zero when
+	// every scene's clips use its connected pictures as references instead.
+	StoryboardsMade *int `json:"storyboards_made,omitempty"`
 }
 
 func (s *Server) generateCharacterSheet(ctx context.Context, c *models.Character, onlyMissing bool, style string) (*models.Character, error) {
@@ -138,24 +141,28 @@ func (s *Server) storyCharacterReferences(ctx context.Context, project string, c
 	return ids, approved, nil
 }
 
-// storyboardStory makes each scene's storyboard with the generator a scene render uses.
+// storyboardStory makes the storyboard of each scene whose clips start from one, with the
+// generator a scene render uses, and reports how many it made. A scene whose clips are
+// sent its connected pictures as references gets none: the clip would never use it, and
+// a render makes one later if the scene is switched to first frame.
 // The scene's brief is first brought up to date with its cast's notes and reference
-// pictures, which exist only now; it is saved together with the new storyboard.
-func (s *Server) storyboardStory(ctx context.Context, scenes []models.Scene) error {
+// pictures, which exist only now; it is saved with or without a new storyboard.
+func (s *Server) storyboardStory(ctx context.Context, scenes []models.Scene) (int, error) {
+	made := 0
 	for i := range scenes {
 		scene := &scenes[i]
 		var cast []string
 		if err := json.Unmarshal(scene.CharacterIDsJSON, &cast); err != nil {
-			return err
+			return made, err
 		}
 		brief, err := s.storySceneBrief(*scene.ProjectID, sceneBrief(scene), cast, nil)
 		if err != nil {
-			return err
+			return made, err
 		}
 		brief.Style = s.sceneVisualStyle(scene)
 		var snapshot map[string]any
 		if err = json.Unmarshal(scene.SceneJSON, &snapshot); err != nil {
-			return err
+			return made, err
 		}
 		if snapshot == nil {
 			snapshot = map[string]any{}
@@ -163,13 +170,21 @@ func (s *Server) storyboardStory(ctx context.Context, scenes []models.Scene) err
 		snapshot["generation_brief"] = brief
 		scene.SceneJSON, err = json.Marshal(snapshot)
 		if err != nil {
-			return err
+			return made, err
 		}
-		if _, err = s.generateMatchingStoryboard(guidedStoryContext(ctx, *scene.ProjectID, nil), scene); err != nil {
-			return err
+		sceneCtx := guidedStoryContext(ctx, *scene.ProjectID, nil)
+		if s.sceneUsesReferences(sceneCtx, scene) {
+			if err = s.database.UpdateScene(scene); err != nil {
+				return made, err
+			}
+			continue
 		}
+		if _, err = s.generateMatchingStoryboard(sceneCtx, scene); err != nil {
+			return made, err
+		}
+		made++
 	}
-	return nil
+	return made, nil
 }
 
 func (s *Server) handleContinueStory(w http.ResponseWriter, r *http.Request) {
@@ -310,7 +325,8 @@ func (s *Server) handleContinueStory(w http.ResponseWriter, r *http.Request) {
 		workCtx = context.WithValue(workCtx, directorBindingKey{}, binding)
 		workCtx = state.Brief.context(guidedStoryContext(workCtx, project, state.Cast))
 		workCtx = context.WithValue(workCtx, mediaRoutesKey{}, state.Routes)
-		if e := s.storyboardStory(workCtx, scenes); e != nil {
+		made, e := s.storyboardStory(workCtx, scenes)
+		if e != nil {
 			state.Status = "failed"
 			raw, _ := json.Marshal(state)
 			message := e.Error()
@@ -318,6 +334,7 @@ func (s *Server) handleContinueStory(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		state.Stages = append(state.Stages, "visuals")
+		state.StoryboardsMade = &made
 		state.Status = "ready_to_render"
 		raw, _ := json.Marshal(state)
 		s.database.UpdateOp(op.ID, "succeeded", raw, nil)

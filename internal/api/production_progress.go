@@ -28,6 +28,9 @@ type sceneProgress struct {
 	Next    progressNext `json:"next"`
 	Blocked bool         `json:"blocked"`
 	Video   sceneVideo   `json:"video"`
+	// ReferenceMode is set for a scene waiting on nothing but its video whose clips are
+	// sent its connected pictures as references: it has, and needs, no storyboard.
+	ReferenceMode bool `json:"reference_mode,omitempty"`
 }
 
 // sceneVideo is where a scene's video stands, for the assistant to act on.
@@ -115,7 +118,7 @@ func friendlyFailure(job models.RenderJob) string {
 	case "invalid timing":
 		return "A shot length is not supported by the video model. Adjust the shot timing, then try again."
 	}
-	return "The last video attempt did not finish. Your shots and storyboard are kept. Ask the assistant why, or try again."
+	return "The last video attempt did not finish. Your shots and pictures are kept. Ask the assistant why, or try again."
 }
 
 func (s *Server) sceneProgressFor(ctx context.Context, scene *models.Scene, jobs []models.RenderJob, complete map[string]bool) sceneProgress {
@@ -199,7 +202,11 @@ func (s *Server) sceneProgressFor(ctx context.Context, scene *models.Scene, jobs
 		return p
 	}
 	boards, _ := refs["storyboards"].([]models.Asset)
+	// A scene whose clips are sent its connected pictures needs no storyboard.
+	p.ReferenceMode = refs["storyboard_ready"] != true && s.sceneUsesReferences(ctx, scene)
 	switch {
+	case p.ReferenceMode:
+		set("ready_to_render", "Ready for video", "Shots and reference pictures are ready. This scene's clips use its connected pictures, so no storyboard is needed. Review the cost, then make the video.", "render_scene", "Make video", 3)
 	case refs["storyboard_ready"] == true:
 		set("ready_to_render", "Ready for video", "Shots, references and storyboard all match. Review the cost, then make the video.", "render_scene", "Make video", 3)
 	case len(boards) > 0:

@@ -26,7 +26,7 @@
   const items: Item[] = $derived([
     { title: 'Connect your AI', detail: connected ? 'Codex or Claude Code is connected.' : 'Sign in to Codex or Claude Code so the assistant can plan your story.', done: connected, action: 'Connect', run: () => go('/settings#ai') },
     { title: 'Create your story', detail: scenes ? `${scenes} scene${scenes === 1 ? '' : 's'} planned.` : 'Describe an idea; VideoFlow plans scenes and characters.', done: scenes > 0, action: 'Create story', run: () => { guide.panelOpen = false; void goto('/').then(() => storyCreation.show()); } },
-    { title: 'Make storyboards', detail: scenes ? `${boarded} of ${scenes} scenes have an up-to-date storyboard.` : 'Preview each scene as an image before paying for video.', done: scenes > 0 && boarded === scenes, action: 'Open scenes', run: () => go('/?view=story') },
+    { title: 'Make storyboards', detail: scenes ? `${boarded} of ${scenes} scenes are ready for video (an up-to-date storyboard, or connected pictures to use instead).` : 'Preview each scene as an image before paying for video.', done: scenes > 0 && boarded === scenes, action: 'Open scenes', run: () => go('/?view=story') },
     { title: 'Make videos', detail: scenes ? `${videos} of ${scenes} scenes have video.` : 'Turn each storyboard into a video clip.', done: scenes > 0 && videos === scenes, action: 'Open scenes', run: () => go('/?view=story') },
     { title: 'Edit and export', detail: 'Put clips in order, add music and captions, then export your finished video.', done: false, action: 'Edit video', run: () => go('/?view=edit') }
   ]);

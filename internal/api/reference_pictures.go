@@ -1,10 +1,12 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 
 	"videoflow-go/internal/models"
+	"videoflow-go/internal/providers"
 	"videoflow-go/internal/seedance"
 )
 
@@ -116,6 +118,32 @@ func (s *Server) referencePictures(scene *models.Scene, unit *renderUnit, limit 
 		out = out[:limit]
 	}
 	return out
+}
+
+// referenceModePictures are the pictures a render of the scene would send as references:
+// none when the owner chose first frame, the video model takes no reference pictures, or
+// nothing usable is connected. None means first-frame mode, which needs a storyboard.
+func (s *Server) referenceModePictures(scene *models.Scene, settings productionSettings, model *providers.Model) []referencePicture {
+	if settings.VideoInput == inputFirstFrame || model == nil || model.ReferenceImages <= 0 {
+		return nil
+	}
+	return s.referencePictures(scene, nil, model.ReferenceImages)
+}
+
+// sceneUsesReferences reports whether a render of the scene right now would send its
+// connected pictures as references. Such a scene's clips never use a storyboard picture,
+// so none is made for it and nothing waits on one. It is the render plan's own answer;
+// while no plan can be made yet (shots still to fix, say) the plan's picture rule alone
+// decides, so story creation and the later render agree.
+func (s *Server) sceneUsesReferences(ctx context.Context, scene *models.Scene) bool {
+	if plan, err := s.sceneProductionPlan(ctx, scene); err == nil {
+		return plan.VideoInput == inputReferences
+	}
+	provider, model, err := s.productionVideoModel(ctx)
+	if err != nil || (provider == "fal" && model.ID == providers.FalNativeVoiceModel) {
+		return false
+	}
+	return len(s.referenceModePictures(scene, sceneProduction(scene), model)) > 0
 }
 
 // clipReferences reads the pictures a frozen clip request is sent with.

@@ -41,6 +41,11 @@
   let characters: any[] = $state([]);
   let shotsByScene: Record<string, any[]> = $state({});
   let storyboards: Record<string, any> = $state({});
+  // A scene's small picture: its storyboard, or a connected picture when it has none (its
+  // clips may use connected pictures and never get a storyboard).
+  let previews: Record<string, any> = $state({});
+  // The scene's clips use its connected pictures, so nothing waits on a storyboard.
+  const usesReferences = (id: string) => !!progressFor(id)?.reference_mode;
   let renderedScenes: Record<string, boolean> = $state({});
   let error = $state('');
   // Per-key busy gating: only the keys of in-flight actions are true, so
@@ -266,6 +271,8 @@
       const sid = a.metadata_json?.scene_id;
       if (!storyboards[sid] && a.type === 'storyboard' && sid && freshScenes.find((scene:any)=>scene.id===sid)?.asset_ids_json?.includes(a.id)) storyboards[sid] = a;
     }
+    const picture=(a:any)=>/\.(png|jpe?g|webp|gif)$/i.test(a.file_path??'')&&a.type!=='storyboard'&&a.metadata_json?.consistency_review!=='rejected';
+    previews=Object.fromEntries(freshScenes.map((scene:any)=>[scene.id,storyboards[scene.id]??allAssets.find((a:any)=>picture(a)&&(scene.asset_ids_json?.includes(a.id)||(a.type==='character_reference'&&scene.character_ids_json?.includes(a.character_id))))??null]));
     renderedScenes=Object.fromEntries([...completeSceneRenders(jobs)].map(id=>[id,true]));
     scenes = mergeScenes(freshScenes);
     await Promise.all(
@@ -438,7 +445,7 @@
         signal:operationScope.signal,
           label: 'Storyboard',
         icon: Images,
-        done: hasStoryboard || hasRender,
+        done: hasStoryboard || hasRender || (hasShots && usesReferences(s.id)),
         busy: !!opBusy[`sb-${s.id}`],
         busyLabel: 'Generating storyboard…',
         action: () => generateStoryboardGuarded(s)
@@ -910,7 +917,7 @@
                 statusLine={statusLine(s)}
                 accentDot={accentDot(s)}
                 dirty={sceneDirty(s) || (shotsByScene[s.id] ?? []).some((sh: any) => shotDirty(sh))}
-                storyboard={storyboards[s.id] ?? null}
+                storyboard={previews[s.id] ?? null}
                 onselect={() => selectScene(s.id)}
               />
             {/each}
@@ -950,6 +957,7 @@
               sceneDirty={sceneDirty(selectedScene)}
               shotDirty={(sh: any) => shotDirty(sh)}
               storyboard={storyboards[selectedScene.id] ?? null}
+              preview={previews[selectedScene.id] ?? null}
               shots={shotsByScene[selectedScene.id] ?? []}
               bind:castSelection
               bind:sceneRefine

@@ -113,6 +113,10 @@ func (s *Server) productionVideoModel(ctx context.Context) (string, *providers.M
 		s.refreshVideoPrices(ctx, false)
 	}
 	provider, model := s.routes().MediaSelection("video")
+	// A story being created keeps the video service it started with.
+	if routes, ok := ctx.Value(mediaRoutesKey{}).(map[string]mediaRoute); ok && routes["video"].Provider != "" {
+		provider, model = routes["video"].Provider, routes["video"].Model
+	}
 	// These are the same documented capabilities used by the existing adapter.
 	if (provider == "fal" && (model == providers.FalVideoModel || model == "bytedance/seedance-2.0/fast/text-to-video")) || (provider == "byteplus" && model == providers.BytePlusVideoModel) {
 		m := &providers.Model{ID: model, GenerateAudio: true, Resolutions: []string{"480p", "720p"}}
@@ -285,8 +289,8 @@ func (s *Server) sceneProductionPlan(ctx context.Context, scene *models.Scene) (
 		return p, err
 	}
 	p.VideoInput = inputFirstFrame
-	if p.Settings.VideoInput != inputFirstFrame && model.ReferenceImages > 0 {
-		if pictures := s.referencePictures(scene, nil, model.ReferenceImages); len(pictures) > 0 {
+	{
+		if pictures := s.referenceModePictures(scene, p.Settings, model); len(pictures) > 0 {
 			madeFromFrames := false
 			for _, job := range jobs {
 				madeFromFrames = madeFromFrames || job.SceneID != nil && *job.SceneID == scene.ID && job.Status == "succeeded" && strings.HasPrefix(renderRequestUnit(job.RequestJSON).Key, p.ID+":")

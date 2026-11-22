@@ -357,11 +357,13 @@
 
 
     // Storyboard assets are linked to their scene by a metadata edge.
-    const scenesWithStoryboard = new Set(
-      edges
+    // A scene whose clips use its connected pictures needs none and counts as having one.
+    const scenesWithStoryboard = new Set([
+      ...edges
         .filter((e) => byId.get(e.target)?.data?.asset_type === 'storyboard')
-        .map((e) => e.source)
-    );
+        .map((e) => e.source),
+      ...(progressData?.scenes ?? []).filter((p: any) => p.reference_mode).map((p: any) => p.scene_id)
+    ]);
 
     const renderedScenes=completeSceneRenders(nodes.filter(n=>n.type==='render_job').map(n=>n.data??{}));
 

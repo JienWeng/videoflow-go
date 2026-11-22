@@ -27,3 +27,11 @@ console.log('PASS 4 story-asset progress assertions');
 
 assert.equal(progress('ready_to_render',['story','scenes','shots','visuals']).current,'render');
 assert(!stepsForCreation(true,true).some(s=>s.key==='review'||s.key==='character_review'));
+// A story whose scenes use their connected pictures makes no storyboard: the stage still completes, and nothing says one was made.
+const none=progress('ready_to_render',['story','scenes','shots','assets','characters','visuals'],true,true,0);
+assert.equal(none.completed.has('visuals'),true);assert.equal(none.current,'render');assert.equal(none.noStoryboards,true);
+assert.equal(/storyboard/i.test(none.title),false);
+assert.equal(progress('ready_to_render',['visuals'],true,true,2).title,'Your storyboard is ready');
+assert.equal(progress('ready_to_render',['visuals']).noStoryboards,false);
+assert.equal(/were|made|created/i.test(stepsForCreation().find(s=>s.key==='visuals').label),false);
+console.log('PASS 7 no-storyboard progress assertions');

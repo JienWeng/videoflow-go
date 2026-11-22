@@ -14,3 +14,11 @@ assert.equal(stage({shots:2},'storyboard').open,true);
 assert.equal(sceneStages({all:true}).every(s=>s.visible),true);
 assert.equal(stage({assets:1},'assets').visible,true);
 console.log('PASS 12 scene stage assertions');
+// Reference mode: no storyboard is needed, so Video opens once shots exist and the empty Storyboard stage stays out of the way.
+assert.equal(stage({shots:2,references:true},'render').visible,true);
+assert.equal(stage({shots:2,references:true},'render').open,true);
+assert.equal(stage({shots:2,references:true},'storyboard').visible,false);
+assert.equal(stage({shots:2,references:true,storyboard:true},'storyboard').visible,true);
+assert.equal(stage({shots:2,references:true,all:true},'storyboard').visible,true);
+assert.equal(stage({references:true},'render').visible,false);
+console.log('PASS 6 reference-mode stage assertions');

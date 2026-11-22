@@ -682,7 +682,7 @@
             {:else}
               <Play class="size-4 mr-1" />
             {/if}
-            {busy ? 'Running…' : (labels[intent.action] ?? 'Run')}
+            {busy ? 'Running…' : intent.action==='render_scene'&&renderPlanId&&!renderQuote.storyboards ? 'Render scene' : (labels[intent.action] ?? 'Run')}
           </Button>
         {/if}
       </div>

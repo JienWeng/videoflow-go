@@ -27,6 +27,7 @@
     sceneDirty = false,
     shotDirty = (_sh: any) => false,
     storyboard = null,
+    preview = null,
     shots = [],
     // bindable per-scene state maps
     castSelection = $bindable(),
@@ -62,12 +63,14 @@
 
   // Stage disclosure follows saved work; generation controls live inside each stage.
   let referenceInfo:any=$state(null);
+  // The scene's clips use its connected pictures: it has, and needs, no storyboard.
+  const usesReferences=$derived(!!progress?.reference_mode);
   let references: SceneReferences | undefined;
   let scenePanel = $state<HTMLElement>();
   const currentStoryboard=$derived(referenceInfo?.storyboards?.find((a:any)=>a.id===referenceInfo.active_storyboard_id)??storyboard);
   let showAll=$state(false);
   let opened=$state<Record<string,boolean>>({});
-  const sections=$derived(sceneStages({expanded:!!steps.find((st:any)=>st.key==='expand')?.done,shots:shots.length,storyboard:!!storyboard,rendered:!!steps.find((st:any)=>st.key==='render')?.done,assets:(generatedAssets[s.id]??[]).length,all:showAll}));
+  const sections=$derived(sceneStages({expanded:!!steps.find((st:any)=>st.key==='expand')?.done,shots:shots.length,storyboard:!!storyboard,rendered:!!steps.find((st:any)=>st.key==='render')?.done,assets:(generatedAssets[s.id]??[]).length,all:showAll,references:usesReferences}));
   const section=(key:string)=>sections.find(st=>st.key===key)!;
   const isOpen=(key:string)=>opened[key]??section(key).open;
   let focusedShot='';
@@ -96,7 +99,7 @@
   const nextStage = $derived(
     current?.key === 'expand' ? { key: 'scene', label: 'Review story & cast' }
       : current?.key === 'shots' ? { key: 'shots', label: 'Set up shots' }
-      : current?.key === 'storyboard' || referenceInfo?.storyboard_ready === false
+      : !usesReferences && (current?.key === 'storyboard' || referenceInfo?.storyboard_ready === false)
         ? { key: 'storyboard', label: 'Review storyboard' }
         : { key: 'render', label: current ? 'Review render plan' : 'View video options' }
   );
@@ -115,6 +118,8 @@
           <Maximize2 class="size-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
         </span>
       </button>
+    {:else if preview}
+      <img class="size-16 shrink-0 rounded-lg border border-border object-cover" src={mediaUrl(preview.file_path)} alt="" title={`Connected picture: ${preview.name ?? ''}`} loading="lazy" />
     {:else}
       <div class="flex size-16 shrink-0 items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 text-muted-foreground/50">
         <Film class="size-5" />
@@ -446,9 +451,9 @@
           </span>
         </button>
       {:else}
-        <p class="text-xs text-muted-foreground">Generate a storyboard after adding shots.</p>
+        <p class="text-xs text-muted-foreground">{usesReferences?'Not needed: this scene\'s clips use its connected pictures. A storyboard is only used when Pictures is set to first frame under Video.':'Generate a storyboard after adding shots.'}</p>
       {/if}
     </div></details>{/if}
-    {#if section('render').visible}<details class="border-t border-border pt-2" open={isOpen('render')} ontoggle={event=>remember('render',event)} data-stage="render"><summary class="min-h-11 cursor-pointer py-3 text-sm font-semibold">Video</summary><div class="space-y-3 pb-4"><ProductionControls scene={s.id} bind:newVersion={productionNewVersion} onplan={(id,cost)=>{productionPlanId=id;productionQuote=cost}} onstate={state=>productionBlocked=state.blocking||state.loading}/><div class="flex flex-wrap gap-2"><Button disabled={productionBlocked||referenceInfo?.references_ready===false||!shots.length||busy[`render-${s.id}`]||sceneDirty||shots.some((shot:any)=>shotDirty(shot))} onclick={()=>{const request={...s,production_plan_id:productionPlanId,new_version:productionNewVersion,confirmed_calls:productionQuote.calls,confirmed_seconds:productionQuote.seconds,confirmed_storyboard_calls:productionQuote.storyboards};productionNewVersion=false;onRenderScene(request)}}>{busy[`render-${s.id}`]?'Preparing…':referenceInfo?.storyboard_ready===false?'Render video · updates storyboard':'Render video'}</Button><Button variant="outline" href={`/?view=edit&scene_id=${encodeURIComponent(s.id)}`}>Edit this scene's video</Button><Button variant="ghost" href="/render">All videos</Button><Button variant="ghost" href={`/library?tab=media&scene_id=${encodeURIComponent(s.id)}`}>Images</Button></div><p class="text-xs text-muted-foreground">Rendering uses credits. You'll see the cost above before anything is sent.</p>{#if !shots.length}<p class="text-xs text-muted-foreground">Add shots before rendering.</p>{/if}</div></details>{/if}
+    {#if section('render').visible}<details class="border-t border-border pt-2" open={isOpen('render')} ontoggle={event=>remember('render',event)} data-stage="render"><summary class="min-h-11 cursor-pointer py-3 text-sm font-semibold">Video</summary><div class="space-y-3 pb-4"><ProductionControls scene={s.id} bind:newVersion={productionNewVersion} onplan={(id,cost)=>{productionPlanId=id;productionQuote=cost}} onstate={state=>productionBlocked=state.blocking||state.loading}/><div class="flex flex-wrap gap-2"><Button disabled={productionBlocked||referenceInfo?.references_ready===false||!shots.length||busy[`render-${s.id}`]||sceneDirty||shots.some((shot:any)=>shotDirty(shot))} onclick={()=>{const request={...s,production_plan_id:productionPlanId,new_version:productionNewVersion,confirmed_calls:productionQuote.calls,confirmed_seconds:productionQuote.seconds,confirmed_storyboard_calls:productionQuote.storyboards};productionNewVersion=false;onRenderScene(request)}}>{busy[`render-${s.id}`]?'Preparing…':productionQuote.storyboards>0?'Render video · updates storyboard':'Render video'}</Button><Button variant="outline" href={`/?view=edit&scene_id=${encodeURIComponent(s.id)}`}>Edit this scene's video</Button><Button variant="ghost" href="/render">All videos</Button><Button variant="ghost" href={`/library?tab=media&scene_id=${encodeURIComponent(s.id)}`}>Images</Button></div><p class="text-xs text-muted-foreground">Rendering uses credits. You'll see the cost above before anything is sent.</p>{#if !shots.length}<p class="text-xs text-muted-foreground">Add shots before rendering.</p>{/if}</div></details>{/if}
   </div>
 </div>
