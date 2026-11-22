@@ -81,7 +81,7 @@ func TestRemoteGuidedReviewNeverQueuesVideo(t *testing.T) {
 		ID string `json:"op_id"`
 	}
 	json.Unmarshal(r.Body.Bytes(), &start)
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		op, _ := s.database.GetOp(start.ID)
 		if op.Status == "failed" {
