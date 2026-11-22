@@ -23,7 +23,7 @@ Use conversational conversion for short, clear spoken lines. Check that the requ
 
 Local continuity retrieval supplies matching character, asset, and sibling-scene text to planning. It is lexical retrieval, not a connected vector-memory system. Shot dependency layers are saved, but they do not yet drive a complete dependency-aware generation scheduler.
 
-For cross-scene visual continuity, render and finish the preceding scene before preparing the next. The code can extract a previous output's last frame when FFmpeg and the file are available. Whether it is sent as a visual reference depends on the selected provider route and reference cap; inspect the render route before relying on it.
+For cross-scene visual continuity, render and finish the preceding scene before preparing the next. Nothing carries the last frame of one clip into the next automatically; each clip is made from the pictures connected to its scene.
 
 ## Storyboard and render
 

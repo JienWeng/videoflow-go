@@ -2,7 +2,7 @@
 
 [Handbook](README.md) · Previous: [Projects](04-projects.md) · Next: [Characters and assets](06-characters-assets.md)
 
-You need a running API/frontend, an active project, and configured text and media routes. Existing photos, character bibles, scripts, and videos are optional. Read the [current provider limitations](03-providers.md) first. The audit verified local contracts but did not run a paid live generation.
+You need a running API/frontend, an active project, and configured text and media routes. Existing photos, character bibles, scripts, and videos are optional. Read the [provider routing guide](../PROVIDERS.md) first. The audit verified local contracts but did not run a paid live generation.
 
 ## Guided workflow
 
@@ -14,7 +14,7 @@ You need a running API/frontend, an active project, and configured text and medi
 6. Click **Create video** and review the **Before you create** preflight panel. Check the text, image, and video routes; selected format; duration and resolution; reference cap; and whether generated audio is supported. This local check does not contact providers. Resolve any missing route or incompatible setting before proceeding.
 7. Confirm **Create video** once. This starts multiple provider stages, not just one video request, and can incur usage charges.
 8. Wait for orchestration to finish. The app then opens **My videos** while render jobs may still be generating.
-9. Open a finished output, play it, check appearance and speech, then download it. Use [captions](10-captions-editor.md) if needed.
+9. Open a finished output, play it, check appearance and speech, then download it. Add captions in the editor if needed (see [Studio](08-studio.md)).
 
 ## Understand the current controls
 
