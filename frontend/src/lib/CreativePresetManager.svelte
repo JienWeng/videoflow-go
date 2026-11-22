@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from './errors';
   import { onMount } from 'svelte';
   import { API_BASE, get } from '$lib/api';
   type Preset = { id: string; name: string; description: string; style_prompt: string; guidance: Record<string, string> };
@@ -13,7 +14,7 @@
     try {
       catalog = await get('/style-presets');
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     }
   }
   onMount(() => {
@@ -46,7 +47,7 @@
       const raw = JSON.parse(await file.text());
       preview = await request('/preset-packs/preview', 'POST', raw);
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       busy = false;
       input.value = '';
@@ -62,7 +63,7 @@
       preview = null;
       await load();
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       busy = false;
     }
@@ -76,7 +77,7 @@
       message = `Removed ${pack.name}.`;
       await load();
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       busy = false;
     }

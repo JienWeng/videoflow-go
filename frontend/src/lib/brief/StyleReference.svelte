@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '../errors';
   import { onMount, onDestroy, untrack } from 'svelte';
   import { get, patch, upload } from '$lib/api';
   import { runBackgroundOp } from '$lib/ops';
@@ -43,7 +44,7 @@
     try {
       assets = (await get<Asset[]>('/assets')).filter(a => /\.(png|jpe?g|gif|webp|mp4|mov|webm)$/i.test(a.file_path ?? ''));
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     }
   }
   onMount(() => {
@@ -68,7 +69,7 @@
       draft = null;
       notice = 'Reference uploaded to your Library. Analyze it to extract visual direction.';
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       busy = false;
     }
@@ -108,7 +109,7 @@
         }
       );
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
       busy = false;
     }
   }
@@ -128,7 +129,7 @@
       onsaved?.(catalog.project_style, draft);
       window.dispatchEvent(new Event('videoflow:style-updated'));
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       busy = false;
     }

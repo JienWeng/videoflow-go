@@ -187,7 +187,7 @@
           remember();
         })
         .catch(e => {
-          if (token === recordToken) recordError = String(e);
+          if (token === recordToken) recordError = errorMessage(e);
         })
         .finally(() => {
           if (token === recordToken) loadingRecord = false;
@@ -211,7 +211,7 @@
           remember();
         })
         .catch(e => {
-          if (token === recordToken) recordError = String(e);
+          if (token === recordToken) recordError = errorMessage(e);
         })
         .finally(() => {
           if (token === recordToken) loadingRecord = false;

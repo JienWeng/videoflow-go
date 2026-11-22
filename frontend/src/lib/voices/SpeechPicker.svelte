@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '../errors';
   import { get } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
   type Model = { id: string; name: string; default: boolean };
@@ -40,7 +41,7 @@
     } catch (e) {
       if (seq === sequence) {
         models = [];
-        error = String(e);
+        error = errorMessage(e);
       }
     } finally {
       if (seq === sequence) modelLoading = false;
@@ -84,7 +85,7 @@
         } else reason = result.reason ?? 'No matching voices found.';
       }
     } catch (e) {
-      if (seq === voiceSequence) error = String(e);
+      if (seq === voiceSequence) error = errorMessage(e);
     } finally {
       if (seq === voiceSequence) loading = false;
     }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '../errors';
   import { editSceneHref } from '$lib/editor/links';
   import { untrack } from 'svelte';
   import { get, put } from '$lib/api';
@@ -57,7 +58,7 @@
       dirty = false;
     } catch (e) {
       if (token === seq) {
-        error = String(e);
+        error = errorMessage(e);
         plan = null;
       }
     } finally {
@@ -101,7 +102,7 @@
       settings = structuredClone(result.settings);
       dirty = false;
     } catch (e) {
-      if (token === seq) error = String(e);
+      if (token === seq) error = errorMessage(e);
     } finally {
       if (token === seq) {
         saving = false;

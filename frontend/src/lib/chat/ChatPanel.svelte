@@ -462,7 +462,7 @@
     } catch (e) {
       if (generation === conversationGeneration) {
         cancelling = false;
-        cancelError = `Could not request cancellation: ${String(e)}`;
+        cancelError = `Could not request cancellation: ${errorMessage(e)}`;
       }
     }
   }
@@ -701,7 +701,7 @@
       storageKey = key;
       loadCheckpoints(key);
     } catch (e) {
-      if (generation === conversationGeneration) historyError = String(e);
+      if (generation === conversationGeneration) historyError = errorMessage(e);
     } finally {
       if (generation === conversationGeneration) historyLoading = false;
     }
@@ -1162,7 +1162,7 @@
       settle();
       if (generation === conversationGeneration) {
         if (m.op) m.op.status = 'failed';
-        m.text = String(e);
+        m.text = errorMessage(e);
       }
     }
   }
@@ -1328,7 +1328,7 @@
       reusePrompt(message.retry ?? '');
       void refreshCapabilities();
     } catch (e) {
-      if (generation === conversationGeneration) message.text = `Could not repair context. ${String(e)}`;
+      if (generation === conversationGeneration) message.text = `Could not repair context. ${errorMessage(e)}`;
     } finally {
       repairingContext = false;
     }
@@ -1730,7 +1730,7 @@
        editing?.apply(applyEditProposal(editing.draft, m.editProposal));
        m.editProposal!.applied = true;
      } catch (e) {
-       m.editProposal!.error = String(e);
+       m.editProposal!.error = errorMessage(e);
      }
    }}>{m.editProposal.applied?'Applied · Undo in editor':'Apply edit changes'}</Button>{:else}<a
      class="text-xs underline" href="/?view=edit">Open editing workspace</a>{/if}

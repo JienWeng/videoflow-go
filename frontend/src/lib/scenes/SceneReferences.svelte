@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '../errors';
   import { onMount, onDestroy } from 'svelte';
   import { get, post, del, mediaUrl } from '$lib/api';
   import { subscribeJobs } from '$lib/sse';
@@ -42,7 +43,7 @@
       library = assets;
       error = '';
     } catch (e) {
-      if (alive && request === sequence) error = String(e);
+      if (alive && request === sequence) error = errorMessage(e);
     } finally {
       if (alive && request === sequence) loading = false;
     }
@@ -103,9 +104,9 @@
       await onchanged?.();
     } catch (e) {
       if (alive) {
-        error = String(e);
+        error = errorMessage(e);
         await load();
-        error = String(e);
+        error = errorMessage(e);
       }
     } finally {
       if (alive) busy = false;

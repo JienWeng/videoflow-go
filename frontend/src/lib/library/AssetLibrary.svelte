@@ -23,7 +23,7 @@
       await refresh();
       error = '';
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       refreshing = false;
     }
@@ -79,7 +79,7 @@
     } catch (e) {
       if (usageAlive) {
         regenerating = '';
-        toast.error(String(e));
+        toast.error(errorMessage(e));
       }
     }
   }
@@ -103,7 +103,7 @@
       usage[id] = result;
       usageError[id] = '';
     } catch (e) {
-      if (usageAlive) usageError[id] = String(e);
+      if (usageAlive) usageError[id] = errorMessage(e);
     }
   }
   function prepareDelete(asset: Asset) {

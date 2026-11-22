@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '../errors';
   import BriefChoice from './BriefChoice.svelte';
   import StyleReference from './StyleReference.svelte';
   import { onMount } from 'svelte';
@@ -73,7 +74,7 @@
       catalog = result;
       if (value.style_preset_id && !styleValid) confirmed = false;
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       loading = false;
     }
