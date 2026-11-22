@@ -142,7 +142,7 @@
       await refresh();
       error = '';
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     }
   }
   // A link to /?view=story&scene_id=… while Story is already open selects that scene with fresh data.
@@ -517,7 +517,7 @@
       );
     } catch (e) {
       busy[key] = false;
-      error = String(e);
+      error = errorMessage(e);
       toast.error(error);
     }
   }

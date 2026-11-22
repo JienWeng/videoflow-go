@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '../errors';
   import { onMount } from 'svelte';
   import ConversationHistory from './ConversationHistory.svelte';
   import SessionReferences from './SessionReferences.svelte';
@@ -55,7 +56,7 @@
       await fn();
       window.dispatchEvent(new Event('videoflow-session-changed'));
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       busy = false;
     }
@@ -69,7 +70,7 @@
     });
   onMount(() => {
     refresh()
-      .catch(e => (error = String(e)))
+      .catch(e => (error = errorMessage(e)))
       .finally(() => (loaded = true));
   });
   const available = $derived(engines.some(e => e.engine === engine && e.installed));

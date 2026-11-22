@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '../errors';
   import * as Dialog from '$lib/components/ui/dialog';
   import { Button } from '$lib/components/ui/button';
   import { del } from '$lib/api';
@@ -23,7 +24,7 @@
     try {
       await del('/projects/' + encodeURIComponent(project.id));
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
       busy = false;
       return;
     }

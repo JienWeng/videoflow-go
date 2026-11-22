@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '../errors';
   // Characters and reference pictures the chosen conversation uses in its next prompts.
   import { get, put } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
@@ -41,7 +42,7 @@
       assetIDs = selection?.asset_ids ?? [];
       saved = key(characterIDs, assetIDs);
     } catch (e) {
-      if (current === generation) error = String(e);
+      if (current === generation) error = errorMessage(e);
     } finally {
       if (current === generation) loading = false;
     }
@@ -64,7 +65,7 @@
       warnings = snapshot?.warnings ?? [];
       notice = 'References saved for your next prompt.';
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       busy = false;
     }

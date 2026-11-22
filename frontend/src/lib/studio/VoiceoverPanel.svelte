@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '../errors';
   import { get, post } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
   import Mic from '@lucide/svelte/icons/mic';
@@ -66,7 +67,7 @@
     } catch (e) {
       if (seq === sequence) {
         voices = [];
-        error = 'Could not list ' + LABEL[p] + ' voices. ' + String(e);
+        error = 'Could not list ' + LABEL[p] + ' voices. ' + errorMessage(e);
       }
     } finally {
       if (seq === sequence) loadingVoices = false;
@@ -112,7 +113,7 @@
           : ' Drag them on the Audio track to fine-tune.') +
         (skipped.length ? ` Skipped ${skipped.length}: ${skipped[0].reason}` : '');
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       working = false;
       onbusy(false);
@@ -145,7 +146,7 @@
         (r.generated ? '' : ' (reused, no charge)') +
         '.';
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       working = false;
       onbusy(false);

@@ -118,7 +118,7 @@
       lastResult = await post<StoryGenerationResult>(`/videos/generate/${opId}/assets/exclude`, { asset_id: id });
       await refreshReviewAssets();
     } catch (e) {
-      opError = String(e);
+      opError = errorMessage(e);
     } finally {
       continuingStory = false;
     }
@@ -137,7 +137,7 @@
       poller = setInterval(() => void checkOperation(), 2500);
       await checkOperation();
     } catch (e) {
-      opError = String(e);
+      opError = errorMessage(e);
     } finally {
       continuingStory = false;
     }
@@ -156,7 +156,7 @@
       characters = cast;
       return true;
     } catch (e) {
-      opError = String(e);
+      opError = errorMessage(e);
       return false;
     } finally {
       reviewLoading = false;

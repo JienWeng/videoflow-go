@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '../errors';
   import { onMount } from 'svelte';
   import { get, post, put } from '$lib/api';
   import { layouts, readLayout, useLayout } from './layouts.mjs';
@@ -54,7 +55,7 @@
           custom = [];
         }
       } catch (e) {
-        error = String(e);
+        error = errorMessage(e);
       }
     })();
   });
@@ -71,7 +72,7 @@
       translation = { ...result, base };
       notice = 'Translation is ready to edit. Spoken audio has not changed.';
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       onbusy(false);
     }
@@ -99,7 +100,7 @@
       brand = await put<Brand>('/studio/brand', brand);
       notice = 'Project brand saved.';
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       onbusy(false);
     }
@@ -139,7 +140,7 @@
       localStorage.setItem(storage, JSON.stringify(custom));
       notice = 'Layout imported. Choose it below to apply.';
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     }
   }
   function exportLayout() {

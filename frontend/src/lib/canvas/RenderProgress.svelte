@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '../errors';
   import { editOutputHref, editSceneHref } from '$lib/editor/links';
   import { untrack } from 'svelte';
   import { get, mediaUrl } from '$lib/api';
@@ -68,7 +69,7 @@
           error = '';
         }
       } catch (e) {
-        if (live) error = String(e);
+        if (live) error = errorMessage(e);
       } finally {
         inFlight = false;
         if (live) loading = false;

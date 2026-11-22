@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '../errors';
   import { get } from '$lib/api';
   import { conversationTurns } from '$lib/chat/history.mjs';
   import { Button } from '$lib/components/ui/button';
@@ -24,7 +25,7 @@
       const result = await get<DirectorTurn[]>(`/director/sessions/${encodeURIComponent(id)}/turns`);
       if (current === generation) turns = conversationTurns(result);
     } catch (e) {
-      if (current === generation) error = String(e);
+      if (current === generation) error = errorMessage(e);
     } finally {
       if (current === generation) loading = false;
     }
@@ -44,7 +45,7 @@
       chosen = id ?? '';
       if (id) await loadTurns(id);
     } catch (e) {
-      if (current === generation) error = String(e);
+      if (current === generation) error = errorMessage(e);
     } finally {
       if (current === generation) loading = false;
     }
@@ -65,7 +66,7 @@
       open = false;
       generation++;
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       switching = false;
     }

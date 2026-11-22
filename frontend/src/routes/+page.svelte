@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '$lib/errors';
   import EditingWorkspace from '$lib/studio/EditingWorkspace.svelte';
   import { clampWindow, readWindowLayout, clampWindowHeight, windowHeightLimits } from '$lib/shell/assistant-window.mjs';
   import GripHorizontal from '@lucide/svelte/icons/grip-horizontal';
@@ -272,7 +273,7 @@
       nodeCount = g.nodes?.length ?? 0;
       error = '';
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     }
   }
   $effect(() => {

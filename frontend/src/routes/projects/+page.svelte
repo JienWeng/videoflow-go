@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '$lib/errors';
   import DeleteProject from '$lib/projects/DeleteProject.svelte';
   import ProjectStyle from '$lib/projects/ProjectStyle.svelte';
   import { page } from '$app/state';
@@ -66,7 +67,7 @@
       if (!Array.isArray(data)) throw Error('Project list is unavailable');
       projects = data;
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       loaded = true;
     }
@@ -89,7 +90,7 @@
     try {
       await fn();
     } catch (e) {
-      toast.error(String(e));
+      toast.error(errorMessage(e));
     } finally {
       busy = '';
     }
@@ -132,7 +133,7 @@
       await refresh();
       detailId = id;
     } catch (e) {
-      createError = String(e);
+      createError = errorMessage(e);
     } finally {
       busy = '';
     }

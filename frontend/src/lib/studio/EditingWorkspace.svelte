@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '../errors';
   import FinishingPanel from './FinishingPanel.svelte';
   import VoiceoverPanel from './VoiceoverPanel.svelte';
   import ChatPanel from '$lib/chat/ChatPanel.svelte';
@@ -81,7 +82,7 @@
       savedEdits = await get<SavedComposition[]>('/compositions');
       indexError = '';
     } catch (e) {
-      indexError = 'Could not load saved edits. ' + String(e);
+      indexError = 'Could not load saved edits. ' + errorMessage(e);
     }
   }
   let opening = true;
@@ -159,7 +160,7 @@
       invalidate();
       error = '';
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     }
   }
   function adjust(index: number, key: string, value: string) {
@@ -301,7 +302,7 @@
       draftReady = true;
       baseline = JSON.stringify(draft);
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       opening = false;
     }
@@ -338,7 +339,7 @@
       activeClip = clip.id;
       invalidate();
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       busy = false;
     }
@@ -360,7 +361,7 @@
       id = asset.id;
       assets = await get<CompositionSource[]>('/compositions/sources');
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       busy = false;
       input.value = '';
@@ -427,7 +428,7 @@
       error = '';
       invalidate();
     } catch (e) {
-      error = 'Cannot apply advanced changes: ' + String(e);
+      error = 'Cannot apply advanced changes: ' + errorMessage(e);
     }
   }
   async function save() {
@@ -448,7 +449,7 @@
       window.history.replaceState({}, '', url);
       return revision;
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
       return undefined;
     } finally {
       busy = false;
@@ -539,7 +540,7 @@
       fitLength();
       invalidate();
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     }
   }
   function onTimelineTrim(track: Track, id: string, edge: 'start' | 'end', value: number) {
@@ -566,7 +567,7 @@
       fitLength();
       invalidate();
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     }
   }
   async function onTimelineDrop(assetId: string, track: Track, start: number) {
@@ -595,7 +596,7 @@
         ];
         invalidate();
       } catch (e) {
-        error = String(e);
+        error = errorMessage(e);
       }
     }
   }
@@ -651,7 +652,7 @@
           ? ` ${skipped.length} clip${skipped.length === 1 ? ' was' : 's were'} skipped: ${skipped[0].reason}`
           : '');
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       busy = false;
     }

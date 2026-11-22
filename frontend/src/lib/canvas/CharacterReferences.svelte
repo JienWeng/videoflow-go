@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '../errors';
   import { onDestroy } from 'svelte';
   import { RefreshCw } from '@lucide/svelte';
   import * as Dialog from '$lib/components/ui/dialog';
@@ -46,7 +47,7 @@
         a => isImage(a.file_path) && (a.character_id === id || c.reference_asset_ids_json?.includes(a.id))
       );
     } catch (e) {
-      if (token === sequence) error = String(e);
+      if (token === sequence) error = errorMessage(e);
     } finally {
       if (token === sequence) loading = false;
     }
@@ -91,7 +92,7 @@
     } catch (e) {
       if (scope.signal.aborted) return;
       generatingFor = '';
-      if (characterId === id) error = String(e);
+      if (characterId === id) error = errorMessage(e);
     }
   }
   const reviewLabel = (a: Asset) => (a.metadata_json?.consistency_review === 'rejected' ? 'Excluded' : 'Ready to use');
@@ -106,7 +107,7 @@
       await onchanged();
       notice = approved ? 'Image available for reuse.' : 'Image excluded from generation.';
     } catch (e) {
-      error = String(e);
+      error = errorMessage(e);
     } finally {
       reviewing = false;
     }
