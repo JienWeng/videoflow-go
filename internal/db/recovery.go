@@ -53,7 +53,7 @@ func (d *DB) CreateRenderRetry(original string, fresh *models.RenderJob) (bool, 
 	}
 	var child, status string
 	err = tx.QueryRow(`SELECT j.id,j.status FROM render_retries r JOIN render_jobs j ON j.id=r.child_job_id WHERE original_job_id=?`, original).Scan(&child, &status)
-	if err == nil && (status == "pending" || status == "running" || status == "reconciliation_required") {
+	if err == nil && (status == models.StatusPending || status == models.StatusRunning || status == models.StatusReconciliationRequired) {
 		fresh.ID = child
 		fresh.Status = status
 		return false, tx.Commit()
@@ -64,7 +64,7 @@ func (d *DB) CreateRenderRetry(original string, fresh *models.RenderJob) (bool, 
 	if err = tx.QueryRow(`SELECT status FROM render_jobs WHERE id=?`, original).Scan(&status); err != nil {
 		return false, err
 	}
-	if status != "failed" && status != "succeeded" {
+	if status != models.StatusFailed && status != models.StatusSucceeded {
 		return false, fmt.Errorf("original job is still active")
 	}
 	if err = insertRenderJob(tx, fresh); err != nil {

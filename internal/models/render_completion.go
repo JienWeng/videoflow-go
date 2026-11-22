@@ -13,7 +13,7 @@ func CompleteSceneRenders(jobs []RenderJob) map[string]bool {
 	}
 	plans := map[string]*group{}
 	for _, job := range jobs {
-		if job.Status != "succeeded" || job.SceneID == nil || job.ShotID != nil {
+		if job.Status != StatusSucceeded || job.SceneID == nil || job.ShotID != nil {
 			continue
 		}
 		var saved struct {

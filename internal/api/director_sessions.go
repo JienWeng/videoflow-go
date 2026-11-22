@@ -19,6 +19,7 @@ import (
 	"videoflow-go/internal/composition"
 	"videoflow-go/internal/db"
 	"videoflow-go/internal/director"
+	"videoflow-go/internal/models"
 )
 
 var errDirectorContextChanged = errors.New("a character or reference changed while the AI was planning, so its plan may be out of date. Nothing was lost: send your request again")
@@ -167,9 +168,9 @@ func (s *Server) localTextJSON(ctx context.Context, kind, system, prompt string,
 	if runErr == nil {
 		runErr = json.Unmarshal(raw, target)
 	}
-	status, message := "succeeded", ""
+	status, message := models.StatusSucceeded, ""
 	if runErr != nil {
-		status = "failed"
+		status = models.StatusFailed
 		message = runErr.Error()
 		if turnCtx.Err() != nil {
 			status = "interrupted"

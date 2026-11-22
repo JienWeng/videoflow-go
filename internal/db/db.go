@@ -67,6 +67,9 @@ func Open(databasePath string) (*DB, error) {
 	if err := d.ensureRequestReplay(); err != nil {
 		return nil, err
 	}
+	if err := d.runMigrations(); err != nil {
+		return nil, fmt.Errorf("migration failed: %w", err)
+	}
 	if err := d.ensureActiveProject(); err != nil {
 		return nil, fmt.Errorf("ensure active project failed: %w", err)
 	}
@@ -230,14 +233,6 @@ func (d *DB) migrate() error {
 		value TEXT NOT NULL
 	);
 
-	CREATE TABLE IF NOT EXISTS agent_settings (
-		agent TEXT NOT NULL,
-		project_id TEXT,
-		provider TEXT DEFAULT '',
-		model TEXT DEFAULT '',
-		prompt_template TEXT DEFAULT '',
-		PRIMARY KEY (agent, project_id)
-	);
 
 	CREATE TABLE IF NOT EXISTS provider_secrets (
 		provider TEXT PRIMARY KEY,
@@ -1629,29 +1624,6 @@ func (d *DB) SetProviderSecret(provider, apiKey string, baseURL *string) error {
 			updated_at = excluded.updated_at
 	`, provider, apiKey, urlVal, now, apiKey, apiKey, urlVal)
 	return err
-}
-
-func (d *DB) ListProviderSecrets() (map[string]models.ProviderSecret, error) {
-	rows, err := d.conn.Query("SELECT provider, api_key, base_url, updated_at FROM provider_secrets")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	res := make(map[string]models.ProviderSecret)
-	for rows.Next() {
-		var ps models.ProviderSecret
-		var bUrl sql.NullString
-		if err := rows.Scan(&ps.Provider, &ps.APIKey, &bUrl, &ps.UpdatedAt); err != nil {
-			return nil, err
-		}
-		if bUrl.Valid {
-			u := bUrl.String
-			ps.BaseURL = &u
-		}
-		res[ps.Provider] = ps
-	}
-	return res, nil
 }
 
 // --- Connections ---

@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"videoflow-go/internal/models"
 
 	"github.com/google/uuid"
 	"videoflow-go/internal/director"
@@ -192,9 +193,9 @@ func (s *Server) codexImage(ctx context.Context, prompt, aspect string, referenc
 			runErr = fmt.Errorf("Codex image generation did not complete; check the native image turn before retrying")
 		}
 	}
-	status, message := "succeeded", ""
+	status, message := models.StatusSucceeded, ""
 	if runErr != nil {
-		status = "failed"
+		status = models.StatusFailed
 		message = runErr.Error()
 		if interrupted {
 			status = "interrupted"

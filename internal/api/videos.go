@@ -100,7 +100,7 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Three background operations are already running. Check Activity before starting another.", 429)
 		return
 	}
-	op := &models.Op{Kind: "video_generation", Status: "running", ProjectID: &project}
+	op := &models.Op{Kind: "video_generation", Status: models.StatusRunning, ProjectID: &project}
 	if err = s.database.CreateOp(op); err != nil {
 		<-s.operationSlots
 		http.Error(w, "failed to save operation", 500)
@@ -128,7 +128,7 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 		fail := func(err error) {
 			message := err.Error()
 			raw, _ := json.Marshal(map[string]any{"stages": stages, "brief": brief, "created_character_ids": createdCharacters, "script_id": savedScriptID, "scene_ids": savedSceneIDs, "project_id": project, "cast_character_ids": cast, "character_reference_ids": characterReferences, "story_asset_ids": storyAssets, "story_assets": assetDecisions, "automatic_assets": true, "character_references": true, "media_routes": routes})
-			s.database.UpdateOp(op.ID, "failed", raw, &message)
+			s.database.UpdateOp(op.ID, models.StatusFailed, raw, &message)
 		}
 		record := func(stage string) {
 			stages = append(stages, stage)
@@ -241,5 +241,5 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 			fail(err)
 		}
 	}()
-	writeJSON(w, 202, map[string]any{"op_id": op.ID, "status": "running", "automatic_assets": true, "character_references": true})
+	writeJSON(w, 202, map[string]any{"op_id": op.ID, "status": models.StatusRunning, "automatic_assets": true, "character_references": true})
 }

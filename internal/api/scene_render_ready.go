@@ -13,7 +13,7 @@ type confirmedRenderPlanKey struct{}
 
 func sceneRenderJob(project string, scene *models.Scene) *models.RenderJob {
 	stage, progress := "submitted", "Whole scene render queued"
-	return &models.RenderJob{ProjectID: &project, SceneID: &scene.ID, Status: "pending", Stage: &stage, Progress: &progress, RequestJSON: []byte(fmt.Sprintf(`{"scene_id":%q}`, scene.ID))}
+	return &models.RenderJob{ProjectID: &project, SceneID: &scene.ID, Status: models.StatusPending, Stage: &stage, Progress: &progress, RequestJSON: []byte(fmt.Sprintf(`{"scene_id":%q}`, scene.ID))}
 }
 
 // Called only by an explicit scene render request. Never on read.
@@ -121,7 +121,7 @@ func (s *Server) existingSceneRender(job *models.RenderJob, newVersion bool) (*m
 		if old.SceneID == nil || job.SceneID == nil || *old.SceneID != *job.SceneID {
 			continue
 		}
-		active := old.Status == "pending" || old.Status == "running" || old.Status == "reconciliation_required"
+		active := old.Active()
 		sameTarget := (old.ShotID == nil && job.ShotID == nil) || (old.ShotID != nil && job.ShotID != nil && *old.ShotID == *job.ShotID)
 		if !sameTarget {
 			if active {
@@ -130,7 +130,7 @@ func (s *Server) existingSceneRender(job *models.RenderJob, newVersion bool) (*m
 			continue
 		}
 
-		if !active && (old.Status != "succeeded" || newVersion) {
+		if !active && (old.Status != models.StatusSucceeded || newVersion) {
 			continue
 		}
 		var a, b any

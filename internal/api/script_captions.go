@@ -103,7 +103,7 @@ func (s *Server) outputScriptLines(ctx context.Context, project, outputID string
 		return nil, fmt.Errorf("video not found")
 	}
 	job, err := s.database.GetRenderJob(out.RenderJobID)
-	if err != nil || job.ProjectID == nil || *job.ProjectID != project || job.Status != "succeeded" {
+	if err != nil || job.ProjectID == nil || *job.ProjectID != project || job.Status != models.StatusSucceeded {
 		return nil, fmt.Errorf("this video isn't a finished render in this project")
 	}
 	if job.SceneID == nil {
@@ -113,10 +113,7 @@ func (s *Server) outputScriptLines(ctx context.Context, project, outputID string
 	if err != nil {
 		return nil, fmt.Errorf("the scene for this video was deleted")
 	}
-	var script struct {
-		Lines []SpokenLine `json:"spoken_lines"`
-	}
-	_ = json.Unmarshal(scene.SceneJSON, &script)
+	spoken := sceneSpokenLines(scene)
 	// A silent render still has its script: silent footage plus a separate narrator
 	// voice-over (and captions for it) is a normal way to make narrated videos.
 	settings := sceneProduction(scene)
@@ -166,7 +163,7 @@ func (s *Server) outputScriptLines(ctx context.Context, project, outputID string
 	}
 	// With several clips per scene, an unassigned line could belong to any of them.
 	partial := unit.Count > 1 || job.ShotID != nil
-	lines := placeScriptLines(script.Lines, settings.DialogueShots, spans, length, !partial)
+	lines := placeScriptLines(spoken, settings.DialogueShots, spans, length, !partial)
 	if len(lines) == 0 {
 		return nil, fmt.Errorf("“%s” has no script lines for this clip", scene.Title)
 	}

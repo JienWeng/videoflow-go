@@ -57,7 +57,7 @@ func (s *Server) handleRenderFromShot(w http.ResponseWriter, r *http.Request) {
 		ShotID:      &body.ShotID,
 		Provider:    "",
 		Model:       "",
-		Status:      "pending",
+		Status:      models.StatusPending,
 		Stage:       &stage,
 		Progress:    &progress,
 		RequestJSON: reqBytes,
@@ -128,7 +128,7 @@ func (s *Server) handleResubmitJob(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "job not found", 404)
 		return
 	}
-	if job.Status != "failed" && job.Status != "succeeded" {
+	if job.Status != models.StatusFailed && job.Status != models.StatusSucceeded {
 		http.Error(w, "Wait for the active job, or reconcile an uncertain provider submission before retrying", 409)
 		return
 	}
@@ -139,7 +139,7 @@ func (s *Server) handleResubmitJob(w http.ResponseWriter, r *http.Request) {
 	}
 	// Explicit retry starts a new generation; only restart reconciliation reuses the upstream ID.
 	stage, progress := "submitted", "Retry queued"
-	fresh := &models.RenderJob{ProjectID: job.ProjectID, SceneID: job.SceneID, ShotID: job.ShotID, Provider: job.Provider, ProviderEndpoint: job.ProviderEndpoint, Model: job.Model, Status: "pending", Stage: &stage, Progress: &progress, RequestJSON: job.RequestJSON}
+	fresh := &models.RenderJob{ProjectID: job.ProjectID, SceneID: job.SceneID, ShotID: job.ShotID, Provider: job.Provider, ProviderEndpoint: job.ProviderEndpoint, Model: job.Model, Status: models.StatusPending, Stage: &stage, Progress: &progress, RequestJSON: job.RequestJSON}
 	if fresh.Provider == "" {
 		fresh.Provider = "openrouter"
 	}

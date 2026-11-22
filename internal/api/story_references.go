@@ -329,10 +329,10 @@ func (s *Server) handleContinueStory(w http.ResponseWriter, r *http.Request) {
 		workCtx = context.WithValue(workCtx, mediaRoutesKey{}, state.Routes)
 		made, e := s.storyboardStory(workCtx, scenes)
 		if e != nil {
-			state.Status = "failed"
+			state.Status = models.StatusFailed
 			raw, _ := json.Marshal(state)
 			message := e.Error()
-			s.database.UpdateOp(op.ID, "failed", raw, &message)
+			s.database.UpdateOp(op.ID, models.StatusFailed, raw, &message)
 			return
 		}
 		state.Stages = append(state.Stages, "visuals")
@@ -341,7 +341,7 @@ func (s *Server) handleContinueStory(w http.ResponseWriter, r *http.Request) {
 		raw, _ := json.Marshal(state)
 		s.database.UpdateOp(op.ID, "succeeded", raw, nil)
 	}()
-	writeJSON(w, 202, map[string]any{"op_id": op.ID, "status": "running", "character_references": true})
+	writeJSON(w, 202, map[string]any{"op_id": op.ID, "status": models.StatusRunning, "character_references": true})
 }
 
 func (s *Server) handleExcludeStoryAsset(w http.ResponseWriter, r *http.Request) {

@@ -290,7 +290,7 @@ func (s *Server) sceneProductionPlan(ctx context.Context, scene *models.Scene) (
 		if pictures := s.referenceModePictures(scene, p.Settings, model); len(pictures) > 0 {
 			madeFromFrames := false
 			for _, job := range jobs {
-				madeFromFrames = madeFromFrames || job.SceneID != nil && *job.SceneID == scene.ID && job.Status == "succeeded" && strings.HasPrefix(renderRequestUnit(job.RequestJSON).Key, p.ID+":")
+				madeFromFrames = madeFromFrames || job.SceneID != nil && *job.SceneID == scene.ID && job.Status == models.StatusSucceeded && strings.HasPrefix(renderRequestUnit(job.RequestJSON).Key, p.ID+":")
 			}
 			// Clips already made from a first frame are kept until the owner asks for references.
 			if p.Settings.VideoInput == inputReferences || !madeFromFrames {
@@ -311,18 +311,15 @@ func (s *Server) sceneProductionPlan(ctx context.Context, scene *models.Scene) (
 			if job.SceneID == nil || *job.SceneID != scene.ID {
 				continue
 			}
-			var r struct {
-				Unit renderUnit `json:"render_unit"`
-			}
-			_ = json.Unmarshal(job.RequestJSON, &r)
-			active := job.Status == "pending" || job.Status == "running" || job.Status == "reconciliation_required"
-			if r.Unit.Key == u.Key && (active || job.Status == "succeeded") && u.JobID == "" {
+			r := renderRequestRef(job.RequestJSON)
+			active := job.Active()
+			if r.Unit.Key == u.Key && (active || job.Status == models.StatusSucceeded) && u.JobID == "" {
 				u.JobID, u.Status = job.ID, job.Status
 			}
 			if active && (r.Unit.Key == "" || !strings.HasPrefix(r.Unit.Key, p.ID+":")) {
 				p.Blocked = "Another or unresolved render is active for this scene. Check Videos before starting a different plan."
 			}
-			if active && job.Status == "reconciliation_required" {
+			if active && job.Status == models.StatusReconciliationRequired {
 				p.Blocked = uncertainRenderBlock
 			}
 		}
@@ -342,11 +339,8 @@ func (s *Server) sceneProductionPlan(ctx context.Context, scene *models.Scene) (
 		}
 	}
 	// A multi-clip native render needs explicit dialogue allocation, not repeated lines in every clip.
-	var script struct {
-		Lines []SpokenLine `json:"spoken_lines"`
-	}
-	_ = json.Unmarshal(scene.SceneJSON, &script)
-	for i, line := range script.Lines {
+	spoken := sceneSpokenLines(scene)
+	for i, line := range spoken {
 		if strings.TrimSpace(line.Text) == "" {
 			continue
 		}

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"videoflow-go/internal/models"
 
 	"github.com/google/uuid"
 	"videoflow-go/internal/director"
@@ -47,7 +48,7 @@ func (s *Server) chatReviewAvailability(ctx context.Context) (string, string) {
 	if err != nil {
 		return "", err.Error()
 	}
-	if session.Status == "running" {
+	if session.Status == models.StatusRunning {
 		return session.Engine, "The selected local session is busy. Wait for its active turn or cancel it in Local sessions."
 	}
 	if _, err = s.directorRunner.Available(session.Engine); err != nil {
@@ -121,7 +122,7 @@ func (s *Server) handleChatReview(w http.ResponseWriter, r *http.Request) {
 		wg.Add(1)
 		go func(i int, role specialistRole) {
 			defer wg.Done()
-			item := specialistResult{ID: role.ID, Role: role.ID, Name: role.Name, Status: "failed", Suggestions: []string{}}
+			item := specialistResult{ID: role.ID, Role: role.ID, Name: role.Name, Status: models.StatusFailed, Suggestions: []string{}}
 			defer func() { result.Subagents[i] = item }()
 			// Each child starts fresh in a private directory. Native identity is never persisted to the parent.
 			child, runErr := os.MkdirTemp(workspace, "review-"+role.ID+"-")
@@ -152,7 +153,7 @@ func (s *Server) handleChatReview(w http.ResponseWriter, r *http.Request) {
 						}
 					}
 					if runErr == nil {
-						item.Status = "succeeded"
+						item.Status = models.StatusSucceeded
 						item.Summary = advice.Summary
 						if advice.Suggestions != nil {
 							item.Suggestions = advice.Suggestions
@@ -177,21 +178,21 @@ func (s *Server) handleChatReview(w http.ResponseWriter, r *http.Request) {
 	_, currentStoryRevision, storyErr := s.chatReviewStory(binding.ProjectID)
 	sameSelection := strings.Join(currentSelection.CharacterIDs, "\x00") == strings.Join(binding.Selection.CharacterIDs, "\x00") && strings.Join(currentSelection.AssetIDs, "\x00") == strings.Join(binding.Selection.AssetIDs, "\x00")
 	stale := storyErr != nil || currentStoryRevision != storyRevision || !sameSelection || selectionErr != nil || currentErr != nil || current.Revision != snapshot.Revision || !bytes.Equal(currentSelected, selected) || selectedErr != nil
-	status, message, httpStatus := "succeeded", "", 200
+	status, message, httpStatus := models.StatusSucceeded, "", 200
 	failures := 0
 	for _, item := range result.Subagents {
-		if item.Status != "succeeded" {
+		if item.Status != models.StatusSucceeded {
 			failures++
 		}
 	}
 	result.Reply = "Local specialist review completed. Suggestions are advisory; use the existing proposal and Run controls for changes."
 	if failures > 0 {
-		status = "failed"
+		status = models.StatusFailed
 		message = "One or more local specialists failed; no automatic retry was attempted."
 		result.Reply = message
 	}
 	if stale {
-		status = "failed"
+		status = models.StatusFailed
 		message = errDirectorContextChanged.Error()
 		httpStatus = 409
 	}
@@ -203,7 +204,7 @@ func (s *Server) handleChatReview(w http.ResponseWriter, r *http.Request) {
 	if stale || ctx.Err() != nil {
 		result.Reply = "Review interrupted or context changed. Prepare a new review using the current selection."
 		for i := range result.Subagents {
-			result.Subagents[i].Status = "failed"
+			result.Subagents[i].Status = models.StatusFailed
 			result.Subagents[i].Summary = ""
 			result.Subagents[i].Suggestions = []string{}
 			result.Subagents[i].Error = message

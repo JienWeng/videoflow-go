@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/go-chi/chi/v5"
 	"math"
@@ -58,7 +57,7 @@ func (s *Server) sceneCompositionDraft(ctx context.Context, scene *models.Scene)
 		for _, unit := range plan.Units {
 			found := false
 			for _, job := range jobs {
-				if job.SceneID == nil || *job.SceneID != scene.ID || job.Status != "succeeded" {
+				if job.SceneID == nil || *job.SceneID != scene.ID || job.Status != models.StatusSucceeded {
 					continue
 				}
 				u := renderRequestUnit(job.RequestJSON)
@@ -82,7 +81,7 @@ func (s *Server) sceneCompositionDraft(ctx context.Context, scene *models.Scene)
 	// Legacy whole-scene versions are alternatives: load only the latest, never concatenate them.
 	if len(selected) == 0 {
 		for _, job := range jobs {
-			if job.SceneID != nil && *job.SceneID == scene.ID && job.ShotID == nil && job.Status == "succeeded" && renderRequestUnit(job.RequestJSON).Key == "" {
+			if job.SceneID != nil && *job.SceneID == scene.ID && job.ShotID == nil && job.Status == models.StatusSucceeded && renderRequestUnit(job.RequestJSON).Key == "" {
 				selected = append(selected, struct {
 					job  models.RenderJob
 					unit renderUnit
@@ -132,14 +131,10 @@ func latestCompleteScenePlan(jobs []models.RenderJob, sceneID string) []struct {
 	plans := map[string][]item{}
 	order := []string{}
 	for _, job := range jobs {
-		if job.SceneID == nil || *job.SceneID != sceneID || job.ShotID != nil || job.Status != "succeeded" {
+		if job.SceneID == nil || *job.SceneID != sceneID || job.ShotID != nil || job.Status != models.StatusSucceeded {
 			continue
 		}
-		var r struct {
-			Plan string     `json:"render_plan_id"`
-			Unit renderUnit `json:"render_unit"`
-		}
-		_ = json.Unmarshal(job.RequestJSON, &r)
+		r := renderRequestRef(job.RequestJSON)
 		if r.Unit.Key == "" || r.Unit.Count < 1 {
 			continue
 		}

@@ -149,7 +149,7 @@ func (s *Server) handleAutopilotFinish(w http.ResponseWriter, r *http.Request) {
 		autopilotRuns.Lock()
 		defer autopilotRuns.Unlock()
 		if id := autopilotRuns.ops[run]; id != "" {
-			writeJSON(w, 202, map[string]any{"op_id": id, "status": "running", "already_running": true})
+			writeJSON(w, 202, map[string]any{"op_id": id, "status": models.StatusRunning, "already_running": true})
 			return
 		}
 	}
@@ -183,7 +183,7 @@ func (s *Server) handleAutopilotFinish(w http.ResponseWriter, r *http.Request) {
 		jobs, _ := s.database.ListRenderJobs(project)
 		for i := range scenes {
 			for j := range jobs {
-				if job := &jobs[j]; job.SceneID != nil && *job.SceneID == scenes[i].ID && job.Status == "reconciliation_required" {
+				if job := &jobs[j]; job.SceneID != nil && *job.SceneID == scenes[i].ID && job.Status == models.StatusReconciliationRequired {
 					stage("Asking " + videoServiceLabel(job.Provider) + " about an earlier request for " + scenes[i].Title)
 					switch check := s.checkUncertainRender(ctx, job); check.Outcome {
 					case "found":
@@ -238,16 +238,16 @@ func (s *Server) handleAutopilotFinish(w http.ResponseWriter, r *http.Request) {
 					if e != nil {
 						return nil, e
 					}
-					if job.Status == "reconciliation_required" {
+					if job.Status == models.StatusReconciliationRequired {
 						if check := s.checkUncertainRender(ctx, job); check.Outcome == "unknown" {
 							return stuckScene(scenes[i].Title, check)
 						}
 						job, _ = s.database.GetRenderJob(id)
 					}
 					switch job.Status {
-					case "succeeded":
+					case models.StatusSucceeded:
 						done++
-					case "failed", "canceled", "reconciliation_required":
+					case models.StatusFailed, "canceled", models.StatusReconciliationRequired:
 						return nil, fmt.Errorf("the video for %s didn't finish. %s", scenes[i].Title, friendlyFailure(*job))
 					default:
 						pending++

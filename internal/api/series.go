@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"videoflow-go/internal/models"
 
 	"videoflow-go/internal/agents"
 )
@@ -57,7 +58,7 @@ func (s *Server) lastStoryBrief(project string) *agents.CreativeBrief {
 		var result struct {
 			Brief *agents.CreativeBrief `json:"brief"`
 		}
-		if op.Status == "succeeded" && json.Unmarshal(op.ResultJSON, &result) == nil && result.Brief != nil && result.Brief.AspectRatio != "" {
+		if op.Status == models.StatusSucceeded && json.Unmarshal(op.ResultJSON, &result) == nil && result.Brief != nil && result.Brief.AspectRatio != "" {
 			return result.Brief
 		}
 	}

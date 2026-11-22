@@ -149,11 +149,8 @@ func (s *Server) writeScenePrompt(ctx context.Context, job *models.RenderJob, wr
 			place[id] = len(clip.Shots)
 		}
 	}
-	var script struct {
-		Lines []SpokenLine `json:"spoken_lines"`
-	}
-	_ = json.Unmarshal(scene.SceneJSON, &script)
-	for _, line := range script.Lines {
+	spoken := sceneSpokenLines(scene)
+	for _, line := range spoken {
 		// A line pinned to a shot is spoken only in the clip that has that shot.
 		target := settings.DialogueShots[line.ID]
 		if target != "" && place[target] == 0 {

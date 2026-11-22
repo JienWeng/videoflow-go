@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -63,14 +62,10 @@ func completedSceneRenders(jobs []models.RenderJob) map[string]bool {
 	plans := map[string]*group{}
 	sceneOf := map[string]string{}
 	for _, job := range jobs {
-		if job.Status != "succeeded" || job.SceneID == nil || job.ShotID != nil {
+		if job.Status != models.StatusSucceeded || job.SceneID == nil || job.ShotID != nil {
 			continue
 		}
-		var r struct {
-			Plan string     `json:"render_plan_id"`
-			Unit renderUnit `json:"render_unit"`
-		}
-		_ = json.Unmarshal(job.RequestJSON, &r)
+		r := renderRequestRef(job.RequestJSON)
 		if r.Unit.Key == "" {
 			complete[*job.SceneID] = true
 			continue
@@ -142,13 +137,13 @@ func (s *Server) sceneProgressFor(ctx context.Context, scene *models.Scene, jobs
 	// Any request with no answer blocks the scene, even behind a newer attempt.
 	var uncertainJob *models.RenderJob
 	for i := range jobs {
-		if j := &jobs[i]; j.SceneID != nil && *j.SceneID == scene.ID && j.ShotID == nil && j.Status == "reconciliation_required" {
+		if j := &jobs[i]; j.SceneID != nil && *j.SceneID == scene.ID && j.ShotID == nil && j.Status == models.StatusReconciliationRequired {
 			uncertainJob = j
 		}
 	}
-	active := latest != nil && (latest.Status == "pending" || latest.Status == "running")
+	active := latest != nil && (latest.Status == models.StatusPending || latest.Status == models.StatusRunning)
 	uncertain := uncertainJob != nil
-	failed := latest != nil && latest.Status == "failed"
+	failed := latest != nil && latest.Status == models.StatusFailed
 	switch {
 	case uncertain:
 		service := videoServiceLabel(uncertainJob.Provider)
@@ -226,8 +221,6 @@ func countIDs(v any) int {
 	}
 	return 0
 }
-
-func strPtr(s string) *string { return &s }
 
 func (s *Server) projectProgress(ctx context.Context, projectID string) (projectProgress, error) {
 	out := projectProgress{Scenes: []sceneProgress{}}

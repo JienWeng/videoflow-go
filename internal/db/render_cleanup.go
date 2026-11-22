@@ -16,7 +16,7 @@ func (d *DB) ensureRenderCleanup() error {
 	return err
 }
 
-func failedRender(status string) bool { return status == "failed" || status == "canceled" }
+func failedRender(status string) bool { return status == models.StatusFailed || status == "canceled" }
 
 // ShownRenderJobs lists a project's render jobs, newest first, without the failed
 // attempts that were cleared or that a newer attempt at the same clip replaced.

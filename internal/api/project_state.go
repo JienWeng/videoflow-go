@@ -52,7 +52,7 @@ func (s *Server) projectState(projectID string) (map[string]any, error) {
 		}
 		playable := []models.RenderJob{}
 		for _, j := range jobs {
-			if j.SceneID != nil && *j.SceneID == sc.ID && j.Status == "succeeded" {
+			if j.SceneID != nil && *j.SceneID == sc.ID && j.Status == models.StatusSucceeded {
 				outputs, err := s.database.ListOutputsForJob(j.ID)
 				if err != nil {
 					return nil, err

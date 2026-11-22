@@ -291,7 +291,7 @@ func (s *Server) compositionSources(project string) (map[string]string, []compos
 		}
 	}
 	for _, job := range jobs {
-		if job.ProjectID == nil || *job.ProjectID != project || job.Status != "succeeded" {
+		if job.ProjectID == nil || *job.ProjectID != project || job.Status != models.StatusSucceeded {
 			continue
 		}
 		outputs, e := s.database.ListOutputsForJob(job.ID)

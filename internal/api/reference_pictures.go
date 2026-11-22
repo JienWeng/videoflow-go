@@ -62,12 +62,9 @@ func (s *Server) referencePictures(scene *models.Scene, unit *renderUnit, limit 
 				said += " " + strings.ToLower(shot.Prompt)
 			}
 		}
-		var script struct {
-			Lines []SpokenLine `json:"spoken_lines"`
-		}
-		_ = json.Unmarshal(scene.SceneJSON, &script)
+		spoken := sceneSpokenLines(scene)
 		speakers := map[string]bool{}
-		for _, line := range script.Lines {
+		for _, line := range spoken {
 			if mine[sceneProduction(scene).DialogueShots[line.ID]] {
 				speakers[line.CharacterID] = true
 			}
@@ -195,12 +192,9 @@ func (s *Server) attachReferenceVoices(ctx context.Context, job *models.RenderJo
 	for _, id := range unit.ShotIDs {
 		mine[id] = true
 	}
-	var script struct {
-		Lines []SpokenLine `json:"spoken_lines"`
-	}
-	_ = json.Unmarshal(scene.SceneJSON, &script)
+	spoken := sceneSpokenLines(scene)
 	speaks := map[string]bool{}
-	for _, line := range script.Lines {
+	for _, line := range spoken {
 		target := settings.DialogueShots[line.ID]
 		if strings.TrimSpace(line.Text) != "" && (target == "" || len(mine) == 0 || mine[target]) {
 			speaks[line.CharacterID] = true

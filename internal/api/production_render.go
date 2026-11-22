@@ -21,7 +21,7 @@ func (s *Server) renderProductionPlan(ctx context.Context, scene *models.Scene, 
 	reuseOnly := true
 	reuseIDs := []string{}
 	for _, u := range plan.Units {
-		if u.JobID == "" || (newVersion && u.Status == "succeeded") {
+		if u.JobID == "" || (newVersion && u.Status == models.StatusSucceeded) {
 			reuseOnly = false
 		}
 		if u.JobID != "" {
@@ -76,10 +76,10 @@ func (s *Server) renderProductionPlan(ctx context.Context, scene *models.Scene, 
 			if e != nil {
 				return nil, e
 			}
-			if old.Status != "pending" && old.Status != "running" && old.Status != "succeeded" {
+			if old.Status != models.StatusPending && old.Status != models.StatusRunning && old.Status != models.StatusSucceeded {
 				return nil, fmt.Errorf("clip state changed; recheck the render plan before retrying")
 			}
-			if old.Status != "succeeded" || !newVersion {
+			if old.Status != models.StatusSucceeded || !newVersion {
 				ids = append(ids, old.ID)
 				reused++
 				continue
@@ -127,15 +127,21 @@ func (s *Server) renderProductionPlan(ctx context.Context, scene *models.Scene, 
 	if len(ids) > 0 {
 		first = ids[0]
 	}
-	return map[string]any{"job_id": first, "job_ids": ids, "scene_id": scene.ID, "render_plan_id": plan.ID, "status": "pending", "reused": len(pending) == 0, "reused_count": reused, "new_calls": len(pending), "storyboard_updated": updated, "audio_mode": plan.Settings.AudioMode, "composition_url": "/compositions?scene_id=" + scene.ID}, nil
+	return map[string]any{"job_id": first, "job_ids": ids, "scene_id": scene.ID, "render_plan_id": plan.ID, "status": models.StatusPending, "reused": len(pending) == 0, "reused_count": reused, "new_calls": len(pending), "storyboard_updated": updated, "audio_mode": plan.Settings.AudioMode, "composition_url": "/compositions?scene_id=" + scene.ID}, nil
 }
 
-func renderRequestUnit(raw json.RawMessage) renderUnit {
-	var r struct {
-		Unit renderUnit `json:"render_unit"`
-	}
+func renderRequestUnit(raw json.RawMessage) renderUnit { return renderRequestRef(raw).Unit }
+
+// renderRef is which render plan, and which clip of it, a saved request is for.
+type renderRef struct {
+	Plan string     `json:"render_plan_id"`
+	Unit renderUnit `json:"render_unit"`
+}
+
+func renderRequestRef(raw json.RawMessage) renderRef {
+	var r renderRef
 	_ = json.Unmarshal(raw, &r)
-	return r.Unit
+	return r
 }
 
 func (s *Server) lockSceneRender(id string) (func(), error) {
@@ -156,7 +162,7 @@ func productionSpend(plan productionPlan, newVersion bool) productionSpendLimit 
 	result := productionSpendLimit{Calls: plan.Calls, Seconds: plan.NewSeconds}
 	if newVersion {
 		for _, u := range plan.Units {
-			if u.Status == "succeeded" {
+			if u.Status == models.StatusSucceeded {
 				result.Calls++
 				result.Seconds += u.Duration
 			}

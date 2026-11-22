@@ -77,10 +77,10 @@ func (s *Server) checkUncertainRender(ctx context.Context, job *models.RenderJob
 		out.SceneID = *job.SceneID
 	}
 	switch job.Status {
-	case "pending", "running", "succeeded":
+	case models.StatusPending, models.StatusRunning, models.StatusSucceeded:
 		out.Outcome, out.Message = "found", service+" has this video. Nothing new is charged."
 		return out
-	case "failed", "canceled":
+	case models.StatusFailed, "canceled":
 		out.Outcome, out.Message = "failed", "This video was not made, so the scene can be made again."
 		return out
 	}
@@ -98,7 +98,7 @@ func (s *Server) checkUncertainRender(ctx context.Context, job *models.RenderJob
 	defer cancel()
 	status, _, err := client.GetVideo(ctx, *job.ProviderJobID)
 	switch {
-	case status == "failed" || status == "cancelled" || status == "canceled" || status == "expired":
+	case status == models.StatusFailed || status == "cancelled" || status == "canceled" || status == "expired":
 		s.routes().NoteServiceAnswer(job.Provider, nil)
 		if _, e := s.database.FailUncertainRender(job.ID, service+" did not make this video."); e != nil {
 			out.Outcome, out.Message = "unknown", "VideoFlow could not save the answer. Press Check again."
@@ -151,7 +151,7 @@ func (s *Server) stopWaitingRender(job *models.RenderJob) renderCheck {
 	if job.SceneID != nil {
 		out.SceneID = *job.SceneID
 	}
-	if job.Status != "reconciliation_required" {
+	if job.Status != models.StatusReconciliationRequired {
 		return s.checkUncertainRender(context.Background(), job)
 	}
 	if _, err := s.database.FailUncertainRender(job.ID, "Stopped waiting for "+service+". The earlier request might still be billed."); err != nil {

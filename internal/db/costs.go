@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+	"videoflow-go/internal/models"
 
 	"videoflow-go/internal/costs"
 )
@@ -144,7 +145,7 @@ func (d *DB) SyncCosts(project string) error {
 		return err
 	}
 	for _, j := range jobs {
-		if j.Provider == "local" || (j.Status != "succeeded" && j.Status != "reconciliation_required") || (j.Status == "succeeded" && recorded["job:"+j.ID]) {
+		if j.Provider == "local" || (j.Status != models.StatusSucceeded && j.Status != models.StatusReconciliationRequired) || (j.Status == models.StatusSucceeded && recorded["job:"+j.ID]) {
 			continue
 		}
 		var req struct {
@@ -165,7 +166,7 @@ func (d *DB) SyncCosts(project string) error {
 		}
 		e.Label += " · " + req.Resolution
 		e.Amount, e.Basis = costs.Video(j.Provider, j.Model, req.Resolution, req.Aspect, req.Duration, live)
-		if j.Status != "succeeded" {
+		if j.Status != models.StatusSucceeded {
 			// The service accepted the job but the result never arrived, so the charge is unknown.
 			e.Ref, e.Basis = "job-unconfirmed:"+j.ID, "unconfirmed"
 		}

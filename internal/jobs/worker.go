@@ -126,11 +126,11 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 	if err != nil {
 		return err
 	}
-	if job.Status == "succeeded" || job.Status == "failed" || job.Status == "reconciliation_required" {
+	if job.Status == models.StatusSucceeded || job.Status == models.StatusFailed || job.Status == models.StatusReconciliationRequired {
 		return nil
 	}
 	if (job.ProviderJobID == nil || *job.ProviderJobID == "") && job.Stage != nil && *job.Stage == "submitting" {
-		job.Status = "reconciliation_required"
+		job.Status = models.StatusReconciliationRequired
 		message := "The video service may have received this request but never confirmed it. Press Check again, or Stop waiting to make the scene again."
 		job.Error = &message
 		return w.database.UpdateRenderJob(job)
@@ -145,7 +145,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 			return err
 		}
 		w.broker.Publish(map[string]any{"type": "job_updated", "job_id": job.ID, "status": status, "stage": stage, "progress": progress, "project_id": job.ProjectID})
-		if status == "succeeded" && job.ProjectID != nil {
+		if status == models.StatusSucceeded && job.ProjectID != nil {
 			_ = w.database.SyncCosts(*job.ProjectID)
 		}
 		return nil
@@ -153,15 +153,15 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 	defer func() {
 		// A service that refuses its key or says the account is empty stops counting as
 		// connected right away; a finished video shows it works again.
-		if resultErr != nil || job.Status == "succeeded" {
+		if resultErr != nil || job.Status == models.StatusSucceeded {
 			routing.Resolver{Config: w.cfg, DB: w.database}.NoteServiceAnswer(job.Provider, resultErr)
 		}
-		if resultErr != nil && !errors.Is(resultErr, context.Canceled) && w.ctx.Err() == nil && job.Status != "reconciliation_required" {
+		if resultErr != nil && !errors.Is(resultErr, context.Canceled) && w.ctx.Err() == nil && job.Status != models.StatusReconciliationRequired {
 			message := resultErr.Error()
 			job.Error = &message
-			status, stage := "failed", "failed"
-			if job.ProviderJobID != nil && *job.ProviderJobID != "" && job.Status != "failed" {
-				status, stage = "reconciliation_required", "polling"
+			status, stage := models.StatusFailed, models.StatusFailed
+			if job.ProviderJobID != nil && *job.ProviderJobID != "" && job.Status != models.StatusFailed {
+				status, stage = models.StatusReconciliationRequired, "polling"
 			}
 			if err := update(status, stage, message); err != nil {
 				log.Printf("persist render failure: %v", err)
@@ -399,7 +399,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 		if !claimed {
 			return nil
 		}
-		job.Status = "running"
+		job.Status = models.StatusRunning
 		stage := "submitting"
 		job.Stage = &stage
 
@@ -409,7 +409,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 			if errors.As(e, &rejected) && rejected.Status >= 400 && rejected.Status < 500 && rejected.Status != 408 && rejected.Status != 409 {
 				return e
 			}
-			job.Status = "reconciliation_required"
+			job.Status = models.StatusReconciliationRequired
 			message := "The video service may have received this request but never confirmed it. Press Check again, or Stop waiting to make the scene again. (" + e.Error() + ")"
 			job.Error = &message
 			if saveErr := w.database.UpdateRenderJob(job); saveErr != nil {
@@ -430,8 +430,8 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 		}
 		status, urls, e := client.GetVideo(ctx, *job.ProviderJobID)
 		if e != nil {
-			if status == "failed" {
-				job.Status = "failed"
+			if status == models.StatusFailed {
+				job.Status = models.StatusFailed
 				return e
 			}
 			pollFailures++
@@ -494,13 +494,13 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 				if e = w.database.CreateRenderOutput(output); e != nil {
 					return e
 				}
-				w.broker.Publish(map[string]any{"type": "job_updated", "job_id": job.ID, "status": "running", "output_id": output.ID, "project_id": job.ProjectID})
+				w.broker.Publish(map[string]any{"type": "job_updated", "job_id": job.ID, "status": models.StatusRunning, "output_id": output.ID, "project_id": job.ProjectID})
 			}
 			return update("succeeded", "done", "Video downloaded")
-		case "failed", "cancelled", "canceled", "expired":
-			job.Status = "failed"
+		case models.StatusFailed, "cancelled", "canceled", "expired":
+			job.Status = models.StatusFailed
 			return fmt.Errorf("Provider video job %s", status)
-		case "pending", "queued", "in_progress", "processing", "running":
+		case models.StatusPending, "queued", "in_progress", "processing", models.StatusRunning:
 		default:
 			return fmt.Errorf("unknown provider video status %q", status)
 		}

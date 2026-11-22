@@ -6,6 +6,7 @@ import (
 	"errors"
 	"github.com/go-chi/chi/v5"
 	"net/http"
+	"videoflow-go/internal/models"
 )
 
 func chatContextError(w http.ResponseWriter) {
@@ -25,7 +26,7 @@ func (s *Server) handleRepairChatContext(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "session not found", 404)
 		return
 	}
-	if session.Status == "running" {
+	if session.Status == models.StatusRunning {
 		http.Error(w, "wait for the current request to finish before repairing context", 409)
 		return
 	}

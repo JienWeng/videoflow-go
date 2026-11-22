@@ -35,7 +35,7 @@ func (s *Server) operation(w http.ResponseWriter, r *http.Request, op *models.Op
 		http.Error(w, "Three background operations are already running. Wait for Activity before starting another.", 429)
 		return
 	}
-	op.Status = "running"
+	op.Status = models.StatusRunning
 	if err := s.database.CreateOp(op); err != nil {
 		<-s.operationSlots
 		http.Error(w, err.Error(), 500)
@@ -51,10 +51,10 @@ func (s *Server) operation(w http.ResponseWriter, r *http.Request, op *models.Op
 		}
 		defer cancel()
 		result, err := work(ctx)
-		status := "succeeded"
+		status := models.StatusSucceeded
 		var errorText *string
 		if err != nil {
-			status = "failed"
+			status = models.StatusFailed
 			message := err.Error()
 			errorText = &message
 		}
@@ -65,7 +65,7 @@ func (s *Server) operation(w http.ResponseWriter, r *http.Request, op *models.Op
 		}
 		s.broker.Publish(map[string]any{"type": "op_done", "op_id": op.ID, "kind": op.Kind, "status": status, "scene_id": op.SceneID, "output_id": op.OutputID, "error": errorText})
 	}()
-	writeJSON(w, 202, map[string]any{"op_id": op.ID, "status": "running"})
+	writeJSON(w, 202, map[string]any{"op_id": op.ID, "status": models.StatusRunning})
 }
 
 func (s *Server) agentJSON(ctx context.Context, agent, system, prompt string, images []string, target any) error {

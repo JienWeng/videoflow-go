@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"time"
+	"videoflow-go/internal/models"
 )
 
 type DirectorSession struct {
@@ -165,7 +166,7 @@ func (d *DB) BeginDirectorTurn(session, project, request, kind string, raw json.
 	if n != 1 {
 		return nil, fmt.Errorf("the AI session is busy with another request; wait for it to finish or stop it")
 	}
-	turn := &DirectorTurn{ID: uuid.NewString(), SessionID: session, Kind: kind, Status: "running", RequestJSON: raw, ResultJSON: json.RawMessage(`null`), CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	turn := &DirectorTurn{ID: uuid.NewString(), SessionID: session, Kind: kind, Status: models.StatusRunning, RequestJSON: raw, ResultJSON: json.RawMessage(`null`), CreatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 	if _, err = tx.Exec(`INSERT INTO director_turns(id,session_id,request_id,kind,status,request_json,created_at) VALUES(?,?,?,?,?,?,?)`, turn.ID, session, request, kind, turn.Status, string(raw), turn.CreatedAt); err != nil {
 		return nil, fmt.Errorf("request already recorded or unavailable: %w", err)
 	}
@@ -175,7 +176,7 @@ func (d *DB) BeginDirectorTurn(session, project, request, kind string, raw json.
 	return turn, nil
 }
 func (d *DB) FinishDirectorTurn(id, status string, result json.RawMessage, message string) error {
-	if status != "succeeded" && status != "failed" && status != "interrupted" {
+	if status != models.StatusSucceeded && status != models.StatusFailed && status != "interrupted" {
 		return fmt.Errorf("invalid turn status")
 	}
 	if len(result) == 0 {
