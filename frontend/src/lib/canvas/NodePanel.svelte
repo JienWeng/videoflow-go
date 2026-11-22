@@ -697,9 +697,9 @@
               {#each revisions as rev (rev.id)}
                 <div class="flex items-center justify-between gap-2 rounded-md border border-border px-2 py-1.5">
                   <div class="min-w-0 text-xs">
-                    <p class="truncate font-medium">{Object.keys(rev.fields_json).join(', ')}</p>
+                    <p class="truncate font-medium">Saved version of this {kind}</p>
                     <p class="text-muted-foreground">
-                      {new Date(rev.created_at).toLocaleString()} · {rev.source}
+                      {new Date(rev.created_at).toLocaleString()}
                     </p>
                   </div>
                   <Button

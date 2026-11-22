@@ -252,16 +252,13 @@ export type OpResult = {
 
 /**
  * GET /{scenes|shots}/{id}/revisions. models.Revision sends entity_type, entity_id and
- * snapshot_json; fields_json and source are what NodePanel's history list reads, but the
- * current backend does not send them.
+ * snapshot_json and created_at.
  */
 export type EditRevision = {
   id: string;
   entity_type?: string;
   entity_id?: string;
   snapshot_json?: unknown;
-  fields_json: Record<string, unknown>;
-  source?: string;
   created_at: string;
 };
 
