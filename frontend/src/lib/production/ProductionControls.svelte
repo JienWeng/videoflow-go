@@ -3,6 +3,7 @@
   import { untrack } from 'svelte';
   import { get, put } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
+  import type { ProductionPlan, ProductionSettings } from '$lib/api-types';
   let {
     scene,
     newVersion = $bindable(false),
@@ -19,17 +20,17 @@
     onask?: (text: string) => void;
   } = $props();
   const cost = $derived.by(() => {
-    const extra = newVersion ? (plan?.units ?? []).filter((u: any) => u.status === 'succeeded') : [];
+    const extra = newVersion ? (plan?.units ?? []).filter(u => u.status === 'succeeded') : [];
     const calls = (plan?.calls ?? 0) + extra.length;
     return {
       calls,
-      seconds: (plan?.new_seconds ?? 0) + extra.reduce((n: number, u: any) => n + u.duration, 0),
+      seconds: (plan?.new_seconds ?? 0) + extra.reduce((n, u) => n + u.duration, 0),
       reused: (plan?.reused ?? 0) - extra.length,
       storyboards: calls > 0 && !plan?.storyboard_ready && plan?.video_input !== 'references' ? 1 : 0
     };
   });
-  let plan = $state<any>(null),
-    settings = $state<any>(null),
+  let plan = $state<ProductionPlan | null>(null),
+    settings = $state<ProductionSettings | null>(null),
     loading = $state(false),
     saving = $state(false),
     dirty = $state(false),
@@ -47,7 +48,7 @@
     error = '';
     report();
     try {
-      const result = await get(`/scenes/${encodeURIComponent(scene)}/production`);
+      const result = await get<ProductionPlan | null>(`/scenes/${encodeURIComponent(scene)}/production`);
       if (token !== seq) return;
       if (!result?.id || !Array.isArray(result.units) || !result.settings)
         throw Error('The render plan is incomplete. Recheck before generating.');
@@ -81,7 +82,7 @@
   function changed() {
     dirty = true;
     error = '';
-    if (settings.audio_mode !== 'native') settings.music_prompt = '';
+    if (settings && settings.audio_mode !== 'native') settings.music_prompt = '';
     report();
   }
   async function save() {
@@ -91,7 +92,7 @@
     error = '';
     report();
     try {
-      const result = await put(`/scenes/${encodeURIComponent(scene)}/production`, {
+      const result = await put<ProductionPlan>(`/scenes/${encodeURIComponent(scene)}/production`, {
         updated_at: plan.updated_at,
         settings: JSON.parse(JSON.stringify(settings))
       });
@@ -123,7 +124,7 @@
    aria-label="Video sound"
    class="mt-1 min-h-11 w-full rounded-md border border-input bg-background p-2"
    value={settings.audio_mode}
-   onchange={e=>{settings.audio_mode=e.currentTarget.value;changed()}}>
+   onchange={e=>{settings!.audio_mode=e.currentTarget.value;changed()}}>
  {#if plan.audio_supported}<option
    value="native">Sound made with the clip · voices, ambience & effects</option>{/if}<option value="silent">No sound</option></select></label>
  <p class="text-xs text-muted-foreground">{settings.audio_mode === 'native'
@@ -135,13 +136,13 @@
    aria-label="How clips use the scene's pictures"
    class="mt-1 min-h-11 w-full rounded-md border border-input bg-background p-2"
    value={settings.video_input??''}
-   onchange={e=>{settings.video_input=e.currentTarget.value||undefined;changed()}}><option
+   onchange={e=>{settings!.video_input=e.currentTarget.value||undefined;changed()}}><option
      value="">Automatic · connected pictures when the video model takes them</option><option
      value="references">Connected pictures as references</option><option value="first_frame">Start from a storyboard picture</option></select></label>
  {#if plan.video_input==='references'&&plan.pictures?.length}<p
    class="text-xs text-muted-foreground">Sent with each clip that shows them: {plan.pictures
        .map(
-         (p: any, i: number) =>
+         (p, i) =>
            `@Image ${i + 1} ${p.name} (${p.kind === 'character' ? (p.sheet ? 'character sheet' : 'character') : p.kind})`
        )
        .join(' · ')}. No storyboard picture is made.</p>{:else}<p
@@ -153,7 +154,7 @@
    aria-label="Clip strategy"
    class="mt-1 min-h-11 w-full rounded-md border border-input bg-background p-2"
    bind:value={settings.strategy}
-   onchange={()=>{settings.dialogue_shots={};changed()}}><option
+   onchange={()=>{settings!.dialogue_shots={};changed()}}><option
      value="auto">Automatic · group consecutive shots</option><option value="shots">Separate clip for each shot</option></select></label>
  {#if settings.audio_mode==='native'}<label class="block">Music direction <span class="text-muted-foreground">(optional)</span><textarea
    aria-label="Native music direction"
@@ -172,7 +173,7 @@
    class="mt-1 min-h-11 w-full rounded-md border border-input bg-background p-2"
    value={settings.dialogue_shots?.[line.id]??''}
    onchange={e => {
-     settings.dialogue_shots = { ...settings.dialogue_shots, [line.id]: e.currentTarget.value };
+     settings!.dialogue_shots = { ...settings!.dialogue_shots, [line.id]: e.currentTarget.value };
      changed();
    }}><option value="">Choose clip…</option>{#each plan.units as unit}<option
      value={unit.shot_ids[0]}>Clip {unit.index+1} · {unit.start}–{unit.start+unit.length}s</option>{/each}</select></label>{/each}</div>{/if}

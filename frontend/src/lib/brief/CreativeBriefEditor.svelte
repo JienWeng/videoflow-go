@@ -3,6 +3,7 @@
   import StyleReference from './StyleReference.svelte';
   import { onMount } from 'svelte';
   import { get } from '$lib/api';
+  import type { ProjectStylePreset, StyleCatalog, StyleFields } from '$lib/api-types';
   import { Button } from '$lib/components/ui/button';
   import StyleCards from './StyleCards.svelte';
   import { normalizeBrief, missingBriefFields } from './brief.mjs';
@@ -18,9 +19,9 @@
     confirmed?: boolean;
     disabled?: boolean;
     onchange?: (brief: Brief) => void;
-    onstyleapplied?: (preset: any, style: any) => void;
+    onstyleapplied?: (preset: ProjectStylePreset, style: StyleFields) => void;
   } = $props();
-  let catalog = $state<any>(null),
+  let catalog = $state<StyleCatalog | null>(null),
     loading = $state(false),
     error = $state(''),
     step = $state(0),
@@ -67,7 +68,7 @@
     loading = true;
     confirmed = false;
     try {
-      const result = await get('/style-presets');
+      const result = await get<StyleCatalog | null>('/style-presets');
       if (!Array.isArray(result?.presets)) throw Error('Style catalog is unavailable');
       catalog = result;
       if (value.style_preset_id && !styleValid) confirmed = false;
@@ -153,7 +154,7 @@
      value="custom">Follow my story</option>{#each catalog?.storytelling_presets??[] as method}<option
      value={method.id}>{method.name}</option>{/each}</select></label>
  {#if value.storytelling_id&&value.storytelling_id!=='custom'}<p
-   class="text-xs text-muted-foreground">{catalog?.storytelling_presets?.find((p: any) => p.id === value.storytelling_id)?.description ??
+   class="text-xs text-muted-foreground">{catalog?.storytelling_presets?.find(p => p.id === value.storytelling_id)?.description ??
      'Saved storytelling method'}</p>{/if}
  <p class="text-xs text-muted-foreground">Storytelling shapes the pacing and direction. Your visual style stays separate.</p>
  <BriefChoice
@@ -235,7 +236,7 @@
        ['Visual style', selected?.name || 'Not selected'],
        [
          'Storytelling',
-         catalog?.storytelling_presets?.find((p: any) => p.id === value.storytelling_id)?.name ||
+         catalog?.storytelling_presets?.find(p => p.id === value.storytelling_id)?.name ||
            (value.storytelling_id && value.storytelling_id !== 'custom' ? value.storytelling_id : 'Follow my story')
        ],
        ['Tone', value.tone],

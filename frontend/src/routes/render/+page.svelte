@@ -26,11 +26,12 @@
     ListVideo,
     Film
   } from '@lucide/svelte';
+  import type { Asset, RenderJob, RenderJobDetail, RenderOutput, Scene, Script } from '$lib/api-types';
 
-  let jobs: any[] = $state([]);
-  let scenes: any[] = $state([]);
-  let scripts: any[] = $state([]);
-  let outputs: Record<string, any[]> = $state({});
+  let jobs: RenderJob[] = $state([]);
+  let scenes: Scene[] = $state([]);
+  let scripts: Script[] = $state([]);
+  let outputs: Record<string, RenderOutput[]> = $state({});
   let error = $state('');
   let loaded = $state(false);
 
@@ -83,22 +84,22 @@
   }
 
   // Videos exported from the editor are project assets, not scene renders.
-  let editedVideos: any[] = $state([]);
+  let editedVideos: Asset[] = $state([]);
   async function refresh() {
-    let allAssets: any[] = [];
+    let allAssets: Asset[] | null = [];
     [jobs, scenes, scripts, allAssets] = await Promise.all([
-      get('/render-jobs'),
-      get('/scenes'),
-      get('/scripts'),
-      get('/assets').catch(() => [])
+      get<RenderJob[]>('/render-jobs'),
+      get<Scene[]>('/scenes'),
+      get<Script[]>('/scripts'),
+      get<Asset[] | null>('/assets').catch((): Asset[] => [])
     ]);
     editedVideos = (allAssets ?? [])
-      .filter((a: any) => a.type === 'output_video' && a.metadata_json?.composition_revision)
-      .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)));
+      .filter(a => a.type === 'output_video' && a.metadata_json?.composition_revision)
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
     const done = jobs.filter(j => j.status === 'succeeded');
     for (const j of done) {
       if (!outputs[j.id]) {
-        const detail = await get(`/render-jobs/${j.id}`);
+        const detail = await get<RenderJobDetail>(`/render-jobs/${j.id}`);
         outputs[j.id] = detail.outputs;
       }
     }
@@ -112,7 +113,7 @@
   async function clearFailed() {
     clearing = true;
     try {
-      const r = await post('/render-jobs/clear-failed', {});
+      const r = await post<{ message: string }>('/render-jobs/clear-failed', {});
       toast.success(r.message);
       await refresh();
     } catch (e) {
@@ -139,7 +140,7 @@
 
   // Re-run a FAILED render. Uses the originating shot/scene endpoints (a failed
   // job produced no output, so there is nothing to /retry).
-  async function reRenderJob(j: any) {
+  async function reRenderJob(j: RenderJob) {
     rerunning = j.id;
     try {
       if (!confirm('Start a new paid video generation using this job’s saved inputs?')) return;
@@ -158,8 +159,8 @@
   type SceneGroup = {
     sceneId: string;
     title: string;
-    jobs: any[]; // newest first
-    active: any[];
+    jobs: RenderJob[]; // newest first
+    active: RenderJob[];
     succeeded: number;
     failed: number;
     latest: string; // newest created_at, for ordering
@@ -168,15 +169,15 @@
   };
 
   let groups: SceneGroup[] = $derived.by(() => {
-    const titles = new Map(scenes.map((s: any) => [s.id, s.title]));
+    const titles = new Map(scenes.map(s => [s.id, s.title]));
     const storyPositions = new Map<string, { time: number; order: number }>();
     const sortedScripts = scripts.slice().sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
     for (let scriptIndex = 0; scriptIndex < sortedScripts.length; scriptIndex += 1) {
       const script = sortedScripts[scriptIndex];
       const scriptScenes = scenes
-        .filter((scene: any) => scene.script_id === script.id)
+        .filter(scene => scene.script_id === script.id)
         .sort(
-          (a: any, b: any) =>
+          (a, b) =>
             (a.scene_order ?? Number.MAX_SAFE_INTEGER) - (b.scene_order ?? Number.MAX_SAFE_INTEGER) ||
             (a.created_at ?? '').localeCompare(b.created_at ?? '')
         );
@@ -187,7 +188,7 @@
         });
       }
     }
-    const bySceneId = new Map<string, any[]>();
+    const bySceneId = new Map<string, RenderJob[]>();
     for (const j of jobs) {
       const key = j.scene_id && titles.has(j.scene_id) ? j.scene_id : '__other__';
       if (!bySceneId.has(key)) bySceneId.set(key, []);
@@ -205,7 +206,7 @@
         failed: list.filter(j => j.status === 'failed').length,
         latest: list[0]?.created_at ?? '',
         storyTime:
-          storyPositions.get(key)?.time ?? new Date(scenes.find((s: any) => s.id === key)?.created_at ?? 0).getTime(),
+          storyPositions.get(key)?.time ?? new Date(scenes.find(s => s.id === key)?.created_at ?? 0).getTime(),
         storyOrder: storyPositions.get(key)?.order ?? 0
       });
     }
@@ -234,8 +235,8 @@
     selectedId = groups.length ? groups[0].sceneId : editedVideos.length ? '__edited__' : null;
   });
 
-  function sceneOutputs(g: SceneGroup): { job: any; out: any }[] {
-    const res: { job: any; out: any }[] = [];
+  function sceneOutputs(g: SceneGroup): { job: RenderJob; out: RenderOutput }[] {
+    const res: { job: RenderJob; out: RenderOutput }[] = [];
     for (const j of g.jobs) {
       if (j.status !== 'succeeded') continue;
       for (const out of outputs[j.id] ?? []) res.push({ job: j, out });
@@ -297,7 +298,7 @@
 
 <svelte:head><title>Videos · VideoFlow</title></svelte:head>
 
-{#snippet jobRow(j: any)}
+{#snippet jobRow(j: RenderJob)}
   <div class="py-1 text-xs">
     <div class="flex flex-wrap items-center gap-2">
       <Badge variant={statusVariant(j.status)} class={isActive(j.status) ? 'animate-pulse' : ''}>{statusLabel(j.status)}</Badge>

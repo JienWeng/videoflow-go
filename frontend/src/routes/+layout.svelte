@@ -20,13 +20,14 @@
   import { palette } from '$lib/shell/palette.svelte';
   import { initActivity } from '$lib/activity.svelte';
   import { get } from '$lib/api';
+  import type { Project } from '$lib/api-types';
   import { watchTheme } from '$lib/shell/theme';
 
   let { children } = $props();
 
   // The active project scopes every backend endpoint; switching does a full
   // page reload (see /projects), so fetching once on mount is always fresh.
-  let activeProject: any = $state(null);
+  let activeProject = $state<Project | null>(null);
   let sidebarCollapsed = $state(false);
   function toggleSidebar() {
     sidebarCollapsed = !sidebarCollapsed;
@@ -58,7 +59,7 @@
     let latest = 0;
     const refresh = () => {
       const request = ++latest;
-      get('/projects/active')
+      get<Project>('/projects/active')
         .then(p => {
           if (request === latest) activeProject = p;
         })

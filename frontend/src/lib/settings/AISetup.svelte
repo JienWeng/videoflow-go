@@ -8,6 +8,7 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AgentConnect from '$lib/director/AgentConnect.svelte';
   import { AudioLines, Check, Clapperboard, Eye, Image, MessageSquare, Mic, TriangleAlert } from '@lucide/svelte';
+  import type { DirectorStatus } from '$lib/api-types';
 
   type Choice = { service: string; model: string; ready: boolean; note: string };
   type Setup = {
@@ -60,10 +61,10 @@
   let error = $state(''),
     busy = $state('');
   // Sign-in state of the local AI tools (Codex, Claude Code) that run the assistant.
-  let tools = $state<any>(null),
+  let tools = $state<DirectorStatus | null>(null),
     connectOpen = $state(false),
     connectChecked = false;
-  const connectedTools = $derived((tools?.engines ?? []).filter((e: any) => e.signed_in).length);
+  const connectedTools = $derived((tools?.engines ?? []).filter(e => e.signed_in).length);
   // The paid picture service saved in settings; 'openai' means an OpenAI key decides it.
   let pictureService = $state('');
   const engineName: Record<string, string> = { claude: 'Claude Code', codex: 'Codex' };
@@ -73,17 +74,17 @@
     try {
       let app: { default_image_provider?: string } | null;
       [setup, catalog, app, tools] = await Promise.all([
-        get('/ai/setup'),
-        get('/director/models'),
-        get('/settings/app').catch(() => null),
-        get('/director/status').catch(() => null)
+        get<Setup>('/ai/setup'),
+        get<Record<string, { models: string[]; efforts: string[] }>>('/director/models'),
+        get<{ default_image_provider?: string }>('/settings/app').catch(() => null),
+        get<DirectorStatus>('/director/status').catch(() => null)
       ]);
       if (!connectChecked) {
         connectChecked = true;
         connectOpen = !connectedTools;
       }
       pictureService = app?.default_image_provider ?? '';
-      services = await get('/video-services' + (setup?.video.family ? '?model=' + setup.video.family : ''));
+      services = await get<Services>('/video-services' + (setup?.video.family ? '?model=' + setup.video.family : ''));
       error = '';
     } catch (e) {
       error = errorMessage(e);
@@ -113,7 +114,7 @@
   // Check again on an empty account: the service is asked when it can be, otherwise the next video decides.
   const checkVideoAgain = () =>
     change('check', async () => {
-      const r = await post(`/settings/providers/${setup!.video.provider}/test`);
+      const r = await post<{ ok: boolean; error?: string }>(`/settings/providers/${setup!.video.provider}/test`);
       if (!r.ok && r.error) throw new Error(r.error);
     });
   const pictures = (provider: string) =>
@@ -188,7 +189,7 @@
           <summary class="min-h-11 cursor-pointer py-3 text-sm font-medium">Connect Codex or Claude Code <span
             class="font-normal text-muted-foreground">· {(tools?.engines ?? [])
                 .map(
-                  (e: any) =>
+                  e =>
                     `${engineName[e.engine] ?? e.engine}: ${e.signed_in ? 'connected' : e.installed ? 'not connected' : 'unavailable'}`
                 )
                 .join(' · ') || 'status unavailable'}</span></summary>

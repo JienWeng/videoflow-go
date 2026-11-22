@@ -6,9 +6,10 @@
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import { Button } from '$lib/components/ui/button';
+  import type { DirectorSession, DirectorStatus } from '$lib/api-types';
   let { compact = false, minimal = false }: { compact?: boolean; minimal?: boolean } = $props();
-  let sessions: any[] = $state([]),
-    engines: any[] = $state([]),
+  let sessions: DirectorSession[] = $state([]),
+    engines: DirectorStatus['engines'] = $state([]),
     selected = $state(''),
     engine = $state('codex'),
     title = $state(''),
@@ -35,14 +36,17 @@
     });
   }
   async function refresh() {
-    get('/director/models')
+    get<Record<string, { models: string[]; efforts: string[] }>>('/director/models')
       .then(c => (catalog = c))
       .catch(() => {});
-    const [list, status] = await Promise.all([get('/director/sessions'), get('/director/status')]);
+    const [list, status] = await Promise.all([
+      get<DirectorSession[]>('/director/sessions'),
+      get<DirectorStatus>('/director/status')
+    ]);
     sessions = list;
     engines = status.engines ?? [];
     if (!engines.some(e => e.engine === engine && e.signed_in)) engine = engines.find(e => e.signed_in)?.engine ?? engine;
-    selected = list.find((s: any) => s.selected)?.id ?? '';
+    selected = list.find(s => s.selected)?.id ?? '';
   }
   async function run(fn: () => Promise<void>) {
     busy = true;
@@ -82,10 +86,10 @@
         <span
           class="truncate">{!loaded
               ? 'Loading sessions…'
-              : sessions.find(s => s.id === selected)
+              : current
                 ? minimal
-                  ? sessions.find(s => s.id === selected).title || 'Untitled'
-                  : `${sessions.find(s => s.id === selected).title || 'Untitled'} · ${sessions.find(s => s.id === selected).engine}`
+                  ? current.title || 'Untitled'
+                  : `${current.title || 'Untitled'} · ${current.engine}`
                 : 'Choose conversation'}</span><ChevronDown
           class="size-4 shrink-0" />
       </DropdownMenu.Trigger>

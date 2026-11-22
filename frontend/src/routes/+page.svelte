@@ -26,6 +26,7 @@
   import Plus from '@lucide/svelte/icons/plus';
   import { Button } from '$lib/components/ui/button';
   import { palette } from '$lib/shell/palette.svelte';
+  import type { ApiGraph } from '$lib/canvas/transform';
   import { get } from '$lib/api';
   import { subscribeJobs } from '$lib/sse';
   let canvas: EntityCanvas | undefined = $state(),
@@ -267,7 +268,7 @@
   );
   async function probe() {
     try {
-      const g = await get('/graph');
+      const g = await get<ApiGraph>('/graph');
       nodeCount = g.nodes?.length ?? 0;
       error = '';
     } catch (e) {

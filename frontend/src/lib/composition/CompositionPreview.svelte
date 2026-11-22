@@ -2,6 +2,7 @@
   import { onDestroy, untrack } from 'svelte';
   import { mediaUrl } from '$lib/api';
   import { clipStyle } from './edits.mjs';
+  import type { Clip, CompositionManifest, CompositionSource } from './types';
   let {
     draft,
     assets,
@@ -9,7 +10,10 @@
     playing = $bindable(false),
     controls = true,
     fill = false
-  }: { draft: any; assets: any[]; time?: number; playing?: boolean; controls?: boolean; fill?: boolean } = $props();
+  }: {
+    draft: CompositionManifest;
+    assets: CompositionSource[];
+    time?: number; playing?: boolean; controls?: boolean; fill?: boolean } = $props();
   let boxW = $state(0),
     boxH = $state(0);
   // In fill mode the frame takes the largest size that fits the panel at the composition's aspect ratio.
@@ -20,7 +24,7 @@
   let frame = 0,
     last = 0;
   const source = (id: string) => assets.find(a => a.id === id);
-  const active = (c: any) => time >= c.start && time < c.start + c.duration;
+  const active = (c: Clip) => time >= c.start && time < c.start + c.duration;
   function tick(now: number) {
     if (!playing) return;
     if (last) time = Math.min(draft.duration, time + (now - last) / 1000);
@@ -63,8 +67,10 @@
       el.muted = clip.muted || !clip.has_audio;
       const local = t - clip.start;
       let gain = Number(clip.volume ?? 1);
-      if (clip.fade_in > 0) gain *= Math.max(0, Math.min(1, local / clip.fade_in));
-      if (clip.fade_out > 0) gain *= Math.max(0, Math.min(1, (clip.duration - local) / clip.fade_out));
+      const fadeIn = clip.fade_in ?? 0,
+        fadeOut = clip.fade_out ?? 0;
+      if (fadeIn > 0) gain *= Math.max(0, Math.min(1, local / fadeIn));
+      if (fadeOut > 0) gain *= Math.max(0, Math.min(1, (clip.duration - local) / fadeOut));
       el.volume = Math.max(0, Math.min(1, Number.isFinite(gain) ? gain : 1));
       if (p && on) void el.play().catch(() => {});
       else el.pause();
@@ -102,10 +108,10 @@
    src={mediaUrl(asset?.url)??''}
    preload="metadata"
    onloadedmetadata={syncMedia}><track kind="captions" /></audio>{/each}
- {#each (draft.texts??[]).filter((t:any)=>time>=t.start&&time<t.end) as layer(layer.id)}<p
+ {#each (draft.texts??[]).filter(t=>time>=t.start&&time<t.end) as layer(layer.id)}<p
    class="absolute left-[5%] w-[90%] -translate-y-1/2 whitespace-pre-wrap text-center"
    style={`top:${layer.position==='top'?15:layer.position==='bottom'?80:50}%;color:${layer.color};background:${layer.background};font-family:${layer.font};font-size:${layer.size*previewWidth/draft.width}px`}>{layer.text}</p>{/each}
- {#each draft.captions.filter((c:any)=>time>=c.start&&time<c.end) as cue(cue.id)}<p
+ {#each draft.captions.filter(c=>time>=c.start&&time<c.end) as cue(cue.id)}<p
    class="absolute inset-x-[5%] bottom-[8%] text-center text-white"
    style={`font-size:${Math.round(Math.min(draft.width,draft.height)*(draft.caption_style==='large'?0.07:draft.caption_style==='compact'?0.036:0.05))*previewWidth/draft.width}px;font-weight:700;line-height:1.25;text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000,0 2px 6px rgba(0,0,0,.8)`}>{cue.text}</p>{/each}
  {#if !draft.clips.length}<p

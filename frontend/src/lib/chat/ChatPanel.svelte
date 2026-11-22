@@ -10,6 +10,35 @@
   import VideoSwitchCard from './VideoSwitchCard.svelte';
   import StuckVideo from '$lib/production/StuckVideo.svelte';
   import { upload as apiUpload } from '$lib/api';
+  import type { Op } from '$lib/ops';
+  import type { ApiGraph } from '$lib/canvas/transform';
+  import type { CompositionManifest } from '$lib/composition/types';
+  import type {
+    Asset,
+    Character,
+    DirectorSession,
+    DirectorStatus,
+    DirectorTurn,
+    EnsuredSession,
+    OpStarted,
+    Project,
+    ProjectProgress,
+    SceneProgress,
+    ProjectStylePreset,
+    StyleFields,
+    StyleGuide
+  } from '$lib/api-types';
+  import type {
+    ChatCapabilities,
+    ChatIntent,
+    ChatOptions,
+    ChatProjectState,
+    ChatReply,
+    ChatReview,
+    RunContext,
+    SpecialistResult,
+    StuckCheck
+  } from './types';
   // Auto: the assistant carries out free planning steps itself. Manual: every step waits for a click.
   // Full auto: after one confirmation the app also renders, edits and exports the video.
   type Mode = 'manual' | 'auto' | 'full';
@@ -43,9 +72,9 @@
     const id = m.autopilotOp;
     if (!id) return;
     for (let i = 0; i < 900; i++) {
-      let op: any;
+      let op: Op;
       try {
-        op = await get('/ops/' + encodeURIComponent(id));
+        op = await get<Op>('/ops/' + encodeURIComponent(id));
       } catch {
         await new Promise(r => setTimeout(r, 5000));
         continue;
@@ -53,7 +82,7 @@
       const rj = op.result_json ?? {};
       if (op.status === 'succeeded' && rj.videos_only) {
         if (m.op) m.op.status = 'done';
-        const titles = (rj.scene_titles ?? []).map((t: string) => `“${t}”`).join(', ');
+        const titles = (rj.scene_titles ?? []).map(t => `“${t}”`).join(', ');
         m.text = `The videos are ready for ${titles}. Say “finish the video” when you want them joined and exported.`;
         m.chips = [
           { label: 'Edit video', href: '/?view=edit' },
@@ -110,7 +139,7 @@
     messages.push(m);
     const live = messages[messages.length - 1];
     try {
-      const started = await post('/autopilot/finish?background=true', run);
+      const started = await post<OpStarted>('/autopilot/finish?background=true', run);
       live.autopilotOp = started.op_id;
       void watchAutopilot(live);
     } catch (e) {
@@ -124,7 +153,7 @@
   const startAutopilot = (scriptId: string) => (scriptId ? startVideos({ script_id: scriptId }) : undefined);
   const startScenes = (ids: string[]) => (ids.length ? startVideos({ scene_ids: ids, videos_only: true }) : undefined);
   // Once the scene a run stopped on is settled, offer to carry on with the same run.
-  function offerResume(m: Msg, check: any) {
+  function offerResume(m: Msg, check: StuckCheck) {
     const run = m.run;
     m.stuck = undefined;
     void onmutate?.();
@@ -147,7 +176,7 @@
     });
   }
   // After a waiting video is settled as not made, offer to make that scene again (a priced card, not a planner turn).
-  function offerMakeAgain(check: any, title: string) {
+  function offerMakeAgain(check: StuckCheck, title: string) {
     if (check.outcome !== 'failed' || !check.scene_id) return;
     messages.push({
       role: 'assistant',
@@ -170,7 +199,7 @@
     dragging = $state(false),
     filePicker = $state<HTMLInputElement | null>(null);
   const attachKind = (path: string) => (/\.(png|jpe?g|gif|webp)$/i.test(path) ? 'image' : 'video');
-  function attached(asset: any) {
+  function attached(asset: Asset) {
     if (attachments.some(a => a.id === asset.id)) return;
     attachments = [
       ...attachments,
@@ -208,7 +237,7 @@
         )[file.type];
         data.append('file', file, /\.[a-z0-9]{2,5}$/i.test(file.name) ? file.name : `pasted-${Date.now()}${ext}`);
         data.append('type', 'other');
-        attached(await apiUpload('/assets/upload', data));
+        attached(await apiUpload<Asset>('/assets/upload', data));
       } catch (e) {
         attachError = `Couldn't add ${file.name || 'that file'}. ${errorMessage(e)}`;
       } finally {
@@ -224,7 +253,7 @@
     attachError = '';
     attaching++;
     try {
-      attached(await post('/assets/import-link', { url }));
+      attached(await post<Asset>('/assets/import-link', { url }));
       return true;
     } catch (e) {
       attachError = errorMessage(e).replace(/^\d+:\s*/, '');
@@ -265,13 +294,13 @@
       void attachLink(link);
     }
   }
-  function referenceSaved(preset: any, style: any) {
+  function referenceSaved(preset: ProjectStylePreset, style: StyleFields) {
     referenceOpen = false;
     input = '';
     const current = activeCreativeBrief()
       ? [...messages].reverse().find(m => m.intent?.action === 'generate_script' && !m.dismissed)
       : undefined;
-    if (current) {
+    if (current?.intent) {
       const brief = { ...activeCreativeBrief(), style_preset_id: preset.id, style_fingerprint: preset.fingerprint };
       current.intent = { ...current.intent, creation_brief: brief };
       void send('Use the saved project reference style for this story and keep my other choices.');
@@ -342,7 +371,7 @@
   }
 
   interface Msg {
-    editProposal?: { base: string; manifest: any; changes: string[]; applied?: boolean; error?: string };
+    editProposal?: { base: string; manifest: CompositionManifest; changes: string[]; applied?: boolean; error?: string };
     role: 'user' | 'assistant';
     autoRun?: boolean;
     autopilotOp?: string;
@@ -363,12 +392,12 @@
     dismissed?: boolean;
     briefSuperseded?: boolean;
     text: string;
-    intent?: any;
-    options?: any;
+    intent?: ChatIntent;
+    options?: ChatOptions;
     /** Prerequisite warnings from the backend, shown above the action card. */
     warnings?: string[];
     /** Project-state snapshot from the backend (drives the unknown card). */
-    state?: any;
+    state?: ChatProjectState;
     /** Inline next-step suggestions rendered inside the bubble. */
     chips?: Chip[];
     /** Background-op progress row (spinner → check/cross). */
@@ -404,7 +433,7 @@
     embedded?: boolean;
     expanded?: boolean;
     selected?: SelectedNode | null;
-    editing?: { draft: any; selected: string; apply: (draft: any) => void };
+    editing?: { draft: CompositionManifest; selected: string; apply: (draft: CompositionManifest) => void };
   } = $props();
 
   const greeting = (): Msg => ({
@@ -418,7 +447,7 @@
   protectDraft(() => !!input.trim(), 'You have an unsent message. Discard it and leave?');
   let busy = $state(false);
   let reviewMode = $state(false),
-    capabilities = $state<any>(null),
+    capabilities = $state<ChatCapabilities | null>(null),
     activeSessionId = $state('');
   let cancelling = $state(false),
     cancelError = $state('');
@@ -463,7 +492,7 @@
   async function refreshCapabilities() {
     const generation = conversationGeneration;
     try {
-      const result = await get('/chat/capabilities');
+      const result = await get<ChatCapabilities | null>('/chat/capabilities');
       if (generation !== conversationGeneration) return;
       capabilities = result;
       if (!result?.subagents?.supported) reviewMode = false;
@@ -474,7 +503,7 @@
       }
     }
   }
-  function subagentEvents(list: any[]) {
+  function subagentEvents(list: SpecialistResult[]) {
     return normalizeActivity(
       (list ?? []).map(a => ({
         kind: 'subagent',
@@ -595,25 +624,25 @@
     cancelError = '';
     void refreshCapabilities();
     try {
-      const status = await get('/director/status');
+      const status = await get<DirectorStatus>('/director/status');
       if (generation !== conversationGeneration) return;
       if (status.all_text_local) {
         // A conversation on a signed-out AI fails every message; move to a connected one first.
-        const ensured = await post('/director/sessions/ensure', {}).catch(() => null);
+        const ensured = await post<EnsuredSession>('/director/sessions/ensure', {}).catch(() => null);
         if (generation !== conversationGeneration) return;
         switchedNote = ensured?.switched_from
           ? `${ensured.switched_from === 'claude' ? 'Claude Code' : 'Codex'} is signed out, so this chat now uses ${ensured.session?.engine === 'claude' ? 'Claude Code' : 'Codex'}.`
           : '';
-        const sessions = await get('/director/sessions');
+        const sessions = await get<DirectorSession[]>('/director/sessions');
         if (generation !== conversationGeneration) return;
-        const session = sessions.find((item: any) => item.selected);
+        const session = sessions.find(item => item.selected);
         if (!session) {
           sessionRequired = true;
           messages = [greeting()];
           return;
         }
         signInNeeded =
-          status.engines?.find((item: any) => item.engine === session.engine)?.signed_in === false
+          status.engines?.find(item => item.engine === session.engine)?.signed_in === false
             ? session.engine === 'claude'
               ? 'Claude Code'
               : 'Codex'
@@ -621,7 +650,7 @@
         activeSessionId = session.id;
         loadCheckpoints('videoflow.chat.' + session.id);
         localSessionLabel = `${session.engine} · ${session.title}`;
-        const turns = await get(`/director/sessions/${session.id}/turns`);
+        const turns = await get<DirectorTurn[]>(`/director/sessions/${session.id}/turns`);
         if (generation !== conversationGeneration) return;
         const restored: Msg[] = [];
         for (const turn of conversationTurns(turns)) {
@@ -651,7 +680,7 @@
         storageKey = key;
         return;
       }
-      const project = await get('/projects/active');
+      const project = await get<Project | null>('/projects/active');
       if (generation !== conversationGeneration) return;
       const key = `videoflow.chat.${project?.id ?? 'default'}`;
       try {
@@ -711,9 +740,9 @@
     inputWrapper?.querySelector('textarea')?.focus();
   }
 
-  let graphData = $state<any>(null);
-  let styleData = $state<any>(null);
-  let progressData = $state<any>(null);
+  let graphData = $state<ApiGraph | null>(null);
+  let styleData = $state<StyleGuide | null>(null);
+  let progressData = $state<ProjectProgress | null>(null);
   const KIND_NAMES: Record<string, string> = {
     asset: 'Image',
     scene: 'Scene',
@@ -727,10 +756,10 @@
    * One pass over /graph (scenes, shots, storyboards and render jobs are all
    * nodes) shared by the suggestion strip and the post-run follow-ups.
    */
-  function analyzeGraph(graph: any) {
-    const nodes: any[] = graph?.nodes ?? [];
-    const edges: any[] = graph?.edges ?? [];
-    const byId = new Map<string, any>(nodes.map(n => [n.id, n]));
+  function analyzeGraph(graph: ApiGraph | null) {
+    const nodes = graph?.nodes ?? [];
+    const edges = graph?.edges ?? [];
+    const byId = new Map(nodes.map(n => [n.id, n]));
 
     const characters = nodes.filter(n => n.type === 'character');
     const scenes = nodes.filter(n => n.type === 'scene');
@@ -743,7 +772,7 @@
     // A scene whose clips use its connected pictures needs none and counts as having one.
     const scenesWithStoryboard = new Set([
       ...edges.filter(e => byId.get(e.target)?.data?.asset_type === 'storyboard').map(e => e.source),
-      ...(progressData?.scenes ?? []).filter((p: any) => p.reference_mode).map((p: any) => p.scene_id)
+      ...(progressData?.scenes ?? []).filter(p => p.reference_mode).map(p => p.scene_id)
     ]);
 
     const renderedScenes = completeSceneRenders(nodes.filter(n => n.type === 'render_job').map(n => n.data ?? {}));
@@ -781,12 +810,12 @@
    * Suggest the next steps from the analyzed graph plus /style. When a canvas
    * node is selected, chips target that node instead.
    */
-  function computeChips(graph: any, style: any, sel: SelectedNode | null): Chip[] {
+  function computeChips(graph: ApiGraph | null, style: StyleGuide | null, sel: SelectedNode | null): Chip[] {
     const { byId, characters, scenes, outputs, scenesWithShots, scenesWithStoryboard, renderedScenes, sceneNextChip } =
       analyzeGraph(graph);
 
     // One chip per progress entry, worded like Studio's next-step button.
-    const progressChip = (p: any): Chip | null => {
+    const progressChip = (p: SceneProgress | null | undefined): Chip | null => {
       if (!p?.next) return null;
       const step = p.next;
       if (p.video?.state === 'waiting_on_service')
@@ -798,7 +827,7 @@
       return { label: `${step.label} · ${p.title}`, focusId: p.scene_id, send: `${step.label} for “${p.title}”` };
     };
     const projectNext = progressChip(progressData?.next ? progressData.next : null);
-    const sceneProgress = (id: string) => progressData?.scenes?.find((p: any) => p.scene_id === id);
+    const sceneProgress = (id: string) => progressData?.scenes?.find(p => p.scene_id === id);
 
     // Selection-aware chips replace the globals while a node is selected; the project's next step stays available.
     if (sel) {
@@ -877,9 +906,9 @@
   async function refreshChips() {
     try {
       const [graph, style, progress] = await Promise.all([
-        get('/graph'),
-        get('/style').catch(() => null),
-        get('/production/progress').catch(() => null)
+        get<ApiGraph>('/graph'),
+        get<StyleGuide>('/style').catch(() => null),
+        get<ProjectProgress>('/production/progress').catch(() => null)
       ]);
       graphData = graph;
       progressData = progress;
@@ -937,14 +966,6 @@
     };
   });
 
-  /** Context passed up by ActionCard after a successful run. */
-  interface RunContext {
-    action: string;
-    sceneId?: string;
-    characterId?: string;
-    outputId?: string;
-  }
-
   const captionsChip: Chip = { label: 'Add captions in Edit video', href: `${editHref}&panel=text` };
 
   // ---------------------------------------------------------------------
@@ -960,7 +981,7 @@
 
   /** Result handed to ActionCard so it can settle the progress row. */
   interface OpHandle {
-    done: (op: { result_json?: Record<string, any> | null; output_id?: string | null }) => unknown;
+    done: (op: Op) => unknown;
     fail: (op: { error?: string | null }) => unknown;
   }
 
@@ -968,7 +989,7 @@
   async function assetThumbs(ids: string[]): Promise<{ src: string; alt: string }[]> {
     if (!ids.length) return [];
     try {
-      const assets: any[] = await get('/assets');
+      const assets = await get<Asset[]>('/assets');
       const byId = new Map(assets.map(a => [a.id, a]));
       return ids
         .map(id => byId.get(id))
@@ -981,7 +1002,7 @@
   }
 
   /** Attach result thumbnails + onward-navigation chips to the op row. */
-  async function attachOpResults(m: Msg | undefined, ctx: RunContext, result: any) {
+  async function attachOpResults(m: Msg | undefined, ctx: RunContext, result: Op | null | undefined) {
     if (!m) return;
     const rj = result?.result_json ?? {};
     if (ctx.action === 'audit_storyboard') {
@@ -991,7 +1012,7 @@
         repaired: 'Replacement checked and linked to the scene.',
         needs_attention: 'Replacement still needs work. The previous scene link was kept.'
       };
-      m.text = [labels[rj.status], rj.evidence].filter(Boolean).join(' ');
+      m.text = [labels[rj.status ?? ''], rj.evidence].filter(Boolean).join(' ');
       if (rj.asset_id) {
         m.thumbs = await assetThumbs([rj.asset_id]);
         m.chips = [{ label: 'View image', href: '/library?tab=media&asset_id=' + encodeURIComponent(rj.asset_id) }];
@@ -999,14 +1020,14 @@
       return;
     }
     if (ctx.action === 'generate_script') {
-      m.storyOperationId = result.id ?? m.storyOperationId;
+      m.storyOperationId = result?.id ?? m.storyOperationId;
       m.storyStage = rj.status;
       m.castIds = rj.cast_character_ids ?? [];
       m.referenceIds = rj.story_asset_ids ?? [];
       m.text =
         rj.status === 'awaiting_character_review'
           ? 'Your saved story can continue to storyboarding. Images do not need approval.'
-          : ['awaiting_reference_review', 'ready_to_render'].includes(rj.status)
+          : ['awaiting_reference_review', 'ready_to_render'].includes(rj.status ?? '')
             ? 'Your story and images are ready. You can adjust them or render a scene.'
             : 'Story planning completed. Review the saved work before continuing.';
       m.chips = [
@@ -1023,7 +1044,7 @@
         if (rj.status === 'awaiting_character_review' && m.storyReady) {
           m.text = 'Characters are ready. Continuing to the scene pictures…';
           void continueStory(m);
-        } else if (['awaiting_reference_review', 'ready_to_render'].includes(rj.status) && rj.script_id) {
+        } else if (['awaiting_reference_review', 'ready_to_render'].includes(rj.status ?? '') && rj.script_id) {
           m.text = 'Your story and pictures are ready. Full auto is now making the video.';
           void startAutopilot(rj.script_id);
         }
@@ -1042,7 +1063,7 @@
       return;
     }
     if (ctx.action === 'storyboard' || ctx.action === 'generate_assets' || ctx.action === 'generate_image') {
-      const ids: string[] = rj.asset_ids ?? (rj.asset_id ? [rj.asset_id] : []);
+      const ids = rj.asset_ids ?? (rj.asset_id ? [rj.asset_id] : []);
       const thumbs = await assetThumbs(ids);
       if (thumbs.length) m.thumbs = thumbs;
       m.chips = [{ label: 'View in Assets', href: '/library?tab=media' }];
@@ -1055,11 +1076,11 @@
     try {
       const generation = conversationGeneration;
       const [characters, assets, ops] = await Promise.all([
-        get('/characters'),
-        get('/assets'),
+        get<Character[]>('/characters'),
+        get<Asset[]>('/assets'),
         Promise.all(
           pending.map(m =>
-            m.storyOperationId ? get(`/ops/${encodeURIComponent(m.storyOperationId)}`) : Promise.resolve(null)
+            m.storyOperationId ? get<Op>(`/ops/${encodeURIComponent(m.storyOperationId)}`) : Promise.resolve(null)
           )
         )
       ]);
@@ -1086,13 +1107,13 @@
   async function restoreGuidedOperation() {
     const generation = conversationGeneration;
     try {
-      const project = await get('/projects/active');
-      const ops = await get(`/ops?project_id=${encodeURIComponent(project.id)}&kind=video_generation&limit=1`);
+      const project = await get<Project>('/projects/active');
+      const ops = await get<Op[] | null>(`/ops?project_id=${encodeURIComponent(project.id)}&kind=video_generation&limit=1`);
       if (generation !== conversationGeneration) return;
       const op = ops?.[0];
       if (
         op?.status !== 'succeeded' ||
-        !['awaiting_character_review', 'awaiting_reference_review', 'ready_to_render'].includes(op.result_json?.status) ||
+        !['awaiting_character_review', 'awaiting_reference_review', 'ready_to_render'].includes(op.result_json?.status ?? '') ||
         messages.some(m => m.storyOperationId === op.id)
       )
         return;
@@ -1254,7 +1275,7 @@
   }
 
   /** Card ran successfully: refresh, then keep the conversation moving. */
-  async function handleRan(_result: any, ctx?: RunContext) {
+  async function handleRan(_result: unknown, ctx?: RunContext) {
     await onmutate?.();
     await refreshChips();
     if (!ctx) return;
@@ -1263,19 +1284,19 @@
     if (follow) messages.push(follow);
   }
 
-  function intentSummary(intent: any, options: any): string {
+  function intentSummary(intent: ChatIntent, options: ChatOptions | undefined): string {
     const lines: string[] = [`Proposed action: ${String(intent.action).replaceAll('_', ' ')}`];
     if (intent.scene_id) {
-      const s = options?.scenes?.find((x: any) => x.id === intent.scene_id);
+      const s = options?.scenes?.find(x => x.id === intent.scene_id);
       lines.push(`Scene: ${s?.title ?? 'Selected scene'}`);
     }
     if (intent.character_id) {
-      const c = options?.characters?.find((x: any) => x.id === intent.character_id);
+      const c = options?.characters?.find(x => x.id === intent.character_id);
       lines.push(`Character: ${c?.name ?? 'Selected character'}`);
     }
     if (intent.shot_id) lines.push('Shot: selected shot');
     if (intent.output_id) {
-      const o = options?.outputs?.find((x: any) => x.id === intent.output_id);
+      const o = options?.outputs?.find(x => x.id === intent.output_id);
       const file = o?.video?.split('/').pop();
       lines.push(`Output: ${file ?? 'Selected output'}`);
     }
@@ -1300,7 +1321,7 @@
     repairingContext = true;
     const generation = conversationGeneration;
     try {
-      const result = await post(`/director/sessions/${activeSessionId}/repair-context`, {});
+      await post(`/director/sessions/${activeSessionId}/repair-context`, {});
       if (generation !== conversationGeneration) return;
       message.repairContext = false;
       message.text = 'Unavailable references removed. Your message is ready to retry.';
@@ -1353,7 +1374,7 @@
         role: 'assistant',
         text: 'Specialist review requested. No story changes will run.',
         activity: normalizeActivity(
-          (capabilities.subagents.roles ?? []).map((role: any) => ({
+          (capabilities?.subagents.roles ?? []).map(role => ({
             kind: 'subagent',
             title: role.name,
             status: 'pending'
@@ -1363,7 +1384,7 @@
     try {
       if (editing) {
         const base = JSON.stringify(editing.draft);
-        const result = await post('/director/composition-plan', {
+        const result = await post<{ manifest: CompositionManifest }>('/director/composition-plan', {
           instruction: message,
           manifest: JSON.parse(base),
           selected_clip_id: editing.selected
@@ -1376,7 +1397,7 @@
         });
         return;
       }
-      const r = await post(useSpecialists ? '/chat/review' : '/chat', {
+      const r = await post<ChatReply & ChatReview>(useSpecialists ? '/chat/review' : '/chat', {
         message,
         ...(useSpecialists ? {} : { history, creation_brief: activeCreativeBrief() }),
         selected: selected ? { id: selected.id, kind: selected.kind } : null,
@@ -1726,11 +1747,11 @@
               <div class="mt-2 flex flex-wrap items-center gap-2"><Button
                 size="sm"
                 class="rounded-full px-4"
-                onclick={()=>{m.dismissed=true;void startAutopilot(m.intent.script_id)}}>Finish the video for me</Button><FinishCost
+                onclick={()=>{m.dismissed=true;void startAutopilot(m.intent?.script_id ?? '')}}>Finish the video for me</Button><FinishCost
                   scriptId={m.intent.script_id} /><span
                   class="text-xs text-muted-foreground">Makes every missing scene video, joins them with captions and exports. Uses video credits.</span></div>
             {:else if !editing && m.intent?.action === 'render_scenes' && m.intent.scene_ids?.length && !m.dismissed}
-              <ScenesCard scenes={m.intent.scenes ?? []} onstart={()=>{m.dismissed=true;void startScenes(m.intent.scene_ids)}} />
+              <ScenesCard scenes={m.intent.scenes ?? []} onstart={()=>{m.dismissed=true;void startScenes(m.intent?.scene_ids ?? [])}} />
             {:else if !editing && (m.intent?.action === 'check_video' || m.intent?.action === 'stop_waiting') && m.intent.job_id && !m.dismissed}
               <StuckVideo
                 jobId={m.intent.job_id}
@@ -1742,7 +1763,7 @@
                   m.autoRun = false;
                   void onmutate?.();
                   void refreshChips();
-                  offerMakeAgain(check, m.intent.scene_title);
+                  offerMakeAgain(check, m.intent?.scene_title ?? '');
                 }} />
             {:else if !editing && m.intent?.action === 'switch_video_service' && m.intent.video_switch && !m.dismissed}
               <VideoSwitchCard
@@ -1758,9 +1779,9 @@
                 auto={!!m.autoRun&&autoMode}
                 onautostart={()=>m.autoRun=false}
                 intent={m.intent}
- onbriefchange={brief=>m.intent={...m.intent,creation_brief:brief,idea:brief.idea}}
+ onbriefchange={brief=>{if(m.intent)m.intent={...m.intent,creation_brief:brief,idea:brief.idea}}}
  onreference={referenceSaved}
-                options={m.options}
+                options={m.options!}
                 projectState={m.state}
                 onfocus={onguide??onfocus}
                 onran={handleRan}

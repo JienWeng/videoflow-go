@@ -13,8 +13,9 @@
   import { Label } from '$lib/components/ui/label';
   import { ArrowLeft, Save, Upload } from '@lucide/svelte';
   import { toast } from 'svelte-sonner';
+  import type { Character } from '$lib/api-types';
   let { characterId }: { characterId: string } = $props();
-  let character: any = $state(null),
+  let character = $state<Character | null>(null),
     loading = $state(true),
     error = $state(''),
     busy = $state(''),
@@ -32,7 +33,7 @@
   });
   const dirty = $derived(!!character && JSON.stringify(form) !== baseline);
   protectDraft(() => dirty);
-  function populate(c: any) {
+  function populate(c: Character) {
     character = c;
     form = {
       name: c.name ?? '',
@@ -49,7 +50,7 @@
     loading = true;
     error = '';
     try {
-      populate(await get(`/characters/${encodeURIComponent(characterId)}`));
+      populate(await get<Character>(`/characters/${encodeURIComponent(characterId)}`));
     } catch (e) {
       error = errorMessage(e);
     } finally {
@@ -69,7 +70,7 @@
           .map(s => s.trim())
           .filter(Boolean);
       populate(
-        await patch(`/characters/${encodeURIComponent(characterId)}`, {
+        await patch<Character>(`/characters/${encodeURIComponent(characterId)}`, {
           name: form.name.trim(),
           description: form.description,
           appearance: form.appearance,
@@ -88,12 +89,12 @@
   }
   async function generateBible() {
     if (busy || dirty) return;
-    const notes = bibleNotes.trim() || character.description || '';
+    const notes = bibleNotes.trim() || character?.description || '';
     busy = 'bible';
     error = '';
     try {
       await post(`/characters/${encodeURIComponent(characterId)}/bible`, { notes });
-      populate(await get(`/characters/${encodeURIComponent(characterId)}`));
+      populate(await get<Character>(`/characters/${encodeURIComponent(characterId)}`));
       toast.success('Character bible updated.');
     } catch (e) {
       error = errorMessage(e);
@@ -200,7 +201,7 @@
             variant="outline"
             disabled={!!busy||!dirty}
             onclick={() => {
-              if (window.confirm('Discard your character edits?')) populate(character);
+              if (character && window.confirm('Discard your character edits?')) populate(character);
             }}>Discard changes</Button>{#if dirty}<span role="status" class="text-xs text-muted-foreground">Unsaved changes</span>{/if}</div>
         </form>
       </section>

@@ -11,6 +11,7 @@
   import { mediaKind, typeLabel, assetReadiness, latestAssetVersions } from './catalog.mjs';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
   import { Ellipsis, LayoutGrid, List } from '@lucide/svelte';
+  import type { Asset, AssetUsage, Character, Scene, StyleGuide } from '$lib/api-types';
   let readinessFilter = $state(''),
     latestOnly = $state(false);
   let kindFilter = $state(''),
@@ -47,9 +48,9 @@
   }
   let reviewBusy = $state(false);
   let reviewScene = $state('');
-  let regenerateTarget: any = $state(null),
+  let regenerateTarget = $state<Asset | null>(null),
     regenerating = $state('');
-  const versionGroup = (asset: any) => asset.metadata_json?.variant_group_id ?? asset.id;
+  const versionGroup = (asset: Asset) => asset.metadata_json?.variant_group_id ?? asset.id;
   async function regenerateAsset() {
     const source = regenerateTarget;
     if (!source || regenerating) return;
@@ -82,21 +83,21 @@
       }
     }
   }
-  function requestRegeneration(asset: any) {
+  function requestRegeneration(asset: Asset) {
     if (detail && assetDetailsDirty()) {
       toast.error('Save asset details before generating a version.');
       return;
     }
     regenerateTarget = asset;
   }
-  let libraryScenes: any[] = $state([]),
-    usage: Record<string, any> = $state({}),
+  let libraryScenes: Scene[] = $state([]),
+    usage: Record<string, AssetUsage> = $state({}),
     usageError: Record<string, string> = $state({});
   let usageAlive = true;
   onDestroy(() => (usageAlive = false));
   async function loadUsage(id: string) {
     try {
-      const result = await get(`/assets/${id}/usage`);
+      const result = await get<AssetUsage | null>(`/assets/${id}/usage`);
       if (!usageAlive) return;
       if (!Array.isArray(result?.uses)) throw Error('Usage information is unavailable. Reload before deleting.');
       usage[id] = result;
@@ -105,7 +106,7 @@
       if (usageAlive) usageError[id] = String(e);
     }
   }
-  function prepareDelete(asset: any) {
+  function prepareDelete(asset: Asset) {
     deleteTarget = asset;
     void loadUsage(asset.id);
   }
@@ -120,8 +121,8 @@
     if (!detail) return;
     reviewBusy = true;
     try {
-      const updated = await post(`/assets/${detail.id}/review`, { approved, expected_updated_at: detail.updated_at });
-      assets = assets.map((a: any) => (a.id === updated.id ? updated : a));
+      const updated = await post<Asset>(`/assets/${detail.id}/review`, { approved, expected_updated_at: detail.updated_at });
+      assets = assets.map(a => (a.id === updated.id ? updated : a));
       detail = updated;
       toast.success(approved ? 'Image available for reuse' : 'Image excluded from generation');
     } catch (e) {
@@ -136,7 +137,7 @@
     if (detail && assetDetailsDirty() && !window.confirm('Discard unsaved identity changes?')) return;
     detail = null;
   }
-  function openDetail(asset: any) {
+  function openDetail(asset: Asset) {
     if (detail && detail.id !== asset.id && assetDetailsDirty() && !window.confirm('Discard unsaved identity changes?'))
       return;
     if (detail?.id !== asset.id) detailedView = false;
@@ -159,13 +160,13 @@
         if (traits[row.name.trim()]) throw new Error('Trait names must be unique');
         traits[row.name.trim()] = row.value.trim();
       }
-      const updated = await patch(`/assets/${detail.id}`, {
+      const updated = await patch<Asset>(`/assets/${detail.id}`, {
         expected_updated_at: detail.updated_at,
         name: assetNameDraft,
         description: assetDescriptionDraft,
         locked_traits: traits
       });
-      assets = assets.map((a: any) => (a.id === updated.id ? updated : a));
+      assets = assets.map(a => (a.id === updated.id ? updated : a));
       detail = updated;
       assetNameDraft = updated.name;
       assetDescriptionDraft = updated.description ?? '';
@@ -201,8 +202,8 @@
 
   const isAudio = (path?: string | null) => !!path && /\.(mp3|m4a|aac|wav|ogg|flac|opus)$/i.test(path);
 
-  let assets: any[] = $state([]);
-  let characters: any[] = $state([]);
+  let assets: Asset[] = $state([]);
+  let characters: Character[] = $state([]);
   let error = $state('');
   let busy = $state(false);
   let search = $state('');
@@ -236,38 +237,38 @@
     );
   }
   protectDraft(() => hasDraft() && !createOpen);
-  let style: any = $state(null);
+  let style = $state<StyleGuide | null>(null);
   let styleLoaded = $state(false);
   let styleEditing = $state(false); // "Create manually" with no row yet
   let styleBusy = $state('');
-  let styleSource: any = $state(null);
-  function deriveStyleFrom(asset: any) {
+  let styleSource = $state<Asset | null>(null);
+  function deriveStyleFrom(asset: Asset) {
     styleSource = asset;
     reingestOpen = true;
   }
   let styleForm = $state({ style_prompt: '', palette: '', lighting: '', audience: '', tone: '' });
   let reingestOpen = $state(false);
-  let deleteTarget: any = $state(null);
+  let deleteTarget = $state<Asset | null>(null);
 
   // --- lightbox / detail ---
-  let detail: any = $state(null);
+  let detail = $state<Asset | null>(null);
   let detailedView = $state(false);
 
   // --- describe with AI ---
-  let describeTarget: any = $state(null);
+  let describeTarget = $state<Asset | null>(null);
   let describeText = $state('');
   let describeBusy = $state(false);
 
   async function loadTypes() {
     try {
-      const r = await get('/assets/types');
+      const r = await get<{ types?: string[] } | null>('/assets/types');
       if (Array.isArray(r?.types) && r.types.length) canonicalTypes = r.types;
     } catch {
       /* keep the built-in fallback */
     }
   }
 
-  function seedStyleForm(s: any) {
+  function seedStyleForm(s: Partial<StyleGuide> | null) {
     styleForm = {
       style_prompt: s?.style_prompt ?? '',
       palette: s?.palette ?? '',
@@ -280,7 +281,7 @@
 
   async function loadStyle() {
     try {
-      style = await get('/style');
+      style = await get<StyleGuide | null>('/style');
       if (style) seedStyleForm(style);
     } catch (e) {
       toast.error(errorMessage(e));
@@ -297,7 +298,7 @@
   async function saveStyle() {
     styleBusy = 'save';
     try {
-      style = await patch('/style', styleForm);
+      style = await patch<StyleGuide>('/style', styleForm);
       styleBaseline = JSON.stringify(styleForm);
       styleEditing = false;
       toast.success('Style saved.');
@@ -313,7 +314,7 @@
     if (!a) return;
     busy = true;
     try {
-      const r = await del(`/assets/${a.id}`);
+      const r = await del<{ detached_from: number }>(`/assets/${a.id}`);
       deleteTarget = null;
       if (detail?.id === a.id) detail = null;
       toast.success(`Asset deleted (detached from ${r.detached_from} place${r.detached_from === 1 ? '' : 's'}).`);
@@ -326,7 +327,7 @@
   }
 
   // ---- describe with AI (structures uploader-provided text into metadata) ----
-  function openDescribe(asset: any) {
+  function openDescribe(asset: Asset) {
     describeTarget = asset;
     describeText = asset.description ?? '';
   }
@@ -341,7 +342,7 @@
     }
     describeBusy = true;
     try {
-      const updated = await post(`/assets/${a.id}/recognise`, { description: text });
+      const updated = await post<Asset>(`/assets/${a.id}/recognise`, { description: text });
       describeTarget = null;
       if (detail?.id === a.id) detail = updated;
       toast.success('Asset described — name, type and tags updated.');
@@ -379,9 +380,9 @@
     const sequence = ++loadSequence;
     try {
       const [nextAssets, nextCharacters, nextScenes] = await Promise.all([
-        get('/assets'),
-        get('/characters'),
-        get('/scenes')
+        get<Asset[]>('/assets'),
+        get<Character[]>('/characters'),
+        get<Scene[]>('/scenes')
       ]);
       if (sequence !== loadSequence) return;
       assets = nextAssets;
@@ -399,7 +400,7 @@
         reviewScene = params.get('scene_id') ?? '';
         const id = params.get('asset_id');
         if (id) {
-          const asset = assets.find((a: any) => a.id === id);
+          const asset = assets.find(a => a.id === id);
           if (asset) openDetail(asset);
         }
       })
@@ -424,7 +425,7 @@
       for (const f of Array.from(files)) form.append('file', f);
       if (assetType) form.append('asset_type', assetType);
       if (characterId) form.append('character_id', characterId);
-      const r = await upload('/assets/upload', form);
+      const r = await upload<Asset | Asset[]>('/assets/upload', form);
       const n = Array.isArray(r) ? r.length : 1;
       files = null;
       assetType = '';
@@ -463,11 +464,11 @@
       ...(scene?.asset_ids_json ?? []),
       ...(scene?.scene_json?.story_asset_ids ?? []),
       ...(scene?.character_ids_json ?? []).flatMap(
-        (id: string) => characters.find(c => c.id === id)?.reference_asset_ids_json ?? []
+        id => characters.find(c => c.id === id)?.reference_asset_ids_json ?? []
       )
     ]);
     let out = reviewScene
-      ? assets.filter((a: any) => associated.has(a.id) || a.metadata_json?.scene_id === reviewScene)
+      ? assets.filter(a => associated.has(a.id) || a.metadata_json?.scene_id === reviewScene)
       : assets;
     if (latestOnly) out = latestAssetVersions(out);
     if (readinessFilter) out = out.filter(a => assetReadiness(a) === readinessFilter);
@@ -686,8 +687,8 @@
         {#if asset.metadata_json?.consistency_review||asset.tags_json?.length}<div
           class="mt-3 flex flex-wrap gap-1">{#if asset.metadata_json?.consistency_review}<Badge
           variant="outline">{asset.metadata_json.consistency_review==='rejected'?'Excluded':'Ready to use'}</Badge>{/if}{#each (asset.tags_json??[]).slice(0,3) as tag}<Badge
-          variant="secondary">{tag}</Badge>{/each}{#if asset.tags_json?.length>3}<span
-          class="px-1 text-xs text-muted-foreground">+{asset.tags_json.length-3}</span>{/if}</div>{/if}
+          variant="secondary">{tag}</Badge>{/each}{#if (asset.tags_json?.length ?? 0)>3}<span
+          class="px-1 text-xs text-muted-foreground">+{(asset.tags_json?.length ?? 0)-3}</span>{/if}</div>{/if}
         </div>
       </CardContent></Card>
     {/each}
@@ -775,7 +776,7 @@
         aria-pressed={detailedView}
         onclick={()=>detailedView=true}>Details{assetDetailsDirty()?' · Unsaved':''}</Button></div>
     </Dialog.Header>
-    {#if detail}
+    {#if detail}{@const current = detail}
       <div class="grid items-start gap-6 md:grid-cols-[minmax(0,1fr)_280px]">
         <div class="flex items-center justify-center bg-muted rounded-md h-[45dvh] md:h-[60dvh] overflow-hidden">
           {#if mediaKind(detail)==='video'}
@@ -802,12 +803,12 @@
    variant="outline"
    size="sm"
    disabled={reviewBusy||identityBusy||assetDetailsDirty()}
-   onclick={()=>reviewReference(detail.metadata_json.consistency_review==='rejected')}>{detail.metadata_json.consistency_review==='rejected'?'Allow reuse':'Exclude from generation'}</Button>{/if}
+   onclick={()=>reviewReference(current.metadata_json?.consistency_review==='rejected')}>{current.metadata_json?.consistency_review==='rejected'?'Allow reuse':'Exclude from generation'}</Button>{/if}
  {#if detailedView}
  {#if ['prop','location'].includes(detail.type)}<section aria-label="Asset versions"><h3
    class="font-semibold">Versions</h3><p
    class="mt-2 text-xs text-muted-foreground">Generate a candidate with the same identity locks. Scenes keep their selected version until you explicitly replace it.</p><ul
-   class="mt-2 space-y-1">{#each assets.filter(a=>versionGroup(a)===versionGroup(detail)) as version}<li><button
+   class="mt-2 space-y-1">{#each assets.filter(a=>versionGroup(a)===versionGroup(current)) as version}<li><button
    type="button"
    class="min-h-11 text-left underline underline-offset-4"
    disabled={version.id===detail.id}
@@ -815,13 +816,13 @@
      variant="outline"
      size="sm"
      disabled={!!regenerating||identityBusy||reviewBusy}
-     onclick={()=>requestRegeneration(detail)}>{regenerating===detail.id?'Generating version…':'Generate new version'}</Button></section>{/if}
+     onclick={()=>requestRegeneration(current)}>{regenerating===detail.id?'Generating version…':'Generate new version'}</Button></section>{/if}
  {/if}
  <details><summary class="cursor-pointer py-2 font-semibold">Used in this project</summary><section
    aria-label="Asset usage">{#if usageError[detail.id]}<p class="mt-2 text-muted-foreground">{usageError[detail.id]}</p><Button
    variant="outline"
    size="sm"
-   onclick={()=>loadUsage(detail.id)}>Reload usage</Button>{:else if !usage[detail.id]}<p
+   onclick={()=>loadUsage(current.id)}>Reload usage</Button>{:else if !usage[detail.id]}<p
      class="mt-2 text-muted-foreground"
      role="status">Checking usage…</p>{:else if usage[detail.id].uses.length}<ul
      class="mt-2 space-y-2">{#each usage[detail.id].uses as use}<li>{#if use.kind==='scene'}<a
@@ -864,12 +865,12 @@
    disabled={identityBusy||reviewBusy||!assetDetailsDirty()}
    onclick={saveIdentity}>{identityBusy?'Saving…':'Save asset details'}</Button></section>
 
-          {#each nodeTools('asset',detail.id,detail).filter((tool:any)=>tool.href.startsWith('/?view=edit')) as tool}<Button
+          {#each nodeTools('asset',detail.id,detail).filter(tool=>tool.href.startsWith('/?view=edit')) as tool}<Button
             variant="outline" href={tool.href}>{tool.label}</Button>{/each}
           {#if detail.character_id}
             <div>
               <div class="text-muted-foreground mb-0.5">Character</div>
-              <div>{characters.find((c) => c.id === detail.character_id)?.name ?? detail.character_id}</div>
+              <div>{characters.find((c) => c.id === current.character_id)?.name ?? current.character_id}</div>
             </div>
           {/if}
           {#if detail.tags_json?.length}
@@ -900,16 +901,16 @@
           {/if}
           </details>
           <div class="flex flex-wrap gap-1 pt-1">
-            <Button variant="outline" size="sm" onclick={() => openDescribe(detail)}>
+            <Button variant="outline" size="sm" onclick={() => openDescribe(current)}>
               <Sparkles class="size-3 mr-1" />Describe with AI
             </Button>
             {#if isImage(detail.file_path)}
-              <Button variant="outline" size="sm" disabled={!!styleBusy} onclick={() => deriveStyleFrom(detail)}>
+              <Button variant="outline" size="sm" disabled={!!styleBusy} onclick={() => deriveStyleFrom(current)}>
                 <Pin class="size-3 mr-1" />Derive visual style
               </Button>
             {/if}
             <Button variant="ghost" size="sm" class="text-destructive hover:text-destructive"
-              onclick={() => prepareDelete(detail)}>
+              onclick={() => prepareDelete(current)}>
               <Trash2 class="size-3 mr-1" />Delete
             </Button>
           </div>

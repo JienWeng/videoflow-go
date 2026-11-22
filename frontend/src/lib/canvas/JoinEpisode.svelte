@@ -6,6 +6,8 @@
   import { get, post } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
   import { Combine } from '@lucide/svelte';
+  import type { OpStarted } from '$lib/api-types';
+  import type { Op } from '$lib/ops';
 
   let { scriptId, episode = '', again = false, onjoined }: { scriptId: string; episode?: string; again?: boolean; onjoined?: () => void } = $props();
   let busy = $state(false), stage = $state(''), problem = $state(''), done = $state(false), alive = true;
@@ -14,9 +16,9 @@
   async function join() {
     busy = true; problem = ''; done = false; stage = 'Starting…';
     try {
-      const started = await post('/autopilot/finish?background=true', { script_id: scriptId, join_only: true });
+      const started = await post<OpStarted>('/autopilot/finish?background=true', { script_id: scriptId, join_only: true });
       for (let i = 0; alive && i < 600; i++) {
-        const op = await get('/ops/' + encodeURIComponent(started.op_id));
+        const op = await get<Op>('/ops/' + encodeURIComponent(started.op_id));
         if (op.status === 'succeeded') { done = true; onjoined?.(); return; }
         if (op.status !== 'running') { problem = op.error ?? 'The episode could not be joined.'; return; }
         stage = (op.result_json?.stage ?? 'Working') + '…';

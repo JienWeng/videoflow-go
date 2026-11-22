@@ -5,12 +5,15 @@
  */
 import { get } from '$lib/api';
 import { subscribeJobs } from '$lib/sse';
+import type { Op } from '$lib/ops';
+import type { RenderJob } from '$lib/api-types';
 
 export type ActivityItem = {
   id: string;
   /** 'render' for render jobs, otherwise the op kind (storyboard | assets | shots | caption | style_ingest). */
   kind: string;
-  status: 'pending' | 'running' | 'succeeded' | 'failed';
+  /** pending | running | succeeded | failed, or another backend state such as reconciliation_required. */
+  status: string;
   scene_id?: string | null;
   output_id?: string | null;
   error?: string | null;
@@ -27,8 +30,8 @@ let unsubscribe: (() => void) | null = null;
 async function refresh(): Promise<void> {
   try {
     const [ops, jobs] = await Promise.all([
-      get(`/ops?limit=${MAX_ITEMS}`) as Promise<any[]>,
-      get('/render-jobs') as Promise<any[]>
+      get<(Op & { created_at: string })[]>(`/ops?limit=${MAX_ITEMS}`),
+      get<RenderJob[]>('/render-jobs')
     ]);
     const merged: ActivityItem[] = [
       ...ops.map((o) => ({

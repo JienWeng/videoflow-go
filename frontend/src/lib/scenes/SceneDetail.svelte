@@ -9,6 +9,8 @@
   import SceneStyle from './SceneStyle.svelte';
   import SceneReferences from './SceneReferences.svelte';
   import { sceneStages } from './stages.mjs';
+  import type { SceneRenderRequest, SceneStep } from './types';
+  import type { Asset, AssetPlan, Character, SceneProgress, SceneReferenceState, Scene, Shot, StyleGuide } from '$lib/api-types';
   import { mediaUrl } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
   import { Badge } from '$lib/components/ui/badge';
@@ -43,7 +45,7 @@
     busy,
     opBusy,
     sceneDirty = false,
-    shotDirty = (_sh: any) => false,
+    shotDirty = (_sh: Shot) => false,
     storyboard = null,
     preview = null,
     shots = [],
@@ -77,25 +79,65 @@
     onDelete,
     onLightbox,
     onReferencesChanged
-  }: any = $props();
+  }: {
+    s: Scene;
+    steps: SceneStep[];
+    characters: Character[];
+    style: StyleGuide | null;
+    busy: Record<string, boolean>;
+    opBusy: Record<string, boolean>;
+    sceneDirty?: boolean;
+    shotDirty?: (shot: Shot) => boolean;
+    storyboard?: Asset | null;
+    preview?: Asset | null;
+    shots?: Shot[];
+    castSelection: Record<string, string[]>;
+    sceneRefine: Record<string, string>;
+    shotRefine: Record<string, string>;
+    autoProps: Record<string, boolean>;
+    assetInstr: Record<string, string>;
+    assetMax: Record<string, number>;
+    generatedAssets: Record<string, Asset[]>;
+    assetPlans: Record<string, AssetPlan | null>;
+    planSelected: Record<string, boolean[]>;
+    onExpand: (s: Scene) => void;
+    onSave: (s: Scene) => void;
+    onRefineScene: (s: Scene) => void;
+    onToggleCast: (sceneId: string, characterId: string) => void;
+    onGenerateShots: (s: Scene) => void;
+    onAddShot: (s: Scene) => void;
+    onMoveShot: (s: Scene, shot: Shot, dir: -1 | 1) => void;
+    onSaveShot: (shot: Shot) => void;
+    onRefineShot: (s: Scene, shot: Shot) => void;
+    onDeleteShot: (s: Scene, shot: Shot) => void;
+    onSuggestAssets: (s: Scene) => void;
+    onGenerateAssets: (s: Scene) => void;
+    onGenerateSelectedAssets: (s: Scene) => void;
+    onGenerateStoryboard: (s: Scene) => void;
+    onRenderScene: (request: SceneRenderRequest) => void;
+    progress?: SceneProgress | null;
+    onDelete: (s: Scene) => void;
+    onLightbox: (asset: Asset | null) => void;
+    onReferencesChanged: () => Promise<void>;
+  } = $props();
 
   // Stage disclosure follows saved work; generation controls live inside each stage.
-  let referenceInfo: any = $state(null);
+  let referenceInfo = $state<SceneReferenceState | null>(null);
   // The scene's clips use its connected pictures: it has, and needs, no storyboard.
   const usesReferences = $derived(!!progress?.reference_mode);
   let references: SceneReferences | undefined;
   let scenePanel = $state<HTMLElement>();
   const currentStoryboard = $derived(
-    referenceInfo?.storyboards?.find((a: any) => a.id === referenceInfo.active_storyboard_id) ?? storyboard
+    referenceInfo?.storyboards?.find(a => a.id === referenceInfo?.active_storyboard_id) ?? storyboard
   );
   let showAll = $state(false);
   let opened = $state<Record<string, boolean>>({});
   const sections = $derived(
     sceneStages({
-      expanded: !!steps.find((st: any) => st.key === 'expand')?.done,
+      expanded: !!steps.find(st => st.key === 'expand')?.done,
       shots: shots.length,
       storyboard: !!storyboard,
-      rendered: !!steps.find((st: any) => st.key === 'render')?.done,
+      rendered: !!steps.find(st => st.key === 'render')?.done,
       assets: (generatedAssets[s.id] ?? []).length,
       all: showAll,
       references: usesReferences
@@ -106,7 +148,7 @@
   let focusedShot = '';
   $effect(() => {
     const id = page.url.searchParams.get('shot_id');
-    if (id && shots.some((shot: any) => shot.id === id) && focusedShot !== id) {
+    if (id && shots.some(shot => shot.id === id) && focusedShot !== id) {
       focusedShot = id;
       opened = { ...opened, shots: true };
       void tick().then(() => {
@@ -137,8 +179,8 @@
   }
   const remember = (key: string, event: Event) => (opened[key] = (event.currentTarget as HTMLDetailsElement).open);
 
-  const firstNotDone = $derived(steps.findIndex((st: any) => !st.done));
-  const laterDone = $derived(firstNotDone !== -1 && steps.some((st: any, i: number) => i > firstNotDone && st.done));
+  const firstNotDone = $derived(steps.findIndex(st => !st.done));
+  const laterDone = $derived(firstNotDone !== -1 && steps.some((st, i) => i > firstNotDone && st.done));
   const currentIdx = $derived(laterDone ? -1 : firstNotDone);
   const current = $derived(currentIdx === -1 ? null : steps[currentIdx]);
   const nextStage = $derived(
@@ -160,7 +202,7 @@
         class="group relative size-16 shrink-0 overflow-hidden rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-ring"
         title="View storyboard" onclick={() => onLightbox(currentStoryboard)}>
         <img class="size-full object-cover transition-transform group-hover:scale-105"
-          src={mediaUrl(currentStoryboard.file_path)} alt="Storyboard" loading="lazy" />
+          src={mediaUrl(currentStoryboard?.file_path)} alt="Storyboard" loading="lazy" />
         <span class="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-colors">
           <Maximize2 class="size-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
         </span>
@@ -312,7 +354,7 @@
         <Wand2
           class="size-3 mr-1" />{busy[`expand-${s.id}`]
               ? 'Expanding…'
-              : steps.find((st: any) => st.key === 'expand')?.done
+              : steps.find(st => st.key === 'expand')?.done
                 ? 'Re-expand scene (AI)'
                 : 'Expand scene (AI)'}
       </Button>
@@ -433,7 +475,7 @@
           </Table>
         </div>
         <div class="text-xs text-muted-foreground mt-1">
-          Shot durations sum to {shots.reduce((t: number, sh: any) => t + (sh.duration || 0), 0)}s
+          Shot durations sum to {shots.reduce((t, sh) => t + (sh.duration || 0), 0)}s
           (3–15s per render).
         </div>
       {:else}
@@ -470,8 +512,8 @@
       </div>
       {#if assetPlans[s.id]?.assets?.length}
         {@const plan = assetPlans[s.id]!}
-        {@const selectedItems = plan.assets.filter((_: any, i: number) => planSelected[s.id]?.[i])}
-        {@const reuseCount = selectedItems.filter((a: any) => a.reuse).length}
+        {@const selectedItems = plan.assets.filter((_, i) => planSelected[s.id]?.[i])}
+        {@const reuseCount = selectedItems.filter(a => a.reuse).length}
         {@const genCount = selectedItems.length - reuseCount}
         <div class="mt-2 rounded-md border border-border p-2 space-y-2">
           <div class="text-xs font-medium">Suggested assets</div>
@@ -490,7 +532,7 @@
                   <span class="block text-muted-foreground mt-0.5">{a.description}</span>
                   {#if a.shot_orders?.length}
                     <span class="block text-muted-foreground mt-0.5">
-                      shots {a.shot_orders.map((o: number) => `#${o + 1}`).join(', ')}
+                      shots {a.shot_orders.map(o => `#${o + 1}`).join(', ')}
                     </span>
                   {/if}
                 </span>
@@ -544,7 +586,7 @@
         <button type="button"
           class="group relative block max-w-[420px] w-full overflow-hidden rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-ring"
           title="Click to enlarge" onclick={() => onLightbox(currentStoryboard)}>
-          <img class="w-full transition-transform group-hover:scale-[1.02]" src={mediaUrl(currentStoryboard.file_path)} alt="Storyboard" loading="lazy" />
+          <img class="w-full transition-transform group-hover:scale-[1.02]" src={mediaUrl(currentStoryboard?.file_path)} alt="Storyboard" loading="lazy" />
           <span
             class="absolute right-2 top-2 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity">
             <Maximize2 class="size-3" />Enlarge
@@ -570,7 +612,7 @@
       !shots.length ||
       busy[`render-${s.id}`] ||
       sceneDirty ||
-      shots.some((shot: any) => shotDirty(shot))}
+      shots.some(shot => shotDirty(shot))}
       onclick={() => {
         const request = {
           ...s,

@@ -29,6 +29,8 @@
     Crosshair,
     CornerDownLeft
   } from '@lucide/svelte';
+  import type { ApiGraph } from '$lib/canvas/transform';
+  import type { Project } from '$lib/api-types';
 
   let {
     open = $bindable(false),
@@ -47,7 +49,7 @@
     label: string;
     hint?: string;
     group: string;
-    icon: any;
+    icon: typeof Search;
     /** Either navigate to a route, focus a canvas node, or run a callback. */
     href?: string;
     focus?: string;
@@ -60,15 +62,15 @@
 
   // Project-scoped data, lazily (re)loaded each time the palette opens so the
   // results never go stale after a generation/render.
-  let graph = $state<any>(null);
-  let projects = $state<any[]>([]);
+  let graph = $state<ApiGraph | null>(null);
+  let projects = $state<Project[]>([]);
   let loaded = $state(false);
 
   async function load() {
     loaded = false;
     const [g, p] = await Promise.all([
-      get('/graph').catch(() => null),
-      get('/projects').catch(() => [])
+      get<ApiGraph>('/graph').catch(() => null),
+      get<Project[] | null>('/projects').catch((): Project[] => [])
     ]);
     graph = g;
     projects = p ?? [];
@@ -152,7 +154,7 @@
     out.push({id:'nav-composition',label:'Edit video',hint:'timeline, captions, music and export',group:'Go to',icon:Film,href:'/?view=edit'});
 
     // --- Entities from the graph ----------------------------------------
-    const nodes: any[] = graph?.nodes ?? [];
+    const nodes = graph?.nodes ?? [];
     for (const n of nodes) {
       if (n.type === 'scene') {
         out.push({
@@ -231,7 +233,7 @@
     if (!q) return items;
     // Best matches first: a word in the title beats a word in the hint beats loose letters.
     const needle = q.toLowerCase();
-    const score = (it: any): number => {
+    const score = (it: Item): number => {
       const label = String(it.label).toLowerCase(), hint = String(it.hint ?? '').toLowerCase();
       if (label.startsWith(needle)) return 5;
       if (label.split(/[\s·\-–—/]+/).some((w) => w.startsWith(needle))) return 4;

@@ -2,6 +2,13 @@
   import { onMount } from 'svelte';
   import { get, post, put } from '$lib/api';
   import { layouts, readLayout, useLayout } from './layouts.mjs';
+  import type { Project } from '$lib/api-types';
+  import type { CompositionManifest, CompositionSource, Cue } from '$lib/composition/types';
+  type Layout = (typeof layouts)[number];
+  /** Project brand (internal/api/studio_brand.go). */
+  type Brand = { name: string; primary: string; text: string; font: string; logo_asset_id: string; revision: string };
+  /** POST /compositions/localize, plus the draft it was made from. */
+  type Translation = { captions: Cue[]; language: string; execution?: string; audio_changed?: boolean; base: string };
   let {
     draft,
     assets,
@@ -10,18 +17,18 @@
     onbusy,
     onexport
   }: {
-    draft: any;
-    assets: any[];
+    draft: CompositionManifest;
+    assets: CompositionSource[];
     disabled?: boolean;
-    onchange: (draft: any) => void;
+    onchange: (draft: CompositionManifest) => void;
     onbusy: (busy: boolean) => void;
     onexport: () => Promise<void>;
   } = $props();
   let error = $state(''),
     notice = $state(''),
     language = $state(''),
-    translation = $state<any>(null),
-    brand = $state<any>({
+    translation = $state<Translation | null>(null),
+    brand = $state<Brand>({
       name: '',
       primary: '#111827',
       text: '#FFFFFF',
@@ -29,18 +36,18 @@
       logo_asset_id: '',
       revision: ''
     }),
-    custom = $state<any[]>([]),
+    custom = $state<Layout[]>([]),
     layoutIndex = $state(0),
     storage = '';
-  const clone = (value: any) => JSON.parse(JSON.stringify(value));
+  const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
   onMount(() => {
     void (async () => {
       try {
-        const project = await get('/projects/active');
+        const project = await get<Project>('/projects/active');
         storage = 'videoflow.layouts.' + project.id;
-        brand = await get('/studio/brand');
+        brand = await get<Brand>('/studio/brand');
         try {
-          custom = JSON.parse(localStorage.getItem(storage) || '[]').map((p: any) =>
+          custom = JSON.parse(localStorage.getItem(storage) || '[]').map((p: unknown) =>
             readLayout({ format: 'videoflow-layout', version: 1, layout: p })
           );
         } catch {
@@ -51,7 +58,7 @@
       }
     })();
   });
-  function change(next: any) {
+  function change(next: CompositionManifest) {
     onchange(next);
     translation = null;
   }
@@ -60,7 +67,7 @@
     error = '';
     const base = JSON.stringify(draft);
     try {
-      const result = await post('/compositions/localize', { captions: draft.captions, language });
+      const result = await post<Omit<Translation, 'base'>>('/compositions/localize', { captions: draft.captions, language });
       translation = { ...result, base };
       notice = 'Translation is ready to edit. Spoken audio has not changed.';
     } catch (e) {
@@ -70,7 +77,7 @@
     }
   }
   function applyTranslation() {
-    if (JSON.stringify(draft) !== translation.base) {
+    if (!translation || JSON.stringify(draft) !== translation.base) {
       error = 'Captions changed after translation. Translate the updated version.';
       return;
     }
@@ -89,7 +96,7 @@
     onbusy(true);
     error = '';
     try {
-      brand = await put('/studio/brand', brand);
+      brand = await put<Brand>('/studio/brand', brand);
       notice = 'Project brand saved.';
     } catch (e) {
       error = String(e);
@@ -100,7 +107,7 @@
   function applyBrand() {
     let next = {
       ...draft,
-      texts: (draft.texts ?? []).map((t: any) => ({
+      texts: (draft.texts ?? []).map(t => ({
         ...t,
         color: brand.text,
         background: brand.primary,
@@ -118,7 +125,7 @@
         has_audio: false,
         overlay: { x: 80, y: 5, width: 15, height: 15 }
       };
-      next.clips = [...draft.clips.filter((c: any) => c.id !== 'brand-logo'), logo];
+      next.clips = [...draft.clips.filter(c => c.id !== 'brand-logo'), logo];
     }
     change(next);
     notice = 'Brand applied to title layers and logo. Source media stays unchanged.';
@@ -173,7 +180,7 @@
    class="grid gap-1 text-xs">{cue.start.toFixed(2)}–{cue.end.toFixed(2)}s<textarea bind:value={cue.text} rows="2"></textarea></label>{/each}<button
    disabled={disabled} onclick={applyTranslation}>Use translated captions</button></div>{/if}
  {#if draft.caption_variants?.length}<label class="grid gap-1 text-sm">Saved language version<select
-   onchange={e=>{const variant=draft.caption_variants[Number(e.currentTarget.value)];change({...draft,captions:clone(variant.captions)})}}><option
+   onchange={e=>{const variant=draft.caption_variants![Number(e.currentTarget.value)];change({...draft,captions:clone(variant.captions)})}}><option
    value="">Choose a saved caption version…</option>{#each draft.caption_variants as variant,i}<option
    value={i}>{variant.language}</option>{/each}</select></label>{/if}</div></details>
  <details><summary class="min-h-11 cursor-pointer py-3 text-sm font-medium">Layouts & brand</summary><div
@@ -208,8 +215,8 @@
    oninput={e =>
      change({
        ...draft,
-       texts: draft.texts.map((t: any, j: number) => (j === i ? { ...t, text: e.currentTarget.value } : t))
-     })}></textarea></label><div class="grid grid-cols-2 gap-3">{#each ['start','end'] as key}<label
+       texts: (draft.texts ?? []).map((t, j) => (j === i ? { ...t, text: e.currentTarget.value } : t))
+     })}></textarea></label><div class="grid grid-cols-2 gap-3">{#each (['start','end'] as const) as key}<label
        class="grid gap-1 text-sm">{key==='start'?'Starts':'Ends'} (s)<input
    type="number"
    min="0"
@@ -219,9 +226,9 @@
    oninput={e =>
      change({
        ...draft,
-       texts: draft.texts.map((t: any, j: number) => (j === i ? { ...t, [key]: Number(e.currentTarget.value) } : t))
+       texts: (draft.texts ?? []).map((t, j) => (j === i ? { ...t, [key]: Number(e.currentTarget.value) } : t))
      })}/></label>{/each}</div><button
-       onclick={()=>change({...draft,texts:draft.texts.filter((_:any,j:number)=>j!==i)})}>Remove title</button></div>{/each}</details>{/if}
+       onclick={()=>change({...draft,texts:(draft.texts ?? []).filter((_,j)=>j!==i)})}>Remove title</button></div>{/each}</details>{/if}
  {#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}{#if notice}<p role="status" class="text-sm">{notice}</p>{/if}
 </section>
 <style>

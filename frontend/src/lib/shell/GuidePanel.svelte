@@ -7,16 +7,17 @@
   import { palette } from './palette.svelte';
   import { guide } from './guide.svelte';
   import { Check, Circle, ArrowRight, Compass, MessageCircleQuestion } from '@lucide/svelte';
+  import type { DirectorStatus, ProjectProgress } from '$lib/api-types';
 
-  let status: any = $state(null),
-    progress: any = $state(null),
+  let status = $state<DirectorStatus | null>(null),
+    progress = $state<ProjectProgress | null>(null),
     loading = $state(false);
 
   async function load() {
     loading = true;
     const [s, p] = await Promise.all([
-      get('/director/status').catch(() => null),
-      get('/production/progress').catch(() => null)
+      get<DirectorStatus>('/director/status').catch(() => null),
+      get<ProjectProgress>('/production/progress').catch(() => null)
     ]);
     status = s;
     progress = p;
@@ -26,10 +27,10 @@
     if (guide.panelOpen) void load();
   });
 
-  const connected = $derived(!!status?.engines?.some((e: any) => e.signed_in));
+  const connected = $derived(!!status?.engines?.some(e => e.signed_in));
   const scenes = $derived(progress?.total ?? 0);
   const boarded = $derived(
-    (progress?.scenes ?? []).filter((s: any) => ['ready_to_render', 'rendering', 'video_ready'].includes(s.stage)).length
+    (progress?.scenes ?? []).filter(s => ['ready_to_render', 'rendering', 'video_ready'].includes(s.stage)).length
   );
   const videos = $derived(progress?.video_ready ?? 0);
 

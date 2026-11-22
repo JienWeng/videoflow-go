@@ -6,6 +6,7 @@
   import { get, patch } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
+  import type { Project, StyleCatalog, StyleFields, StyleGuide, StylePreset } from '$lib/api-types';
 
   let {
     projectId,
@@ -18,11 +19,10 @@
     disabled?: boolean;
     onSavingChange?: (saving: boolean) => void;
   } = $props();
-  type Style = { name: string; style_prompt: string; palette: string; lighting: string; audience: string; tone: string };
-  type Preset = { id: string; name: string; description: string; style_prompt: string; guidance: Record<string, string> };
+  type Style = StyleFields;
   const empty: Style = { name: '', style_prompt: '', palette: '', lighting: '', audience: '', tone: '' };
   let form: Style = $state({ ...empty });
-  let presets: Preset[] = $state([]);
+  let presets: StylePreset[] = $state([]);
   let baseline = $state('');
   let selected = $state('');
   let loaded = $state(false);
@@ -31,8 +31,10 @@
   let message = $state('');
   let hasSavedStyle = $state(false);
   const key = $derived(`VideoFlow.projectStyleDraft.${projectId}`);
-  const clean = (value: any): Style =>
-    Object.fromEntries(Object.keys(empty).map(k => [k, typeof value?.[k] === 'string' ? value[k] : ''])) as Style;
+  const clean = (value: unknown): Style => {
+    const source = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>;
+    return Object.fromEntries(Object.keys(empty).map(k => [k, typeof source[k] === 'string' ? source[k] : ''])) as Style;
+  };
   let dirty = $derived(loaded && JSON.stringify(form) !== baseline);
   let preview = $derived(presets.find(p => p.id === selected));
 
@@ -40,7 +42,7 @@
     loaded = false;
     error = '';
     try {
-      const [style, catalog] = await Promise.all([get('/style'), get('/style-presets')]);
+      const [style, catalog] = await Promise.all([get<StyleGuide>('/style'), get<StyleCatalog>('/style-presets')]);
       if (style.project_id !== projectId)
         throw new Error('The active project changed. Reload Projects to edit its style.');
       presets = catalog.presets ?? [];
@@ -85,15 +87,15 @@
     error = '';
     message = '';
     try {
-      const projects = await get('/projects');
-      if (!projects.some((p: any) => p.id === projectId && p.is_active))
+      const projects = await get<Project[]>('/projects');
+      if (!projects.some(p => p.id === projectId && p.is_active))
         throw new Error('The active project changed. Reload Projects before saving. Your draft is kept.');
-      const current = await get('/style');
+      const current = await get<StyleGuide>('/style');
       if (current.project_id !== projectId || JSON.stringify(clean(current)) !== baseline)
         throw new Error(
           'The saved style changed. Your draft is kept. Choose “Undo changes” to load the latest saved look.'
         );
-      const result = await patch('/style', { ...form, project_id: projectId });
+      const result = await patch<StyleGuide>('/style', { ...form, project_id: projectId });
       form = clean(result);
       baseline = JSON.stringify(form);
       hasSavedStyle = true;

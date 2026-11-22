@@ -14,7 +14,8 @@
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
   import { toast } from 'svelte-sonner';
   import { Folder, FolderPlus, LayoutGrid, List, Ellipsis, Upload } from '@lucide/svelte';
-  let projects: any[] = $state([]),
+  import type { Project } from '$lib/api-types';
+  let projects: Project[] = $state([]),
     loaded = $state(false),
     error = $state(''),
     busy = $state('');
@@ -25,10 +26,10 @@
     name = $state(''),
     description = $state(''),
     createError = $state(''),
-    createdProject: any = $state(null);
-  let renameTarget: any = $state(null),
+    createdProject = $state<Project | null>(null);
+  let renameTarget = $state<Project | null>(null),
     renameValue = $state(''),
-    deleteTarget: any = $state(null);
+    deleteTarget = $state<Project | null>(null);
   let importInput: HTMLInputElement | null = $state(null);
   // Details dialog: counts and the project look (the look can only be edited on the active project).
   let detailId = $state(''),
@@ -50,8 +51,8 @@
     s && !Number.isNaN(Date.parse(s))
       ? new Date(s).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
       : '—';
-  const plural = (n: any, word: string) => (n == null ? `— ${word}s` : `${n} ${word}${n === 1 ? '' : 's'}`);
-  const countsLine = (p: any) =>
+  const plural = (n: number | null | undefined, word: string) => (n == null ? `— ${word}s` : `${n} ${word}${n === 1 ? '' : 's'}`);
+  const countsLine = (p: Project) =>
     `${plural(p.counts?.scenes, 'scene')} · ${plural(p.counts?.characters, 'character')} · ${plural(p.counts?.assets, 'image')}`;
   protectDraft(
     () =>
@@ -61,7 +62,7 @@
   async function refresh() {
     error = '';
     try {
-      const data = await get('/projects');
+      const data = await get<Project[] | null>('/projects');
       if (!Array.isArray(data)) throw Error('Project list is unavailable');
       projects = data;
     } catch (e) {
@@ -119,7 +120,7 @@
     try {
       // Retain the created ID if activation fails; retry activation rather than creating twice.
       if (!createdProject)
-        createdProject = await post('/projects', { name: name.trim(), description: description.trim() });
+        createdProject = await post<Project>('/projects', { name: name.trim(), description: description.trim() });
       await post(`/projects/${createdProject.id}/activate`);
       const id = createdProject.id;
       createOpen = false;
@@ -136,13 +137,13 @@
       busy = '';
     }
   }
-  const activate = (p: any) =>
+  const activate = (p: Project) =>
     run(`open-${p.id}`, async () => {
       await post(`/projects/${p.id}/activate`);
       await invalidateAll();
       await goto('/');
     });
-  const activateForStyle = (p: any) =>
+  const activateForStyle = (p: Project) =>
     run(`open-${p.id}`, async () => {
       await post(`/projects/${p.id}/activate`);
       window.dispatchEvent(new Event('videoflow:projects-changed'));
@@ -157,7 +158,7 @@
     if (p) void activate(p);
     else toast.error('That project is no longer available.');
   });
-  function exportProject(p: any) {
+  function exportProject(p: Project) {
     void run(`export-${p.id}`, async () => {
       const data = await get(`/projects/${p.id}/export`);
       const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
@@ -186,7 +187,7 @@
       toast.success('Project imported');
     }).finally(() => (input.value = ''));
   }
-  function startRename(p: any) {
+  function startRename(p: Project) {
     renameTarget = p;
     renameValue = p.name;
   }
@@ -199,14 +200,14 @@
     e.preventDefault();
     if (!renameValue.trim()) return;
     await run('rename', async () => {
-      await patch(`/projects/${renameTarget.id}`, { name: renameValue.trim() });
+      await patch(`/projects/${renameTarget!.id}`, { name: renameValue.trim() });
       renameTarget = null;
       await refresh();
     });
   }
 </script>
 <svelte:head><title>Projects · VideoFlow</title></svelte:head>
-{#snippet actions(p:any)}
+{#snippet actions(p: Project)}
  <DropdownMenu.Root><DropdownMenu.Trigger
    aria-label={`Actions for ${p.name}`}
    disabled={!!busy}

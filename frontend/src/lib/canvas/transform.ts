@@ -1,4 +1,5 @@
 import { MarkerType, type Node, type Edge } from '@xyflow/svelte';
+import type { GraphNodeData } from '$lib/api-types';
 
 /** Per-kind accent colors — node left borders and minimap dots share these so
  * the zoomed-out canvas still reads as structure-by-color. */
@@ -50,7 +51,7 @@ export function edgeColor(label: string | undefined): string {
 }
 
 export type ApiGraph = {
-  nodes: { id: string; type: string; label: string; data?: Record<string, any> }[];
+  nodes: { id: string; type: string; label: string; data?: GraphNodeData }[];
   edges: { source: string; target: string; label: string }[];
 };
 
@@ -71,7 +72,7 @@ export function toFlow(g: ApiGraph): { nodes: Node[]; edges: Edge[] } {
               .slice()
               .reverse()
               .map((id: string) => assets.get(id))
-              .find((a: any) => /\.(png|jpe?g|webp|gif)$/i.test(a?.data?.file_path ?? ''));
+              .find(a => /\.(png|jpe?g|webp|gif)$/i.test(a?.data?.file_path ?? ''));
             return {
               reference_preview_path: image?.data?.file_path,
               reference_review: image?.data?.consistency_review

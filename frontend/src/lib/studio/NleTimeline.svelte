@@ -1,6 +1,9 @@
 <script lang="ts">
   import { mediaUrl } from '$lib/api';
+  import type { CompositionManifest, CompositionSource } from '$lib/composition/types';
   type Track = 'clips' | 'audio' | 'captions';
+  /** A block on any track: a clip, or a caption with its length worked out. */
+  type TimelineItem = { id: string; start: number; duration: number; asset_id?: string; text?: string };
   let {
     draft,
     assets,
@@ -12,8 +15,8 @@
     ontrim,
     ondrop
   }: {
-    draft: any;
-    assets: any[];
+    draft: CompositionManifest;
+    assets: CompositionSource[];
     selected?: string;
     time?: number;
     zoom?: number;
@@ -36,10 +39,10 @@
   const width = $derived(length * zoom);
   const step = $derived(zoom >= 80 ? 1 : zoom >= 40 ? 2 : zoom >= 20 ? 5 : 10);
   const ticks = $derived(Array.from({ length: Math.floor(length / step) + 1 }, (_, i) => i * step));
-  const asset = (id: string) => assets.find(a => a.id === id);
-  const items = (track: Track) =>
-    track === 'captions' ? draft.captions.map((c: any) => ({ ...c, duration: c.end - c.start })) : draft[track];
-  const label = (track: Track, item: any) =>
+  const asset = (id: string | undefined) => assets.find(a => a.id === id);
+  const items = (track: Track): TimelineItem[] =>
+    track === 'captions' ? draft.captions.map(c => ({ ...c, duration: c.end - c.start })) : draft[track];
+  const label = (track: Track, item: TimelineItem) =>
     track === 'captions' ? item.text || 'Empty caption' : (asset(item.asset_id)?.name ?? 'Missing media');
   const fmt = (t: number) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
 
@@ -67,7 +70,7 @@
     el.addEventListener('pointerup', up);
   }
   // One gesture handler for move and both trim edges; a click without movement just selects.
-  function grab(e: PointerEvent, track: Track, item: any, edge?: 'start' | 'end') {
+  function grab(e: PointerEvent, track: Track, item: TimelineItem, edge?: 'start' | 'end') {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
@@ -105,7 +108,7 @@
     el.addEventListener('pointercancel', cancel);
   }
   // Live geometry while dragging so the block follows the pointer.
-  function geometry(item: any) {
+  function geometry(item: TimelineItem) {
     let left = item.start * zoom,
       w = Math.max(6, item.duration * zoom);
     const d = dragging;
@@ -118,7 +121,7 @@
     }
     return `left:${left}px;width:${w}px`;
   }
-  function key(e: KeyboardEvent, track: Track, item: any) {
+  function key(e: KeyboardEvent, track: Track, item: TimelineItem) {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
     e.preventDefault();
     const nudge = (e.key === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 1 : 1 / draft.fps);

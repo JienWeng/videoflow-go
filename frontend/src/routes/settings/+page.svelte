@@ -73,6 +73,8 @@
     latency_ms: number | null;
     error: string | null;
   };
+  /** GET /settings/providers/{name}/models */
+  type ModelList = { models: string[]; error?: string; capabilities?: VideoCapability[] };
   type ProviderPreset = {
     label: string;
     protocol: 'chat' | 'responses' | 'anthropic' | 'codex' | 'media' | 'video' | 'speech';
@@ -109,7 +111,7 @@
       loaded = true;
     }
   }
-  let presets = $state<Record<string, any>>({});
+  let presets = $state<Record<string, ProviderPreset>>({});
   let newLabel = $state('');
   let newPreset = $state('openrouter');
   let newProtocol = $state('chat');
@@ -148,7 +150,7 @@
   async function discoverModels(name: string) {
     busy = `models-${name}`;
     try {
-      const result = await get(
+      const result = await get<ModelList>(
         providerEndpoint(name, 'models') +
           (name === 'fal' ? '?modality=all' : name === 'byteplus' ? '?modality=video' : '')
       );
@@ -180,7 +182,10 @@
   async function verifyModel(name: string) {
     busy = `verify-${name}`;
     try {
-      const result = await post(providerEndpoint(name, 'verify-model'), { model: testModelInput[name]?.trim() });
+      const result = await post<{ ok: boolean; generation_tested?: boolean; error: string }>(
+        providerEndpoint(name, 'verify-model'),
+        { model: testModelInput[name]?.trim() }
+      );
       if (result.ok)
         toast.success(
           result.generation_tested
@@ -255,7 +260,7 @@
 
   const selectablePresets = $derived.by(() => {
     const entries = Object.entries(presets).filter(
-      ([id, preset]) => (preset as any).preset === id && preset.protocol === 'chat'
+      ([id, preset]) => preset.preset === id && preset.protocol === 'chat'
     );
     return entries.length ? entries : Object.entries(FALLBACK_PRESETS);
   });
@@ -273,19 +278,19 @@
   async function refresh() {
     // Everything the page needs is asked for at once, so it appears after one round trip.
     const [pr, pv, ap] = await Promise.all([
-      get('/settings/connection-presets').catch(() => FALLBACK_PRESETS),
-      get('/settings/providers'),
-      get('/settings/app')
+      get<Record<string, ProviderPreset>>('/settings/connection-presets').catch(() => FALLBACK_PRESETS),
+      get<Provider[]>('/settings/providers'),
+      get<AppSettings>('/settings/app')
     ]);
     presets = pr;
     providers = pv;
     testModelInput = Object.fromEntries(
-      pv.map((p: Provider) => [p.name, p.models?.[0] ?? p.suggested_models?.[0] ?? p.default_model ?? ''])
+      pv.map(p => [p.name, p.models?.[0] ?? p.suggested_models?.[0] ?? p.default_model ?? ''])
     );
     for (const p of providers) providerLabels[p.name] = p.label ?? p.name;
     app = ap;
     // Load each provider's secret config (masked key + base_url) in parallel.
-    const cfgs: ProviderConfig[] = await Promise.all((pv as Provider[]).map(p => get(providerEndpoint(p.name))));
+    const cfgs = await Promise.all(pv.map(p => get<ProviderConfig>(providerEndpoint(p.name))));
     const cfgMap: Record<string, ProviderConfig> = {};
     const keyMap: Record<string, string> = {};
     const urlMap: Record<string, string> = {};
@@ -473,7 +478,9 @@
           return;
         }
         try {
-          const result = await get(`/settings/providers/${encodeURIComponent(provider)}/models?modality=${modality}`);
+          const result = await get<ModelList>(
+            `/settings/providers/${encodeURIComponent(provider)}/models?modality=${modality}`
+          );
           if (sequence !== catalogSequence) return;
           if (result.error) {
             failures.push(`${provider} ${modality}: ${result.error}`);
