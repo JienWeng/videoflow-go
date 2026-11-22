@@ -137,38 +137,59 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 	}
 	ctx, cancel := context.WithTimeout(w.ctx, 30*time.Minute)
 	defer cancel()
-	update := func(status, stage, progress string) error {
-		job.Status = status
-		job.Stage = &stage
-		job.Progress = &progress
-		if err := w.database.UpdateRenderJob(job); err != nil {
+	defer func() { w.recordJobOutcome(job, resultErr) }()
+	resolver := routing.Resolver{Config: w.cfg, DB: w.database}
+	client, err := w.resolveJobClient(job, resolver)
+	if err != nil {
+		return err
+	}
+	if job.ProviderJobID == nil || *job.ProviderJobID == "" {
+		submitted, err := w.submitRender(ctx, job, client, resolver)
+		if err != nil || !submitted {
 			return err
 		}
-		w.broker.Publish(map[string]any{"type": "job_updated", "job_id": job.ID, "status": status, "stage": stage, "progress": progress, "project_id": job.ProjectID})
-		if status == models.StatusSucceeded && job.ProjectID != nil {
-			_ = w.database.SyncCosts(*job.ProjectID)
-		}
-		return nil
 	}
-	defer func() {
-		// A service that refuses its key or says the account is empty stops counting as
-		// connected right away; a finished video shows it works again.
-		if resultErr != nil || job.Status == models.StatusSucceeded {
-			routing.Resolver{Config: w.cfg, DB: w.database}.NoteServiceAnswer(job.Provider, resultErr)
+	return w.pollRender(ctx, job, client)
+}
+
+// updateJobProgress saves the job's status, stage and progress and tells listeners.
+func (w *WorkerPool) updateJobProgress(job *models.RenderJob, status, stage, progress string) error {
+	job.Status = status
+	job.Stage = &stage
+	job.Progress = &progress
+	if err := w.database.UpdateRenderJob(job); err != nil {
+		return err
+	}
+	w.broker.Publish(map[string]any{"type": "job_updated", "job_id": job.ID, "status": status, "stage": stage, "progress": progress, "project_id": job.ProjectID})
+	if status == models.StatusSucceeded && job.ProjectID != nil {
+		_ = w.database.SyncCosts(*job.ProjectID)
+	}
+	return nil
+}
+
+// recordJobOutcome notes the service's answer and saves a failure on the job.
+func (w *WorkerPool) recordJobOutcome(job *models.RenderJob, resultErr error) {
+	// A service that refuses its key or says the account is empty stops counting as
+	// connected right away; a finished video shows it works again.
+	if resultErr != nil || job.Status == models.StatusSucceeded {
+		routing.Resolver{Config: w.cfg, DB: w.database}.NoteServiceAnswer(job.Provider, resultErr)
+	}
+	if resultErr != nil && !errors.Is(resultErr, context.Canceled) && w.ctx.Err() == nil && job.Status != models.StatusReconciliationRequired {
+		message := resultErr.Error()
+		job.Error = &message
+		status, stage := models.StatusFailed, models.StatusFailed
+		if job.ProviderJobID != nil && *job.ProviderJobID != "" && job.Status != models.StatusFailed {
+			status, stage = models.StatusReconciliationRequired, "polling"
 		}
-		if resultErr != nil && !errors.Is(resultErr, context.Canceled) && w.ctx.Err() == nil && job.Status != models.StatusReconciliationRequired {
-			message := resultErr.Error()
-			job.Error = &message
-			status, stage := models.StatusFailed, models.StatusFailed
-			if job.ProviderJobID != nil && *job.ProviderJobID != "" && job.Status != models.StatusFailed {
-				status, stage = models.StatusReconciliationRequired, "polling"
-			}
-			if err := update(status, stage, message); err != nil {
-				log.Printf("persist render failure: %v", err)
-			}
+		if err := w.updateJobProgress(job, status, stage, message); err != nil {
+			log.Printf("persist render failure: %v", err)
 		}
-	}()
-	resolver := routing.Resolver{Config: w.cfg, DB: w.database}
+	}
+}
+
+// resolveJobClient fills in the job's provider and model and returns the client for
+// the endpoint the job is pinned to.
+func (w *WorkerPool) resolveJobClient(job *models.RenderJob, resolver routing.Resolver) (providers.MediaClient, error) {
 	provider := job.Provider
 	if provider == "" {
 		provider = "openrouter"
@@ -179,252 +200,308 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 	}
 	client, endpoint, err := resolver.Media(provider, job.Model, job.ProviderEndpoint)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	pinned, err := w.database.PinRenderEndpoint(job.ID, endpoint)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	job.ProviderEndpoint = pinned
 	if pinned != endpoint {
 		client, _, err = resolver.Media(provider, job.Model, pinned)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
-	if job.ProviderJobID == nil || *job.ProviderJobID == "" {
-		payload := map[string]any{}
-		if len(job.RequestJSON) > 0 {
-			if err = json.Unmarshal(job.RequestJSON, &payload); err != nil {
-				return fmt.Errorf("invalid render request: %w", err)
+	return client, nil
+}
+
+// submitRender builds the request and sends it to the provider. It reports false
+// when another worker already claimed the submission.
+func (w *WorkerPool) submitRender(ctx context.Context, job *models.RenderJob, client providers.MediaClient, resolver routing.Resolver) (bool, error) {
+	payload, err := w.buildRenderPayload(ctx, job, client, resolver)
+	if err != nil {
+		return false, err
+	}
+	if err = w.encodeReferenceFiles(payload); err != nil {
+		return false, err
+	}
+	job.RequestJSON, err = json.Marshal(payload)
+	if err != nil {
+		return false, err
+	}
+	if err = w.validateSubmission(ctx, job); err != nil {
+		return false, err
+	}
+	upstreamPayload := providerVideoPayload(payload)
+	if err = client.ValidateVideo(ctx, upstreamPayload); err != nil {
+		return false, err
+	}
+	claimed, e := w.database.ClaimRenderSubmission(job.ID, job.Model, job.RequestJSON)
+	if e != nil {
+		return false, e
+	}
+	if !claimed {
+		return false, nil
+	}
+	job.Status = models.StatusRunning
+	stage := "submitting"
+	job.Stage = &stage
+
+	id, e := client.CreateVideo(ctx, upstreamPayload)
+	if e != nil {
+		var rejected *providers.HTTPError
+		if errors.As(e, &rejected) && rejected.Status >= 400 && rejected.Status < 500 && rejected.Status != 408 && rejected.Status != 409 {
+			return false, e
+		}
+		job.Status = models.StatusReconciliationRequired
+		message := "The video service may have received this request but never confirmed it. Press Check again, or Stop waiting to make the scene again. (" + e.Error() + ")"
+		job.Error = &message
+		if saveErr := w.database.UpdateRenderJob(job); saveErr != nil {
+			return false, saveErr
+		}
+		return false, e
+	}
+	job.ProviderJobID = &id
+	// Save the upstream ID before polling, so restart resumes rather than submits again.
+	if err = w.updateJobProgress(job, "running", "polling", "Waiting for provider video"); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// buildRenderPayload turns the stored request into the provider request: allowed
+// fields only, with prompt, model, duration, aspect ratio and first frame filled in.
+func (w *WorkerPool) buildRenderPayload(ctx context.Context, job *models.RenderJob, client providers.MediaClient, resolver routing.Resolver) (map[string]any, error) {
+	payload := map[string]any{}
+	if len(job.RequestJSON) > 0 {
+		if err := json.Unmarshal(job.RequestJSON, &payload); err != nil {
+			return nil, fmt.Errorf("invalid render request: %w", err)
+		}
+	}
+	// Only fields in the provider contract are forwarded. Local IDs never leave the app.
+	allowed := map[string]bool{"final_prompt": true, "prompt": true, "duration": true, "aspect_ratio": true, "resolution": true, "generate_audio": true, "seed": true, "frame_images": true, "input_references": true, "provider": true, "director_context": true, "director_keyframe": true, "voice_policy": true, "request_fingerprint": true, "audio_mode": true, "music_prompt": true, "render_unit": true, "render_plan_id": true, "scene_input_revision": true, "image_urls": true, "video_input": true, "reference_pictures": true, "audio_urls": true, "reference_voices": true}
+	for key := range payload {
+		if !allowed[key] {
+			delete(payload, key)
+		}
+	}
+	nativeAudio := false
+	if policy, ok := payload["voice_policy"].(map[string]any); ok {
+		nativeAudio = policy["mode"] == "native"
+		payload["generate_audio"] = nativeAudio
+	}
+	// A planned scene clip carries its finished prompt, written for the video model
+	// from the scene's records. Any other clip gets its prompt assembled here.
+	prompt, _ := payload["final_prompt"].(string)
+	if strings.TrimSpace(prompt) == "" {
+		var err error
+		if prompt, err = w.assembledPrompt(job, payload, resolver, nativeAudio); err != nil {
+			return nil, err
+		}
+	}
+	delete(payload, "final_prompt")
+	payload["prompt"] = prompt
+	if job.Model == "" {
+		job.Model = resolver.DefaultMediaModel(job.Provider, "video")
+	}
+	payload["model"] = job.Model
+	// Local durations may be storyboard timings. Only explicitly supplied generation durations are sent unchanged.
+	if _, ok := payload["duration"]; !ok {
+		if err := w.applyPlannedDuration(ctx, job, client, payload); err != nil {
+			return nil, err
+		}
+	}
+	if _, ok := payload["aspect_ratio"]; !ok {
+		aspect := resolver.Setting("default_aspect_ratio", "9:16")
+		if job.SceneID != nil {
+			if scene, e := w.database.GetScene(*job.SceneID); e == nil && scene.AspectRatio != "" {
+				aspect = scene.AspectRatio
 			}
 		}
-		// Only fields in the provider contract are forwarded. Local IDs never leave the app.
-		allowed := map[string]bool{"final_prompt": true, "prompt": true, "duration": true, "aspect_ratio": true, "resolution": true, "generate_audio": true, "seed": true, "frame_images": true, "input_references": true, "provider": true, "director_context": true, "director_keyframe": true, "voice_policy": true, "request_fingerprint": true, "audio_mode": true, "music_prompt": true, "render_unit": true, "render_plan_id": true, "scene_input_revision": true, "image_urls": true, "video_input": true, "reference_pictures": true, "audio_urls": true, "reference_voices": true}
-		for key := range payload {
-			if !allowed[key] {
-				delete(payload, key)
+		payload["aspect_ratio"] = aspect
+	}
+	// Use a generated storyboard as the first frame only when the selected model supports it.
+	if _, explicit := payload["frame_images"]; !explicit && payload["input_references"] == nil && payload["video_input"] != "references" && job.SceneID != nil && job.ProjectID != nil {
+		if err := w.attachStoryboardFirstFrame(ctx, job, client, payload); err != nil {
+			return nil, err
+		}
+	}
+	return payload, nil
+}
+
+// applyPlannedDuration picks the shortest duration the model supports that covers the
+// shot's or scene's planned length.
+func (w *WorkerPool) applyPlannedDuration(ctx context.Context, job *models.RenderJob, client providers.MediaClient, payload map[string]any) error {
+	model, e := client.Model(ctx, job.Model, "video")
+	if e != nil {
+		return e
+	}
+	target := 4
+	if job.SceneID != nil {
+		if scene, e := w.database.GetScene(*job.SceneID); e == nil {
+			target = scene.Duration
+		}
+	}
+	if job.ShotID != nil {
+		if shot, e := w.database.GetShot(*job.ShotID); e == nil {
+			target = shot.Duration
+		}
+	}
+	chosen := 0
+	for _, duration := range model.Durations {
+		if duration >= target && (chosen == 0 || duration < chosen) {
+			chosen = duration
+		}
+	}
+	if chosen == 0 {
+		return fmt.Errorf("planned clip duration %ds exceeds or cannot be verified against this model's supported durations; shorten the scene or choose a suitable model", target)
+	}
+	if chosen > 0 {
+		payload["duration"] = chosen
+	}
+	return nil
+}
+
+// attachStoryboardFirstFrame sends the scene's approved storyboard as the first frame
+// when the model accepts one.
+func (w *WorkerPool) attachStoryboardFirstFrame(ctx context.Context, job *models.RenderJob, client providers.MediaClient, payload map[string]any) error {
+	model, e := client.Model(ctx, job.Model, "video")
+	if e != nil {
+		return e
+	}
+	supports := false
+	for _, frame := range model.FrameImages {
+		if frame == "first_frame" {
+			supports = true
+		}
+	}
+	if !supports {
+		if scene, e := w.database.GetScene(*job.SceneID); e == nil {
+			var brief map[string]map[string]json.RawMessage
+			json.Unmarshal(scene.SceneJSON, &brief)
+			var refs []string
+			json.Unmarshal(brief["generation_brief"]["reference_asset_ids"], &refs)
+			if len(refs) > 0 {
+				return fmt.Errorf("selected video model cannot use the character-conditioned keyframe; select a first-frame model")
 			}
 		}
-		nativeAudio := false
-		if policy, ok := payload["voice_policy"].(map[string]any); ok {
-			nativeAudio = policy["mode"] == "native"
-			payload["generate_audio"] = nativeAudio
+	}
+	if supports {
+		assets, e := w.database.ListAssets(*job.ProjectID)
+		if e != nil {
+			return e
 		}
-		// A planned scene clip carries its finished prompt, written for the video model
-		// from the scene's records. Any other clip gets its prompt assembled here.
-		prompt, _ := payload["final_prompt"].(string)
-		if strings.TrimSpace(prompt) == "" {
-			if prompt, err = w.assembledPrompt(job, payload, resolver, nativeAudio); err != nil {
-				return err
+		approved := map[string]bool{}
+		if scene, e := w.database.GetScene(*job.SceneID); e == nil {
+			ids := models.IDList(scene.AssetIDsJSON)
+			for _, id := range ids {
+				approved[id] = true
 			}
 		}
-		delete(payload, "final_prompt")
-		payload["prompt"] = prompt
-		if job.Model == "" {
-			job.Model = resolver.DefaultMediaModel(provider, "video")
-		}
-		payload["model"] = job.Model
-		// Local durations may be storyboard timings. Only explicitly supplied generation durations are sent unchanged.
-		if _, ok := payload["duration"]; !ok {
-			model, e := client.Model(ctx, job.Model, "video")
-			if e != nil {
-				return e
+		blockedReview := false
+		for _, asset := range assets {
+			var meta struct {
+				SceneID string `json:"scene_id"`
 			}
-			target := 4
-			if job.SceneID != nil {
-				if scene, e := w.database.GetScene(*job.SceneID); e == nil {
-					target = scene.Duration
+			_ = json.Unmarshal(asset.MetadataJSON, &meta)
+			if asset.Type == "storyboard" && meta.SceneID == *job.SceneID && approved[asset.ID] {
+				if !models.ReferenceApproved(asset.MetadataJSON) {
+					blockedReview = true
+					continue
 				}
-			}
-			if job.ShotID != nil {
-				if shot, e := w.database.GetShot(*job.ShotID); e == nil {
-					target = shot.Duration
-				}
-			}
-			chosen := 0
-			for _, duration := range model.Durations {
-				if duration >= target && (chosen == 0 || duration < chosen) {
-					chosen = duration
-				}
-			}
-			if chosen == 0 {
-				return fmt.Errorf("planned clip duration %ds exceeds or cannot be verified against this model's supported durations; shorten the scene or choose a suitable model", target)
-			}
-			if chosen > 0 {
-				payload["duration"] = chosen
-			}
-		}
-		if _, ok := payload["aspect_ratio"]; !ok {
-			aspect := resolver.Setting("default_aspect_ratio", "9:16")
-			if job.SceneID != nil {
-				if scene, e := w.database.GetScene(*job.SceneID); e == nil && scene.AspectRatio != "" {
-					aspect = scene.AspectRatio
-				}
-			}
-			payload["aspect_ratio"] = aspect
-		}
-		// Use a generated storyboard as the first frame only when the selected model supports it.
-		if _, explicit := payload["frame_images"]; !explicit && payload["input_references"] == nil && payload["video_input"] != "references" && job.SceneID != nil && job.ProjectID != nil {
-			model, e := client.Model(ctx, job.Model, "video")
-			if e != nil {
-				return e
-			}
-			supports := false
-			for _, frame := range model.FrameImages {
-				if frame == "first_frame" {
-					supports = true
-				}
-			}
-			if !supports {
-				if scene, e := w.database.GetScene(*job.SceneID); e == nil {
-					var brief map[string]map[string]json.RawMessage
-					json.Unmarshal(scene.SceneJSON, &brief)
-					var refs []string
-					json.Unmarshal(brief["generation_brief"]["reference_asset_ids"], &refs)
-					if len(refs) > 0 {
-						return fmt.Errorf("selected video model cannot use the character-conditioned keyframe; select a first-frame model")
-					}
-				}
-			}
-			if supports {
-				assets, e := w.database.ListAssets(*job.ProjectID)
+				image, e := media.ImageDataURL(w.cfg.StorageRoot, asset.FilePath)
 				if e != nil {
 					return e
 				}
-				approved := map[string]bool{}
-				if scene, e := w.database.GetScene(*job.SceneID); e == nil {
-					ids := models.IDList(scene.AssetIDsJSON)
-					for _, id := range ids {
-						approved[id] = true
-					}
-				}
-				blockedReview := false
-				for _, asset := range assets {
-					var meta struct {
-						SceneID string `json:"scene_id"`
-					}
-					_ = json.Unmarshal(asset.MetadataJSON, &meta)
-					if asset.Type == "storyboard" && meta.SceneID == *job.SceneID && approved[asset.ID] {
-						if !models.ReferenceApproved(asset.MetadataJSON) {
-							blockedReview = true
-							continue
-						}
-						image, e := media.ImageDataURL(w.cfg.StorageRoot, asset.FilePath)
-						if e != nil {
-							return e
-						}
-						payload["frame_images"] = []map[string]any{{"type": "image_url", "image_url": map[string]string{"url": image}, "frame_type": "first_frame"}}
-						break
-					}
-				}
-				if blockedReview && payload["frame_images"] == nil {
-					return fmt.Errorf("generated reference is excluded; replace it before video generation")
-				}
+				payload["frame_images"] = []map[string]any{{"type": "image_url", "image_url": map[string]string{"url": image}, "frame_type": "first_frame"}}
+				break
 			}
 		}
-		for _, key := range []string{"frame_images", "input_references"} {
-			if raw, ok := payload[key]; ok {
-				data, _ := json.Marshal(raw)
-				var refs []map[string]any
-				if json.Unmarshal(data, &refs) != nil {
-					return fmt.Errorf("invalid %s", key)
+		if blockedReview && payload["frame_images"] == nil {
+			return fmt.Errorf("generated reference is excluded; replace it before video generation")
+		}
+	}
+	return nil
+}
+
+// encodeReferenceFiles replaces local reference images and voice samples in the
+// payload with the data itself, so the provider receives sendable values.
+func (w *WorkerPool) encodeReferenceFiles(payload map[string]any) error {
+	if err := w.encodeFrameReferences(payload); err != nil {
+		return err
+	}
+	// Reference pictures are kept as files until now and sent as the pictures themselves.
+	if refs, ok := payload["image_urls"].([]any); ok {
+		for i, ref := range refs {
+			path, _ := ref.(string)
+			if path != "" && !strings.HasPrefix(path, "https://") && !strings.HasPrefix(path, "http://") && !strings.HasPrefix(path, "data:") {
+				encoded, e := media.ImageDataURL(w.cfg.StorageRoot, path)
+				if e != nil {
+					return e
 				}
-				for _, ref := range refs {
-					image, ok := ref["image_url"].(map[string]any)
-					if !ok || ref["type"] != "image_url" {
-						return fmt.Errorf("only image_url references are supported")
-					}
-					path, _ := image["url"].(string)
-					if path == "" {
-						return fmt.Errorf("reference URL is required")
-					}
-					if !strings.HasPrefix(path, "https://") && !strings.HasPrefix(path, "http://") && !strings.HasPrefix(path, "data:image/") {
-						encoded, e := media.ImageDataURL(w.cfg.StorageRoot, path)
-						if e != nil {
-							return e
-						}
-						image["url"] = encoded
-					}
-				}
-				payload[key] = refs
+				refs[i] = encoded
 			}
 		}
-		// Reference pictures are kept as files until now and sent as the pictures themselves.
-		if refs, ok := payload["image_urls"].([]any); ok {
-			for i, ref := range refs {
-				path, _ := ref.(string)
-				if path != "" && !strings.HasPrefix(path, "https://") && !strings.HasPrefix(path, "http://") && !strings.HasPrefix(path, "data:") {
+	}
+	// Voice samples too: each is the app's own short MP3.
+	if voices, ok := payload["audio_urls"].([]any); ok {
+		for i, voice := range voices {
+			path, _ := voice.(string)
+			if path != "" && !strings.HasPrefix(path, "https://") && !strings.HasPrefix(path, "data:") {
+				full, e := media.StoragePath(w.cfg.StorageRoot, path)
+				if e != nil {
+					return e
+				}
+				data, e := os.ReadFile(full)
+				if e != nil {
+					return fmt.Errorf("a character's voice sample is missing; save it again in Voices")
+				}
+				voices[i] = "data:audio/mpeg;base64," + base64.StdEncoding.EncodeToString(data)
+			}
+		}
+	}
+	return nil
+}
+
+// encodeFrameReferences checks frame_images and input_references and inlines any
+// local image paths as data URLs.
+func (w *WorkerPool) encodeFrameReferences(payload map[string]any) error {
+	for _, key := range []string{"frame_images", "input_references"} {
+		if raw, ok := payload[key]; ok {
+			data, _ := json.Marshal(raw)
+			var refs []map[string]any
+			if json.Unmarshal(data, &refs) != nil {
+				return fmt.Errorf("invalid %s", key)
+			}
+			for _, ref := range refs {
+				image, ok := ref["image_url"].(map[string]any)
+				if !ok || ref["type"] != "image_url" {
+					return fmt.Errorf("only image_url references are supported")
+				}
+				path, _ := image["url"].(string)
+				if path == "" {
+					return fmt.Errorf("reference URL is required")
+				}
+				if !strings.HasPrefix(path, "https://") && !strings.HasPrefix(path, "http://") && !strings.HasPrefix(path, "data:image/") {
 					encoded, e := media.ImageDataURL(w.cfg.StorageRoot, path)
 					if e != nil {
 						return e
 					}
-					refs[i] = encoded
+					image["url"] = encoded
 				}
 			}
-		}
-		// Voice samples too: each is the app's own short MP3.
-		if voices, ok := payload["audio_urls"].([]any); ok {
-			for i, voice := range voices {
-				path, _ := voice.(string)
-				if path != "" && !strings.HasPrefix(path, "https://") && !strings.HasPrefix(path, "data:") {
-					full, e := media.StoragePath(w.cfg.StorageRoot, path)
-					if e != nil {
-						return e
-					}
-					data, e := os.ReadFile(full)
-					if e != nil {
-						return fmt.Errorf("a character's voice sample is missing; save it again in Voices")
-					}
-					voices[i] = "data:audio/mpeg;base64," + base64.StdEncoding.EncodeToString(data)
-				}
-			}
-		}
-		job.RequestJSON, err = json.Marshal(payload)
-		if err != nil {
-			return err
-		}
-		if err = w.validateSubmission(ctx, job); err != nil {
-			return err
-		}
-		upstreamPayload := providerVideoPayload(payload)
-		if err = client.ValidateVideo(ctx, upstreamPayload); err != nil {
-			return err
-		}
-		claimed, e := w.database.ClaimRenderSubmission(job.ID, job.Model, job.RequestJSON)
-		if e != nil {
-			return e
-		}
-		if !claimed {
-			return nil
-		}
-		job.Status = models.StatusRunning
-		stage := "submitting"
-		job.Stage = &stage
-
-		id, e := client.CreateVideo(ctx, upstreamPayload)
-		if e != nil {
-			var rejected *providers.HTTPError
-			if errors.As(e, &rejected) && rejected.Status >= 400 && rejected.Status < 500 && rejected.Status != 408 && rejected.Status != 409 {
-				return e
-			}
-			job.Status = models.StatusReconciliationRequired
-			message := "The video service may have received this request but never confirmed it. Press Check again, or Stop waiting to make the scene again. (" + e.Error() + ")"
-			job.Error = &message
-			if saveErr := w.database.UpdateRenderJob(job); saveErr != nil {
-				return saveErr
-			}
-			return e
-		}
-		job.ProviderJobID = &id
-		// Save the upstream ID before polling, so restart resumes rather than submits again.
-		if err = update("running", "polling", "Waiting for provider video"); err != nil {
-			return err
+			payload[key] = refs
 		}
 	}
+	return nil
+}
+
+// pollRender waits for the provider job to finish and saves its videos.
+func (w *WorkerPool) pollRender(ctx context.Context, job *models.RenderJob, client providers.MediaClient) error {
 	pollFailures := 0
 	for {
-		if err = ctx.Err(); err != nil {
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 		status, urls, e := client.GetVideo(ctx, *job.ProviderJobID)
@@ -451,51 +528,7 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 		pollFailures = 0
 		switch status {
 		case "completed":
-			count := len(urls)
-			if count == 0 {
-				count = 1
-			}
-			existing, e := w.database.ListOutputsForJob(job.ID)
-			if e != nil {
-				return e
-			}
-			if len(existing) >= count {
-				return update("succeeded", "done", "Video downloaded")
-			}
-			if err = update("running", "downloading", "Downloading provider video"); err != nil {
-				return err
-			}
-			completed := map[string]bool{}
-			for _, output := range existing {
-				completed[output.VideoPath] = true
-			}
-			for index := 0; index < count; index++ {
-				public := filepath.ToSlash(filepath.Join("storage", "outputs", fmt.Sprintf("%s-%d.mp4", job.ID, index)))
-				if completed[public] {
-					continue
-				}
-				data, e := client.VideoContent(ctx, *job.ProviderJobID, index)
-				if e != nil {
-					return e
-				}
-				filename := fmt.Sprintf("%s-%d.mp4", job.ID, index)
-				path := filepath.Join(w.cfg.StorageRoot, "outputs", filename)
-				if e = os.MkdirAll(filepath.Dir(path), 0755); e != nil {
-					return e
-				}
-				if e = os.WriteFile(path+".part", data, 0644); e != nil {
-					return e
-				}
-				if e = os.Rename(path+".part", path); e != nil {
-					return e
-				}
-				output := &models.RenderOutput{RenderJobID: job.ID, VideoPath: filepath.ToSlash(filepath.Join("storage", "outputs", filename)), CaptionsJSON: json.RawMessage(`[]`), QAJSON: json.RawMessage(`{"status":"not_run"}`), Selected: index == 0}
-				if e = w.database.CreateRenderOutput(output); e != nil {
-					return e
-				}
-				w.broker.Publish(map[string]any{"type": "job_updated", "job_id": job.ID, "status": models.StatusRunning, "output_id": output.ID, "project_id": job.ProjectID})
-			}
-			return update("succeeded", "done", "Video downloaded")
+			return w.saveRenderOutputs(ctx, job, client, len(urls))
 		case models.StatusFailed, "cancelled", "canceled", "expired":
 			job.Status = models.StatusFailed
 			return fmt.Errorf("Provider video job %s", status)
@@ -511,6 +544,56 @@ func (w *WorkerPool) processJob(jobID string) (resultErr error) {
 			return ctx.Err()
 		}
 	}
+}
+
+// saveRenderOutputs downloads each finished video not yet saved and records it as an
+// output of the job.
+func (w *WorkerPool) saveRenderOutputs(ctx context.Context, job *models.RenderJob, client providers.MediaClient, urlCount int) error {
+	count := urlCount
+	if count == 0 {
+		count = 1
+	}
+	existing, e := w.database.ListOutputsForJob(job.ID)
+	if e != nil {
+		return e
+	}
+	if len(existing) >= count {
+		return w.updateJobProgress(job, "succeeded", "done", "Video downloaded")
+	}
+	if err := w.updateJobProgress(job, "running", "downloading", "Downloading provider video"); err != nil {
+		return err
+	}
+	completed := map[string]bool{}
+	for _, output := range existing {
+		completed[output.VideoPath] = true
+	}
+	for index := 0; index < count; index++ {
+		public := filepath.ToSlash(filepath.Join("storage", "outputs", fmt.Sprintf("%s-%d.mp4", job.ID, index)))
+		if completed[public] {
+			continue
+		}
+		data, e := client.VideoContent(ctx, *job.ProviderJobID, index)
+		if e != nil {
+			return e
+		}
+		filename := fmt.Sprintf("%s-%d.mp4", job.ID, index)
+		path := filepath.Join(w.cfg.StorageRoot, "outputs", filename)
+		if e = os.MkdirAll(filepath.Dir(path), 0755); e != nil {
+			return e
+		}
+		if e = os.WriteFile(path+".part", data, 0644); e != nil {
+			return e
+		}
+		if e = os.Rename(path+".part", path); e != nil {
+			return e
+		}
+		output := &models.RenderOutput{RenderJobID: job.ID, VideoPath: filepath.ToSlash(filepath.Join("storage", "outputs", filename)), CaptionsJSON: json.RawMessage(`[]`), QAJSON: json.RawMessage(`{"status":"not_run"}`), Selected: index == 0}
+		if e = w.database.CreateRenderOutput(output); e != nil {
+			return e
+		}
+		w.broker.Publish(map[string]any{"type": "job_updated", "job_id": job.ID, "status": models.StatusRunning, "output_id": output.ID, "project_id": job.ProjectID})
+	}
+	return w.updateJobProgress(job, "succeeded", "done", "Video downloaded")
 }
 
 // assembledPrompt builds the prompt of a clip that has no finished prompt of its own:
