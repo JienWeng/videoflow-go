@@ -55,14 +55,32 @@ export type ApiGraph = {
 };
 
 export function toFlow(g: ApiGraph): { nodes: Node[]; edges: Edge[] } {
-  const assets=new Map(g.nodes.filter(n=>n.type==='asset').map(n=>[n.id,n]));
-  const nodes: Node[] = g.nodes.map((n) => ({
+  const assets = new Map(g.nodes.filter(n => n.type === 'asset').map(n => [n.id, n]));
+  const nodes: Node[] = g.nodes.map(n => ({
     id: n.id,
     type: 'entity',
     position: { x: 0, y: 0 },
-    data: { kind: n.type, label: n.label, ...(n.data ?? {}), ...(n.type==='character'?(()=>{const refs=Array.isArray(n.data?.reference_asset_ids_json)?n.data.reference_asset_ids_json:[];const image=refs.slice().reverse().map((id:string)=>assets.get(id)).find((a:any)=>/\.(png|jpe?g|webp|gif)$/i.test(a?.data?.file_path??''));return {reference_preview_path:image?.data?.file_path,reference_review:image?.data?.consistency_review};})():{}) }
+    data: {
+      kind: n.type,
+      label: n.label,
+      ...(n.data ?? {}),
+      ...(n.type === 'character'
+        ? (() => {
+            const refs = Array.isArray(n.data?.reference_asset_ids_json) ? n.data.reference_asset_ids_json : [];
+            const image = refs
+              .slice()
+              .reverse()
+              .map((id: string) => assets.get(id))
+              .find((a: any) => /\.(png|jpe?g|webp|gif)$/i.test(a?.data?.file_path ?? ''));
+            return {
+              reference_preview_path: image?.data?.file_path,
+              reference_review: image?.data?.consistency_review
+            };
+          })()
+        : {})
+    }
   }));
-  const edges: Edge[] = g.edges.map((e) => {
+  const edges: Edge[] = g.edges.map(e => {
     const color = edgeColor(e.label);
     return {
       id: `${e.source}->${e.target}:${e.label}`,
@@ -91,10 +109,18 @@ export function loadPositions(): Record<string, { x: number; y: number }> {
 }
 
 export function savePositions(nodes: Node[]) {
-  const pos = Object.fromEntries(nodes.map((n) => [n.id, n.position]));
-  try { localStorage.setItem(POS_KEY, JSON.stringify(pos)); } catch { /* Layout still works when browser storage is unavailable. */ }
+  const pos = Object.fromEntries(nodes.map(n => [n.id, n.position]));
+  try {
+    localStorage.setItem(POS_KEY, JSON.stringify(pos));
+  } catch {
+    /* Layout still works when browser storage is unavailable. */
+  }
 }
 
 export function clearPositions() {
-  try { localStorage.removeItem(POS_KEY); } catch { /* Arrangement still works for this visit. */ }
+  try {
+    localStorage.removeItem(POS_KEY);
+  } catch {
+    /* Arrangement still works for this visit. */
+  }
 }

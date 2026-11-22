@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '$lib/errors';
   // Compare what each service charges for the same video model, connect services,
   // and choose between "always the cheapest" and one fixed service.
   import { onMount } from 'svelte';
@@ -10,12 +11,39 @@
   import * as Table from '$lib/components/ui/table';
   import { LoaderCircle } from '@lucide/svelte';
 
-  type Service = { provider: string; label: string; model: string; per_second: number; total: number; checked: string; connected: boolean; usable: boolean; checked_at?: string; problem?: string; cheapest: boolean; in_use: boolean; note?: string; key_check?: { state: string; message?: string } };
-  type State = { families: { id: string; label: string }[]; model: string; resolution: string; seconds: number; routing: string; current: { provider: string; label: string; model: string; family: string }; services: Service[] };
+  type Service = {
+    provider: string;
+    label: string;
+    model: string;
+    per_second: number;
+    total: number;
+    checked: string;
+    connected: boolean;
+    usable: boolean;
+    checked_at?: string;
+    problem?: string;
+    cheapest: boolean;
+    in_use: boolean;
+    note?: string;
+    key_check?: { state: string; message?: string };
+  };
+  type State = {
+    families: { id: string; label: string }[];
+    model: string;
+    resolution: string;
+    seconds: number;
+    routing: string;
+    current: { provider: string; label: string; model: string; family: string };
+    services: Service[];
+  };
 
-  let data = $state<State | null>(null), error = $state(''), busy = $state('');
-  let model = $state(''), resolution = $state('720p');
-  let adding = $state(''), key = $state('');
+  let data = $state<State | null>(null),
+    error = $state(''),
+    busy = $state('');
+  let model = $state(''),
+    resolution = $state('720p');
+  let adding = $state(''),
+    key = $state('');
   const usd = (v: number, digits = 2) => '$' + v.toFixed(digits);
 
   let refreshing = $state(false);
@@ -27,43 +55,68 @@
     if (minutes < 1440) return `${Math.round(minutes / 60)} h ago`;
     return new Date(v).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
   }
-  async function refresh() { refreshing = true; await load(true); refreshing = false; }
+  async function refresh() {
+    refreshing = true;
+    await load(true);
+    refreshing = false;
+  }
   async function load(fresh = false) {
     try {
       const q = new URLSearchParams({ resolution, seconds: '10' });
       if (fresh) q.set('refresh', '1');
       if (model) q.set('model', model);
       data = await get('/video-services?' + q);
-      model = data!.model; error = '';
-    } catch (e) { error = (e as Error).message; }
+      model = data!.model;
+      error = '';
+    } catch (e) {
+      error = errorMessage(e);
+    }
   }
   async function route(mode: 'cheapest' | 'manual', provider = '') {
-    busy = provider || mode; error = '';
-    try { await put('/video-services/routing', { mode, model, provider }); await load(); }
-    catch (e) { error = (e as Error).message; }
+    busy = provider || mode;
+    error = '';
+    try {
+      await put('/video-services/routing', { mode, model, provider });
+      await load();
+    } catch (e) {
+      error = errorMessage(e);
+    }
     busy = '';
   }
   async function saveKey(provider: string) {
     if (!key.trim()) return;
-    busy = provider; error = '';
-    try { await put('/settings/providers/' + provider, { api_key: key.trim() }); adding = ''; key = ''; await load(); }
-    catch (e) { error = (e as Error).message; }
+    busy = provider;
+    error = '';
+    try {
+      await put('/settings/providers/' + provider, { api_key: key.trim() });
+      adding = '';
+      key = '';
+      await load();
+    } catch (e) {
+      error = errorMessage(e);
+    }
     busy = '';
   }
   // An account that said it has no balance: ask again once the owner has topped it up.
   async function checkAgain(provider: string) {
-    busy = provider; error = '';
+    busy = provider;
+    error = '';
     try {
       const r = await post('/settings/providers/' + provider + '/test');
       await load();
       if (!r.ok && r.error) error = r.error;
-    } catch (e) { error = (e as Error).message; }
+    } catch (e) {
+      error = errorMessage(e);
+    }
     busy = '';
   }
   // Changing the model while "cheapest" is on must move the automatic pick too.
-  async function modelChanged() { if (data?.routing === 'cheapest') await route('cheapest'); else await load(); }
+  async function modelChanged() {
+    if (data?.routing === 'cheapest') await route('cheapest');
+    else await load();
+  }
   onMount(() => void load());
-  const pick = $derived(data?.services.find((s) => s.cheapest));
+  const pick = $derived(data?.services.find(s => s.cheapest));
 </script>
 
 <section class="grid gap-4" aria-labelledby="video-services">
@@ -86,7 +139,12 @@
           <option value="480p">480p</option><option value="720p">720p</option><option value="1080p">1080p</option>
         </select>
       </label>
-      <Button variant="outline" size="sm" class="h-9" disabled={refreshing} onclick={refresh}>{#if refreshing}<LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />{/if}Check prices now</Button>
+      <Button
+        variant="outline"
+        size="sm"
+        class="h-9"
+        disabled={refreshing}
+        onclick={refresh}>{#if refreshing}<LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />{/if}Check prices now</Button>
     </div>
 
     <label class="flex items-start gap-3 rounded-lg border border-border p-3 text-sm">
@@ -104,15 +162,18 @@
 
     <Table.Root>
       <Table.Header>
-        <Table.Row><Table.Head>Service</Table.Head><Table.Head class="text-right">Per second</Table.Head><Table.Head class="text-right">10-second clip</Table.Head><Table.Head>Status</Table.Head></Table.Row>
+        <Table.Row><Table.Head>Service</Table.Head><Table.Head
+          class="text-right">Per second</Table.Head><Table.Head class="text-right">10-second clip</Table.Head><Table.Head>Status</Table.Head></Table.Row>
       </Table.Header>
       <Table.Body>
         {#each data.services as s (s.provider)}
           <Table.Row>
             <Table.Cell class="whitespace-normal">
               <span class="font-medium">{s.label}</span>
-              {#if s.key_check?.state === 'rejected' || s.key_check?.state === 'no_credit'}<span class="block text-xs text-destructive">{s.key_check.message}</span>{/if}
-              <span class="block text-xs text-muted-foreground">{#if s.problem}{s.problem}{:else if s.checked_at}Price read from {s.label} {ago(s.checked_at)}{:else}Price not read yet{/if}</span>
+              {#if s.key_check?.state === 'rejected' || s.key_check?.state === 'no_credit'}<span
+                class="block text-xs text-destructive">{s.key_check.message}</span>{/if}
+              <span
+                class="block text-xs text-muted-foreground">{#if s.problem}{s.problem}{:else if s.checked_at}Price read from {s.label} {ago(s.checked_at)}{:else}Price not read yet{/if}</span>
             </Table.Cell>
             <Table.Cell class="text-right tabular-nums">{usd(s.per_second, 3)}</Table.Cell>
             <Table.Cell class="text-right tabular-nums">{usd(s.total)}</Table.Cell>
@@ -121,14 +182,21 @@
                 {#if s.in_use}<Badge>In use</Badge>{/if}
                 {#if s.key_check?.state === 'rejected'}<Badge variant="destructive">Key rejected</Badge>{/if}
                 {#if s.key_check?.state === 'no_credit'}<Badge variant="destructive">No balance</Badge>
-                  <Button size="sm" variant="outline" disabled={!!busy} onclick={() => checkAgain(s.provider)}>{busy === s.provider ? 'Checking…' : 'Check again'}</Button>{/if}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!!busy}
+                    onclick={() => checkAgain(s.provider)}>{busy === s.provider ? 'Checking…' : 'Check again'}</Button>{/if}
                 {#if s.cheapest && !s.in_use}<Badge variant="outline">Cheapest connected</Badge>{/if}
                 {#if s.connected && !s.in_use && !s.cheapest}<Badge variant="outline">Connected</Badge>{/if}
                 {#if s.usable && !s.in_use && data.routing !== 'cheapest'}
                   <Button size="sm" variant="outline" disabled={!!busy} onclick={() => route('manual', s.provider)}>Use this</Button>
                 {/if}
                 {#if !s.connected && adding !== s.provider}
-                  <Button size="sm" variant="ghost" onclick={() => { adding = s.provider; key = ''; }}>{s.key_check?.state === 'rejected' ? 'Paste a new key' : 'Add API key'}</Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onclick={() => { adding = s.provider; key = ''; }}>{s.key_check?.state === 'rejected' ? 'Paste a new key' : 'Add API key'}</Button>
                 {/if}
               </div>
               {#if adding === s.provider}

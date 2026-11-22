@@ -8,34 +8,93 @@
   import { guide } from './guide.svelte';
   import { Check, Circle, ArrowRight, Compass, MessageCircleQuestion } from '@lucide/svelte';
 
-  let status: any = $state(null), progress: any = $state(null), loading = $state(false);
+  let status: any = $state(null),
+    progress: any = $state(null),
+    loading = $state(false);
 
   async function load() {
     loading = true;
-    const [s, p] = await Promise.all([get('/director/status').catch(() => null), get('/production/progress').catch(() => null)]);
-    status = s; progress = p; loading = false;
+    const [s, p] = await Promise.all([
+      get('/director/status').catch(() => null),
+      get('/production/progress').catch(() => null)
+    ]);
+    status = s;
+    progress = p;
+    loading = false;
   }
-  $effect(() => { if (guide.panelOpen) void load(); });
+  $effect(() => {
+    if (guide.panelOpen) void load();
+  });
 
   const connected = $derived(!!status?.engines?.some((e: any) => e.signed_in));
   const scenes = $derived(progress?.total ?? 0);
-  const boarded = $derived((progress?.scenes ?? []).filter((s: any) => ['ready_to_render', 'rendering', 'video_ready'].includes(s.stage)).length);
+  const boarded = $derived(
+    (progress?.scenes ?? []).filter((s: any) => ['ready_to_render', 'rendering', 'video_ready'].includes(s.stage)).length
+  );
   const videos = $derived(progress?.video_ready ?? 0);
 
   type Item = { title: string; detail: string; done: boolean; action: string; run: () => void };
   const items: Item[] = $derived([
-    { title: 'Connect your AI', detail: connected ? 'Codex or Claude Code is connected.' : 'Sign in to Codex or Claude Code so the assistant can plan your story.', done: connected, action: 'Connect', run: () => go('/settings#ai') },
-    { title: 'Create your story', detail: scenes ? `${scenes} scene${scenes === 1 ? '' : 's'} planned.` : 'Describe an idea; VideoFlow plans scenes and characters.', done: scenes > 0, action: 'Create story', run: () => { guide.panelOpen = false; void goto('/').then(() => storyCreation.show()); } },
-    { title: 'Make storyboards', detail: scenes ? `${boarded} of ${scenes} scenes are ready for video (an up-to-date storyboard, or connected pictures to use instead).` : 'Preview each scene as an image before paying for video.', done: scenes > 0 && boarded === scenes, action: 'Open scenes', run: () => go('/?view=story') },
-    { title: 'Make videos', detail: scenes ? `${videos} of ${scenes} scenes have video.` : 'Turn each storyboard into a video clip.', done: scenes > 0 && videos === scenes, action: 'Open scenes', run: () => go('/?view=story') },
-    { title: 'Edit and export', detail: 'Put clips in order, add music and captions, then export your finished video.', done: false, action: 'Edit video', run: () => go('/?view=edit') }
+    {
+      title: 'Connect your AI',
+      detail: connected
+        ? 'Codex or Claude Code is connected.'
+        : 'Sign in to Codex or Claude Code so the assistant can plan your story.',
+      done: connected,
+      action: 'Connect',
+      run: () => go('/settings#ai')
+    },
+    {
+      title: 'Create your story',
+      detail: scenes
+        ? `${scenes} scene${scenes === 1 ? '' : 's'} planned.`
+        : 'Describe an idea; VideoFlow plans scenes and characters.',
+      done: scenes > 0,
+      action: 'Create story',
+      run: () => {
+        guide.panelOpen = false;
+        void goto('/').then(() => storyCreation.show());
+      }
+    },
+    {
+      title: 'Make storyboards',
+      detail: scenes
+        ? `${boarded} of ${scenes} scenes are ready for video (an up-to-date storyboard, or connected pictures to use instead).`
+        : 'Preview each scene as an image before paying for video.',
+      done: scenes > 0 && boarded === scenes,
+      action: 'Open scenes',
+      run: () => go('/?view=story')
+    },
+    {
+      title: 'Make videos',
+      detail: scenes ? `${videos} of ${scenes} scenes have video.` : 'Turn each storyboard into a video clip.',
+      done: scenes > 0 && videos === scenes,
+      action: 'Open scenes',
+      run: () => go('/?view=story')
+    },
+    {
+      title: 'Edit and export',
+      detail: 'Put clips in order, add music and captions, then export your finished video.',
+      done: false,
+      action: 'Edit video',
+      run: () => go('/?view=edit')
+    }
   ]);
   const current = $derived(items.findIndex(i => !i.done));
 
-  function go(href: string) { guide.panelOpen = false; void goto(href); }
+  function go(href: string) {
+    guide.panelOpen = false;
+    void goto(href);
+  }
   function ask() {
     guide.panelOpen = false;
-    void goto('/').then(() => window.dispatchEvent(new CustomEvent('videoflow-ask-assistant', { detail: { text: 'I’m stuck. Where is my project up to, and what should I do next?' } })));
+    void goto('/').then(() =>
+      window.dispatchEvent(
+        new CustomEvent('videoflow-ask-assistant', {
+          detail: { text: 'I’m stuck. Where is my project up to, and what should I do next?' }
+        })
+      )
+    );
   }
 </script>
 
@@ -47,10 +106,14 @@
     </Sheet.Header>
     <div class="space-y-6 px-4 pb-6">
       {#if loading && !progress}<p class="text-sm text-muted-foreground" role="status">Checking your project…</p>{/if}
-      <ol class="space-y-1 transition-opacity {loading && !progress ? 'pointer-events-none opacity-40' : ''}" aria-label="Getting started checklist" aria-busy={loading}>
+      <ol
+        class="space-y-1 transition-opacity {loading && !progress ? 'pointer-events-none opacity-40' : ''}"
+        aria-label="Getting started checklist"
+        aria-busy={loading}>
         {#each items as item, i}
           <li class="flex gap-3 rounded-lg p-3 {i === current ? 'bg-accent/60' : ''}">
-            <span class="mt-0.5 shrink-0" aria-hidden="true">{#if item.done}<Check class="size-5 text-emerald-500" />{:else}<Circle class="size-5 {i === current ? 'text-primary' : 'text-muted-foreground/50'}" />{/if}</span>
+            <span class="mt-0.5 shrink-0" aria-hidden="true">{#if item.done}<Check
+              class="size-5 text-emerald-500" />{:else}<Circle class="size-5 {i === current ? 'text-primary' : 'text-muted-foreground/50'}" />{/if}</span>
             <div class="min-w-0 flex-1">
               <p class="text-sm font-medium">{i + 1}. {item.title}<span class="sr-only">{item.done ? ' — done' : i === current ? ' — next' : ''}</span></p>
               <p class="mt-0.5 text-xs text-muted-foreground">{item.detail}</p>
@@ -68,10 +131,16 @@
       <section aria-labelledby="tips-title" class="space-y-3 text-sm">
         <h3 id="tips-title" class="font-medium">Good to know</h3>
         <ul class="space-y-2 text-muted-foreground">
-          <li><span class="font-medium text-foreground">Nothing paid runs by surprise.</span> Image and video steps show what they will use and wait for you to confirm.</li>
+          <li><span
+            class="font-medium text-foreground">Nothing paid runs by surprise.</span> Image and video steps show what they will use and wait for you to confirm.</li>
           <li><span class="font-medium text-foreground">Storyboards first.</span> A storyboard is a cheap preview image; fix it before making video.</li>
-          <li><span class="font-medium text-foreground">Stuck or something failed?</span> Ask the assistant “why did this stop?” — it checks what is saved and suggests one fix.</li>
-          <li><span class="font-medium text-foreground">Find anything fast.</span> Press <kbd class="rounded border border-border px-1 text-xs">Ctrl/⌘ K</kbd> or use <button type="button" class="underline underline-offset-4" onclick={() => { guide.panelOpen = false; palette.open = true; }}>Search</button>.</li>
+          <li><span
+            class="font-medium text-foreground">Stuck or something failed?</span> Ask the assistant “why did this stop?” — it checks what is saved and suggests one fix.</li>
+          <li><span class="font-medium text-foreground">Find anything fast.</span> Press <kbd
+            class="rounded border border-border px-1 text-xs">Ctrl/⌘ K</kbd> or use <button
+            type="button"
+            class="underline underline-offset-4"
+            onclick={() => { guide.panelOpen = false; palette.open = true; }}>Search</button>.</li>
           <li><span class="font-medium text-foreground">Your work is saved as you go.</span> Closing the tab doesn’t lose scenes, images or videos.</li>
         </ul>
       </section>

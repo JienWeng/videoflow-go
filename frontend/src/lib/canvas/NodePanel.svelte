@@ -1,10 +1,11 @@
 <script lang="ts">
+  import { errorMessage } from '$lib/errors';
   import { editOutputHref } from '$lib/editor/links';
   import NodeTools from './NodeTools.svelte';
   import RenderProgress from './RenderProgress.svelte';
   import AssetDescriptionEditor from '$lib/assets/AssetDescriptionEditor.svelte';
   import CharacterReferences from './CharacterReferences.svelte';
-  import {changedFields} from '$lib/scenes/drafts.mjs';
+  import { changedFields } from '$lib/scenes/drafts.mjs';
   import { beforeNavigate } from '$app/navigation';
   import { untrack } from 'svelte';
   import type { Node } from '@xyflow/svelte';
@@ -21,8 +22,18 @@
   let {
     node,
     onclose,
-    onsaved, embedded = false, onopenscene,onopencharacterrefs
-  }: { node: Node | null; onclose: () => void; onsaved: () => void; embedded?: boolean; onopenscene?:(id:string)=>void;onopencharacterrefs?:(id:string)=>void } = $props();
+    onsaved,
+    embedded = false,
+    onopenscene,
+    onopencharacterrefs
+  }: {
+    node: Node | null;
+    onclose: () => void;
+    onsaved: () => void;
+    embedded?: boolean;
+    onopenscene?: (id: string) => void;
+    onopencharacterrefs?: (id: string) => void;
+  } = $props();
 
   // The panel's own source of truth for which node it shows. It tracks the
   // `node` prop, EXCEPT when the form is dirty and the user cancels the
@@ -41,10 +52,15 @@
   let formDirty = $state(false);
   const markFormDirty = () => (formDirty = true);
   let saving = $state(false);
-  let loadingRecord=$state(false), recordError=$state('');
-  let recordToken=0;
-  let baseline='';
-  function remember(){untrack(()=>{baseline=JSON.stringify(form)});}
+  let loadingRecord = $state(false),
+    recordError = $state('');
+  let recordToken = 0;
+  let baseline = '';
+  function remember() {
+    untrack(() => {
+      baseline = JSON.stringify(form);
+    });
+  }
   let refineInstruction = $state('');
   let refining = $state(false);
   let confirmingDelete = $state(false);
@@ -57,9 +73,16 @@
   // Output node action: make another take.
   let retrying = $state(false);
 
-  export function canLeave(){if(saving||refining||reverting||deleting)return false;return !formDirty || confirm('Discard unsaved changes?');}
-  export function hasUnsavedChanges(){return formDirty;}
-  beforeNavigate(({cancel})=>{if(!canLeave())cancel();});
+  export function canLeave() {
+    if (saving || refining || reverting || deleting) return false;
+    return !formDirty || confirm('Discard unsaved changes?');
+  }
+  export function hasUnsavedChanges() {
+    return formDirty;
+  }
+  beforeNavigate(({ cancel }) => {
+    if (!canLeave()) cancel();
+  });
   // Sync the `node` prop into `shown`, guarding unsaved edits on node-switch.
   // Design note: reverting the parent's selection on cancel is impractical
   // (selection lives in +page.svelte and there is no "reselect" callback), so
@@ -68,7 +91,7 @@
   $effect(() => {
     const next = node;
     untrack(() => {
-      if ((next?.id ?? null) === (shown?.id ?? null) && (formDirty || saving || next===shown)) return;
+      if ((next?.id ?? null) === (shown?.id ?? null) && (formDirty || saving || next === shown)) return;
       if (!embedded && formDirty && shown && !canLeave()) return;
       shown = next;
     });
@@ -77,7 +100,10 @@
   // Re-seed the form whenever the shown node changes.
   $effect(() => {
     const d = (shown?.data ?? {}) as Record<string, any>;
-    const token=++recordToken;recordError='';loadingRecord=false;baseline='';
+    const token = ++recordToken;
+    recordError = '';
+    loadingRecord = false;
+    baseline = '';
     refineInstruction = '';
     confirmingDelete = false;
     showHistory = false;
@@ -98,16 +124,62 @@
         movement: d.movement ?? '',
         shot_order: d.shot_order ?? 0
       };
-    } else if(shown && String(d.kind)==='asset'){
-      form={};loadingRecord=true;const id=shown.id;
-      get(`/assets/${id}`).then(a=>{if(token!==recordToken)return;form={name:a.name,description:a.description??'',updated_at:a.updated_at,character_id:a.character_id,traits:Object.entries(a.metadata_json?.locked_traits??{}).map(([name,value])=>({name,value:String(value)})),review:a.metadata_json?.consistency_review};remember();}).catch(e=>{if(token===recordToken)recordError=String(e)}).finally(()=>{if(token===recordToken)loadingRecord=false});
-    } else if(shown && String(d.kind)==='character'){
-      form={};loadingRecord=true;const id=shown.id;
-      get(`/characters/${id}`).then(c=>{if(token!==recordToken)return;form={name:c.name,description:c.description??'',appearance:c.appearance??'',personality:c.personality??'',visual_rules:(c.visual_rules_json??[]).join('\n'),voice_rules:(c.voice_rules_json??[]).join('\n'),sample_dialogue:c.sample_dialogue??''};remember();}).catch(e=>{if(token===recordToken)recordError=String(e)}).finally(()=>{if(token===recordToken)loadingRecord=false});
+    } else if (shown && String(d.kind) === 'asset') {
+      form = {};
+      loadingRecord = true;
+      const id = shown.id;
+      get(`/assets/${id}`)
+        .then(a => {
+          if (token !== recordToken) return;
+          form = {
+            name: a.name,
+            description: a.description ?? '',
+            updated_at: a.updated_at,
+            character_id: a.character_id,
+            traits: Object.entries(a.metadata_json?.locked_traits ?? {}).map(([name, value]) => ({
+              name,
+              value: String(value)
+            })),
+            review: a.metadata_json?.consistency_review
+          };
+          remember();
+        })
+        .catch(e => {
+          if (token === recordToken) recordError = String(e);
+        })
+        .finally(() => {
+          if (token === recordToken) loadingRecord = false;
+        });
+    } else if (shown && String(d.kind) === 'character') {
+      form = {};
+      loadingRecord = true;
+      const id = shown.id;
+      get(`/characters/${id}`)
+        .then(c => {
+          if (token !== recordToken) return;
+          form = {
+            name: c.name,
+            description: c.description ?? '',
+            appearance: c.appearance ?? '',
+            personality: c.personality ?? '',
+            visual_rules: (c.visual_rules_json ?? []).join('\n'),
+            voice_rules: (c.voice_rules_json ?? []).join('\n'),
+            sample_dialogue: c.sample_dialogue ?? ''
+          };
+          remember();
+        })
+        .catch(e => {
+          if (token === recordToken) recordError = String(e);
+        })
+        .finally(() => {
+          if (token === recordToken) loadingRecord = false;
+        });
     } else {
       form = {};
     }
-    untrack(()=>{if(!loadingRecord)remember();});
+    untrack(() => {
+      if (!loadingRecord) remember();
+    });
   });
 
   // Close requested via Escape or the X button. Dirty edits get a confirm;
@@ -135,48 +207,89 @@
     retrying = true;
     try {
       const res = await post(`/outputs/${shown.id}/retry`);
-      toast.success("New take started. Track it in Videos.");
+      toast.success('New take started. Track it in Videos.');
       onsaved();
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err) {
+      toast.error(errorMessage(err));
     } finally {
       retrying = false;
     }
   }
 
-  function discard(){if(saving||refining)return;if(baseline)form=JSON.parse(baseline);formDirty=false;}
+  function discard() {
+    if (saving || refining) return;
+    if (baseline) form = JSON.parse(baseline);
+    formDirty = false;
+  }
 
   async function save() {
     if (!shown) return;
     saving = true;
     try {
-      if(kind==='asset'){
-        const traits:Record<string,string>={};for(const row of form.traits){const name=row.name.trim(),value=row.value.trim();if(!name||!value)throw Error('Each identity trait needs a name and value');if(Object.hasOwn(traits,name))throw Error('Trait names must be unique');traits[name]=value;}
-        const a=await patch(`/assets/${shown.id}`,{expected_updated_at:form.updated_at,name:form.name,description:form.description,locked_traits:traits});form.updated_at=a.updated_at;
-      } else if(kind==='character'){
-        if(!form.name?.trim())throw Error('Character name is required');
-        await patch(`/characters/${shown.id}`,{...form,name:form.name.trim(),visual_rules_json:form.visual_rules.split('\n').map((v:string)=>v.trim()).filter(Boolean),voice_rules_json:form.voice_rules.split('\n').map((v:string)=>v.trim()).filter(Boolean)});
+      if (kind === 'asset') {
+        const traits: Record<string, string> = {};
+        for (const row of form.traits) {
+          const name = row.name.trim(),
+            value = row.value.trim();
+          if (!name || !value) throw Error('Each identity trait needs a name and value');
+          if (Object.hasOwn(traits, name)) throw Error('Trait names must be unique');
+          traits[name] = value;
+        }
+        const a = await patch(`/assets/${shown.id}`, {
+          expected_updated_at: form.updated_at,
+          name: form.name,
+          description: form.description,
+          locked_traits: traits
+        });
+        form.updated_at = a.updated_at;
+      } else if (kind === 'character') {
+        if (!form.name?.trim()) throw Error('Character name is required');
+        await patch(`/characters/${shown.id}`, {
+          ...form,
+          name: form.name.trim(),
+          visual_rules_json: form.visual_rules
+            .split('\n')
+            .map((v: string) => v.trim())
+            .filter(Boolean),
+          voice_rules_json: form.voice_rules
+            .split('\n')
+            .map((v: string) => v.trim())
+            .filter(Boolean)
+        });
       } else if (kind === 'scene') {
-        await patch(`/scenes/${shown.id}`, changedFields({
-          title: form.title,
-          summary: form.summary,
-          duration: Number(form.duration),
-          aspect_ratio: form.aspect_ratio
-        },JSON.parse(baseline||'{}')));
+        await patch(
+          `/scenes/${shown.id}`,
+          changedFields(
+            {
+              title: form.title,
+              summary: form.summary,
+              duration: Number(form.duration),
+              aspect_ratio: form.aspect_ratio
+            },
+            JSON.parse(baseline || '{}')
+          )
+        );
       } else if (kind === 'shot') {
-        await patch(`/shots/${shown.id}`, changedFields({
-          prompt: form.prompt,
-          duration: Number(form.duration),
-          camera: form.camera,
-          movement: form.movement,
-          shot_order: Number(form.shot_order)
-        },JSON.parse(baseline||'{}')));
+        await patch(
+          `/shots/${shown.id}`,
+          changedFields(
+            {
+              prompt: form.prompt,
+              duration: Number(form.duration),
+              camera: form.camera,
+              movement: form.movement,
+              shot_order: Number(form.shot_order)
+            },
+            JSON.parse(baseline || '{}')
+          )
+        );
       }
-      formDirty = false;remember();
+      formDirty = false;
+      remember();
       toast.success('Saved');
       onsaved();
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err) {
+      toast.error(errorMessage(err));
     } finally {
       saving = false;
     }
@@ -207,10 +320,11 @@
         toast.success(r.note || 'Refined');
       }
       refineInstruction = '';
-      formDirty = false;remember(); // form now mirrors the server-side refined entity
+      formDirty = false;
+      remember(); // form now mirrors the server-side refined entity
       onsaved();
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err) {
+      toast.error(errorMessage(err));
     } finally {
       refining = false;
     }
@@ -242,8 +356,8 @@
     if (!showHistory) return;
     try {
       revisions = await get(`/${kind}s/${shown.id}/revisions`);
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err) {
+      toast.error(errorMessage(err));
     }
   }
 
@@ -252,12 +366,13 @@
     reverting = revisionId;
     try {
       const entity = await post(`/revisions/${revisionId}/revert`);
-      seedForm(entity);remember();
+      seedForm(entity);
+      remember();
       revisions = await get(`/${kind}s/${shown.id}/revisions`);
       toast.success('Reverted');
       onsaved();
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err) {
+      toast.error(errorMessage(err));
     } finally {
       reverting = '';
     }
@@ -278,8 +393,8 @@
       toast.success(`Asset deleted (detached from ${r.detached_from} place${r.detached_from === 1 ? '' : 's'}).`);
       onsaved();
       onclose();
-    } catch (err: any) {
-      toast.error(err.message);
+    } catch (err) {
+      toast.error(errorMessage(err));
     } finally {
       deleting = false;
       confirmingDelete = false;
@@ -287,11 +402,13 @@
   }
 
   const videoSrc = $derived(
-    kind === 'output' ? mediaUrl(data.captioned_path || data.video_path) : kind === 'final_video' ? mediaUrl(data.file_path) : null
+    kind === 'output'
+      ? mediaUrl(data.captioned_path || data.video_path)
+      : kind === 'final_video'
+        ? mediaUrl(data.file_path)
+        : null
   );
-  const imageSrc = $derived(
-    kind === 'asset' && isImage(data.file_path) ? mediaUrl(data.file_path) : null
-  );
+  const imageSrc = $derived(kind === 'asset' && isImage(data.file_path) ? mediaUrl(data.file_path) : null);
 </script>
 
 <svelte:window onkeydown={onWindowKeydown} />
@@ -304,7 +421,9 @@
     canvas stays pannable behind/around it, the chat stays reachable, and
     clicking another node just switches the panel. -->
   <aside
-    class={embedded ? "relative flex h-full min-h-0 flex-col gap-4 text-sm" : "bg-popover text-popover-foreground absolute right-3 top-3 z-40 flex max-h-[calc(100%-12rem)] w-[340px] max-w-[calc(100%-1.5rem)] flex-col gap-4 rounded-lg border border-border text-sm shadow-xl"}
+    class={embedded
+      ? 'relative flex h-full min-h-0 flex-col gap-4 text-sm'
+      : 'bg-popover text-popover-foreground absolute right-3 top-3 z-40 flex max-h-[calc(100%-12rem)] w-[340px] max-w-[calc(100%-1.5rem)] flex-col gap-4 rounded-lg border border-border text-sm shadow-xl'}
     aria-label="{kind} details"
     data-testid="node-panel"
   >
@@ -412,7 +531,15 @@
         <div class="grid gap-1.5">
           <Label>Not happy with this take?</Label>
           <p class="text-xs text-muted-foreground">Make a new version from the same scene setup. This is a paid video call.</p>
-          <Button variant="outline" size="sm" class="justify-self-start" disabled={retrying} onclick={() => { if (window.confirm('Make another take of this scene? This uses one paid video call with the same settings.')) void fixAndRerender(); }}>
+          <Button
+            variant="outline"
+            size="sm"
+            class="justify-self-start"
+            disabled={retrying}
+            onclick={() => {
+              if (window.confirm('Make another take of this scene? This uses one paid video call with the same settings.'))
+                void fixAndRerender();
+            }}>
             <RefreshCw class="size-4 mr-1 {retrying ? 'animate-spin' : ''}" />{retrying ? 'Submitting…' : 'Make another take'}
           </Button>
         </div>
@@ -430,7 +557,9 @@
           </p>
         </div>
       {:else if kind === 'asset'}
-        {#if form.character_id&&data.asset_type==='character_reference'&&onopencharacterrefs}<Button variant="outline" onclick={()=>onopencharacterrefs?.(form.character_id)}>Character reference images</Button>{/if}
+        {#if form.character_id&&data.asset_type==='character_reference'&&onopencharacterrefs}<Button
+          variant="outline"
+          onclick={()=>onopencharacterrefs?.(form.character_id)}>Character reference images</Button>{/if}
         {#if imageSrc}
           <img src={imageSrc} alt={String(data.label ?? '')} class="w-full rounded-md border border-border object-cover" />
         {/if}
@@ -445,10 +574,33 @@
           </div>
         </div>
         {#if loadingRecord}<p role="status">Loading identity…</p>{:else if recordError}<p role="alert" class="text-destructive">{recordError}</p>{:else}
-          <div class="space-y-3"><Label for="np-asset-name">Asset name</Label><Input id="np-asset-name" bind:value={form.name} oninput={markFormDirty}/><AssetDescriptionEditor bind:value={form.description} onchange={markFormDirty}/><h3 class="font-medium">Identity locks</h3><p class="text-xs text-muted-foreground">Keep defining details consistent, such as color: red or vehicle: car.</p>
-          {#each form.traits??[] as trait,i}<div class="grid grid-cols-[1fr_1fr_auto] gap-2"><Input aria-label={'Trait name '+(i+1)} bind:value={trait.name} oninput={markFormDirty} placeholder="Color" /><Input aria-label={'Trait value '+(i+1)} bind:value={trait.value} oninput={markFormDirty} placeholder="Red" /><Button variant="ghost" aria-label={'Remove trait '+(i+1)} onclick={()=>{form.traits.splice(i,1);markFormDirty()}}><X class="size-4" /></Button></div>{/each}
-          <Button variant="outline" disabled={(form.traits?.length??0)>=32} onclick={()=>{form.traits.push({name:'',value:''});markFormDirty()}}>Add identity trait</Button>
-          <div class="flex gap-2"><Button onclick={save} disabled={saving||!formDirty}>{saving?'Saving…':'Save asset details'}</Button><Button variant="outline" onclick={discard} disabled={!formDirty||saving}>Cancel</Button></div></div>
+          <div class="space-y-3"><Label for="np-asset-name">Asset name</Label><Input
+            id="np-asset-name"
+            bind:value={form.name}
+            oninput={markFormDirty}/><AssetDescriptionEditor
+            bind:value={form.description}
+            onchange={markFormDirty}/><h3 class="font-medium">Identity locks</h3><p
+              class="text-xs text-muted-foreground">Keep defining details consistent, such as color: red or vehicle: car.</p>
+          {#each form.traits??[] as trait,i}<div class="grid grid-cols-[1fr_1fr_auto] gap-2"><Input
+            aria-label={'Trait name '+(i+1)}
+            bind:value={trait.name}
+            oninput={markFormDirty}
+            placeholder="Color" /><Input
+            aria-label={'Trait value '+(i+1)}
+            bind:value={trait.value}
+            oninput={markFormDirty}
+            placeholder="Red" /><Button
+            variant="ghost"
+            aria-label={'Remove trait '+(i+1)}
+            onclick={()=>{form.traits.splice(i,1);markFormDirty()}}><X class="size-4" /></Button></div>{/each}
+          <Button
+            variant="outline"
+            disabled={(form.traits?.length??0)>=32}
+            onclick={()=>{form.traits.push({name:'',value:''});markFormDirty()}}>Add identity trait</Button>
+          <div class="flex gap-2"><Button onclick={save} disabled={saving||!formDirty}>{saving?'Saving…':'Save asset details'}</Button><Button
+            variant="outline"
+            onclick={discard}
+            disabled={!formDirty||saving}>Cancel</Button></div></div>
         {/if}
 
         <Button variant="destructive" class="hover:text-foreground" onclick={deleteAsset} disabled={deleting}>
@@ -468,10 +620,28 @@
       {:else if kind === 'character'}
         <CharacterReferences characterId={shown!.id} disabled={formDirty||saving||loadingRecord||!!recordError} onchanged={onsaved}/>
         {#if loadingRecord}<p role="status">Loading character…</p>{:else if recordError}<p role="alert" class="text-destructive">{recordError}</p>{:else}
-          {#each [{key:'name',label:'Name'},{key:'description',label:'Description'},{key:'appearance',label:'Appearance'},{key:'personality',label:'Personality'},{key:'visual_rules',label:'Visual rules (one per line)'},{key:'voice_rules',label:'Voice rules (one per line)'},{key:'sample_dialogue',label:'Sample dialogue'}] as field}
-            <div class="grid gap-1.5"><Label for={'np-character-'+field.key}>{field.label}</Label><Textarea id={'np-character-'+field.key} rows={field.key==='name'?1:3} bind:value={form[field.key]} oninput={markFormDirty} /></div>
+          {#each [
+              { key: 'name', label: 'Name' },
+              { key: 'description', label: 'Description' },
+              { key: 'appearance', label: 'Appearance' },
+              { key: 'personality', label: 'Personality' },
+              { key: 'visual_rules', label: 'Visual rules (one per line)' },
+              { key: 'voice_rules', label: 'Voice rules (one per line)' },
+              { key: 'sample_dialogue', label: 'Sample dialogue' }
+            ] as field}
+            <div class="grid gap-1.5"><Label for={'np-character-'+field.key}>{field.label}</Label><Textarea
+              id={'np-character-'+field.key}
+              rows={field.key==='name'?1:3}
+              bind:value={form[field.key]}
+              oninput={markFormDirty} /></div>
           {/each}
-          <div class="flex gap-2"><Button class="flex-1" onclick={save} disabled={saving||!formDirty}>{saving?'Saving…':'Save character'}</Button><Button variant="outline" disabled={saving||!formDirty} onclick={discard}>Cancel</Button></div>
+          <div class="flex gap-2"><Button
+            class="flex-1"
+            onclick={save}
+            disabled={saving||!formDirty}>{saving?'Saving…':'Save character'}</Button><Button
+            variant="outline"
+            disabled={saving||!formDirty}
+            onclick={discard}>Cancel</Button></div>
         {/if}
 
       {/if}

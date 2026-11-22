@@ -5,34 +5,57 @@
 export const API_BASE =
   import.meta.env.VITE_API_BASE ??
   (typeof window !== 'undefined'
-    ? (['5173', '4173'].includes(window.location.port)
+    ? ['5173', '4173'].includes(window.location.port)
       ? `http://${window.location.hostname}:8000`
-      : `${window.location.origin}/api`)
+      : `${window.location.origin}/api`
     : 'http://localhost:8000');
 
-export class APIError extends Error {constructor(public status:number,message:string,public code?:string){super(`${status}: ${message}`);this.name='APIError'}}
+export class APIError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+    public code?: string
+  ) {
+    super(`${status}: ${message}`);
+    this.name = 'APIError';
+  }
+}
 
 async function handle(resp: Response) {
   if (!resp.ok) {
     const text = await resp.text();
-    let detail: unknown = text || resp.statusText;let code:string|undefined;
+    let detail: unknown = text || resp.statusText;
+    let code: string | undefined;
     // The web server answers with an HTML page while the app restarts; say that plainly.
-    if ([502,503,504].includes(resp.status) && /^\s*</.test(text)) detail = 'VideoFlow is restarting. Wait a few seconds and try again; nothing was lost.';
-    else try { const body=JSON.parse(text);detail=body.detail ?? body.error ?? JSON.stringify(body);code=typeof body.code==='string'?body.code:undefined; } catch { /* plain-text backend error is already useful */ }
-    throw new APIError(resp.status,formatDetail(detail),code);
+    if ([502, 503, 504].includes(resp.status) && /^\s*</.test(text))
+      detail = 'VideoFlow is restarting. Wait a few seconds and try again; nothing was lost.';
+    else
+      try {
+        const body = JSON.parse(text);
+        detail = body.detail ?? body.error ?? JSON.stringify(body);
+        code = typeof body.code === 'string' ? body.code : undefined;
+      } catch {
+        /* plain-text backend error is already useful */
+      }
+    throw new APIError(resp.status, formatDetail(detail), code);
   }
   return resp.json();
 }
 
 function formatDetail(detail: unknown): string {
   if (Array.isArray(detail)) {
-    return detail.map((item: any) => {
-      const loc = Array.isArray(item?.loc)
-        ? item.loc.filter((part: unknown) => part !== 'body').map(String).join('.')
-        : '';
-      const message = typeof item?.msg === 'string' ? item.msg : JSON.stringify(item);
-      return loc ? `${loc}: ${message}` : message;
-    }).join('; ');
+    return detail
+      .map((item: { loc?: unknown; msg?: unknown } | null) => {
+        const loc = Array.isArray(item?.loc)
+          ? item.loc
+              .filter((part: unknown) => part !== 'body')
+              .map(String)
+              .join('.')
+          : '';
+        const message = typeof item?.msg === 'string' ? item.msg : JSON.stringify(item);
+        return loc ? `${loc}: ${message}` : message;
+      })
+      .join('; ');
   }
   if (detail && typeof detail === 'object') return JSON.stringify(detail);
   return String(detail);
@@ -41,20 +64,43 @@ function formatDetail(detail: unknown): string {
 export const get = (path: string) => fetch(`${API_BASE}${path}`).then(handle);
 
 // Keep the same request key after a lost response, including page reloads.
-async function localPost(path:string,body?:unknown){
- const payload=body===undefined?undefined:JSON.stringify(body);
- const bytes=new TextEncoder().encode(path+':'+(payload??''));
- let fingerprint:string;
- if(crypto.subtle){const hash=await crypto.subtle.digest('SHA-256',bytes);fingerprint=Array.from(new Uint8Array(hash),b=>b.toString(16).padStart(2,'0')).join('')}
- else{let hash=14695981039346656037n;for(const b of bytes)hash=BigInt.asUintN(64,(hash^BigInt(b))*1099511628211n);fingerprint=hash.toString(16)}
- const slot='VideoFlow.pending.'+fingerprint;
- const newKey=()=>{const bytes=crypto.getRandomValues(new Uint8Array(16));return Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('')};
- let key:string;try{key=sessionStorage.getItem(slot)||newKey();sessionStorage.setItem(slot,key)}catch{key=newKey()}
- const response=await fetch(`${API_BASE}${path}`,{method:'POST',headers:{...(payload===undefined?{}:{'Content-Type':'application/json'}),'Idempotency-Key':key},body:payload});
- try{sessionStorage.removeItem(slot)}catch{/* storage may be unavailable */}
- return handle(response);
+async function localPost(path: string, body?: unknown) {
+  const payload = body === undefined ? undefined : JSON.stringify(body);
+  const bytes = new TextEncoder().encode(path + ':' + (payload ?? ''));
+  let fingerprint: string;
+  if (crypto.subtle) {
+    const hash = await crypto.subtle.digest('SHA-256', bytes);
+    fingerprint = Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2, '0')).join('');
+  } else {
+    let hash = 14695981039346656037n;
+    for (const b of bytes) hash = BigInt.asUintN(64, (hash ^ BigInt(b)) * 1099511628211n);
+    fingerprint = hash.toString(16);
+  }
+  const slot = 'VideoFlow.pending.' + fingerprint;
+  const newKey = () => {
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  };
+  let key: string;
+  try {
+    key = sessionStorage.getItem(slot) || newKey();
+    sessionStorage.setItem(slot, key);
+  } catch {
+    key = newKey();
+  }
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { ...(payload === undefined ? {} : { 'Content-Type': 'application/json' }), 'Idempotency-Key': key },
+    body: payload
+  });
+  try {
+    sessionStorage.removeItem(slot);
+  } catch {
+    /* storage may be unavailable */
+  }
+  return handle(response);
 }
-export const post = (path:string,body?:unknown)=>localPost(path,body);
+export const post = (path: string, body?: unknown) => localPost(path, body);
 
 export const put = (path: string, body: unknown) =>
   fetch(`${API_BASE}${path}`, {
@@ -70,8 +116,11 @@ export const patch = (path: string, body: unknown) =>
     body: JSON.stringify(body)
   }).then(handle);
 
-export const del = (path: string,body?:unknown) =>
-  fetch(`${API_BASE}${path}`, { method: 'DELETE',...(body===undefined?{}:{headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}) }).then(handle);
+export const del = (path: string, body?: unknown) =>
+  fetch(`${API_BASE}${path}`, {
+    method: 'DELETE',
+    ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  }).then(handle);
 
 export const upload = (path: string, form: FormData) =>
   fetch(`${API_BASE}${path}`, { method: 'POST', body: form }).then(handle);
@@ -84,7 +133,5 @@ export function mediaUrl(filePath: string | null | undefined): string | null {
   return `${API_BASE}/${filePath.slice(i)}`;
 }
 
-export const isImage = (p: string | null | undefined) =>
-  !!p && /\.(png|jpe?g|webp|gif)$/i.test(p);
-export const isVideo = (p: string | null | undefined) =>
-  !!p && /\.(mp4|webm|mov)$/i.test(p);
+export const isImage = (p: string | null | undefined) => !!p && /\.(png|jpe?g|webp|gif)$/i.test(p);
+export const isVideo = (p: string | null | undefined) => !!p && /\.(mp4|webm|mov)$/i.test(p);

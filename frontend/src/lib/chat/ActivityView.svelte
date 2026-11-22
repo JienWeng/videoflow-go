@@ -68,11 +68,15 @@
                 {#each event.items as item, itemIndex (itemIndex)}
                   {#if item.detail}
                     <Trace.Collapsible>
-                      <Trace.CollapsibleTrigger><Trace.Line status={traceStatus(item.status)} title={item.title}><Trace.Icon>{@render icon(item.status)}</Trace.Icon><Trace.Title>{item.title}</Trace.Title>{#if item.status}<Trace.Description>{item.status}</Trace.Description>{/if}</Trace.Line></Trace.CollapsibleTrigger>
+                      <Trace.CollapsibleTrigger><Trace.Line
+                        status={traceStatus(item.status)}
+                        title={item.title}><Trace.Icon>{@render icon(item.status)}</Trace.Icon><Trace.Title>{item.title}</Trace.Title>{#if item.status}<Trace.Description>{item.status}</Trace.Description>{/if}</Trace.Line></Trace.CollapsibleTrigger>
                       <Trace.CollapsibleContent class="whitespace-pre-wrap break-words">{item.detail}</Trace.CollapsibleContent>
                     </Trace.Collapsible>
                   {:else}
-                    <Trace.Line status={traceStatus(item.status)} title={item.title}><Trace.Icon>{@render icon(item.status)}</Trace.Icon><Trace.Title>{item.title}</Trace.Title>{#if item.status}<Trace.Description>{item.status}</Trace.Description>{/if}</Trace.Line>
+                    <Trace.Line
+                      status={traceStatus(item.status)}
+                      title={item.title}><Trace.Icon>{@render icon(item.status)}</Trace.Icon><Trace.Title>{item.title}</Trace.Title>{#if item.status}<Trace.Description>{item.status}</Trace.Description>{/if}</Trace.Line>
                   {/if}
                 {/each}
               </Trace.Root>
@@ -82,11 +86,21 @@
                 {#each event.sources as source (source.url)}
                   {#if event.kind === 'inline-citation'}
                     <HoverCard.Root>
-                      <HoverCard.Trigger>{#snippet child({ props })}<Button {...props} variant="secondary" size="sm">{source.title}</Button>{/snippet}</HoverCard.Trigger>
-                      <HoverCard.Content class="max-w-xs"><p class="font-medium">{source.title}</p>{#if source.description}<p class="text-sm text-muted-foreground">{source.description}</p>{/if}<a href={source.url} target="_blank" rel="noopener noreferrer" class="text-sm underline">Open source<span class="sr-only"> (opens in a new tab)</span></a></HoverCard.Content>
+                      <HoverCard.Trigger>{#snippet child({ props })}<Button {...props} variant="secondary"
+                        size="sm">{source.title}</Button>{/snippet}</HoverCard.Trigger>
+                      <HoverCard.Content class="max-w-xs"><p
+                        class="font-medium">{source.title}</p>{#if source.description}<p class="text-sm text-muted-foreground">{source.description}</p>{/if}<a
+                        href={source.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="text-sm underline">Open source<span class="sr-only"> (opens in a new tab)</span></a></HoverCard.Content>
                     </HoverCard.Root>
                   {:else}
-                    <a href={source.url} target="_blank" rel="noopener noreferrer"><Trace.Line title={source.title}><Trace.Title>{source.title}<span class="sr-only"> (opens in a new tab)</span></Trace.Title></Trace.Line></a>
+                    <a
+                      href={source.url}
+                      target="_blank"
+                      rel="noopener noreferrer"><Trace.Line
+                        title={source.title}><Trace.Title>{source.title}<span class="sr-only"> (opens in a new tab)</span></Trace.Title></Trace.Line></a>
                   {/if}
                 {/each}
               </Trace.Root>
@@ -94,9 +108,12 @@
             {#if event.files.length}<div>{@render fileRows(event.files)}</div>{/if}
             {#if event.usage}
               <Marker.Root><Marker.Content>{event.usage.used.toLocaleString()} / {event.usage.limit.toLocaleString()} tokens ({Math.round(event.usage.used / event.usage.limit * 100)}% context)</Marker.Content></Marker.Root>
-              <dl class="grid grid-cols-2 gap-1 text-xs text-muted-foreground">{#each ['input', 'output', 'reasoning'] as field}{@const value = event.usage[field as 'input' | 'output' | 'reasoning']}{#if value !== undefined}<dt class="capitalize">{field}</dt><dd>{value.toLocaleString()}</dd>{/if}{/each}</dl>
+              <dl
+                class="grid grid-cols-2 gap-1 text-xs text-muted-foreground">{#each ['input', 'output', 'reasoning'] as field}{@const value = event.usage[field as 'input' | 'output' | 'reasoning']}{#if value !== undefined}<dt
+                class="capitalize">{field}</dt><dd>{value.toLocaleString()}</dd>{/if}{/each}</dl>
             {/if}
-            {#if event.suggestions.length}<ul class="list-disc space-y-1 pl-4 text-sm">{#each event.suggestions as suggestion, suggestionIndex (suggestionIndex)}<li>{suggestion}</li>{/each}</ul>{/if}
+            {#if event.suggestions.length}<ul
+              class="list-disc space-y-1 pl-4 text-sm">{#each event.suggestions as suggestion, suggestionIndex (suggestionIndex)}<li>{suggestion}</li>{/each}</ul>{/if}
             {#if event.children.length}{@render activityRows(event.children)}{/if}
           </Trace.CollapsibleContent>
         </Trace.Collapsible>

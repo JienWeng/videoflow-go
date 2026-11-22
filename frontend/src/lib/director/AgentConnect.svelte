@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { errorMessage } from '$lib/errors';
   import { onDestroy } from 'svelte';
   import { get, post } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
@@ -41,7 +42,7 @@
       logins[engine] = login;
       if (active(login)) poll(engine);
       else errors[engine] = login.message ?? 'Sign-in could not start.';
-    } catch (e: any) { errors[engine] = e.message ?? String(e); }
+    } catch (e) { errors[engine] = errorMessage(e, String(e)); }
     finally { busy[engine] = false; }
   }
   async function submit(engine: string, event: SubmitEvent) {
@@ -49,7 +50,7 @@
     if (!pasted[engine]?.trim()) return;
     busy[engine] = true; errors[engine] = '';
     try { const state = await post(`/director/auth/${engine}/code`, { code: pasted[engine] }); logins[engine] = state.login ?? null; poll(engine); }
-    catch (e: any) { errors[engine] = e.message ?? String(e); }
+    catch (e) { errors[engine] = errorMessage(e, String(e)); }
     finally { busy[engine] = false; }
   }
   async function cancel(engine: string) {
@@ -65,13 +66,17 @@
 <div class="grid gap-3 sm:grid-cols-2">
   {#each engines as item (item.engine)}
     {@const login = logins[item.engine]}
-    <section class="rounded-lg border p-4 {highlight === item.engine && !item.signed_in ? 'border-primary' : 'border-border'}" aria-label={`${NAMES[item.engine]} connection`}>
+    <section
+      class="rounded-lg border p-4 {highlight === item.engine && !item.signed_in ? 'border-primary' : 'border-border'}"
+      aria-label={`${NAMES[item.engine]} connection`}>
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
           <h3 class="font-medium">{NAMES[item.engine] ?? item.engine}</h3>
           <p class="mt-0.5 text-xs text-muted-foreground">Uses your {ACCOUNTS[item.engine]}</p>
         </div>
-        {#if item.signed_in}<span class="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300"><Check class="size-3" />Connected</span>
+        {#if item.signed_in}<span
+          class="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300"><Check
+          class="size-3" />Connected</span>
         {:else if item.installed}<span class="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">Not connected</span>{/if}
       </div>
 
@@ -88,16 +93,32 @@
               <p class="font-medium">2. Enter this code on that page</p>
               <div class="mt-2 flex items-center gap-2">
                 <code class="rounded-md border border-border bg-muted/40 px-3 py-2 font-mono text-lg tracking-widest">{login!.code}</code>
-                <Button variant="ghost" size="sm" class="min-h-11" onclick={() => copy(login!.code!)} aria-label="Copy code">{#if copied === login!.code}<Check class="size-4" />Copied{:else}<Copy class="size-4" />Copy{/if}</Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  class="min-h-11"
+                  onclick={() => copy(login!.code!)}
+                  aria-label="Copy code">{#if copied === login!.code}<Check class="size-4" />Copied{:else}<Copy class="size-4" />Copy{/if}</Button>
               </div>
             </li>
-            <li class="flex items-center gap-2 text-muted-foreground"><LoaderCircle class="size-4 animate-spin" />Waiting for you to approve… this page updates by itself.</li>
+            <li class="flex items-center gap-2 text-muted-foreground"><LoaderCircle
+              class="size-4 animate-spin" />Waiting for you to approve… this page updates by itself.</li>
           {:else if login!.needs_code}
             <li>
               <p class="font-medium">2. Paste the code shown after you sign in</p>
               <form class="mt-2 flex flex-wrap gap-2" onsubmit={e => submit(item.engine, e)}>
-                <input class="min-h-11 min-w-0 flex-1 rounded-md border border-input bg-background px-3 font-mono text-sm" aria-label={`${NAMES[item.engine]} sign-in code`} placeholder="Paste code" autocomplete="off" spellcheck="false" bind:value={pasted[item.engine]} disabled={login!.status === 'verifying' || busy[item.engine]} />
-                <Button type="submit" class="min-h-11" disabled={!pasted[item.engine]?.trim() || login!.status === 'verifying' || busy[item.engine]}>{login!.status === 'verifying' ? 'Checking…' : 'Connect'}</Button>
+                <input
+                  class="min-h-11 min-w-0 flex-1 rounded-md border border-input bg-background px-3 font-mono text-sm"
+                  aria-label={`${NAMES[item.engine]} sign-in code`}
+                  placeholder="Paste code"
+                  autocomplete="off"
+                  spellcheck="false"
+                  bind:value={pasted[item.engine]}
+                  disabled={login!.status === 'verifying' || busy[item.engine]} />
+                <Button
+                  type="submit"
+                  class="min-h-11"
+                  disabled={!pasted[item.engine]?.trim() || login!.status === 'verifying' || busy[item.engine]}>{login!.status === 'verifying' ? 'Checking…' : 'Connect'}</Button>
               </form>
             </li>
           {/if}
@@ -111,7 +132,20 @@
         {/if}
         {#if login?.status === 'complete' && item.signed_in}<p role="status" class="mt-2 text-sm">Connected. You can start planning.</p>{/if}
         {#if login?.status === 'failed'}<p role="alert" class="mt-2 text-sm text-destructive">{login.message}</p>{/if}
-        <Button class="mt-3 min-h-11" variant={item.signed_in ? 'outline' : 'default'} disabled={busy[item.engine]} onclick={() => { if (item.signed_in && !window.confirm(`Switching signs ${NAMES[item.engine]} out of the current account right away, even if you cancel. Continue?`)) return; start(item.engine); }}>
+        <Button
+          class="mt-3 min-h-11"
+          variant={item.signed_in ? 'outline' : 'default'}
+          disabled={busy[item.engine]}
+          onclick={() => {
+            if (
+              item.signed_in &&
+              !window.confirm(
+                `Switching signs ${NAMES[item.engine]} out of the current account right away, even if you cancel. Continue?`
+              )
+            )
+              return;
+            start(item.engine);
+          }}>
           {busy[item.engine] ? 'Starting…' : item.signed_in ? 'Switch account' : `Connect ${NAMES[item.engine]}`}
         </Button>
       {/if}

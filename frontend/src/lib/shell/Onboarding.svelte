@@ -80,7 +80,9 @@
         <BrandLogo class="size-9" />
         <Dialog.Title class="text-lg font-semibold">Welcome to VideoFlow</Dialog.Title>
       </div>
-      <Dialog.Description id="onboarding-description" class="mb-5 text-sm text-muted-foreground">Build a story, review the references, then choose what to render.</Dialog.Description>
+      <Dialog.Description
+        id="onboarding-description"
+        class="mb-5 text-sm text-muted-foreground">Build a story, review the references, then choose what to render.</Dialog.Description>
 
       <div class="mb-5 grid gap-3 sm:grid-cols-2">
         {#each surfaces as s (s.title)}

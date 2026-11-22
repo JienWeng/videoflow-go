@@ -21,7 +21,9 @@
 <div class="mt-2 grid gap-2 rounded-md border border-border p-3 text-sm">
   <ul class="grid gap-1">
     {#each rows as l (l.scene_id)}
-      <li class="flex flex-wrap justify-between gap-2"><span class="font-medium">{l.title || 'Scene'}</span><span class="text-xs text-muted-foreground">{l.note ? l.note : `${l.seconds} s${l.amount ? ' · ' + usd(l.amount) : ''}`}</span></li>
+      <li class="flex flex-wrap justify-between gap-2"><span
+        class="font-medium">{l.title || 'Scene'}</span><span
+        class="text-xs text-muted-foreground">{l.note ? l.note : `${l.seconds} s${l.amount ? ' · ' + usd(l.amount) : ''}`}</span></li>
     {/each}
   </ul>
   <p class="text-xs font-medium">

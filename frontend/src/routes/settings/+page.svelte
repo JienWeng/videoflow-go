@@ -1,7 +1,8 @@
 <script lang="ts">
- import CreativePresetManager from '$lib/CreativePresetManager.svelte';
- import { protectDraft } from '$lib/protect-draft';
- import GenerationRecovery from '$lib/GenerationRecovery.svelte';
+  import { errorMessage } from '$lib/errors';
+  import CreativePresetManager from '$lib/CreativePresetManager.svelte';
+  import { protectDraft } from '$lib/protect-draft';
+  import GenerationRecovery from '$lib/GenerationRecovery.svelte';
   import { replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount, tick } from 'svelte';
@@ -51,7 +52,7 @@
     key_check?: KeyCheck | null;
   };
   type AppSettings = {
- all_text_local?: boolean;
+    all_text_local?: boolean;
     default_aspect_ratio: string;
     default_video_provider: string;
     default_image_provider: string;
@@ -61,10 +62,17 @@
     ref_image_model: string;
     video_model: string;
     vl_model: string;
-media_model_preferences:Record<string,Record<string,string>>;
+    media_model_preferences: Record<string, Record<string, string>>;
     render_negatives: string[];
   };
-  type TestResult = { checked?:string;message?:string;credentials_verified?:boolean;ok: boolean; latency_ms: number | null; error: string | null };
+  type TestResult = {
+    checked?: string;
+    message?: string;
+    credentials_verified?: boolean;
+    ok: boolean;
+    latency_ms: number | null;
+    error: string | null;
+  };
   type ProviderPreset = {
     label: string;
     protocol: 'chat' | 'responses' | 'anthropic' | 'codex' | 'media' | 'video' | 'speech';
@@ -84,9 +92,23 @@ media_model_preferences:Record<string,Record<string,string>>;
   let saveStatus = $state('');
   let confirmClear = $state('');
   let durationError = $state('');
-  const providerDirty = (name:string) => !!provKeyInput[name]?.trim() || (provUrlInput[name] ?? '').trim() !== (provCfg[name]?.base_url ?? '');
-  protectDraft(() => Object.keys(provKeyInput).some(providerDirty), 'You have unsaved provider credentials. Discard them and leave?');
-  async function retryLoad() { error = ''; loaded = false; try { await refresh(); } catch (e: any) { error = e.message; } finally { loaded = true; } }
+  const providerDirty = (name: string) =>
+    !!provKeyInput[name]?.trim() || (provUrlInput[name] ?? '').trim() !== (provCfg[name]?.base_url ?? '');
+  protectDraft(
+    () => Object.keys(provKeyInput).some(providerDirty),
+    'You have unsaved provider credentials. Discard them and leave?'
+  );
+  async function retryLoad() {
+    error = '';
+    loaded = false;
+    try {
+      await refresh();
+    } catch (e) {
+      error = errorMessage(e);
+    } finally {
+      loaded = true;
+    }
+  }
   let presets = $state<Record<string, any>>({});
   let newLabel = $state('');
   let newPreset = $state('openrouter');
@@ -98,32 +120,55 @@ media_model_preferences:Record<string,Record<string,string>>;
   function choosePreset() {
     const p = presets[newPreset];
     if (!p) return;
-    newProtocol = p.protocol; newUrl = p.url ?? ''; newModel = p.model;
+    newProtocol = p.protocol;
+    newUrl = p.url ?? '';
+    newModel = p.model;
   }
   async function addConnection() {
     busy = 'add-connection';
     try {
-      await post('/settings/connections', { label: newLabel.trim(), preset: newPreset,
-        protocol: newProtocol, base_url: newUrl || null, model: newModel.trim(), mode: newMode, vision: newVision });
+      await post('/settings/connections', {
+        label: newLabel.trim(),
+        preset: newPreset,
+        protocol: newProtocol,
+        base_url: newUrl || null,
+        model: newModel.trim(),
+        mode: newMode,
+        vision: newVision
+      });
       newLabel = '';
       await refresh();
       toast.success('Connection added. Add its key in AI connections.');
-    } catch (e: any) { toast.error(e.message); }
-    finally { busy = ''; }
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      busy = '';
+    }
   }
   async function discoverModels(name: string) {
     busy = `models-${name}`;
     try {
-      const result = await get(providerEndpoint(name, 'models')+(name==='fal'?'?modality=all':name==='byteplus'?'?modality=video':''));
-      if (result.error) { toast.error(result.error); return; }
-      providers = providers.map(p => p.name === name ? {...p, suggested_models: result.models, models: result.models} : p);
+      const result = await get(
+        providerEndpoint(name, 'models') +
+          (name === 'fal' ? '?modality=all' : name === 'byteplus' ? '?modality=video' : '')
+      );
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      providers = providers.map(p =>
+        p.name === name ? { ...p, suggested_models: result.models, models: result.models } : p
+      );
       if (result.models.length) {
         testModelInput[name] = result.models[0];
         providerModelInput[name] = false;
       }
       toast.success(`Loaded ${result.models.length} supported models`);
-    } catch (e: any) { toast.error(e.message); }
-    finally { busy = ''; }
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      busy = '';
+    }
   }
 
   // Per-provider editable form fields (key/base_url) + configured pill state.
@@ -135,11 +180,19 @@ media_model_preferences:Record<string,Record<string,string>>;
   async function verifyModel(name: string) {
     busy = `verify-${name}`;
     try {
-      const result = await post(providerEndpoint(name, 'verify-model'), {model: testModelInput[name]?.trim()});
-      if (result.ok) toast.success(result.generation_tested?'Model returned valid structured JSON':'Model catalog checked; no generation submitted.');
+      const result = await post(providerEndpoint(name, 'verify-model'), { model: testModelInput[name]?.trim() });
+      if (result.ok)
+        toast.success(
+          result.generation_tested
+            ? 'Model returned valid structured JSON'
+            : 'Model catalog checked; no generation submitted.'
+        );
       else toast.error(result.error);
-    } catch (e: any) { toast.error(e.message); }
-    finally { busy = ''; }
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      busy = '';
+    }
   }
 
   // Theme radio — persisted to the shared localStorage key the shell reads.
@@ -148,14 +201,44 @@ media_model_preferences:Record<string,Record<string,string>>;
 
   // Active settings tab (bound so clicking a trigger switches sections).
   let tab = $state('ai');
-  function settingsHash(){const h=window.location.hash.slice(1);tab=h==='presets'?'presets':['providers','connections'].includes(h)?'connections':h==='advanced'?'advanced':['general','appearance'].includes(h)?'general':'ai';}
+  function settingsHash() {
+    const h = window.location.hash.slice(1);
+    tab =
+      h === 'presets'
+        ? 'presets'
+        : ['providers', 'connections'].includes(h)
+          ? 'connections'
+          : h === 'advanced'
+            ? 'advanced'
+            : ['general', 'appearance'].includes(h)
+              ? 'general'
+              : 'ai';
+  }
   // Links to the removed Media models tab (#models, #engines) land on AI setup.
-  function chooseSection(value:string){tab=value;replaceState('#'+value,page.state);}
+  function chooseSection(value: string) {
+    tab = value;
+    replaceState('#' + value, page.state);
+  }
 
   // ------------------------------------------------------------- labels
-  const providerLabels: Record<string, string> = { openai:'OpenAI Images',elevenlabs:'ElevenLabs',fish:'Fish Audio',fal:'fal.ai',byteplus:'BytePlus ModelArk',openrouter:'OpenRouter' };
+  const providerLabels: Record<string, string> = {
+    openai: 'OpenAI Images',
+    elevenlabs: 'ElevenLabs',
+    fish: 'Fish Audio',
+    fal: 'fal.ai',
+    byteplus: 'BytePlus ModelArk',
+    openrouter: 'OpenRouter'
+  };
   const FALLBACK_PRESETS: Record<string, ProviderPreset> = {
-    openrouter: { label: 'OpenRouter', protocol: 'chat', url: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini', preset: 'openrouter', mode: 'auto', vision: true }
+    openrouter: {
+      label: 'OpenRouter',
+      protocol: 'chat',
+      url: 'https://openrouter.ai/api/v1',
+      model: 'openai/gpt-4o-mini',
+      preset: 'openrouter',
+      mode: 'auto',
+      vision: true
+    }
   };
 
   // -------------------------------------------------------------- options
@@ -165,12 +248,15 @@ media_model_preferences:Record<string,Record<string,string>>;
     { value: 'Chinese', code: 'zh', label: 'Chinese' },
     { value: 'English', code: 'en', label: 'English' }
   ];
-  const dialogueValue = (v: string) => DIALOGUE_LANGUAGES.find(l => l.value.toLowerCase() === String(v ?? '').toLowerCase() || l.code === v)?.value ?? v;
+  const dialogueValue = (v: string) =>
+    DIALOGUE_LANGUAGES.find(l => l.value.toLowerCase() === String(v ?? '').toLowerCase() || l.code === v)?.value ?? v;
   const CUSTOM = '__custom__';
   const LOAD_MODELS = '__load_models__';
 
   const selectablePresets = $derived.by(() => {
-    const entries = Object.entries(presets).filter(([id, preset]) => (preset as any).preset === id && preset.protocol === 'chat');
+    const entries = Object.entries(presets).filter(
+      ([id, preset]) => (preset as any).preset === id && preset.protocol === 'chat'
+    );
     return entries.length ? entries : Object.entries(FALLBACK_PRESETS);
   });
 
@@ -180,11 +266,9 @@ media_model_preferences:Record<string,Record<string,string>>;
   }
 
   // ------------------------------------------------------------- derived
-  const byName = $derived(Object.fromEntries(providers.map((p) => [p.name, p])));
-  let providerOpen=$state<Record<string,boolean>>({});
-  const orderedProviders = $derived(
-    providers
-  );
+  const byName = $derived(Object.fromEntries(providers.map(p => [p.name, p])));
+  let providerOpen = $state<Record<string, boolean>>({});
+  const orderedProviders = $derived(providers);
   // -------------------------------------------------------------- load
   async function refresh() {
     // Everything the page needs is asked for at once, so it appears after one round trip.
@@ -201,9 +285,7 @@ media_model_preferences:Record<string,Record<string,string>>;
     for (const p of providers) providerLabels[p.name] = p.label ?? p.name;
     app = ap;
     // Load each provider's secret config (masked key + base_url) in parallel.
-    const cfgs: ProviderConfig[] = await Promise.all(
-      (pv as Provider[]).map((p) => get(providerEndpoint(p.name)))
-    );
+    const cfgs: ProviderConfig[] = await Promise.all((pv as Provider[]).map(p => get(providerEndpoint(p.name))));
     const cfgMap: Record<string, ProviderConfig> = {};
     const keyMap: Record<string, string> = {};
     const urlMap: Record<string, string> = {};
@@ -229,7 +311,7 @@ media_model_preferences:Record<string,Record<string,string>>;
       /* private mode / disabled storage */
     }
     refresh()
-      .catch((e) => (error = e.message))
+      .catch(e => (error = e.message))
       .finally(() => (loaded = true));
   });
 
@@ -281,15 +363,16 @@ media_model_preferences:Record<string,Record<string,string>>;
       provKeyInput[name] = '';
       provUrlInput[name] = updated.base_url ?? '';
       // Reflect the new configured-state in the catalog.
-      providers = providers.map((p) =>
+      providers = providers.map(p =>
         p.name === name ? { ...p, configured: updated.configured, from_db: updated.from_db } : p
       );
       provTest[name] = undefined;
       if (name === 'openai') await refresh();
-      if (updated.key_check?.state === 'unchecked') toast(updated.key_check.message ?? `${providerLabels[name] ?? name} saved`);
+      if (updated.key_check?.state === 'unchecked')
+        toast(updated.key_check.message ?? `${providerLabels[name] ?? name} saved`);
       else toast.success(`${providerLabels[name] ?? name} saved`);
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e) {
+      toast.error(errorMessage(e));
     } finally {
       busy = '';
     }
@@ -301,15 +384,15 @@ media_model_preferences:Record<string,Record<string,string>>;
       const updated: ProviderConfig = await put(providerEndpoint(name), { api_key: '' });
       provCfg[name] = updated;
       provKeyInput[name] = '';
-      providers = providers.map((p) =>
+      providers = providers.map(p =>
         p.name === name ? { ...p, configured: updated.configured, from_db: updated.from_db } : p
       );
       provTest[name] = undefined;
       confirmClear = '';
       if (name === 'openai') await refresh();
       toast.success(`${providerLabels[name] ?? name} key cleared`);
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e) {
+      toast.error(errorMessage(e));
     } finally {
       busy = '';
     }
@@ -322,11 +405,16 @@ media_model_preferences:Record<string,Record<string,string>>;
       const res: TestResult = await post(providerEndpoint(name, 'test'));
       provTest[name] = res;
       if (res.checked === 'key') provCfg[name] = await get(providerEndpoint(name));
-      if (res.ok) toast.success(res.checked==='configuration'||res.checked==='key'?res.message!:`${providerLabels[name] ?? name}: connected (${res.latency_ms}ms)`);
+      if (res.ok)
+        toast.success(
+          res.checked === 'configuration' || res.checked === 'key'
+            ? res.message!
+            : `${providerLabels[name] ?? name}: connected (${res.latency_ms}ms)`
+        );
       else toast.error(`${providerLabels[name] ?? name}: ${res.error ?? 'failed'}`);
-    } catch (e: any) {
-      provTest[name] = { ok: false, latency_ms: null, error: e.message };
-      toast.error(e.message);
+    } catch (e) {
+      provTest[name] = { ok: false, latency_ms: null, error: errorMessage(e) };
+      toast.error(errorMessage(e));
     } finally {
       busy = '';
     }
@@ -339,11 +427,11 @@ media_model_preferences:Record<string,Record<string,string>>;
     try {
       const updated: AppSettings = await put('/settings/app', patch);
       app = updated;
-if(patch.default_image_provider||patch.default_video_provider)await loadEngineCatalogs();
+      if (patch.default_image_provider || patch.default_video_provider) await loadEngineCatalogs();
       saveStatus = 'Preferences saved';
-    } catch (e: any) {
+    } catch (e) {
       saveStatus = 'Could not save preferences. Check your connection and try again.';
-      toast.error(e.message);
+      toast.error(errorMessage(e));
       // Rebuild controls from the last confirmed values, including native selects.
       const previous = app;
       app = null;
@@ -354,40 +442,64 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
     }
   }
 
-  type VideoCapability = { id: string; supported_frame_images?: string[]; supported_durations?: number[]; supported_resolutions?: string[]; supported_aspect_ratios?: string[] };
+  type VideoCapability = {
+    id: string;
+    supported_frame_images?: string[];
+    supported_durations?: number[];
+    supported_resolutions?: string[];
+    supported_aspect_ratios?: string[];
+  };
   let engineCatalogs = $state<Record<string, string[]>>({
-    image: ['openai/gpt-image-2'], video: ['google/veo-3.1-lite'],
+    image: ['openai/gpt-image-2'],
+    video: ['google/veo-3.1-lite'],
     vision: ['qwen/qwen3-vl-30b-a3b-instruct']
   });
   let videoCapabilities = $state<VideoCapability[]>([]);
   let catalogError = $state('');
   let catalogBusy = $state(false);
-  let catalogSequence=0;
+  let catalogSequence = 0;
   async function loadEngineCatalogs() {
-    if(!app)return;
-    const sequence=++catalogSequence;
-    const imageProvider=app.default_image_provider;
-    const videoProvider=app.default_video_provider;
-    catalogBusy=true;
-    const failures:string[]=[];
-    await Promise.all(['image','video','vision'].map(async modality=>{
-      const provider=modality==='image'?imageProvider:modality==='video'?videoProvider:'openrouter';
-      if(provider==='openrouter'&&!provCfg.openrouter?.configured){if(sequence===catalogSequence)engineCatalogs={...engineCatalogs,[modality]:[]};return}
-      try{
-        const result=await get(`/settings/providers/${encodeURIComponent(provider)}/models?modality=${modality}`);
-        if(sequence!==catalogSequence)return;
-        if(result.error){failures.push(`${provider} ${modality}: ${result.error}`);engineCatalogs={...engineCatalogs,[modality]:[]};return}
-        engineCatalogs={...engineCatalogs,[modality]:result.models??[]};if(modality==='video')videoCapabilities=result.capabilities??[];
-      }catch(e:any){failures.push(`${provider} ${modality}: ${e.message}`)}
-    }));
-    if(sequence===catalogSequence){catalogError=failures.join('; ');catalogBusy=false}
+    if (!app) return;
+    const sequence = ++catalogSequence;
+    const imageProvider = app.default_image_provider;
+    const videoProvider = app.default_video_provider;
+    catalogBusy = true;
+    const failures: string[] = [];
+    await Promise.all(
+      ['image', 'video', 'vision'].map(async modality => {
+        const provider = modality === 'image' ? imageProvider : modality === 'video' ? videoProvider : 'openrouter';
+        if (provider === 'openrouter' && !provCfg.openrouter?.configured) {
+          if (sequence === catalogSequence) engineCatalogs = { ...engineCatalogs, [modality]: [] };
+          return;
+        }
+        try {
+          const result = await get(`/settings/providers/${encodeURIComponent(provider)}/models?modality=${modality}`);
+          if (sequence !== catalogSequence) return;
+          if (result.error) {
+            failures.push(`${provider} ${modality}: ${result.error}`);
+            engineCatalogs = { ...engineCatalogs, [modality]: [] };
+            return;
+          }
+          engineCatalogs = { ...engineCatalogs, [modality]: result.models ?? [] };
+          if (modality === 'video') videoCapabilities = result.capabilities ?? [];
+        } catch (e) {
+          failures.push(`${provider} ${modality}: ${errorMessage(e)}`);
+        }
+      })
+    );
+    if (sequence === catalogSequence) {
+      catalogError = failures.join('; ');
+      catalogBusy = false;
+    }
   }
   function engineOptions(key: keyof AppSettings): string[] {
     return engineCatalogs[key === 'vl_model' ? 'vision' : key === 'video_model' ? 'video' : 'image'] ?? [];
   }
   function videoModelHint(): string {
     const model = videoCapabilities.find(model => model.id === app?.video_model);
-    return model ? `Durations: ${model.supported_durations?.join(', ')} seconds. Resolutions: ${model.supported_resolutions?.join(', ')}.` : 'Capabilities are checked before the selected provider receives a render request.';
+    return model
+      ? `Durations: ${model.supported_durations?.join(', ')} seconds. Resolutions: ${model.supported_resolutions?.join(', ')}.`
+      : 'Capabilities are checked before the selected provider receives a render request.';
   }
 
   let engineCustomOpen = $state<Record<string, boolean>>({});
@@ -440,9 +552,7 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
     const root = document.documentElement;
     root.setAttribute('data-theme', value);
     const prefersDark =
-      typeof window !== 'undefined' &&
-      window.matchMedia &&
-      window.matchMedia('(prefers-color-scheme: dark)').matches;
+      typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
     const dark = value === 'dark' || (value === 'system' && prefersDark);
     root.classList.toggle('dark', dark);
   }
@@ -457,25 +567,62 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
 
   {#if error}
     <Card class="mb-4 border-destructive/40">
-      <CardContent class="space-y-3 p-4"><p role="alert" class="text-sm text-destructive">Settings could not load: {error}</p><Button variant="outline" onclick={retryLoad}>Try again</Button></CardContent>
+      <CardContent class="space-y-3 p-4"><p role="alert"
+        class="text-sm text-destructive">Settings could not load: {error}</p><Button variant="outline" onclick={retryLoad}>Try again</Button></CardContent>
     </Card>
   {/if}
 
   {#if !loaded}
     <div role="status" aria-busy="true" aria-label="Loading settings" class="grid gap-6 md:grid-cols-[200px_minmax(0,1fr)]">
 
-      <div aria-hidden="true" class="grid grid-cols-2 gap-2 self-start md:block md:space-y-2">{#each Array(4) as _, i (i)}<Skeleton aria-hidden="true" class="h-12 motion-reduce:animate-none" />{/each}</div>
-      <div class="space-y-6"><Skeleton aria-hidden="true" class="h-8 w-36 motion-reduce:animate-none" /><Skeleton aria-hidden="true" class="h-24 w-full motion-reduce:animate-none" /><Skeleton aria-hidden="true" class="h-8 w-44 motion-reduce:animate-none" /><Skeleton aria-hidden="true" class="h-40 w-full motion-reduce:animate-none" /></div>
+      <div
+        aria-hidden="true"
+        class="grid grid-cols-2 gap-2 self-start md:block md:space-y-2">{#each Array(4) as _, i (i)}<Skeleton
+        aria-hidden="true"
+        class="h-12 motion-reduce:animate-none" />{/each}</div>
+      <div class="space-y-6"><Skeleton
+        aria-hidden="true"
+        class="h-8 w-36 motion-reduce:animate-none" /><Skeleton
+        aria-hidden="true"
+        class="h-24 w-full motion-reduce:animate-none" /><Skeleton
+        aria-hidden="true"
+        class="h-8 w-44 motion-reduce:animate-none" /><Skeleton
+        aria-hidden="true"
+        class="h-40 w-full motion-reduce:animate-none" /></div>
     </div>
   {:else if !error}
     <div class="grid gap-6 md:grid-cols-[200px_minmax(0,1fr)]">
       <nav aria-label="Settings sections" class="grid grid-cols-2 gap-2 self-start md:sticky md:top-8 md:block md:space-y-2">
-        {#each [{id:'ai',label:'AI setup',hint:'Which AI does each job'},{id:'general',label:'General',hint:'Video defaults & appearance'},{id:'connections',label:'AI connections',hint:'Service keys'},{id:'presets',label:'Creative presets',hint:'Styles & community packs'},{id:'advanced',label:'Advanced',hint:'Troubleshooting'}] as section}
-          <button type="button" aria-label={section.label} aria-current={tab===section.id?'page':undefined} onclick={()=>chooseSection(section.id)} class="min-h-11 flex-1 rounded-lg px-3 py-2 text-left md:w-full {tab===section.id?'bg-accent font-semibold':'hover:bg-accent text-muted-foreground'}"><span class="block text-sm">{section.label}</span><span class="hidden text-xs font-normal md:block">{section.hint}</span></button>
+        {#each [
+            { id: 'ai', label: 'AI setup', hint: 'Which AI does each job' },
+            { id: 'general', label: 'General', hint: 'Video defaults & appearance' },
+            { id: 'connections', label: 'AI connections', hint: 'Service keys' },
+            { id: 'presets', label: 'Creative presets', hint: 'Styles & community packs' },
+            { id: 'advanced', label: 'Advanced', hint: 'Troubleshooting' }
+          ] as section}
+          <button
+            type="button"
+            aria-label={section.label}
+            aria-current={tab===section.id?'page':undefined}
+            onclick={()=>chooseSection(section.id)}
+            class="min-h-11 flex-1 rounded-lg px-3 py-2 text-left md:w-full {tab===section.id?'bg-accent font-semibold':'hover:bg-accent text-muted-foreground'}"><span
+              class="block text-sm">{section.label}</span><span class="hidden text-xs font-normal md:block">{section.hint}</span></button>
         {/each}
       </nav>
       <div class="min-w-0 space-y-6" data-testid="settings-content">
-        <div class="space-y-1 text-sm text-muted-foreground"><p>{tab === 'ai' ? '' : tab === 'connections' ? 'Save each provider key before checking its connection.' : tab === 'presets' ? 'Preview a pack before installing it.' : tab === 'advanced' ? 'These are for troubleshooting. Most people never need them.' : 'Preferences save automatically when changed.'}</p><p role="status" aria-live="polite" class="min-h-5 text-foreground">{saveStatus}</p></div>
+        <div
+          class="space-y-1 text-sm text-muted-foreground"><p>{tab === 'ai'
+              ? ''
+              : tab === 'connections'
+                ? 'Save each provider key before checking its connection.'
+                : tab === 'presets'
+                  ? 'Preview a pack before installing it.'
+                  : tab === 'advanced'
+                    ? 'These are for troubleshooting. Most people never need them.'
+                    : 'Preferences save automatically when changed.'}</p><p
+            role="status"
+            aria-live="polite"
+            class="min-h-5 text-foreground">{saveStatus}</p></div>
       {#if tab === 'ai'}<AISetup onopen={chooseSection} />{/if}
       {#if tab === 'presets'}<CreativePresetManager />{/if}
       <!-- ============================================ APPEARANCE -->
@@ -490,7 +637,11 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
           </CardHeader>
           <CardContent>
             <div role="radiogroup" aria-label="Theme" class="flex flex-wrap gap-2">
-              {#each [{ v: 'light', label: 'Light', icon: Sun }, { v: 'dark', label: 'Dark', icon: Moon }, { v: 'system', label: 'System', icon: Monitor }] as opt (opt.v)}
+              {#each [
+                  { v: 'light', label: 'Light', icon: Sun },
+                  { v: 'dark', label: 'Dark', icon: Moon },
+                  { v: 'system', label: 'System', icon: Monitor }
+                ] as opt (opt.v)}
                 <button
                   type="button"
                   role="radio"
@@ -501,7 +652,20 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                     : 'border-border hover:bg-accent/50'}"
                   onclick={() => setTheme(opt.v as 'light' | 'dark' | 'system')}
                   tabindex={theme === opt.v ? 0 : -1}
-                  onkeydown={(e) => { if (['ArrowRight','ArrowDown','ArrowLeft','ArrowUp','Home','End'].includes(e.key)) { e.preventDefault(); const options = ['light','dark','system'] as const; const index = e.key === 'Home' ? 0 : e.key === 'End' ? 2 : (options.indexOf(theme) + (['ArrowRight','ArrowDown'].includes(e.key) ? 1 : 2)) % 3; setTheme(options[index]); ((e.currentTarget as HTMLElement).parentElement?.querySelectorAll('button')[index] as HTMLElement)?.focus(); } }}
+                  onkeydown={e => {
+                    if (['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+                      e.preventDefault();
+                      const options = ['light', 'dark', 'system'] as const;
+                      const index =
+                        e.key === 'Home'
+                          ? 0
+                          : e.key === 'End'
+                            ? 2
+                            : (options.indexOf(theme) + (['ArrowRight', 'ArrowDown'].includes(e.key) ? 1 : 2)) % 3;
+                      setTheme(options[index]);
+                      ((e.currentTarget as HTMLElement).parentElement?.querySelectorAll('button')[index] as HTMLElement)?.focus();
+                    }
+                  }}
                 >
                   <opt.icon class="size-4" />
                   {opt.label}
@@ -528,17 +692,24 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
             {#each orderedProviders as p (p.name)}
               {@const cfg = provCfg[p.name]}
               {@const test = provTest[p.name]}
-              <details open={providerOpen[p.name] ?? (p.name === app?.default_image_provider || p.name === app?.default_video_provider)} ontoggle={e=>providerOpen[p.name]=e.currentTarget.open}>
+              <details
+                open={providerOpen[p.name] ?? (p.name === app?.default_image_provider || p.name === app?.default_video_provider)}
+                ontoggle={e=>providerOpen[p.name]=e.currentTarget.open}>
                 <summary class="cursor-pointer rounded-md py-2 text-sm font-medium">
                   {providerLabels[p.name] ?? p.name}
-                  {#if cfg?.key_check?.state === 'rejected'}<span class="ml-2 text-xs font-normal text-destructive">Key rejected</span>{:else if cfg?.key_check?.state === 'no_credit'}<span class="ml-2 text-xs font-normal text-destructive">No balance</span>{:else}<span class="ml-2 text-xs font-normal text-muted-foreground">{cfg?.configured ? 'Configured' : 'Not configured'}</span>{/if}
+                  {#if cfg?.key_check?.state === 'rejected'}<span
+                    class="ml-2 text-xs font-normal text-destructive">Key rejected</span>{:else if cfg?.key_check?.state === 'no_credit'}<span
+                    class="ml-2 text-xs font-normal text-destructive">No balance</span>{:else}<span
+                    class="ml-2 text-xs font-normal text-muted-foreground">{cfg?.configured ? 'Configured' : 'Not configured'}</span>{/if}
                 </summary>
               <div data-provider={p.name}>
                 {#if cfg?.configured}
                   <p class="settings-help mb-2">{cfg.from_db ? cfg.masked_key : 'Provided by the server environment'}</p>
                 {/if}
                 {#if cfg?.key_check?.message}
-                  <p class="mb-2 text-xs {cfg.key_check.state === 'rejected' || cfg.key_check.state === 'no_credit' ? 'text-destructive' : 'text-muted-foreground'}" role="status">{cfg.key_check.message}</p>
+                  <p
+                    class="mb-2 text-xs {cfg.key_check.state === 'rejected' || cfg.key_check.state === 'no_credit' ? 'text-destructive' : 'text-muted-foreground'}"
+                    role="status">{cfg.key_check.message}</p>
                 {/if}
 
                 <div class="grid gap-2 sm:grid-cols-2">
@@ -563,7 +734,10 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                 </div>
                 <p class="settings-help mt-2" role="status">{providerDirty(p.name) ? 'Unsaved credential changes' : 'No unsaved credential changes'}</p>
                 <div class="mt-2 flex flex-wrap items-center gap-2">
-                  {#if p.name === 'openai'}<p class="settings-help">Used for images when native Codex image generation is unavailable.</p>{:else if p.protocol === 'speech'}<p class="settings-help">Choose the voice service in AI setup and each character's voice in <a class="underline" href="/voices">Voices</a>. Configuration checks do not generate speech.</p>{:else}
+                  {#if p.name === 'openai'}<p
+                    class="settings-help">Used for images when native Codex image generation is unavailable.</p>{:else if p.protocol === 'speech'}<p
+                    class="settings-help">Choose the voice service in AI setup and each character's voice in <a
+                    class="underline" href="/voices">Voices</a>. Configuration checks do not generate speech.</p>{:else}
                   {#if providerModelInput[p.name]}
                     <Input
                       class="max-w-64"
@@ -609,7 +783,10 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                       Verify
                     </Button>
                   {/if}
-                  <span class="settings-help">{p.protocol === 'chat' ? 'Text model tests consume provider usage.' : 'Catalog checks do not submit generation or verify account/model access.'}</span>{/if}
+                  <span
+                    class="settings-help">{p.protocol === 'chat'
+                        ? 'Text model tests consume provider usage.'
+                        : 'Catalog checks do not submit generation or verify account/model access.'}</span>{/if}
                   <Button
                     size="sm"
                     disabled={!!busy || !providerDirty(p.name)}
@@ -626,7 +803,14 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                     {#if busy === `test-${p.name}`}
                       <LoaderCircle class="size-3.5 mr-1 animate-spin" />Testing…
                     {:else}
-                      <Wifi class="size-3.5 mr-1" />{cfg?.key_check?.state === 'no_credit' ? 'Check again' : p.protocol === 'chat' ? 'Test connection' : p.protocol === 'video' && p.name !== 'byteplus' ? 'Check key' : 'Check configuration'}
+                      <Wifi
+                        class="size-3.5 mr-1" />{cfg?.key_check?.state === 'no_credit'
+                            ? 'Check again'
+                            : p.protocol === 'chat'
+                              ? 'Test connection'
+                              : p.protocol === 'video' && p.name !== 'byteplus'
+                                ? 'Check key'
+                                : 'Check configuration'}
                     {/if}
                   </Button>
                   {#if cfg?.from_db}
@@ -651,7 +835,14 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                   {#if test}
                     {#if test.ok}
                       <span class="flex items-center gap-1 text-xs text-emerald-500">
-                        <CircleCheck class="size-3.5" />{test.checked === 'configuration' ? 'Configuration checked' : test.checked === 'key' ? (test.credentials_verified ? 'Key accepted' : 'Key could not be checked') : 'Connected'}
+                        <CircleCheck
+                          class="size-3.5" />{test.checked === 'configuration'
+                              ? 'Configuration checked'
+                              : test.checked === 'key'
+                                ? test.credentials_verified
+                                  ? 'Key accepted'
+                                  : 'Key could not be checked'
+                                : 'Connected'}
                         {#if test.checked !== 'configuration' && test.checked !== 'key' && test.latency_ms != null}({test.latency_ms}ms){/if}
                       </span>
                     {:else}
@@ -698,11 +889,32 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
               </div>
 
               <div class="flex flex-wrap items-start gap-3">
-                <div class="min-w-[180px] flex-1"><label class="settings-label" for="scene-duration">Default scene duration (s)</label><p id="duration-hint" class="settings-help">1–120 whole seconds.</p></div>
-                <div><Input id="scene-duration" aria-label="Default scene duration (seconds)" aria-invalid={durationError ? 'true' : undefined} aria-describedby={durationError ? 'duration-hint duration-error' : 'duration-hint'} type="number" min="1" max="120" step="1" class="h-8 w-24 text-sm" disabled={busy === 'app'} value={app.default_scene_duration}
+                <div class="min-w-[180px] flex-1"><label class="settings-label"
+                  for="scene-duration">Default scene duration (s)</label><p id="duration-hint" class="settings-help">1–120 whole seconds.</p></div>
+                <div><Input
+                  id="scene-duration"
+                  aria-label="Default scene duration (seconds)"
+                  aria-invalid={durationError ? 'true' : undefined}
+                  aria-describedby={durationError ? 'duration-hint duration-error' : 'duration-hint'}
+                  type="number"
+                  min="1"
+                  max="120"
+                  step="1"
+                  class="h-8 w-24 text-sm"
+                  disabled={busy === 'app'}
+                  value={app.default_scene_duration}
                   onfocus={() => durationError = ''}
                   oninput={() => durationError = ''}
-                  onchange={(e) => { const input=e.currentTarget as HTMLInputElement;const n=Number(input.value);if(!input.value || !Number.isInteger(n) || n<1 || n>120) {durationError='Enter a scene duration from 1 to 120 in whole seconds.';return;}durationError='';if(n!==app!.default_scene_duration)void saveApp({default_scene_duration:n}); }} />
+                  onchange={e => {
+                    const input = e.currentTarget as HTMLInputElement;
+                    const n = Number(input.value);
+                    if (!input.value || !Number.isInteger(n) || n < 1 || n > 120) {
+                      durationError = 'Enter a scene duration from 1 to 120 in whole seconds.';
+                      return;
+                    }
+                    durationError = '';
+                    if (n !== app!.default_scene_duration) void saveApp({ default_scene_duration: n });
+                  }} />
                 {#if durationError}<p id="duration-error" role="alert" class="mt-2 max-w-xs text-sm text-destructive">{durationError}</p>{/if}</div>
               </div>
 
@@ -716,7 +928,8 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                   onchange={(e) =>
                     saveApp({ dialogue_language: (e.currentTarget as HTMLSelectElement).value })}
                 >
-                  {#if !DIALOGUE_LANGUAGES.some(l => l.value === dialogueValue(app!.dialogue_language))}<option value={app.dialogue_language}>{app.dialogue_language}</option>{/if}
+                  {#if !DIALOGUE_LANGUAGES.some(l => l.value === dialogueValue(app!.dialogue_language))}<option
+                    value={app.dialogue_language}>{app.dialogue_language}</option>{/if}
                   {#each DIALOGUE_LANGUAGES as l (l.value)}
                     <option value={l.value}>{l.label}</option>
                   {/each}
@@ -742,7 +955,11 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
             </CardDescription>
           </CardHeader>
           <CardContent class="settings-section">
-            <Button size="sm" variant="outline" disabled={catalogBusy} onclick={loadEngineCatalogs}>{catalogBusy ? 'Loading catalogs…' : 'Refresh model catalogs'}</Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={catalogBusy}
+              onclick={loadEngineCatalogs}>{catalogBusy ? 'Loading catalogs…' : 'Refresh model catalogs'}</Button>
             {#if catalogError}<p class="text-sm text-destructive">{catalogError}</p>{/if}
             {#if app}
               {@const engines = [
@@ -888,7 +1105,10 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
                 <label class="text-xs">Default model<Input bind:value={newModel} placeholder="Model ID from your provider" /></label>
                 {#if newProtocol !== 'codex'}
                   <label class="text-xs">Base URL<Input bind:value={newUrl} /></label>
-                  <label class="text-xs">Chat Completions output mode<select class="block w-full rounded border p-2 bg-background" bind:value={newMode} disabled={newProtocol !== 'chat'}>
+                  <label class="text-xs">Chat Completions output mode<select
+                    class="block w-full rounded border p-2 bg-background"
+                    bind:value={newMode}
+                    disabled={newProtocol !== 'chat'}>
                     <option value="auto">Provider default</option><option value="prompt">JSON in prompt</option>
                   </select></label>
                 {/if}
@@ -911,14 +1131,48 @@ if(patch.default_image_provider||patch.default_video_provider)await loadEngineCa
 <svelte:window onhashchange={settingsHash} />
 
 <style>
-  .settings-page { --settings-label-size: .875rem; --settings-help-size: .75rem; --settings-section-gap: 1rem; }
-  .settings-page :global(.settings-label) { font-size:var(--settings-label-size); line-height:1.25rem; font-weight:500; }
-  .settings-page :global(.settings-help) { font-size:var(--settings-help-size); line-height:1rem; color:var(--muted-foreground); }
-  .settings-page :global(.settings-section > :not(:last-child)) { margin-bottom:var(--settings-section-gap); }
+  .settings-page {
+    --settings-label-size: 0.875rem;
+    --settings-help-size: 0.75rem;
+    --settings-section-gap: 1rem;
+  }
+  .settings-page :global(.settings-label) {
+    font-size: var(--settings-label-size);
+    line-height: 1.25rem;
+    font-weight: 500;
+  }
+  .settings-page :global(.settings-help) {
+    font-size: var(--settings-help-size);
+    line-height: 1rem;
+    color: var(--muted-foreground);
+  }
+  .settings-page :global(.settings-section > :not(:last-child)) {
+    margin-bottom: var(--settings-section-gap);
+  }
 
-  .settings-page :global([data-slot="card"]) { border-radius: 0; box-shadow: none; border-width: 0 0 1px; border-color: var(--border); background: transparent; padding-bottom: 1.5rem; }
-  .settings-page :global([data-slot="card-header"]), .settings-page :global([data-slot="card-content"]) { padding-left: 0; padding-right: 0; }
-  .settings-page :global(select) { max-width: 100%; }
-  .settings-page :global(summary) { min-height: 2.75rem; align-content: center; }
-  @media (max-width: 639px) { .settings-page :global(select) { width: 100%; } }
+  .settings-page :global([data-slot='card']) {
+    border-radius: 0;
+    box-shadow: none;
+    border-width: 0 0 1px;
+    border-color: var(--border);
+    background: transparent;
+    padding-bottom: 1.5rem;
+  }
+  .settings-page :global([data-slot='card-header']),
+  .settings-page :global([data-slot='card-content']) {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .settings-page :global(select) {
+    max-width: 100%;
+  }
+  .settings-page :global(summary) {
+    min-height: 2.75rem;
+    align-content: center;
+  }
+  @media (max-width: 639px) {
+    .settings-page :global(select) {
+      width: 100%;
+    }
+  }
 </style>
