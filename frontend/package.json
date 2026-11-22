@@ -8,6 +8,7 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check",
+		"test": "node --test $(find src tests -name \"*.test.mjs\")",
 		"serve": "serve -s build -l 4173"
 	},
 	"devDependencies": {

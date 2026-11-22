@@ -1,6 +1,6 @@
 # Media provider implementation verification
 
-Repository: JienWeng/videoflow-go. Design and task plan: docs/superpowers/specs/2026-11-11-media-providers.md and docs/superpowers/plans/2026-11-11-media-providers.md.
+Repository: JienWeng/videoflow-go.
 
 Implemented: fal default new media routes, OpenRouter text/vision/transcription, selectable direct international BytePlus video, curated exact API profiles, provider-specific model preferences, migration preserving existing routes, durable job endpoint/provider/model snapshots, route capture shared by preflight and generation, provider-aware retry/reconciliation, capability filtering, reference/first-frame translation, credential-free bounded output downloads and private-network blocking. No application dependencies were added.
 

@@ -86,7 +86,7 @@ Fix: initially provide a simple ordered “assemble selected scene outputs” ac
 
 ## Repair implementation
 
-The subsequent repair branch implements the ordered plan in `docs/superpowers/plans/2026-11-11-browser-generation-repair.md`. The findings above describe the audited baseline, not a claim that they remain present after the repair. See `docs/BROWSER-WORKFLOW.md` for the resulting user flow and recovery semantics. Live model/device/cloud checks remain separate.
+The subsequent repair branch fixed these in order. The findings above describe the audited baseline, not a claim that they remain present after the repair. See `docs/BROWSER-WORKFLOW.md` for the resulting user flow and recovery semantics. Live model/device/cloud checks remain separate.
 
 ### Repair verification (2026-11-11)
 

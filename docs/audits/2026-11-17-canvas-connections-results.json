@@ -1,7 +1,0 @@
-{
-  "checks": [
-    "1440: keyboard cast attach, detach, revision-checked scene reference attach, automatic links protected, related-node navigation",
-    "390: keyboard cast attach, detach, revision-checked scene reference attach, automatic links protected, related-node navigation"
-  ],
-  "errors": []
-}
