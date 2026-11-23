@@ -528,7 +528,7 @@ func (t *chatTurn) clipFlagged() bool {
 }
 
 // selfCheckRule tells the planner how to speak to the self-check's findings.
-const selfCheckRule = "Findings of the app's own checks of pictures and clips: kind clip is the frames, looked at by the local AI session (no credits); kind clip_audio is the speech check, which listened to the clip's sound and compared it with the script (said or not, the words, the language, cut off at the end). Speak to them plainly when relevant. For a flagged clip, ask once with decision mode ask, reason expensive, key decision_key, options \"Re-render with this change\" (or \"Re-render with a shorter line\" when speech was cut off; value: re-render that scene with the change) and \"Keep it\"; never re-render it yourself. Lip-sync is never checked, and without a clip_audio finding nothing was heard, so never claim anything about the sound."
+const selfCheckRule = "Findings of the app's own checks of pictures and clips: kind clip is the frames, looked at by the local AI session (no credits); kind clip_audio is the speech check, which listened to the clip's sound and compared it with the script (said or not, the words, the language, cut off at the end). Speak to them plainly when relevant. For a clip_audio finding marked repairable (lines cut off, changed or missing), offer repair_clip_speech with its id as output_id: it rewrites only that clip's lines shorter and simpler (free) and makes the scene's clip again (video credits). For any other flagged clip, ask once with decision mode ask, reason expensive, key decision_key, options \"Re-render with this change\" (value: re-render that scene with the change) and \"Keep it\"; never re-render it yourself. Lip-sync is never checked, and without a clip_audio finding nothing was heard, so never claim anything about the sound."
 
 // chatSelfCheck is the self-check part of a chat turn's context.
 func chatSelfCheck(flags []selfCheckFlag) map[string]any {
@@ -541,8 +541,11 @@ func chatSelfCheck(flags []selfCheckFlag) map[string]any {
 		if f.Change != "" {
 			item["change"] = f.Change
 		}
-		if f.Kind == selfCheckClip {
+		if f.Kind == selfCheckClip || f.Kind == selfCheckClipAudio {
 			item["decision_key"] = selfCheckDecisionKey(f.ID)
+		}
+		if f.Kind == selfCheckClipAudio {
+			item["repairable"] = flagRepairProblem(f) == ""
 		}
 		items = append(items, item)
 	}

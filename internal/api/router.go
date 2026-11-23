@@ -289,6 +289,8 @@ func (s *Server) registerRenderRoutes() {
 	s.registerRenderRecoveryRoutes()
 
 	s.router.Post("/outputs/{id}/retry", s.handleRetryOutput)
+	s.router.Post("/outputs/{id}/speech-repair", s.handleSpeechRepair)
+	s.router.Post("/outputs/{id}/speech-repair/apply", s.handleSpeechRepairApply)
 	s.router.Get("/outputs/{id}/download", s.handleDownloadOutput)
 }
 

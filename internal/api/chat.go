@@ -282,6 +282,7 @@ func (s *Server) chatIntent(ctx context.Context, turn *chatTurn, res *agents.Cha
 	action = s.resolveChatServiceActions(turn, res, action, intent)
 	action = s.resolveChatCharacterSheets(turn, res, action, intent)
 	chatIntentTargets(turn, res, action, intent)
+	action = resolveChatSpeechRepair(turn, res, action, intent)
 	action = chatGuardSelection(turn, res, action, selectionApplies, intent)
 	s.pinChatSelection(turn, res, action, selectionApplies, intent)
 	intent["decision"] = chatTurnDecision(turn, res, action)
@@ -658,7 +659,7 @@ func canonicalChatAction(action string) string {
 	switch action {
 	case "create_script", "add_scene":
 		return "generate_script"
-	case "open_editor", "finish_video", "render_scenes", "check_video", "stop_waiting", "switch_video_service", "clear_failed_videos", "set_music", "update_character", "generate_image", "generate_character_reference", "generate_character_references", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets", "fit_script":
+	case "open_editor", "finish_video", "render_scenes", "check_video", "stop_waiting", "switch_video_service", "clear_failed_videos", "set_music", "update_character", "generate_image", "generate_character_reference", "generate_character_references", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets", "fit_script", speechRepairAction:
 		return action
 	default:
 		return "unknown"
@@ -678,10 +679,10 @@ const retiredClipReply = "I can't make a one-off clip straight from a picture an
 
 func chatMode(auto, full bool) string {
 	if full {
-		return "full auto: the user wants the finished video with as few clicks as possible. For a new story they confirm the plan once; the app then makes the pictures, renders every scene, joins them with captions and exports the final video by itself, using image and video credits. Say that confirming is the only click. Free planning steps and check_video start by themselves, and finish_video, render_scenes, generate_character_references, generate_character_reference, generate_scenes, storyboard, audit_storyboard, generate_assets, render_scene, render_shot, retry_render, generate_image and fit_script start by themselves as soon as they are ready (fit_script also saves the fitted lines); only delete_scene and edits to a character's details wait for the user; finish_video and render_scenes first make the missing reference pictures of the scenes' characters, all at once, so never offer per-character picture buttons first. Decide every detail yourself and never ask the user to press per-scene buttons. The only questions allowed are the one plan confirmation, a destructive step and a required input that is missing; any other question is overruled and the step goes ahead."
+		return "full auto: the user wants the finished video with as few clicks as possible. For a new story they confirm the plan once; the app then makes the pictures, renders every scene, joins them with captions and exports the final video by itself, using image and video credits. Say that confirming is the only click. Free planning steps and check_video start by themselves, and finish_video, render_scenes, generate_character_references, generate_character_reference, generate_scenes, storyboard, audit_storyboard, generate_assets, render_scene, render_shot, retry_render, generate_image and fit_script start by themselves as soon as they are ready (fit_script also saves the fitted lines); repair_clip_speech also starts by itself, but only once per clip: it is the one automatic re-render a clip whose speech the check flagged gets, and after it the clip is asked about; only delete_scene and edits to a character's details wait for the user; finish_video and render_scenes first make the missing reference pictures of the scenes' characters, all at once, so never offer per-character picture buttons first. Decide every detail yourself and never ask the user to press per-scene buttons. The only questions allowed are the one plan confirmation, a destructive step and a required input that is missing; any other question is overruled and the step goes ahead."
 	}
 	if auto {
-		return "auto: free steps (refine_scene, refine_shot, generate_shots, plan_assets, check_video) start by themselves right after your reply, so write a complete instruction and say what you are doing now (\"I'm rewriting the scene so that…\"), not \"press the button\". Steps that use credits or delete things still wait for the user's click, and so does fit_script (the user sees the script before and after and chooses); say so. Decide details yourself and do not ask for confirmation of free steps."
+		return "auto: free steps (refine_scene, refine_shot, generate_shots, plan_assets, check_video) start by themselves right after your reply, so write a complete instruction and say what you are doing now (\"I'm rewriting the scene so that…\"), not \"press the button\". Steps that use credits or delete things still wait for the user's click, and so does fit_script (the user sees the script before and after and chooses), and so does repair_clip_speech (the user sees the shorter lines and the price of the new clip, then chooses); say so. Decide details yourself and do not ask for confirmation of free steps."
 	}
 	return "manual: every step waits for the user to press its button."
 }

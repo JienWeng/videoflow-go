@@ -284,10 +284,23 @@ type Budget struct {
 
 // BudgetFor is how many characters or words fill seconds in a language.
 func BudgetFor(seconds float64, language string, cal Calibration) Budget {
+	return BudgetShare(seconds, language, cal, Target, 1)
+}
+
+// RepairTarget is the share of a shot's seconds a line rewritten after the speech check
+// heard it cut off, changed or missing aims to fill: shorter than Target, with room
+// for the video model's own pace. RepairMost is the most it may fill.
+var RepairTarget = [2]float64{0.6, 0.75}
+
+const RepairMost = 0.75
+
+// BudgetShare is how many characters or words fill the shares target (low, high) and
+// most of seconds in a language.
+func BudgetShare(seconds float64, language string, cal Calibration, target [2]float64, most float64) Budget {
 	r := RateFor(language, cal)
 	rate, unit := r.Words, "words"
 	if CharBased(language) {
 		rate, unit = r.Chars, "characters"
 	}
-	return Budget{Unit: unit, Low: int(math.Floor(seconds * Target[0] * rate)), High: int(math.Floor(seconds * Target[1] * rate)), Max: int(math.Floor(seconds * rate))}
+	return Budget{Unit: unit, Low: int(math.Floor(seconds * target[0] * rate)), High: int(math.Floor(seconds * target[1] * rate)), Max: int(math.Floor(seconds * most * rate))}
 }

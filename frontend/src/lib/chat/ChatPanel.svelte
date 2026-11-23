@@ -1328,6 +1328,7 @@
         };
       case 'render_shot':
       case 'retry_render':
+      case 'repair_clip_speech':
         return {
           role: 'assistant',
           text: 'Render submitted. When it succeeds, add captions in Edit video:',

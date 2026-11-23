@@ -576,6 +576,25 @@ export type ScriptFit = {
   after_fit: SceneSpeech;
 };
 
+/** POST /outputs/{id}/speech-repair (speechRepair in internal/api/speech_repair.go):
+ * the scene's lines before and after (only the flagged clip's lines differ), what the
+ * speech check heard, and the price of making the clip again. Nothing is saved. */
+export type SpeechRepair = {
+  output_id: string;
+  scene_id: string;
+  scene_title: string;
+  expected_updated_at: string;
+  heard: string[];
+  speech_end?: number;
+  clip_length: number;
+  line_ids: string[];
+  before: SavedSpokenLine[];
+  after: SavedSpokenLine[];
+  before_fit: SceneSpeech;
+  after_fit: SceneSpeech;
+  quote: { plan_id: string; calls: number; seconds: number; storyboards: number; blocked?: string };
+};
+
 /** A scene's video settings (productionSettings in internal/api/production_plan.go). */
 export type ProductionSettings = {
   dialogue_shots?: Record<string, string>;
