@@ -96,6 +96,8 @@ type projectStage struct {
 	// Missing says in plain words what is not there yet, e.g. "no saved voice for Satoshi".
 	Missing []string     `json:"missing,omitempty"`
 	Next    *stageAction `json:"next,omitempty"`
+	// Findings are the self-check results of the clips (review stage only).
+	Findings []stageFinding `json:"findings,omitempty"`
 }
 
 // stageMap is GET /stages.
@@ -136,6 +138,8 @@ type stageInputs struct {
 	LastExportAt time.Time
 	// Reviewed is set when the decision log says the user watched the clips.
 	Reviewed bool
+	// Clips are the clips each scene's newest video is made of, with their self-check.
+	Clips []stageClip
 }
 
 var stageLabels = map[string]string{
@@ -200,6 +204,7 @@ func (s *Server) stageInputs(ctx context.Context, projectID string, progress pro
 	in.LastEditAt = s.lastSavedEdit(projectID)
 	in.LastExportAt = s.lastExport(projectID)
 	decisions, _ := s.database.ListDecisions(projectID) // an unreadable log reads as empty; stages still come from saved work
+	in.Clips = s.stageClips(in.Scenes, jobs, decisions)
 	for _, d := range decisions {
 		for _, key := range briefDecisionKeys {
 			in.BriefDecided = in.BriefDecided || d.Key == key
@@ -519,19 +524,61 @@ func editIsCurrent(in stageInputs) bool {
 	return !in.LastEditAt.IsZero() && !in.LastEditAt.Before(in.LastClipAt)
 }
 
+// reviewStage is watching the clips, and the self-check's verdict on them. A clip the
+// check flagged, that the user has not kept or made again, blocks it (it is still
+// optional: the project can go on). It is done when the user watched the clips, an
+// edit was saved after them, or every clip passed its check or was kept.
 func reviewStage(in stageInputs) projectStage {
 	st := newStage(stageReview)
 	st.Optional = true
+	flagged, checked, passed := []stageClip{}, 0, 0
+	for _, c := range in.Clips {
+		if c.Check == nil {
+			continue
+		}
+		checked++
+		st.Findings = append(st.Findings, stageFinding{SceneID: c.SceneID, OutputID: c.OutputID, Label: "“" + c.SceneTitle + "” clip", Verdict: c.Check.Result.Verdict, Score: c.Check.Result.Score, Issues: c.Check.Result.Issues, Change: c.Check.Result.Retry.Change, Kept: c.Kept, Note: c.Check.Result.Note})
+		if c.flagged() {
+			flagged = append(flagged, c)
+		} else {
+			passed++
+		}
+	}
+	if checked > 0 {
+		st.Total, st.Done = len(in.Clips), passed
+	}
 	switch {
 	case !allClipsDone(in):
 		st.Status = statusNotStarted
-	case in.Reviewed || editIsCurrent(in):
+	case len(flagged) > 0:
+		st.Status = statusBlocked
+		for _, c := range flagged {
+			detail := "it doesn't match the scene"
+			if len(c.Check.Result.Issues) > 0 {
+				detail = strings.TrimRight(c.Check.Result.Issues[0].Detail, ".")
+			}
+			st.Missing = append(st.Missing, fmt.Sprintf("the check flagged the “%s” clip (%s): %s", c.SceneTitle, c.Check.Result.Verdict, detail))
+		}
+		st.Next = &stageAction{Action: "watch_videos", Label: "Look at the flagged clips", SceneIDs: stageClipScenes(flagged), Reversible: true, Cost: stageCost{Class: costFree, Note: "re-rendering a clip uses video credits and is always your choice"}}
+	case in.Reviewed || editIsCurrent(in) || len(in.Clips) > 0 && passed == len(in.Clips):
 		st.Status = statusDone
 	default:
 		st.Status = statusReady
 		st.Next = &stageAction{Action: "watch_videos", Label: "Watch the scene videos", Reversible: true, Cost: stageCost{Class: costFree}}
 	}
 	return st
+}
+
+// stageClipScenes are the scenes of clips, each once.
+func stageClipScenes(clips []stageClip) []string {
+	ids, seen := []string{}, map[string]bool{}
+	for _, c := range clips {
+		if !seen[c.SceneID] {
+			seen[c.SceneID] = true
+			ids = append(ids, c.SceneID)
+		}
+	}
+	return ids
 }
 
 func editStage(in stageInputs) projectStage {

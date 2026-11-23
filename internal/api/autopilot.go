@@ -56,6 +56,9 @@ type autopilotRequest struct {
 	// member of these scenes that has none, using image credits. Full auto sends it; a
 	// run started by a click elsewhere spends only what its button showed.
 	CharacterPictures bool `json:"character_pictures"`
+	// FullAuto runs the self-check (selfcheck_policy.go): the pictures are checked before
+	// any video is paid for, and the clips once they are made. Full auto sends it.
+	FullAuto bool `json:"full_auto"`
 }
 
 // autopilotRuns are the background runs in progress, by what they make.
@@ -222,12 +225,18 @@ func (a *autopilotRunner) run(ctx context.Context) (any, error) {
 	if err = a.makeCharacterPictures(ctx); err != nil {
 		return nil, err
 	}
+	if flagged, err := a.checkPictures(ctx); err != nil {
+		return flagged, err
+	}
 	waiting, err := a.startSceneVideos(ctx, adopted)
 	if err != nil {
 		return nil, err
 	}
 	if stuck, err := a.waitForSceneVideos(ctx, waiting); err != nil {
 		return stuck, err
+	}
+	if flagged := a.checkClips(ctx); len(flagged) > 0 {
+		return a.clipReviewResult(flagged), nil
 	}
 	if a.body.VideosOnly {
 		return a.videosOnlyResult(waiting), nil

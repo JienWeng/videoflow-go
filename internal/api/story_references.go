@@ -86,6 +86,9 @@ func (s *Server) generateCharacterSheet(ctx context.Context, c *models.Character
 	if style != "" {
 		prompt += "\nVisual style: " + style
 	}
+	if change, _ := ctx.Value(selfCheckChangeKey{}).(string); change != "" {
+		prompt += selfCheckCorrection(change)
+	}
 	images, err := s.generateAssets(ctx, c.ProjectID, &c.ID, "", c.Name+" reference", "character_reference", prompt, "1:1", refs)
 	if err != nil {
 		return nil, err

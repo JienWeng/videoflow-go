@@ -252,6 +252,23 @@ export type OpResult = {
   made?: CharacterSheetOutcome[];
   failed?: CharacterSheetOutcome[];
   image_calls?: number;
+  /** Full auto's self-check (internal/api/selfcheck_policy.go): what it flagged, and for
+   * a flagged clip the question to ask (needs_review with a chat decision). */
+  self_check?: SelfCheckFlag[];
+  needs_review?: boolean;
+  decision?: unknown;
+};
+
+/** A picture or clip the self-check flagged. */
+export type SelfCheckFlag = {
+  kind: string;
+  id: string;
+  label: string;
+  scene_id?: string;
+  verdict: string;
+  score: number;
+  change?: string;
+  problem?: string;
 };
 
 /** One character in a picture batch (internal/api/character_batch.go). */

@@ -6,6 +6,7 @@
   import { get, post, API_BASE, mediaUrl } from '$lib/api';
   import { subscribeJobs } from '$lib/sse';
   import VideoPreview from '$lib/components/VideoPreview.svelte';
+  import SelfCheck from '$lib/selfcheck/SelfCheck.svelte';
   import StuckVideo from '$lib/production/StuckVideo.svelte';
   import { serviceName } from '$lib/costs/services.mjs';
   import { Button } from '$lib/components/ui/button';
@@ -579,6 +580,7 @@
                           <Clapperboard class="size-3.5 mr-1.5" />Edit video
                         </Button>
                       </div>
+                      <SelfCheck kind="clip" id={out.id} record={out.qa_json} compact />
 
                       <!-- Download controls (raw vs captioned). Captioned shown
                            first when available. -->

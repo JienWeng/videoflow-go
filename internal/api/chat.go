@@ -49,6 +49,9 @@ type chatTurn struct {
 	videoService map[string]any
 	// decisions is the project's decision log as the planner saw it.
 	decisions []db.ProjectDecision
+	// selfChecks are the pictures and clips whose self-check found problems the user
+	// has not settled; a flagged clip lets Full auto ask about re-rendering it.
+	selfChecks []selfCheckFlag
 }
 
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -174,9 +177,10 @@ func (s *Server) chatPlannerContext(ctx context.Context, turn *chatTurn) ([]byte
 	turn.decisions, _ = s.database.ListDecisions(projectID) // an unreadable log reads as empty; the assistant may then ask again
 	if in, err := s.stageInputs(ctx, projectID, progress); err == nil {
 		turn.stages = computeStages(in)
+		turn.selfChecks = append(s.flaggedPictures(projectID, turn.chars, turn.scenes), flaggedClips(in.Clips)...)
 	}
 	turn.videoService = s.chatVideoService()
-	contextJSON, _ := json.Marshal(map[string]any{"stages": chatStages(turn.stages), "decided_so_far": chatDecidedSoFar(turn.decisions), "production_progress": chatProgress(progress), "recent_activity": s.chatActivity(projectID, turn.jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "video_service": turn.videoService, "episode_sound": s.episodeSound(projectID), "failed_video_attempts": failedShown, "assistant_mode": chatMode(body.Auto, body.Full), "attached_media": turn.attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": turn.sceneOptions, "characters": turn.charOptions, "outputs": turn.outputs, "selected_item": turn.selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "render_audio_modes": []string{"native", "silent"}, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false}})
+	contextJSON, _ := json.Marshal(map[string]any{"stages": chatStages(turn.stages), "self_check": chatSelfCheck(turn.selfChecks), "decided_so_far": chatDecidedSoFar(turn.decisions), "production_progress": chatProgress(progress), "recent_activity": s.chatActivity(projectID, turn.jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "video_service": turn.videoService, "episode_sound": s.episodeSound(projectID), "failed_video_attempts": failedShown, "assistant_mode": chatMode(body.Auto, body.Full), "attached_media": turn.attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": turn.sceneOptions, "characters": turn.charOptions, "outputs": turn.outputs, "selected_item": turn.selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "render_audio_modes": []string{"native", "silent"}, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false}})
 	return contextJSON, nil
 }
 
@@ -286,7 +290,7 @@ func chatTurnDecision(turn *chatTurn, res *agents.ChatIntentResponse, action str
 	decision := normalizeChatDecision(res.Decision, action)
 	decision = applySettledAsk(decision, action, turn.body.Message, turn.decisions)
 	if turn.body.Full {
-		decision = applyFullAutoAsk(decision, action, chatInputMissing(turn))
+		decision = applyFullAutoAsk(decision, action, chatInputMissing(turn), turn.clipFlagged())
 	}
 	return decision
 }

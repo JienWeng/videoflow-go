@@ -20,8 +20,9 @@ import (
 // Otherwise decide, name the assumption in one line, and proceed.
 //
 // The server enforces what it can check. In Full auto the only questions allowed are
-// the one plan confirmation, a destructive step and a missing required input; any
-// other question with an action to take becomes "act", noting the assumption.
+// the one plan confirmation, a destructive step, a missing required input, and whether
+// to re-render a clip the self-check flagged (video credits, see selfcheck_policy.go);
+// any other question with an action to take becomes "act", noting the assumption.
 
 // Decision modes.
 const (
@@ -143,10 +144,13 @@ func destructiveChatAction(action string) bool {
 }
 
 // fullAutoAskAllowed says whether Full auto may stop for this question: the plan
-// confirmation, a destructive step, or a required input that is missing (nothing can
-// run, a stage is blocked, or the video service needs fixing).
-func fullAutoAskAllowed(d chatDecision, action string, inputMissing bool) bool {
+// confirmation, a destructive step, a required input that is missing (nothing can
+// run, a stage is blocked, or the video service needs fixing), or re-rendering a clip
+// the self-check flagged (clipFlagged).
+func fullAutoAskAllowed(d chatDecision, action string, inputMissing, clipFlagged bool) bool {
 	switch d.Reason {
+	case askExpensive:
+		return clipReviewAsk(d, action, clipFlagged)
 	case askConfirmPlan:
 		return action == "generate_script"
 	case askDestructive:
@@ -160,8 +164,8 @@ func fullAutoAskAllowed(d chatDecision, action string, inputMissing bool) bool {
 // applyFullAutoAsk enforces Full auto's rule: a question it does not allow, asked
 // while there is an action to take, becomes "act" with the assumption noted. With no
 // action the question stands, since there is nothing to go ahead with.
-func applyFullAutoAsk(d chatDecision, action string, inputMissing bool) chatDecision {
-	if d.Mode != decisionAsk || action == "unknown" || fullAutoAskAllowed(d, action, inputMissing) {
+func applyFullAutoAsk(d chatDecision, action string, inputMissing, clipFlagged bool) chatDecision {
+	if d.Mode != decisionAsk || action == "unknown" || fullAutoAskAllowed(d, action, inputMissing, clipFlagged) {
 		return d
 	}
 	return overruleAsk(d, decisionAct, "full_auto", fullAutoAssumption(d))

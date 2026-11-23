@@ -98,7 +98,7 @@ func TestFullAutoOnlyAsksWhatItMay(t *testing.T) {
 		{"not a question", chatDecision{Mode: decisionAct, Assumptions: []string{}}, "render_scenes", false, decisionAct},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := applyFullAutoAsk(tc.d, tc.action, tc.inputMissing)
+			got := applyFullAutoAsk(tc.d, tc.action, tc.inputMissing, false)
 			if got.Mode != tc.want {
 				t.Fatalf("mode %q, want %q: %+v", got.Mode, tc.want, got)
 			}
@@ -108,7 +108,7 @@ func TestFullAutoOnlyAsksWhatItMay(t *testing.T) {
 			}
 		})
 	}
-	got := applyFullAutoAsk(ask(askOptions, "Piano", "Strings"), "finish_video", false)
+	got := applyFullAutoAsk(ask(askOptions, "Piano", "Strings"), "finish_video", false, false)
 	if !strings.Contains(got.Assumptions[0], "“Piano”") {
 		t.Fatalf("assumption %q does not name the default", got.Assumptions[0])
 	}
