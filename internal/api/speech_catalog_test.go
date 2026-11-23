@@ -133,7 +133,7 @@ func TestGeminiVoicesUseTheGeminiKey(t *testing.T) {
 	}
 	s.cfg.GeminiAPIKey = "gemini-fixture"
 	models := call(t, s, "GET", "/voice/catalog/gemini/models", "")
-	if models.Code != 200 || !strings.Contains(models.Body.String(), `"id":"gemini-3.8-flash-tts"`) || strings.Contains(models.Body.String(), "2.5") {
+	if models.Code != 200 || !strings.Contains(models.Body.String(), `"id":"gemini-3.8-flash-tts"`) || strings.Contains(models.Body.String(), "gemini-2.5") {
 		t.Fatalf("models = %d %s", models.Code, models.Body.String())
 	}
 	voices := call(t, s, "GET", "/voice/catalog/gemini/voices?character_id="+c+"&search=firm", "")

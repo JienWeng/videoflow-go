@@ -16,6 +16,17 @@ var migrations = []func(tx *sql.Tx) error{
 		_, err := tx.Exec(`DROP TABLE IF EXISTS agent_settings`)
 		return err
 	},
+	// 2: the project's decision log, what the assistant must not ask again (decisions.go).
+	func(tx *sql.Tx) error {
+		_, err := tx.Exec(`CREATE TABLE IF NOT EXISTS project_decisions(
+ project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+ key TEXT NOT NULL,
+ value TEXT NOT NULL,
+ source TEXT NOT NULL CHECK(source IN ('user','assistant')),
+ created_at TEXT NOT NULL,
+ PRIMARY KEY(project_id,key))`)
+		return err
+	},
 }
 
 func (d *DB) runMigrations() error {

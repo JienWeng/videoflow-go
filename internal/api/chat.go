@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"videoflow-go/internal/agents"
+	"videoflow-go/internal/db"
 	"videoflow-go/internal/models"
 	"videoflow-go/internal/presets"
 )
@@ -23,6 +24,8 @@ type chatRequest struct {
 	Attachments   []string              `json:"attachments"`
 	Auto          bool                  `json:"auto"`
 	Full          bool                  `json:"full"`
+	// Answer is the quick reply the user picked, kept in the decision log.
+	Answer *chatAnswer `json:"answer"`
 }
 
 // chatTurn is what one chat message is planned against: the request and the project
@@ -40,6 +43,12 @@ type chatTurn struct {
 	charOptions     []map[string]interface{}
 	style           *models.StyleGuide
 	progress        projectProgress
+	// stages is the project's stage map as the turn began (see stages.go).
+	stages stageMap
+	// videoService is the video service as the planner saw it (chatVideoService).
+	videoService map[string]any
+	// decisions is the project's decision log as the planner saw it.
+	decisions []db.ProjectDecision
 }
 
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +64,8 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), status)
 		return
 	}
+	// A quick reply settles its question before planning, so this turn already sees it.
+	s.recordAnswer(projectID, body.Answer)
 	contextJSON, err := s.chatPlannerContext(r.Context(), turn)
 	if err != nil {
 		http.Error(w, "could not load project connections", 500)
@@ -90,6 +101,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	intent := s.chatIntent(r.Context(), turn, res)
+	intent["remembered"] = s.rememberDecisions(projectID, res.Remember)
 	s.writeChatResponse(w, turn, intent, binding, snapshot)
 }
 
@@ -159,8 +171,32 @@ func (s *Server) chatPlannerContext(ctx context.Context, turn *chatTurn) ([]byte
 	progress, _ := s.projectProgress(ctx, projectID)
 	failedShown, _ := s.database.FailedRendersShown(projectID)
 	turn.style, turn.progress = style, progress
-	contextJSON, _ := json.Marshal(map[string]any{"production_progress": progress, "recent_activity": s.chatActivity(projectID, turn.jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "video_service": s.chatVideoService(), "episode_sound": s.episodeSound(projectID), "failed_video_attempts": failedShown, "assistant_mode": chatMode(body.Auto, body.Full), "attached_media": turn.attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": turn.sceneOptions, "characters": turn.charOptions, "outputs": turn.outputs, "selected_item": turn.selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "render_audio_modes": []string{"native", "silent"}, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false}})
+	turn.decisions, _ = s.database.ListDecisions(projectID) // an unreadable log reads as empty; the assistant may then ask again
+	if in, err := s.stageInputs(ctx, projectID, progress); err == nil {
+		turn.stages = computeStages(in)
+	}
+	turn.videoService = s.chatVideoService()
+	contextJSON, _ := json.Marshal(map[string]any{"stages": chatStages(turn.stages), "decided_so_far": chatDecidedSoFar(turn.decisions), "production_progress": chatProgress(progress), "recent_activity": s.chatActivity(projectID, turn.jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "video_service": turn.videoService, "episode_sound": s.episodeSound(projectID), "failed_video_attempts": failedShown, "assistant_mode": chatMode(body.Auto, body.Full), "attached_media": turn.attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": turn.sceneOptions, "characters": turn.charOptions, "outputs": turn.outputs, "selected_item": turn.selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "render_audio_modes": []string{"native", "silent"}, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false}})
 	return contextJSON, nil
+}
+
+// chatProgress is the part of /production/progress the planner acts on: where each
+// scene and its video stand, with the ids its actions need. The stage map carries the
+// project-wide summary and next step, so the long per-scene help texts are left out.
+func chatProgress(progress projectProgress) map[string]any {
+	scenes := []map[string]any{}
+	for _, p := range progress.Scenes {
+		scene := map[string]any{"scene_id": p.SceneID, "title": p.Title, "order": p.Order, "stage": p.Stage, "shots": p.Shots, "video": p.Video, "next_action": p.Next.Action}
+		if p.ReferenceMode {
+			scene["reference_mode"] = true
+		}
+		scenes = append(scenes, scene)
+	}
+	out := map[string]any{"scenes": scenes, "total": progress.Total, "video_ready": progress.VideoReady, "attention": progress.Attention}
+	if progress.Next != nil {
+		out["next_scene_id"] = progress.Next.SceneID
+	}
+	return out
 }
 
 // chatAssetContext lists up to 64 of the project's library items for the planner.
@@ -240,7 +276,19 @@ func (s *Server) chatIntent(ctx context.Context, turn *chatTurn, res *agents.Cha
 	chatIntentTargets(turn, res, action, intent)
 	action = chatGuardSelection(turn, res, action, selectionApplies, intent)
 	s.pinChatSelection(turn, res, action, selectionApplies, intent)
+	intent["decision"] = chatTurnDecision(turn, res, action)
 	return intent
+}
+
+// chatTurnDecision validates the planner's ask-or-decide choice for the action the
+// turn ends with, and applies Full auto's rule on questions.
+func chatTurnDecision(turn *chatTurn, res *agents.ChatIntentResponse, action string) chatDecision {
+	decision := normalizeChatDecision(res.Decision, action)
+	decision = applySettledAsk(decision, action, turn.body.Message, turn.decisions)
+	if turn.body.Full {
+		decision = applyFullAutoAsk(decision, action, chatInputMissing(turn))
+	}
+	return decision
 }
 
 // chatPlannedAction is the planner's action on the card contract. A retired one-off clip
@@ -606,7 +654,7 @@ const retiredClipReply = "I can't make a one-off clip straight from a picture an
 
 func chatMode(auto, full bool) string {
 	if full {
-		return "full auto: the user wants the finished video with as few clicks as possible. For a new story they confirm the plan once; the app then makes the pictures, renders every scene, joins them with captions and exports the final video by itself, using image and video credits. Say that confirming is the only click. Free planning steps and check_video start by themselves, and finish_video, render_scenes, generate_character_references, generate_character_reference, generate_scenes, storyboard, audit_storyboard, generate_assets, render_scene, render_shot, retry_render and generate_image start by themselves as soon as they are ready; only delete_scene and edits to a character's details wait for the user; finish_video and render_scenes first make the missing reference pictures of the scenes' characters, all at once, so never offer per-character picture buttons first. Decide every detail yourself and never ask the user to press per-scene buttons."
+		return "full auto: the user wants the finished video with as few clicks as possible. For a new story they confirm the plan once; the app then makes the pictures, renders every scene, joins them with captions and exports the final video by itself, using image and video credits. Say that confirming is the only click. Free planning steps and check_video start by themselves, and finish_video, render_scenes, generate_character_references, generate_character_reference, generate_scenes, storyboard, audit_storyboard, generate_assets, render_scene, render_shot, retry_render and generate_image start by themselves as soon as they are ready; only delete_scene and edits to a character's details wait for the user; finish_video and render_scenes first make the missing reference pictures of the scenes' characters, all at once, so never offer per-character picture buttons first. Decide every detail yourself and never ask the user to press per-scene buttons. The only questions allowed are the one plan confirmation, a destructive step and a required input that is missing; any other question is overruled and the step goes ahead."
 	}
 	if auto {
 		return "auto: free steps (refine_scene, refine_shot, generate_shots, plan_assets, check_video) start by themselves right after your reply, so write a complete instruction and say what you are doing now (\"I'm rewriting the scene so that…\"), not \"press the button\". Steps that use credits or delete things still wait for the user's click; say so. Decide details yourself and do not ask for confirmation of free steps."

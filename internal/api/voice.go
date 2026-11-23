@@ -171,5 +171,10 @@ func (s *Server) handleVoiceProfile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 409)
 		return
 	}
+	if p.Approved && p.VoiceID != "" {
+		s.recordDecision(project, "voice:"+id, p.Provider+" voice "+p.VoiceID)
+	} else {
+		s.forgetDecision(project, "voice:"+id)
+	}
 	writeJSON(w, 200, saved)
 }

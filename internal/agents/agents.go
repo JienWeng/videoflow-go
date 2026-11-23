@@ -329,6 +329,40 @@ type ChatIntentResponse struct {
 	NextEpisode bool `json:"next_episode,omitempty"`
 	// Instruction is the planner's own complete direction for the button it offers.
 	Instruction string `json:"instruction,omitempty"`
+	// Decision says whether the planner acts, asks or only informs, with the
+	// assumptions it made. The server validates it (internal/api/chat_decision.go).
+	Decision *ChatDecision `json:"decision,omitempty"`
+	// Remember is what the planner wants kept in the project's decision log.
+	Remember []RememberItem `json:"remember,omitempty"`
+}
+
+// ChatDecision is the planner's ask-or-decide choice for one turn.
+type ChatDecision struct {
+	// Mode is "act" (go ahead with the action), "ask" (one question the user must
+	// answer first) or "inform" (an answer, no step to take).
+	Mode string `json:"mode"`
+	// Assumptions are the choices made without asking, each one short line.
+	Assumptions []string `json:"assumptions,omitempty"`
+	// Question and Options are set only to ask; options become quick replies.
+	Question string           `json:"question,omitempty"`
+	Options  []DecisionOption `json:"options,omitempty"`
+	// Reason is why asking is needed: "missing_input", "expensive", "options",
+	// "confirm_plan" or "destructive".
+	Reason string `json:"reason,omitempty"`
+	// Key is the decision-log key the answer settles, such as "aspect_ratio".
+	Key string `json:"key,omitempty"`
+}
+
+// DecisionOption is one quick reply to a question: Label is shown, Value is sent.
+type DecisionOption struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+}
+
+// RememberItem is one decision-log entry the planner asks to keep.
+type RememberItem struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 // CharacterChanges is the full rewritten text of each saved character field the user wants changed.
