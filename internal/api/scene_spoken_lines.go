@@ -3,12 +3,15 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
+
+	"videoflow-go/internal/models"
 )
 
 const (
@@ -42,7 +45,12 @@ func (s *Server) handleSceneSpokenLines(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "scene changed; reload before editing its spoken script", http.StatusConflict)
 		return
 	}
-	lines, err := s.validSpokenLines(project, body.Lines)
+	shots, err := s.database.ListShots(scene.ID)
+	if err != nil {
+		http.Error(w, "cannot read the scene's shots", http.StatusInternalServerError)
+		return
+	}
+	lines, err := s.validSpokenLines(project, body.Lines, shots, scene.Duration)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -71,8 +79,14 @@ func (s *Server) handleSceneSpokenLines(w http.ResponseWriter, r *http.Request) 
 
 // validSpokenLines trims each line and checks it can be spoken: text and language are
 // set, ids are unique (a missing or repeated id gets a new one, so kept lines keep theirs), and the speaker is the narrator or
-// one of the project's characters. Only a character can be seen saying a line.
-func (s *Server) validSpokenLines(project string, lines []SpokenLine) ([]SpokenLine, error) {
+// one of the project's characters. Only a character can be seen saying a line. A line's
+// shot must be one of the scene's shots, and its start hint inside that shot (inside
+// the scene when it has no shot).
+func (s *Server) validSpokenLines(project string, lines []SpokenLine, shots []models.Shot, sceneSeconds int) ([]SpokenLine, error) {
+	shotSeconds := map[string]int{}
+	for _, sh := range shots {
+		shotSeconds[sh.ID] = sh.Duration
+	}
 	if len(lines) > maxSpokenLines {
 		return nil, fmt.Errorf("a scene can have at most %d spoken lines", maxSpokenLines)
 	}
@@ -99,6 +113,18 @@ func (s *Server) validSpokenLines(project string, lines []SpokenLine) ([]SpokenL
 		}
 		if len(line.ID) > maxSpokenLineIDSize {
 			return nil, fmt.Errorf("line %d has an invalid id", n)
+		}
+		line.ShotID = strings.TrimSpace(line.ShotID)
+		limit := sceneSeconds
+		if line.ShotID != "" {
+			seconds, ok := shotSeconds[line.ShotID]
+			if !ok {
+				return nil, fmt.Errorf("line %d is placed in a shot that is not in this scene; choose one of its shots", n)
+			}
+			limit = seconds
+		}
+		if h := line.StartHint; h != nil && (math.IsNaN(*h) || *h < 0 || (limit > 0 && *h >= float64(limit))) {
+			return nil, fmt.Errorf("line %d starts outside its shot; its start must be between 0 and %d seconds", n, limit)
 		}
 		if seen[line.ID] {
 			line.ID = "" // a repeated id stays with its first line

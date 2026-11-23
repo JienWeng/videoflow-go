@@ -79,6 +79,16 @@ func sceneProduction(scene *models.Scene) productionSettings {
 		d.Production.Strategy = "auto"
 	}
 	d.Production.AudioMode = currentAudioMode(d.Production.AudioMode)
+	// A line saved with its own shot is spoken in that shot. The older clip choice in the
+	// video options (dialogue_shots) still places the lines that have none.
+	for _, line := range sceneSpokenLines(scene) {
+		if line.ShotID != "" && line.ID != "" {
+			if d.Production.DialogueShots == nil {
+				d.Production.DialogueShots = map[string]string{}
+			}
+			d.Production.DialogueShots[line.ID] = line.ShotID
+		}
+	}
 	return d.Production
 }
 
@@ -388,6 +398,12 @@ func (s *Server) handleProductionPlan(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		body.Settings.AudioMode = currentAudioMode(body.Settings.AudioMode)
+		// Shots chosen in the spoken script are saved on the lines, not here.
+		for _, line := range sceneSpokenLines(scene) {
+			if line.ShotID != "" {
+				delete(body.Settings.DialogueShots, line.ID)
+			}
+		}
 		if err := validateProduction(body.Settings); err != nil {
 			http.Error(w, err.Error(), 400)
 			return
