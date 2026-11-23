@@ -447,7 +447,23 @@ export type CostEstimate = {
   seconds: number;
   model: string;
   known: boolean;
-  scenes?: { scene_id: string; title: string; seconds: number; clips: number; amount: number; note?: string }[];
+  scenes?: {
+    scene_id: string;
+    title: string;
+    seconds: number;
+    clips: number;
+    amount: number;
+    note?: string;
+    retry_seconds?: number;
+    retry_amount?: number;
+  }[];
+  /** full_auto=true: the worst case, each scene that speaks made once more by the
+   * automatic speech retry. */
+  retry_seconds?: number;
+  retry_amount?: number;
+  worst_seconds?: number;
+  worst_total?: number;
+  retry_note?: string;
 };
 
 /** One service selling a video model (videoService in internal/api). */

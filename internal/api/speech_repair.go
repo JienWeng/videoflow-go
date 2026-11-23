@@ -322,28 +322,45 @@ func (s *Server) speechRepairQuote(ctx context.Context, scene *models.Scene, lin
 }
 
 // speechRepairApply is POST /outputs/{id}/speech-repair/apply: the repaired lines and
-// the price the owner saw.
+// the price the owner saw. Automatic is set when Full auto starts it by itself: it is
+// then the clip's one automatic retry (speech_retry.go).
 type speechRepairApply struct {
 	After             []SpokenLine      `json:"after"`
 	ExpectedUpdatedAt time.Time         `json:"expected_updated_at"`
 	Quote             speechRepairQuote `json:"quote"`
+	Automatic         bool              `json:"automatic"`
+}
+
+// saveSpeechRepair checks repaired lines against the flagged clip and saves them with a
+// revision. A scene changed since the proposal is refused.
+func (s *Server) saveSpeechRepair(project, outputID string, after []SpokenLine, expected time.Time) (*models.Scene, []SpokenLine, int, error) {
+	c, err := s.speechRepairTarget(project, outputID)
+	if err != nil {
+		return nil, nil, 409, err
+	}
+	scene := c.Scene
+	if !scene.UpdatedAt.Equal(expected) {
+		return nil, nil, 409, fmt.Errorf("“%s” changed since the shorter lines were written; ask again", scene.Title)
+	}
+	if after, err = s.checkSpeechRepair(project, c, after); err != nil {
+		return nil, nil, 422, fmt.Errorf("the shorter lines of “%s” can't be used: %w", scene.Title, err)
+	}
+	return scene, after, 0, nil
 }
 
 // applySpeechRepair saves a repaired script (with a revision) and makes the scene's clip
-// again at the price that was shown. A scene changed since the proposal, or a price
-// that went up, is refused before anything is saved.
+// again at the price that was shown. A scene changed since the proposal, a price that
+// went up, or an automatic retry the clip already had is refused before anything is
+// saved.
 func (s *Server) applySpeechRepair(ctx context.Context, project, outputID string, body speechRepairApply) (map[string]any, int, error) {
-	c, err := s.speechRepairTarget(project, outputID)
+	scene, after, code, err := s.saveSpeechRepair(project, outputID, body.After, body.ExpectedUpdatedAt)
 	if err != nil {
-		return nil, 409, err
+		return nil, code, err
 	}
-	scene := c.Scene
-	if !scene.UpdatedAt.Equal(body.ExpectedUpdatedAt) {
-		return nil, 409, fmt.Errorf("“%s” changed since the shorter lines were written; ask again", scene.Title)
-	}
-	after, err := s.checkSpeechRepair(project, c, body.After)
-	if err != nil {
-		return nil, 422, fmt.Errorf("the shorter lines of “%s” can't be used: %w", scene.Title, err)
+	if body.Automatic {
+		if problem := s.speechRetryProblem(project, scene.ID, outputID); problem != "" {
+			return nil, 409, fmt.Errorf("%s", problem)
+		}
 	}
 	quote := s.speechRepairQuote(ctx, scene, after)
 	switch {
@@ -355,11 +372,18 @@ func (s *Server) applySpeechRepair(ctx context.Context, project, outputID string
 	if err = s.saveSpokenLines(scene, after); err != nil {
 		return nil, 500, err
 	}
+	if body.Automatic {
+		// Recorded before the video is paid for: a reload or another run never
+		// retries this clip again by itself.
+		if err = s.recordSpeechRetry(project, outputID, scene.Title); err != nil {
+			return nil, 500, fmt.Errorf("the shorter lines of “%s” are saved, but its video wasn't started: %w", scene.Title, err)
+		}
+	}
 	jobs, err := speechRepairRender(s, ctx, scene.ID, body.Quote)
 	if err != nil {
 		return nil, 502, fmt.Errorf("the shorter lines of “%s” are saved, but its video didn't start: %w", scene.Title, err)
 	}
-	return map[string]any{"scene_id": scene.ID, "output_id": outputID, "job_ids": jobs, "lines": after, "seconds": body.Quote.Seconds}, 0, nil
+	return map[string]any{"scene_id": scene.ID, "output_id": outputID, "job_ids": jobs, "lines": after, "seconds": body.Quote.Seconds, "automatic": body.Automatic}, 0, nil
 }
 
 // speechRepairRender makes the repaired scene's video; tests replace it.

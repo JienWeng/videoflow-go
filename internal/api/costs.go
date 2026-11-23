@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -361,19 +362,43 @@ func projectCostTotals(projects []models.Project, project string, totals map[str
 	return all, money(sum)
 }
 
-// handleCostEstimate prices finishing one story before any money is spent.
+// speechRetryNote says what the worst case of a Full auto quote adds.
+const speechRetryNote = "Worst case: if the speech check flags a clip (a line cut off, changed or missing), Full auto shortens its lines and re-renders that scene once, never more."
+
+// handleCostEstimate prices finishing one story before any money is spent. With
+// full_auto=true it adds Full auto's worst case: each scene whose clips speak may be
+// made once more by the one automatic speech retry (speech_retry.go). With only
+// target_seconds (a story not written yet, at Full auto's one confirmation) it prices
+// that many seconds of video on the chosen video model, and the worst case is every
+// scene speaking and being made twice.
 func (s *Server) handleCostEstimate(w http.ResponseWriter, r *http.Request) {
 	project, err := s.activeProjectID(r.Context())
 	if err != nil {
 		http.Error(w, "no active project", 400)
 		return
 	}
-	// The same scenes an autopilot run with these inputs would make.
-	query := autopilotRequest{ScriptID: r.URL.Query().Get("script_id"), VideosOnly: true}
-	if ids := strings.TrimSpace(r.URL.Query().Get("scene_ids")); ids != "" {
-		query.SceneIDs = strings.Split(ids, ",")
+	query := r.URL.Query()
+	fullAuto := query.Get("full_auto") == "true"
+	if target, _ := strconv.Atoi(query.Get("target_seconds")); target > 0 && query.Get("script_id") == "" && query.Get("scene_ids") == "" {
+		s.refreshVideoPrices(r.Context(), false)
+		settings, _ := s.database.AppSettingsSnapshot()
+		out := map[string]any{"currency": "USD", "total": 0.0, "seconds": target, "model": "", "known": false, "scenes": []any{}}
+		if provider, model, e := s.productionVideoModel(r.Context()); e == nil {
+			amount, basis := costs.Video(provider, model.ID, "auto", query.Get("aspect_ratio"), float64(target), costs.LiveFromSettings(settings))
+			out["model"], out["total"], out["known"] = model.ID, money(amount), basis != costs.Unpriced
+			if fullAuto {
+				out["retry_seconds"], out["retry_amount"], out["worst_seconds"], out["worst_total"], out["retry_note"] = target, money(amount), 2*target, money(2*amount), speechRetryNote
+			}
+		}
+		writeJSON(w, 200, out)
+		return
 	}
-	scenes, code, problem := s.autopilotScenes(project, query)
+	// The same scenes an autopilot run with these inputs would make.
+	run := autopilotRequest{ScriptID: query.Get("script_id"), VideosOnly: true}
+	if ids := strings.TrimSpace(query.Get("scene_ids")); ids != "" {
+		run.SceneIDs = strings.Split(ids, ",")
+	}
+	scenes, code, problem := s.autopilotScenes(project, run)
 	if code != 0 {
 		http.Error(w, problem, code)
 		return
@@ -385,11 +410,21 @@ func (s *Server) handleCostEstimate(w http.ResponseWriter, r *http.Request) {
 		Clips   int     `json:"clips"`
 		Amount  float64 `json:"amount"`
 		Note    string  `json:"note,omitempty"`
+		// RetrySeconds and RetryAmount are Full auto's worst case: the scene made once
+		// more by the automatic speech retry.
+		RetrySeconds int     `json:"retry_seconds,omitempty"`
+		RetryAmount  float64 `json:"retry_amount,omitempty"`
 	}
 	s.refreshVideoPrices(r.Context(), false)
 	settings, _ := s.database.AppSettingsSnapshot()
 	live := costs.LiveFromSettings(settings)
 	lines, total, seconds, known := []line{}, 0.0, 0, true
+	retrySeconds, retryAmount := 0, 0.0
+	retried := map[string]bool{}
+	if fullAuto {
+		decisions, _ := s.database.ListDecisions(project) // an unreadable log prices every retry
+		retried = s.speechRetriedScenes(decisions)
+	}
 	model := ""
 	for i := range scenes {
 		scene := &scenes[i]
@@ -417,7 +452,19 @@ func (s *Server) handleCostEstimate(w http.ResponseWriter, r *http.Request) {
 			total += amount
 			seconds += plan.NewSeconds
 		}
+		// A scene whose clips speak may be made once more by Full auto's speech retry,
+		// already-made scenes included: their clips are listened to in the same run.
+		if fullAuto && plan.Blocked == "" && plan.Speech != nil && plan.Settings.AudioMode == "native" && !retried[scene.ID] {
+			amount, _ := costs.Video(plan.Provider, plan.Model, plan.Resolution, scene.AspectRatio, float64(plan.GeneratedSeconds), live)
+			l.RetrySeconds, l.RetryAmount = plan.GeneratedSeconds, money(amount)
+			retrySeconds += plan.GeneratedSeconds
+			retryAmount += amount
+		}
 		lines = append(lines, l)
 	}
-	writeJSON(w, 200, map[string]any{"currency": "USD", "total": money(total), "seconds": seconds, "model": model, "known": known, "scenes": lines})
+	out := map[string]any{"currency": "USD", "total": money(total), "seconds": seconds, "model": model, "known": known, "scenes": lines}
+	if fullAuto {
+		out["retry_seconds"], out["retry_amount"], out["worst_seconds"], out["worst_total"], out["retry_note"] = retrySeconds, money(retryAmount), seconds+retrySeconds, money(total+retryAmount), speechRetryNote
+	}
+	writeJSON(w, 200, out)
 }

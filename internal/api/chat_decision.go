@@ -21,8 +21,11 @@ import (
 //
 // The server enforces what it can check. In Full auto the only questions allowed are
 // the one plan confirmation, a destructive step, a missing required input, and whether
-// to re-render a clip the self-check flagged (video credits, see selfcheck_policy.go);
-// any other question with an action to take becomes "act", noting the assumption.
+// to re-render a clip the self-check flagged (video credits, see selfcheck_policy.go).
+// Around speech that last one is narrower: only a clip still flagged after its one
+// automatic retry, or one a shorter line can't fix (wrong language, no speech); a clip
+// still to be repaired is repaired instead (speech_retry.go). Any other question with
+// an action to take becomes "act", noting the assumption.
 
 // Decision modes.
 const (
@@ -146,7 +149,8 @@ func destructiveChatAction(action string) bool {
 // fullAutoAskAllowed says whether Full auto may stop for this question: the plan
 // confirmation, a destructive step, a required input that is missing (nothing can
 // run, a stage is blocked, or the video service needs fixing), or re-rendering a clip
-// the self-check flagged (clipFlagged).
+// the self-check flagged that is waiting on the user (clipFlagged: its frames, or its
+// speech after the one automatic retry or when a shorter line can't fix it).
 func fullAutoAskAllowed(d chatDecision, action string, inputMissing, clipFlagged bool) bool {
 	switch d.Reason {
 	case askExpensive:

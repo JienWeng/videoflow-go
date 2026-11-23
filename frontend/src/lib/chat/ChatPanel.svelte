@@ -60,7 +60,7 @@
   const MODE_HELP: Record<Mode, string> = {
     manual: 'Manual: every step waits for your click, and you review before any video is made.',
     auto: 'Auto: the assistant does free steps itself (rewriting scenes, planning shots). Anything that uses credits waits for you.',
-    full: 'Full auto: confirm the plan once, then the assistant makes the pictures, renders every scene, edits them together with captions and exports the final video. Uses image and video credits without asking again.'
+    full: 'Full auto: confirm the plan once, then the assistant makes the pictures, renders every scene, edits them together with captions and exports the final video. Uses image and video credits without asking again. If the speech check flags a clip, it shortens the lines and re-renders that scene once (at most twice the video seconds in all), then asks.'
   };
   function nextMode() {
     mode = mode === 'manual' ? 'auto' : mode === 'auto' ? 'full' : 'manual';

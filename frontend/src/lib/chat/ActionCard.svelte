@@ -12,6 +12,7 @@
   import { onDestroy, untrack } from 'svelte';
   import { del as apiDel, get, patch as apiPatch, post as apiPost, put as apiPut } from '$lib/api';
   import ScriptFitReview from '$lib/scenes/ScriptFitReview.svelte';
+  import FullAutoCost from '$lib/costs/FullAutoCost.svelte';
   import { normalizeChatIntent } from './intent.mjs';
   import { runBackgroundOp, type Op } from '$lib/ops';
   import type {
@@ -628,7 +629,8 @@
       }
       const started = await post<{ scene_id: string; job_ids?: string[] }>(
         `/outputs/${encodeURIComponent(outputId)}/speech-repair/apply`,
-        { after: repair.after, expected_updated_at: repair.expected_updated_at, quote: repair.quote }
+        // In Full auto this is the clip's one automatic retry; the server refuses a second.
+        { after: repair.after, expected_updated_at: repair.expected_updated_at, quote: repair.quote, automatic: full }
       );
       repairStarted = true;
       toast.success(`Shorter lines saved. Making “${repair.scene_title}” again.`);
@@ -757,6 +759,7 @@
           disabled={busy||developing}
           onchange={editBrief}
           onstyleapplied={onreference}/>
+        {#if full}<FullAutoCost seconds={creationBrief.target_duration} aspect={creationBrief.aspect_ratio} />{/if}
 
       {/if}
 

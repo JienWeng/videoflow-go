@@ -16,13 +16,16 @@ import (
 //	                          with the reviewer's change and checked again; a picture that
 //	                          still fails (or is not worth retrying) stops the run and is
 //	                          shown. Manual/Auto: checked on demand, findings shown only.
-//	clips (video credits)     never made again automatically. Full auto checks every new
-//	                          clip (and, for a clip made with its own sound, listens to
-//	                          it: the speech check, audio_check.go); a "fix"/"fail"
-//	                          stops before joining and asks the user ("Re-render with
-//	                          this change" or, for speech cut off, "Re-render with a
-//	                          shorter line" / "Keep it"). Manual/Auto: checked on
-//	                          demand, findings shown only.
+//	clips (video credits)     Full auto checks every new clip (and, for a clip made
+//	                          with its own sound, listens to it: the speech check,
+//	                          audio_check.go). A clip whose speech was cut off, changed
+//	                          or missing gets ONE automatic repair per scene: shorter
+//	                          lines, the clip made again and checked again
+//	                          (speech_retry.go). Anything else flagged, or still
+//	                          flagged after that retry, stops before joining and asks
+//	                          the user ("Re-render with this change" / "Re-render
+//	                          again" / "Keep it"). Manual/Auto: checked on demand,
+//	                          findings shown only; a clip is never made again by itself.
 //
 // A check that cannot run reads as "pass", so it never holds work back.
 
@@ -91,6 +94,9 @@ type selfCheckFlag struct {
 	Attempt    int    `json:"attempt,omitempty"`
 	// Problem is set when an automatic retry could not be made.
 	Problem string `json:"problem,omitempty"`
+	// Retried is set on a speech flag whose clip already had Full auto's one automatic
+	// retry (shorter lines, made again): it is asked about, never retried again.
+	Retried bool `json:"retried,omitempty"`
 }
 
 func newSelfCheckFlag(t *selfCheckTarget, r selfCheckRecord) selfCheckFlag {
@@ -115,17 +121,24 @@ func clipReviewDecision(f selfCheckFlag) chatDecision {
 	if change == "" {
 		change = "fix this: " + f.firstIssue()
 	}
-	checker, ask, label := "check", "Re-render it with a fix?", "Re-render with this change"
+	checker, ask, label, tried := "check", "Re-render it with a fix?", "Re-render with this change", false
 	if f.Kind == selfCheckClipAudio {
 		checker = "speech check"
 		if hasIssue(f.Issues, "speech_cut_off") {
 			ask, label = "Re-render it with a shorter line?", "Re-render with a shorter line"
 		}
+		if f.Retried {
+			tried, ask, label = true, "Re-render it again?", "Re-render again"
+		}
+	}
+	question := fmt.Sprintf("The %s flagged the %s: %s %s That uses video credits.", checker, f.Label, strings.TrimRight(f.firstIssue(), ".")+".", ask)
+	if tried {
+		question = fmt.Sprintf("I already shortened its lines and re-rendered it once, and the %s still flagged the %s: %s %s That uses video credits.", checker, f.Label, strings.TrimRight(f.firstIssue(), ".")+".", ask)
 	}
 	return chatDecision{
 		Mode:        decisionAsk,
 		Assumptions: []string{},
-		Question:    clip(fmt.Sprintf("The %s flagged the %s: %s %s That uses video credits.", checker, f.Label, strings.TrimRight(f.firstIssue(), ".")+".", ask), maxQuestionChars),
+		Question:    clip(question, maxQuestionChars),
 		Options: []chatDecisionOption{
 			{Label: label, Value: clip(fmt.Sprintf("Re-render the %s with this change: %s", strings.TrimSuffix(f.Label, "’s speech"), change), maxOptionValue)},
 			{Label: "Keep it", Value: clip("Keep the "+strings.TrimSuffix(f.Label, "’s speech")+" as it is.", maxOptionValue)},
@@ -517,10 +530,14 @@ func (s *Server) flaggedPictures(projectID string, chars []models.Character, sce
 	return out
 }
 
-// clipFlagged says whether a clip the self-check flagged is waiting on the user.
+// clipFlagged says whether a clip the self-check flagged is waiting on the user's
+// answer. Around speech only two questions remain in Full auto: after its one
+// automatic retry, and for what a shorter line can't fix (wrong language, no speech).
+// A speech flag that still has its retry to come is not asked about: Full auto
+// repairs it (repair_clip_speech) instead.
 func (t *chatTurn) clipFlagged() bool {
 	for _, f := range t.selfChecks {
-		if f.Kind == selfCheckClip || f.Kind == selfCheckClipAudio {
+		if f.Kind == selfCheckClip || f.Kind == selfCheckClipAudio && (f.Retried || flagRepairProblem(f) != "") {
 			return true
 		}
 	}
@@ -545,7 +562,10 @@ func chatSelfCheck(flags []selfCheckFlag) map[string]any {
 			item["decision_key"] = selfCheckDecisionKey(f.ID)
 		}
 		if f.Kind == selfCheckClipAudio {
-			item["repairable"] = flagRepairProblem(f) == ""
+			item["repairable"] = flagRepairProblem(f) == "" && !f.Retried
+			if f.Retried {
+				item["auto_retried"] = true
+			}
 		}
 		items = append(items, item)
 	}
