@@ -6,6 +6,7 @@
   onDestroy(() => operationScope.abort());
   import { onMount, onDestroy } from 'svelte';
   import { changedFields, mergeDraft } from './drafts.mjs';
+  import { sceneSpokenLines, spokenSummary } from './spoken.mjs';
   import { afterNavigate, beforeNavigate, replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import { storyCreation } from '$lib/create/story-creation.svelte';
@@ -1061,6 +1062,7 @@
                 accentDot={accentDot(s)}
                 dirty={sceneDirty(s) || (shotsByScene[s.id] ?? []).some(sh => shotDirty(sh))}
                 storyboard={previews[s.id] ?? null}
+                script={spokenSummary(sceneSpokenLines(s), characters)}
                 onselect={() => selectScene(s.id)}
               />
             {/each}

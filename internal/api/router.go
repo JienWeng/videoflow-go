@@ -223,6 +223,7 @@ func (s *Server) registerSceneRoutes() {
 	s.router.Get("/scenes/{id}", s.handleGetScene)
 	s.router.Patch("/scenes/{id}", s.handleUpdateScene)
 	s.router.Put("/scenes/{id}/style", s.handleSceneStyle)
+	s.router.Put("/scenes/{id}/spoken-lines", s.handleSceneSpokenLines)
 	s.router.Delete("/scenes/{id}", s.handleDeleteScene)
 	s.router.Post("/scenes/{id}/generate", s.handleExpandScene)
 	s.router.Post("/scenes/{id}/refine", s.handleRefineScene)

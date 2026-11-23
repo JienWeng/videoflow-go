@@ -12,6 +12,7 @@
     accentDot,
     dirty = false,
     storyboard = null,
+    script = '',
     onselect
   }: {
     scene: Scene;
@@ -20,6 +21,8 @@
     accentDot: string;
     dirty?: boolean;
     storyboard?: Asset | null;
+    /** A one-line read-only view of what is said in the scene. */
+    script?: string;
     onselect: () => void;
   } = $props();
 
@@ -60,6 +63,7 @@
       {/if}
     </div>
     <p class="mt-0.5 truncate text-xs text-muted-foreground">{statusLine}</p>
+    {#if script}<p class="mt-0.5 truncate text-xs text-muted-foreground/80" title={script}>{script}</p>{/if}
 
 
   </div>
