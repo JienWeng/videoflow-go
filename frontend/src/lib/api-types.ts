@@ -259,7 +259,7 @@ export type OpResult = {
   decision?: unknown;
 };
 
-/** A picture or clip the self-check flagged. */
+/** A picture or clip the self-check flagged (kind clip_audio: the speech check). */
 export type SelfCheckFlag = {
   kind: string;
   id: string;
