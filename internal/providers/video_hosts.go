@@ -297,6 +297,10 @@ func InvalidKey(err error) bool {
 		return false
 	}
 	message := strings.ToLower(e.Message)
+	// Google answers a bad key with 400 "API key not valid" (reason API_KEY_INVALID).
+	if e.Status == 400 && (strings.Contains(message, "api key not valid") || strings.Contains(message, "api_key_invalid")) {
+		return true
+	}
 	return e.Status == 401 || e.Status == 403 && (strings.Contains(message, "api key") || strings.Contains(message, "api_key") || strings.Contains(message, "invalid key") || strings.Contains(message, "unauthori") || strings.Contains(message, "authenticat"))
 }
 

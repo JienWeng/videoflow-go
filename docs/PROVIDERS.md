@@ -99,3 +99,37 @@ to `https://generativelanguage.googleapis.com/v1beta` with the key in the
 `x-goog-api-key` header. Pictures are requested at Google's default 1K size and
 cost about $0.134, $0.067 and $0.039 each respectively. Settings checks
 configuration without generating an image.
+
+### Google Gemini video (Gemini Omni Flash)
+
+The same Google Gemini key also makes scene videos. In **Settings → AI setup →
+Video**, choose the model **Gemini Omni Flash (Google)**. Google Gemini then
+appears as its only service. It shows "(no key saved)" until the key is saved.
+Google no longer offers Veo through the Gemini API: the Veo 3.1 previews shut
+down on 22 October 2026, and Google names `gemini-omni-1.2-flash` as the
+replacement. That is the model VideoFlow uses.
+
+Clips go to the Interactions API (`POST /v1beta/interactions`) as a background
+interaction. The key travels only in the `x-goog-api-key` header. VideoFlow then
+polls `GET /v1beta/interactions/{id}` every few seconds, within the usual
+30-minute job limit, and saves the finished MP4. When Google keeps the clip in
+its Files API instead, it is downloaded from Google's API host with the key in
+the header. A redirect to any other host is followed without the key.
+
+What a clip can be:
+
+| Setting | Gemini Omni Flash |
+|---|---|
+| Length | 3–15 seconds; 3–10 seconds with a first and last frame |
+| Shape | 16:9 or 9:16 |
+| Size | 360p, 720p (default), 1080p or 4K (the last two are upscaled by Google) |
+| Pictures | a first frame, a first and last frame, or up to 6 reference pictures |
+| Sound | always on; a silent scene is asked for silence in its prompt |
+
+A seed, voice recordings, other shapes or sizes, and longer clips are refused
+before anything is sent.
+
+Google bills the video as output tokens at $12.00 per million. The quote uses
+Google's own per-second rate: about $0.023 at 360p, $0.070 at 720p, $0.104 at
+1080p and $0.209 at 4K. The input prompt and pictures add well under a cent per
+clip and are left out. Prices were checked on 23 November 2026.

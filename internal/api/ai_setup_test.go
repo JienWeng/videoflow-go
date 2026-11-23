@@ -87,7 +87,23 @@ func TestAISetupChoosesGeminiAndItsModel(t *testing.T) {
 	if routes := s.routes(); routes.MediaModel("reference") != "gemini-2.5-flash-image" {
 		t.Fatalf("reference model = %s", routes.MediaModel("reference"))
 	}
-	if w := call(t, s, "PUT", "/settings/app", `{"default_video_provider":"gemini"}`); w.Code != 400 {
-		t.Fatalf("gemini accepted for video: %d", w.Code)
+	// The same key makes videos: choosing the Gemini Omni Flash model moves video to Google.
+	if w := call(t, s, "PUT", "/video-services/routing", `{"mode":"manual","model":"gemini-omni-flash"}`); w.Code != 200 {
+		t.Fatalf("choose gemini video: %d %s", w.Code, w.Body.String())
+	}
+	w := call(t, s, "GET", "/ai/setup", "")
+	var out map[string]map[string]any
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &out) != nil {
+		t.Fatalf("ai setup: %d %s", w.Code, w.Body.String())
+	}
+	video := out["video"]
+	if video["service"] != "Google Gemini" || video["provider"] != "gemini" || video["model"] != "gemini-omni-1.2-flash" || video["family"] != "gemini-omni-flash" || video["ready"] != true || video["per_second"] != 0.069504 {
+		t.Fatalf("video = %v", video)
+	}
+	if out["picture_service"]["model"] != "gemini-2.5-flash-image" {
+		t.Fatalf("choosing video changed the picture model: %v", out["picture_service"])
+	}
+	if w := call(t, s, "PUT", "/settings/app", `{"default_video_provider":"gemini","video_model":"gemini-3-pro-image"}`); w.Code != 400 {
+		t.Fatalf("a picture model accepted for video: %d", w.Code)
 	}
 }

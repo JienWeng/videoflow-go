@@ -19,6 +19,7 @@ type Family struct {
 var Families = []Family{
 	{"seedance-2.0", "Seedance 2.0"}, {"seedance-2.0-fast", "Seedance 2.0 Fast"}, {"seedance-2.0-mini", "Seedance 2.0 Mini"},
 	{"seedance-2.5", "Seedance 2.5"}, {"seedance-2.5-flash", "Seedance 2.5 Flash"},
+	{"gemini-omni-flash", "Gemini Omni Flash (Google)"},
 }
 
 // Host is one service that sells video generation.
@@ -40,6 +41,9 @@ type Host struct {
 	Voices int
 	// Checked says where the price came from.
 	Checked string
+	// DefaultResolution is what the service makes when no size is asked for ("auto");
+	// empty when that is not known, which leaves such clips unpriced.
+	DefaultResolution string
 }
 
 // Prices were read from each service's public pricing page on 19 Nov 2026, or from the
@@ -60,6 +64,13 @@ var Hosts = []Host{
 		Models: map[string]string{"seedance-2.0": "bytedance/seedance-2.0/image-to-video", "seedance-2.0-fast": "bytedance/seedance-2.0/fast/image-to-video",
 			"seedance-2.0-mini": "bytedance/seedance-2.0/mini/image-to-video", "seedance-2.5": "bytedance/seedance-2.5/image-to-video"},
 		TokenRate: map[string]float64{"seedance-2.0": 0.014, "seedance-2.0-fast": 0.0112, "seedance-2.0-mini": 0.007, "seedance-2.5": 0.0214}},
+	// Google bills Omni video as output tokens at $12.00 per million, "5,792 tokens per second
+	// of 720p video"; 360p is 1,931, 1080p 8,688 and 4K 17,376 tokens per second
+	// (https://aistudio.google.com/docs/pricing, checked 23 Nov 2026). The prompt and pictures
+	// add input tokens at $1.50 per million, well under a cent per clip, which is left out.
+	{Name: "gemini", Label: "Google Gemini", URL: "https://generativelanguage.googleapis.com/v1beta", EnvKey: "GEMINI_API_KEY", Checked: "Google Gemini API pricing page, 23 Nov 2026", DefaultResolution: "720p",
+		Models:    map[string]string{"gemini-omni-flash": "gemini-omni-1.2-flash"},
+		PerSecond: map[string]map[string]float64{"gemini-omni-flash": {"360p": 1931 * 12 / 1e6, "720p": 5792 * 12 / 1e6, "1080p": 8688 * 12 / 1e6, "4k": 17376 * 12 / 1e6}}},
 }
 
 // Retired labels the services the app used to send video to. Old video jobs and cost
@@ -124,6 +135,9 @@ func HostPrice(provider, family, resolution, aspect string, live map[string]floa
 	}
 	if resolution == "" {
 		resolution = "720p"
+	}
+	if resolution == "auto" && h.DefaultResolution != "" {
+		resolution = h.DefaultResolution
 	}
 	if rate, ok := h.TokenRate[family]; ok {
 		if fresh := live[provider+":"+family]; fresh > 0 {

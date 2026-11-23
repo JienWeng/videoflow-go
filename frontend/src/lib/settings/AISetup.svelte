@@ -56,8 +56,10 @@
     label: string;
     per_second: number;
     usable: boolean;
+    connected: boolean;
     in_use: boolean;
     cheapest: boolean;
+    note?: string;
   };
   type Services = { families: { id: string; label: string }[]; model: string; routing: string; services: Service[] };
 
@@ -281,11 +283,12 @@ docker compose exec backend claude auth login</code></pre>
                   <option value="cheapest">Cheapest connected (automatic)</option>
                   {#if services.routing !== 'cheapest' && !usable.some((s) => s.in_use)}<option value="">{setup.video.service} (current)</option>{/if}
                   {#each usable as s (s.provider)}<option value={s.provider}>{s.label} · ${s.per_second.toFixed(3)}/s</option>{/each}
+                  {#each services.services.filter((s) => !s.usable) as s (s.provider)}<option value={s.provider} disabled>{s.label} · ${s.per_second.toFixed(3)}/s{s.connected ? ' (unavailable)' : ' (no key saved)'}</option>{/each}
                 </select>
               </label>
             </div>
           {/if}
-          <p class="text-xs text-muted-foreground">Only services with a saved key are listed. <a
+          <p class="text-xs text-muted-foreground">Each model lists the services that sell it; add a key to use one. Gemini Omni Flash uses your Google Gemini key. <a
             class="underline" href="/costs#services">Compare all prices</a></p>
         </div>
       </li>

@@ -76,3 +76,29 @@ func TestEachModelIsOfferedByTheServicesThatListIt(t *testing.T) {
 		}
 	}
 }
+
+// Gemini Omni Flash is sold only by Google, priced per second from its token rate.
+func TestGeminiOmniIsPricedPerSecondByResolution(t *testing.T) {
+	offers := Offers("gemini-omni-flash", "720p", "9:16", nil)
+	if len(offers) != 1 || offers[0].Provider != "gemini" || offers[0].Model != "gemini-omni-1.2-flash" || offers[0].PerSecond != 0.0695 {
+		t.Fatalf("offers = %v", offers)
+	}
+	if FamilyOf("gemini", "gemini-omni-1.2-flash") != "gemini-omni-flash" {
+		t.Fatal("family lookup")
+	}
+	for resolution, want := range map[string]float64{"360p": 0.2317, "720p": 0.695, "1080p": 1.0426, "4k": 2.0851, "auto": 0.695, "": 0.695} {
+		if amount, basis := Video("gemini", "gemini-omni-1.2-flash", resolution, "16:9", 10, nil); basis != Rate || amount != want {
+			t.Errorf("%q: %v %s, want %v", resolution, amount, basis, want)
+		}
+	}
+	// A size Google does not make, or a model it does not sell, is never guessed.
+	for _, c := range [][2]string{{"gemini-omni-1.2-flash", "480p"}, {"veo-3.1-generate-preview", "720p"}} {
+		if _, basis := Video("gemini", c[0], c[1], "16:9", 10, nil); basis != Unpriced {
+			t.Errorf("%v priced", c)
+		}
+	}
+	// Seedance services still leave a model-default size unpriced.
+	if _, basis := Video("argolink", "seedance-2.0", "auto", "16:9", 10, nil); basis != Unpriced {
+		t.Error("argolink auto priced")
+	}
+}
