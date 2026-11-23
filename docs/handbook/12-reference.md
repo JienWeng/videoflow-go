@@ -64,3 +64,23 @@ From `frontend`:
 npm run check
 npm run build
 ```
+
+### Assistant evaluation
+
+The assistant is checked in two layers.
+
+**Deterministic, in CI.** `go test ./internal/api` includes golden tests of what each chat turn is given and how its answer is post-processed, with a fake planner (no Codex or Claude CLI is started, nothing is paid for):
+
+- `internal/api/chat_eval_test.go` builds eight projects from saved state (empty; brief only; characters without pictures; characters without voices; scenes ready to render; clips made, not edited; edited, not exported; exported) and sends one turn in manual, auto and Full auto. The turn must carry the stage map of `GET /stages`, the decision log (`decided_so_far`), the mode's rules, stay under 24 KB, and hold no key.
+- `internal/api/chat_decision_matrix_test.go` runs assistant mode × the planner's decision × decision log × stage × the user's words through the same function every turn ends with.
+
+**Live and scored, by hand only.** `scripts/assistant_eval.py --suite stages` sends scenario messages to a running backend, for the stage the open project is in (cases for other stages are skipped), in manual, auto and Full auto, and scores each reply: the right step for the stage, acting or asking as it should, no question about something already decided, stated assumptions, the user's language in a short plain reply, and no per-step buttons in Full auto.
+
+```sh
+python3 scripts/assistant_eval.py --suite stages --out run.json
+python3 scripts/assistant_eval.py --suite stages --out next.json --compare run.json
+python3 scripts/assistant_eval.py --suite stages --dry-run   # offline check of cases and rubric
+python3 -m unittest scripts/test_assistant_eval.py           # offline unit tests
+```
+
+Each case is one or two turns of the AI session selected in Settings (your Claude Code or Codex sign-in), so a run uses real session usage; run it yourself, never in CI. The script only calls `/chat` (which prepares a button and runs nothing), reads `/stages`, `/decisions`, `/characters` and `/scenes`, and adds then removes the decisions a case seeds; it refuses any other request. It prints a table per case, scores per stage and per criterion, the overall score and the unnecessary-question rate, and `--compare` lists regressions against an earlier report. Run it on projects at different stages to cover them all. The default `--suite basic` runs the older everyday-request checks.
