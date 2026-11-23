@@ -178,3 +178,25 @@ func TestWriteAudioExportVerificationFixture(t *testing.T) {
 	}
 	os.WriteFile(filepath.Join(root, "revision.txt"), []byte(rev), 0600)
 }
+
+func TestClipEndingAMillisecondPastTheLengthSavesButFarPastIsExplained(t *testing.T) {
+	root := t.TempDir()
+	voice := filepath.Join(root, "voice.mp3")
+	os.WriteFile(voice, []byte("mp3"), 0600)
+	sources := map[string]string{"asset-1": voice}
+	near := Manifest{Version: 1, Width: 640, Height: 360, FPS: 24, Duration: 15.802, Audio: []Clip{{ID: "v", AssetID: "asset-1", Start: 12.3456, Duration: 3.4567, OriginalDuration: 3.4567, Speed: 1}}}
+	if _, err := Save(root, "project", near, sources); err != nil {
+		t.Fatal("a clip ending under a millisecond past a rounded length should save:", err)
+	}
+	far := near
+	far.Audio = []Clip{{ID: "v", AssetID: "asset-1", Start: 12, Duration: 5, OriginalDuration: 5, Speed: 1}}
+	_, err := Save(root, "project", far, sources)
+	if err == nil || !strings.Contains(err.Error(), "after the end of the video") {
+		t.Fatalf("a clip far past the end should be refused with a clear reason, got %v", err)
+	}
+	speed := near
+	speed.Audio = []Clip{{ID: "v", AssetID: "asset-1", Duration: 2, OriginalDuration: 2, Speed: 2}}
+	if _, err = Save(root, "project", speed, sources); err == nil || !strings.Contains(err.Error(), "only normal speed") {
+		t.Fatalf("a speed other than 1 should say so, got %v", err)
+	}
+}
