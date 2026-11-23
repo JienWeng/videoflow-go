@@ -6,6 +6,7 @@ package costs
 import (
 	"math"
 	"strings"
+	"time"
 )
 
 // How sure an amount is.
@@ -93,9 +94,36 @@ func Image(provider, model string, usage *ImageUsage) (float64, string) {
 	return 0, Unpriced
 }
 
-// Voice prices one spoken line by the text sent.
-func Voice(provider, model, text string) (float64, string) {
+// GeminiSpeechPrices is Google's Standard-tier TTS price in dollars per million tokens:
+// text in, audio out, at "25 tokens per second of audio". Read from
+// https://aistudio.google.com/docs/pricing on 23 Nov 2026; both double on 1 Jan 2027.
+var GeminiSpeechPrices = map[string][2]float64{
+	"gemini-3.8-flash-tts":      {0.50, 9.00},
+	"gemini-3.8-flash-lite-tts": {0.50, 6.00},
+}
+
+// geminiSpeechRise is when Google's announced TTS prices take effect.
+var geminiSpeechRise = time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+
+// Voice prices one spoken line by the text sent. seconds is how long the line came out
+// (0 when unknown); at is when it was made.
+func Voice(provider, model, text string, seconds float64, at time.Time) (float64, string) {
 	switch provider {
+	case "gemini":
+		rates, ok := GeminiSpeechPrices[model]
+		if !ok {
+			return 0, Unpriced
+		}
+		if !at.Before(geminiSpeechRise) {
+			rates[0], rates[1] = rates[0]*2, rates[1]*2
+		}
+		basis := Rate
+		if seconds <= 0 {
+			// About 15 characters are spoken a second.
+			seconds, basis = float64(len([]rune(text)))/15, Estimate
+		}
+		// About 4 characters make a text token.
+		return round((float64(len([]rune(text)))/4*rates[0] + seconds*25*rates[1]) / 1e6), basis
 	case "fish":
 		if strings.HasSuffix(model, "-free") {
 			return 0, Included

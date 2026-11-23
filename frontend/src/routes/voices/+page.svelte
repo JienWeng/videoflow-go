@@ -19,8 +19,8 @@
     profiles: Document[];
     samples?: Record<string, string>;
   };
-  const providers = ['fish', 'elevenlabs'];
-  const providerName = (p: string) => p === 'elevenlabs' ? 'ElevenLabs' : 'Fish Audio';
+  const providers = ['fish', 'elevenlabs', 'gemini'];
+  const providerName = (p: string) => ({ elevenlabs: 'ElevenLabs', gemini: 'Google Gemini' })[p] ?? 'Fish Audio';
 
   let selectedCharacter = $state('');
   let project = $state('');

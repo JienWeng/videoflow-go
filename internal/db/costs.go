@@ -184,6 +184,7 @@ func (d *DB) SyncCosts(project string) error {
 			Model    string            `json:"model"`
 			SceneID  string            `json:"scene_id"`
 			Text     string            `json:"text"`
+			Seconds  float64           `json:"seconds"`
 			Usage    *costs.ImageUsage `json:"usage"`
 		}
 		if recorded["asset:"+a.ID] || json.Unmarshal(a.MetadataJSON, &m) != nil || m.Provider == "" {
@@ -192,7 +193,7 @@ func (d *DB) SyncCosts(project string) error {
 		e := CostEntry{Ref: "asset:" + a.ID, ProjectID: project, SceneID: m.SceneID, ScriptID: script[m.SceneID], Provider: m.Provider, Model: m.Model, Label: a.Name, CreatedAt: a.CreatedAt}
 		if a.Type == "voiceover" {
 			e.Category, e.Quantity, e.Unit = "voice", float64(len([]rune(m.Text))), "characters"
-			e.Amount, e.Basis = costs.Voice(m.Provider, m.Model, m.Text)
+			e.Amount, e.Basis = costs.Voice(m.Provider, m.Model, m.Text, m.Seconds, a.CreatedAt)
 		} else if strings.HasPrefix(a.FilePath, "storage/assets/") {
 			e.Category, e.Quantity, e.Unit = "image", 1, "picture"
 			e.Amount, e.Basis = costs.Image(m.Provider, m.Model, m.Usage)

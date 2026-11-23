@@ -1,14 +1,17 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"videoflow-go/internal/composition"
@@ -28,7 +31,7 @@ type voiceChoice struct {
 }
 
 func (v voiceChoice) usable() bool {
-	return (v.Provider == "fish" || v.Provider == "elevenlabs") && providers.SafeSpeechID(v.VoiceID)
+	return speechProvider(v.Provider) && providers.SafeSpeechID(v.VoiceID)
 }
 
 type voiceoverItem struct {
@@ -42,6 +45,13 @@ type voiceoverItem struct {
 
 // voiceoverSpeech is the one paid call; tests replace it.
 var voiceoverSpeech = func(ctx context.Context, provider, key, endpoint, model, voice, text string) ([]byte, error) {
+	if provider == "gemini" {
+		wav, err := providers.GeminiSpeech(ctx, key, endpoint, model, voice, text)
+		if err != nil {
+			return nil, err
+		}
+		return wavToMP3(ctx, wav)
+	}
 	input := map[string]any{"text": text, "reference_id": voice, "format": "mp3"}
 	if provider == "elevenlabs" {
 		return providers.ElevenSpeech(ctx, key, endpoint, model, input)
@@ -227,7 +237,7 @@ func (s *Server) voiceoverLine(ctx context.Context, project string, voice voiceC
 	if utf8.RuneCountInString(label) > 40 {
 		label = string([]rune(label)[:40]) + "…"
 	}
-	meta, _ := json.Marshal(map[string]any{"voiceover": true, "text": cue.Text, "character_id": cue.CharacterID, "provider": voice.Provider, "model": model, "voice_id": voice.VoiceID})
+	meta, _ := json.Marshal(map[string]any{"voiceover": true, "text": cue.Text, "character_id": cue.CharacterID, "provider": voice.Provider, "model": model, "voice_id": voice.VoiceID, "seconds": round3(duration)})
 	a := &models.Asset{ID: id, ProjectID: &project, Type: "voiceover", Name: "Voice · " + speaker + ": " + label + ".mp3", FilePath: public, TagsJSON: []byte("[]"), MetadataJSON: meta}
 	if _, err := s.database.GetAsset(id); err != nil {
 		if err = s.database.CreateUploadedAsset(a); err != nil {
@@ -236,4 +246,18 @@ func (s *Server) voiceoverLine(ctx context.Context, project string, voice voiceC
 	}
 	item.Duration = round3(duration)
 	return item, false, nil
+}
+
+// wavToMP3 turns Google's WAV speech into the MP3 every saved voice line is kept as.
+func wavToMP3(ctx context.Context, wav []byte) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-v", "error", "-protocol_whitelist", "pipe", "-f", "wav", "-i", "pipe:0", "-vn", "-ac", "1", "-ar", "44100", "-b:a", "128k", "-f", "mp3", "pipe:1")
+	cmd.Stdin = bytes.NewReader(wav)
+	var out, problem bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &problem
+	if err := cmd.Run(); err != nil || out.Len() == 0 {
+		return nil, fmt.Errorf("could not turn Google Gemini speech into MP3; install FFmpeg (%s)", strings.TrimSpace(problem.String()))
+	}
+	return out.Bytes(), nil
 }

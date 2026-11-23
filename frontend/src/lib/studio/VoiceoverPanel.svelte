@@ -32,7 +32,7 @@
     error = $state(''),
     note = $state('');
   const sceneClips = $derived(clips.filter(c => String(c.asset_id).startsWith('output-')));
-  const LABEL: Record<string, string> = { elevenlabs: 'ElevenLabs', fish: 'Fish Audio' };
+  const LABEL: Record<string, string> = { elevenlabs: 'ElevenLabs', fish: 'Fish Audio', gemini: 'Google Gemini' };
   let saved: { provider?: string; voice?: string } = {};
   try {
     saved = JSON.parse(localStorage.getItem(STORE) || 'null') ?? {};
@@ -42,12 +42,12 @@
   // Only offer providers that can actually speak (have a saved key).
   get<ProviderInfo[]>('/settings/providers')
     .then(list => {
-      connected = ['elevenlabs', 'fish'].filter(n => list.some(p => p.name === n && p.configured));
+      connected = ['elevenlabs', 'fish', 'gemini'].filter(n => list.some(p => p.name === n && p.configured));
       provider = connected.includes(saved.provider ?? '') ? saved.provider! : (connected[0] ?? '');
       if (provider === saved.provider && saved.voice) voice = saved.voice;
     })
     .catch(() => {
-      connected = ['elevenlabs', 'fish'];
+      connected = ['elevenlabs', 'fish', 'gemini'];
       provider = saved.provider ?? 'elevenlabs';
     });
   let sequence = 0;

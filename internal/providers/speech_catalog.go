@@ -61,6 +61,9 @@ func speechJSON(ctx context.Context, key, base, provider, path string, out any) 
 }
 func SpeechModels(ctx context.Context, provider, key, base, schemaURL string) ([]SpeechModel, error) {
 	models := []SpeechModel{}
+	if provider == "gemini" {
+		return append(models, GeminiSpeechModels...), nil
+	}
 	if provider == "elevenlabs" {
 		var list []struct {
 			ID        string `json:"model_id"`
@@ -130,6 +133,9 @@ func SafeSpeechID(id string) bool {
 	return true
 }
 func ListSpeechVoices(ctx context.Context, provider, key, base, search, language, page string) (SpeechVoices, error) {
+	if provider == "gemini" {
+		return geminiSpeechVoices(search), nil
+	}
 	result := SpeechVoices{Voices: []SpeechVoice{}}
 	q := url.Values{}
 	if provider == "elevenlabs" {

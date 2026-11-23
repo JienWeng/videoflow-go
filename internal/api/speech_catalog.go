@@ -56,6 +56,9 @@ func (s *Server) speechModels(ctx context.Context, provider string, refresh bool
 	if provider == "fish" {
 		cat.Source = "https://docs.fish.audio/api-reference/openapi.json"
 	}
+	if provider == "gemini" {
+		cat.Source = "https://aistudio.google.com/docs/speech-generation"
+	}
 	encoded, _ := json.Marshal(cat)
 	if err = s.database.SetAppSetting(cacheKey, string(encoded)); err != nil {
 		return cat, err
@@ -114,8 +117,8 @@ func (s *Server) resolveSpeechModel(ctx context.Context, provider, model string,
 }
 func (s *Server) handleSpeechModels(w http.ResponseWriter, r *http.Request) {
 	p := chi.URLParam(r, "provider")
-	if p != "fish" && p != "elevenlabs" {
-		http.Error(w, "choose Fish Audio or ElevenLabs", 400)
+	if !speechProvider(p) {
+		http.Error(w, "choose Fish Audio, ElevenLabs or Google Gemini", 400)
 		return
 	}
 	cat, err := s.speechModels(r.Context(), p, r.URL.Query().Get("refresh") == "true")
@@ -174,8 +177,8 @@ func (s *Server) handleSpeechVoices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := chi.URLParam(r, "provider")
-	if p != "fish" && p != "elevenlabs" {
-		http.Error(w, "choose Fish Audio or ElevenLabs", 400)
+	if !speechProvider(p) {
+		http.Error(w, "choose Fish Audio, ElevenLabs or Google Gemini", 400)
 		return
 	}
 	// Without a character (narrator voice in the editor) the list is unranked.
@@ -222,7 +225,7 @@ func (s *Server) handleVoicePreferences(w http.ResponseWriter, r *http.Request) 
 	if !voiceDecode(w, r, &body) {
 		return
 	}
-	if body.Primary != "fish" && body.Primary != "elevenlabs" {
+	if !speechProvider(body.Primary) {
 		http.Error(w, "choose an available speech provider", 400)
 		return
 	}

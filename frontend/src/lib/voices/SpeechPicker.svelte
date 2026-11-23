@@ -56,7 +56,7 @@
     warning = '';
     loading = false;
     voiceSequence++;
-    if (p === 'fish' || p === 'elevenlabs') void loadModels(p);
+    if (p === 'fish' || p === 'elevenlabs' || p === 'gemini') void loadModels(p);
     else {
       models = [];
       sequence++;

@@ -107,7 +107,7 @@ func (s *Server) handleAISetup(w http.ResponseWriter, r *http.Request) {
 	// Voice: the service that speaks narration and dialogue.
 	primary := s.primaryVoiceProvider()
 	voices := []map[string]any{}
-	for _, name := range []string{"fish", "elevenlabs"} {
+	for _, name := range []string{"fish", "elevenlabs", "gemini"} {
 		voices = append(voices, map[string]any{"id": name, "label": label(name), "ready": connected(name)})
 	}
 	voice := map[string]any{"provider": primary, "service": label(primary), "ready": connected(primary), "options": voices}
