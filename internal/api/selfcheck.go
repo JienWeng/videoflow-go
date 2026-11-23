@@ -59,8 +59,9 @@ const selfCheckVersion = "selfcheck-1"
 // selfCheckUnavailable starts the note of a check that could not give a verdict.
 const selfCheckUnavailable = "self-check unavailable"
 
-// selfCheckAudioNote is on every clip result: frames carry no sound.
-const selfCheckAudioNote = "Sound, voices and lip-sync can't be judged from still frames, so they were not checked."
+// selfCheckAudioNote is on every clip result: frames carry no sound. What is said is
+// the speech check's to judge (audio_check.go); lip-sync is never judged.
+const selfCheckAudioNote = "Sound, voices and lip-sync can't be judged from still frames, so they were not checked here; the speech check listens to what is said."
 
 // Limits on what a reviewer's answer may carry.
 const (
@@ -110,10 +111,13 @@ type selfCheckResult struct {
 	// Unavailable marks a result that is not a real verdict (no session, invalid answer,
 	// limit reached). It reads as "pass" and is never kept as the answer for a hash.
 	Unavailable bool `json:"unavailable,omitempty"`
+	// Audio is the speech check's detail (kind clip_audio): each line as heard.
+	Audio *audioCheck `json:"audio,omitempty"`
 }
 
 // selfCheckRecord is what is stored on the artifact: asset metadata self_check for
-// pictures, render output qa_json.self_check for clips.
+// pictures, render output qa_json.self_check for clips and qa_json.audio_check for a
+// clip's speech check.
 type selfCheckRecord struct {
 	Kind   string          `json:"kind"`
 	ID     string          `json:"id"`
@@ -292,6 +296,16 @@ type selfCheckTarget struct {
 	SceneID, CharacterID string
 	asset                *models.Asset
 	output               *models.RenderOutput
+	// script is the clip and the lines it should say (speech check only).
+	script *clipScript
+}
+
+// noteKey is where the artifact's result is stored.
+func (t *selfCheckTarget) noteKey() string {
+	if t.Kind == selfCheckClipAudio {
+		return "audio_check"
+	}
+	return "self_check"
 }
 
 // selfCheckKind accepts the kinds and their aliases ("storyboard" is a scene picture).
@@ -303,6 +317,8 @@ func selfCheckKind(kind string) string {
 		return selfCheckScenePicture
 	case selfCheckClip, "output":
 		return selfCheckClip
+	case selfCheckClipAudio, "speech", "audio":
+		return selfCheckClipAudio
 	}
 	return ""
 }
@@ -319,8 +335,10 @@ func (s *Server) selfCheckTarget(project, kind, id string) (*selfCheckTarget, er
 		return s.scenePictureTarget(project, id)
 	case selfCheckClip:
 		return s.clipTarget(project, id)
+	case selfCheckClipAudio:
+		return s.clipAudioTarget(project, id)
 	}
-	return nil, fmt.Errorf("choose character_sheet, scene_picture or clip")
+	return nil, fmt.Errorf("choose character_sheet, scene_picture, clip or clip_audio")
 }
 
 func (s *Server) projectAsset(project, id string) (*models.Asset, string, error) {
@@ -462,18 +480,22 @@ func (t *selfCheckTarget) stored() *selfCheckRecord {
 	} else if t.output != nil {
 		raw = t.output.QAJSON
 	}
-	return storedSelfCheck(raw)
+	return storedCheck(raw, t.noteKey())
 }
 
 // storedSelfCheck reads a self_check record out of asset metadata or clip notes.
-func storedSelfCheck(raw json.RawMessage) *selfCheckRecord {
-	var notes struct {
-		Check *selfCheckRecord `json:"self_check"`
-	}
-	if json.Unmarshal(raw, &notes) != nil || notes.Check == nil || notes.Check.Result.Verdict == "" {
+func storedSelfCheck(raw json.RawMessage) *selfCheckRecord { return storedCheck(raw, "self_check") }
+
+// storedAudioCheck reads a clip's speech check out of its notes.
+func storedAudioCheck(raw json.RawMessage) *selfCheckRecord { return storedCheck(raw, "audio_check") }
+
+func storedCheck(raw json.RawMessage, key string) *selfCheckRecord {
+	var notes map[string]json.RawMessage
+	var check selfCheckRecord
+	if json.Unmarshal(raw, &notes) != nil || json.Unmarshal(notes[key], &check) != nil || check.Result.Verdict == "" {
 		return nil
 	}
-	return notes.Check
+	return &check
 }
 
 func (s *Server) saveSelfCheck(t *selfCheckTarget, record selfCheckRecord) error {
@@ -481,8 +503,8 @@ func (s *Server) saveSelfCheck(t *selfCheckTarget, record selfCheckRecord) error
 	if err != nil {
 		return err
 	}
-	if t.Kind == selfCheckClip {
-		err = s.database.SetRenderOutputSelfCheck(t.ID, raw)
+	if t.output != nil {
+		err = s.database.SetRenderOutputNote(t.ID, t.noteKey(), raw)
 	} else {
 		err = s.database.SetAssetSelfCheck(t.ProjectID, t.ID, raw)
 	}
@@ -534,7 +556,7 @@ func (s *Server) runSelfCheck(ctx context.Context, t *selfCheckTarget, opts self
 	}
 	defer unlock()
 	if fresh, e := s.selfCheckTarget(t.ProjectID, t.Kind, t.ID); e == nil {
-		t.asset, t.output = fresh.asset, fresh.output // a check that just finished is seen
+		t.asset, t.output, t.script = fresh.asset, fresh.output, fresh.script // a check that just finished is seen
 	}
 	hash, err := t.hash()
 	if err != nil {
@@ -548,9 +570,14 @@ func (s *Server) runSelfCheck(ctx context.Context, t *selfCheckTarget, opts self
 	if previous != nil && previous.Hash == hash {
 		record.Attempt = max(record.Attempt, previous.Attempt)
 	}
-	if !takeSelfCheckBudget(t.ProjectID, time.Now()) {
+	switch {
+	case t.Kind == selfCheckClipAudio && !takeSelfCheckBudget("speech:"+t.ProjectID, time.Now()):
+		record.Result = audioUnavailable(fmt.Sprintf("this project already ran %d speech checks in the last hour", selfCheckProjectCap))
+	case t.Kind == selfCheckClipAudio:
+		record.Result, record.Engine, record.Model = s.listenArtifact(ctx, t)
+	case !takeSelfCheckBudget(t.ProjectID, time.Now()):
 		record.Result = unavailableResult(fmt.Sprintf("this project already ran %d checks in the last hour", selfCheckProjectCap))
-	} else {
+	default:
 		record.Result, record.Engine, record.Model = s.reviewArtifact(ctx, t)
 	}
 	if err = s.saveSelfCheck(t, record); err != nil {
@@ -788,7 +815,7 @@ func (s *Server) requestedSelfCheckTarget(w http.ResponseWriter, r *http.Request
 	}
 	kind = selfCheckKind(kind)
 	if kind == "" || strings.TrimSpace(id) == "" || len(id) > 160 {
-		http.Error(w, "choose a kind (character_sheet, scene_picture or clip) and its id", 400)
+		http.Error(w, "choose a kind (character_sheet, scene_picture, clip or clip_audio) and its id", 400)
 		return nil
 	}
 	target, err := s.selfCheckTarget(project, kind, strings.TrimSpace(id))
@@ -819,7 +846,7 @@ func (s *Server) handleSelfCheck(w http.ResponseWriter, r *http.Request) {
 	if target.SceneID != "" {
 		op.SceneID = &target.SceneID
 	}
-	if target.Kind == selfCheckClip {
+	if target.output != nil {
 		op.OutputID = &target.ID
 	}
 	s.operation(w, r, op, func(ctx context.Context) (any, error) {
