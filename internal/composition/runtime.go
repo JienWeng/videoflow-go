@@ -3,6 +3,7 @@ package composition
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -74,7 +75,13 @@ func Run(ctx context.Context, dir, operation string) (string, error) {
 	if e != nil {
 		return "", e
 	}
-	ctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
+	// Checks are quick. A render draws every frame in a headless browser, which on a small
+	// machine can take many minutes for a video of a minute, so it gets far longer.
+	limit := 4 * time.Minute
+	if operation == "render" {
+		limit = 30 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...)
 	containProcess(cmd)
@@ -85,6 +92,9 @@ func Run(ctx context.Context, dir, operation string) (string, error) {
 	cmd.Stderr = &out
 	e = cmd.Run()
 	if e != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return out.String(), fmt.Errorf("local %s stopped after %s because it took too long", operation, limit)
+		}
 		return out.String(), fmt.Errorf("local %s failed: %w", operation, e)
 	}
 	return out.String(), nil
