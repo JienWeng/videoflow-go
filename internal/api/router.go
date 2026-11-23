@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -111,12 +112,12 @@ func (s *Server) useMiddleware() {
 	s.router.Use(middleware.Logger)
 	s.router.Use(middleware.Recoverer)
 	// Every request is cut off after five minutes except the event stream, which stays
-	// open for as long as the page does.
+	// open for as long as the page does, and a local export, which has its own limit.
 	limit := middleware.Timeout(5 * time.Minute)
 	s.router.Use(func(next http.Handler) http.Handler {
 		limited := limit(next)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/events" {
+			if exemptFromRequestTimeout(r.URL.Path) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -339,4 +340,11 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(data)
+}
+
+// exemptFromRequestTimeout names the requests that are allowed to outlast five minutes:
+// the event stream, and running a local export (a render can take far longer on a small
+// machine; composition.Run enforces its own limit).
+func exemptFromRequestTimeout(path string) bool {
+	return path == "/events" || (strings.HasPrefix(path, "/compositions/") && strings.HasSuffix(path, "/run"))
 }
