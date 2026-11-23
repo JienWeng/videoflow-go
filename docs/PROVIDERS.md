@@ -86,9 +86,10 @@ without generating an image.
 
 Save a Google AI Studio key under **Settings → AI connections → Google Gemini**,
 or provide `GEMINI_API_KEY` to the backend, then choose **Google Gemini** as the
-picture service in **Settings → AI setup**. Choosing Gemini there takes
-precedence over a saved OpenAI key; pictures still come from Codex when the
-conversation runs on Codex.
+picture service in **Settings → AI setup**. The picker lists OpenAI, fal.ai,
+OpenRouter and Google Gemini; the service chosen there is used whichever keys are
+saved. With none chosen, a saved OpenAI key decides. Pictures still come from
+Codex when the conversation runs on Codex.
 
 The model picker next to the service offers Nano Banana Pro
 (`gemini-3-pro-image`, the default, up to 14 reference pictures), Nano Banana 2

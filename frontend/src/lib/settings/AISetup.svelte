@@ -240,7 +240,7 @@ docker compose exec backend claude auth login</code></pre>
             {/if}
           </div>
           {/if}
-          <p class="text-xs text-muted-foreground">Codex makes the pictures when the conversation runs on Codex. Otherwise the service chosen here is used; with an OpenAI key saved, that is OpenAI unless you choose Google Gemini.</p>
+          <p class="text-xs text-muted-foreground">Codex makes the pictures when the conversation runs on Codex. Otherwise the service chosen here is used; with an OpenAI key saved and no service chosen, that is OpenAI.</p>
         </div>
       </li>
 
