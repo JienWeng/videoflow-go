@@ -35,9 +35,14 @@ func TestStagesSayWhenSpeechWontFit(t *testing.T) {
 		{ID: "s1", Title: "Trust", Progress: progressAt("ready_to_render", "none"), VideoSeconds: 8, Speech: speech.TooLong, SpeechSummary: "Won't fit: 11.4 s of 8 s — fit the script first", SpeechWontFit: "11.4 s of 8 s"},
 		{ID: "s2", Title: "Code", Progress: progressAt("ready_to_render", "none"), VideoSeconds: 8, Speech: speech.OK, SpeechSummary: "Speech fits: 6 s of 8 s ✓"},
 	}}
-	clips := stageByID(t, computeStages(in), stageClips)
-	if len(clips.Missing) != 2 || clips.Missing[1] != "speech won't fit in 1 scene — fit the script first: “Trust” (11.4 s of 8 s)" {
-		t.Fatalf("missing: %q", clips.Missing)
+	m := computeStages(in)
+	dialogue := stageByID(t, m, stageDialogue)
+	if len(dialogue.Missing) != 1 || dialogue.Missing[0] != "speech won't fit in 1 scene — fit the script first: “Trust” (11.4 s of 8 s)" {
+		t.Fatalf("missing: %q", dialogue.Missing)
+	}
+	// The videos stage no longer repeats it: the dialogue stage owns the speech.
+	if clips := stageByID(t, m, stageClips); len(clips.Missing) != 1 || strings.Contains(clips.Missing[0], "speech") {
+		t.Fatalf("clips: %q", clips.Missing)
 	}
 	fit := chatSpeechFit(in.Scenes)
 	if len(fit) != 1 || fit[0]["scene_id"] != "s1" || !strings.Contains(fit[0]["summary"], "11.4 s of 8 s") {

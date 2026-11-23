@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"videoflow-go/internal/models"
+	"videoflow-go/internal/speech"
 )
 
 func stageByID(t *testing.T, m stageMap, id string) projectStage {
@@ -149,6 +150,67 @@ func TestStagesFollowTheProjectsSavedState(t *testing.T) {
 			}
 			if tc.check != nil {
 				tc.check(t, m)
+			}
+		})
+	}
+}
+
+// The dialogue stage comes from each scene's speech-fit verdict: done when every
+// speaking scene fits, ready with Fit script to clips (free, reversible) when one won't
+// fit, optional when one only just fits, and never blocked.
+func TestDialogueStageFollowsTheSpeechFit(t *testing.T) {
+	ready := func(id, title, verdict, summary, over string) stageScene {
+		return stageScene{ID: id, Title: title, Progress: progressAt("ready_to_render", "none"), VideoSeconds: 8, Speech: verdict, SpeechSummary: summary, SpeechWontFit: over}
+	}
+	for _, tc := range []struct {
+		name, status, current, action string
+		optional                      bool
+		done, total                   int
+		missing                       string
+		scenes                        []stageScene
+	}{
+		{name: "every speaking scene fits", status: statusDone, current: stageClips, action: "render_scenes", done: 1, total: 1, scenes: []stageScene{
+			ready("s1", "Opening", speech.OK, "Speech fits: 6 s of 8 s ✓", ""), ready("s2", "Quiet", "", "", ""),
+		}},
+		{name: "a scene that won't fit is the next step", status: statusReady, current: stageDialogue, action: "fit_script", done: 1, total: 3,
+			missing: "speech won't fit in 1 scene — fit the script first: “Trust” (11.4 s of 8 s)|speech only just fits in “Code” (Speech fits, just: 7.5 s of 8 s)", scenes: []stageScene{
+				ready("s1", "Opening", speech.OK, "Speech fits: 6 s of 8 s ✓", ""),
+				ready("s2", "Trust", speech.TooLong, "Won't fit: 11.4 s of 8 s — fit the script first", "11.4 s of 8 s"),
+				ready("s3", "Code", speech.Tight, "Speech fits, just: 7.5 s of 8 s", ""),
+			}},
+		{name: "only just fits: offered, never holding the project back", status: statusReady, optional: true, current: stageClips, action: "render_scene", total: 1,
+			missing: "speech only just fits in “Code” (Speech fits, just: 7.5 s of 8 s)", scenes: []stageScene{ready("s3", "Code", speech.Tight, "Speech fits, just: 7.5 s of 8 s", "")}},
+		{name: "made scenes are settled", status: statusDone, current: stageEdit, action: "finish_video", scenes: []stageScene{
+			{ID: "s1", Title: "Opening", Progress: progressAt("video_ready", "ready")},
+		}},
+		{name: "waits for shots", status: statusNotStarted, current: stageShots, action: "generate_shots", missing: "1 scene needs shots first; the lines are sized to them", scenes: []stageScene{
+			{ID: "s1", Title: "Opening", Progress: progressAt("needs_shots", "none")},
+		}},
+		{name: "fit before the pictures", status: statusReady, current: stageDialogue, action: "fit_script", total: 1,
+			missing: "speech won't fit in 1 scene — fit the script first: “Trust” (Won't fit: 11 s of 8 s — fit the script first)", scenes: []stageScene{
+				{ID: "s2", Title: "Trust", Progress: progressAt("needs_storyboard", "none"), Speech: speech.TooLong, SpeechSummary: "Won't fit: 11 s of 8 s — fit the script first"},
+			}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := computeStages(stageInputs{Scenes: tc.scenes})
+			st := stageByID(t, m, stageDialogue)
+			if st.Status != tc.status || st.Optional != tc.optional || st.Done != tc.done || st.Total != tc.total || strings.Join(st.Missing, "|") != tc.missing {
+				t.Fatalf("dialogue: %+v", st)
+			}
+			if st.Status == statusReady && (st.Next == nil || st.Next.Action != "fit_script" || st.Next.Cost.Class != costFree || !st.Next.Reversible || len(st.Next.SceneIDs) != 1) {
+				t.Fatalf("next: %+v", st.Next)
+			}
+			action := ""
+			if m.Next != nil {
+				action = m.Next.Action
+			}
+			if m.Current != tc.current || action != tc.action {
+				t.Fatalf("current %s next %q", m.Current, action)
+			}
+			for _, line := range chatStages(m)["stages"].([]string) {
+				if strings.HasPrefix(line, "clips:") && strings.Contains(line, "speech") {
+					t.Fatalf("the videos stage repeats the speech: %s", line)
+				}
 			}
 		})
 	}
