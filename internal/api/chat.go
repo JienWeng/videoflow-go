@@ -236,6 +236,7 @@ func (s *Server) chatIntent(ctx context.Context, turn *chatTurn, res *agents.Cha
 	}
 	action = s.resolveChatVideoActions(ctx, turn, res, action, intent)
 	action = s.resolveChatServiceActions(turn, res, action, intent)
+	action = s.resolveChatCharacterSheets(turn, res, action, intent)
 	chatIntentTargets(turn, res, action, intent)
 	action = chatGuardSelection(turn, res, action, selectionApplies, intent)
 	s.pinChatSelection(turn, res, action, selectionApplies, intent)
@@ -403,6 +404,37 @@ func (s *Server) resolveChatServiceActions(turn *chatTurn, res *agents.ChatInten
 	return action
 }
 
+// resolveChatCharacterSheets lists the characters generate_character_references draws
+// and its picture calls, for the button to show before anything is spent: the ones the
+// planner named (by id or name), or else every character without a usable picture.
+func (s *Server) resolveChatCharacterSheets(turn *chatTurn, res *agents.ChatIntentResponse, action string, intent map[string]interface{}) string {
+	if action != "generate_character_references" {
+		return action
+	}
+	named := []string{}
+	for _, want := range res.CharacterIDs {
+		for _, c := range turn.chars {
+			if c.ID == want || strings.EqualFold(strings.TrimSpace(want), strings.TrimSpace(c.Name)) {
+				named = append(named, c.ID)
+			}
+		}
+	}
+	chars, err := s.sheetCharacters(turn.projectID, named)
+	if err != nil || len(chars) == 0 {
+		action = "unknown"
+		intent["action"] = action
+		intent["reply"] = "Every character already has a reference picture, so there is nothing to make. To redo one, say which character."
+		return action
+	}
+	ids, list := []string{}, []map[string]string{}
+	for _, c := range chars {
+		ids = append(ids, c.ID)
+		list = append(list, map[string]string{"id": c.ID, "name": c.Name})
+	}
+	intent["character_ids"], intent["characters"], intent["image_calls"] = ids, list, len(chars)*characterSheetImageCalls
+	return action
+}
+
 // chatIntentTargets fills the asset type, scene count and the scene, character and
 // finished video the planner named, matching IDs first and scene titles as a fallback.
 func chatIntentTargets(turn *chatTurn, res *agents.ChatIntentResponse, action string, intent map[string]interface{}) {
@@ -554,7 +586,7 @@ func canonicalChatAction(action string) string {
 	switch action {
 	case "create_script", "add_scene":
 		return "generate_script"
-	case "open_editor", "finish_video", "render_scenes", "check_video", "stop_waiting", "switch_video_service", "clear_failed_videos", "set_music", "update_character", "generate_image", "generate_character_reference", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
+	case "open_editor", "finish_video", "render_scenes", "check_video", "stop_waiting", "switch_video_service", "clear_failed_videos", "set_music", "update_character", "generate_image", "generate_character_reference", "generate_character_references", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets":
 		return action
 	default:
 		return "unknown"
@@ -574,7 +606,7 @@ const retiredClipReply = "I can't make a one-off clip straight from a picture an
 
 func chatMode(auto, full bool) string {
 	if full {
-		return "full auto: the user wants the finished video with as few clicks as possible. For a new story they confirm the plan once; the app then makes the pictures, renders every scene, joins them with captions and exports the final video by itself, using image and video credits. Say that confirming is the only click. Free planning steps and check_video start by themselves, and finish_video and render_scenes start immediately. Decide every detail yourself and never ask the user to press per-scene buttons."
+		return "full auto: the user wants the finished video with as few clicks as possible. For a new story they confirm the plan once; the app then makes the pictures, renders every scene, joins them with captions and exports the final video by itself, using image and video credits. Say that confirming is the only click. Free planning steps and check_video start by themselves, and finish_video, render_scenes and generate_character_references start immediately; finish_video and render_scenes first make the missing reference pictures of the scenes' characters, all at once, so never offer per-character picture buttons first. Decide every detail yourself and never ask the user to press per-scene buttons."
 	}
 	if auto {
 		return "auto: free steps (refine_scene, refine_shot, generate_shots, plan_assets, check_video) start by themselves right after your reply, so write a complete instruction and say what you are doing now (\"I'm rewriting the scene so that…\"), not \"press the button\". Steps that use credits or delete things still wait for the user's click; say so. Decide details yourself and do not ask for confirmation of free steps."

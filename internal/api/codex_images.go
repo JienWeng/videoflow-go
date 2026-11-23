@@ -110,6 +110,11 @@ func (s *Server) codexImage(ctx context.Context, prompt, aspect string, referenc
 	if err != nil {
 		return nil, false, "", err
 	}
+	release, err := takeDirectorTurn(ctx)
+	if err != nil {
+		return nil, false, "", err
+	}
+	defer release()
 	privateRoot := filepath.Join(filepath.Dir(s.cfg.DatabasePath), ".videoflow-image-workspaces")
 	if err = os.MkdirAll(privateRoot, 0700); err != nil {
 		return nil, false, "", err
