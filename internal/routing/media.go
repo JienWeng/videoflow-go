@@ -134,16 +134,24 @@ func (r Resolver) MediaSelections() (map[string]MediaChoice, error) {
 		} else if kind == "reference" {
 			modelKey = "ref_image_model"
 		}
-		provider := setting(providerKey, "fal")
-		// An OpenAI key decides pictures unless Google Gemini was chosen on purpose.
-		if kind != "video" && openAIConfigured && provider != "gemini" {
-			selections[kind] = MediaChoice{"openai", r.DefaultMediaModel("openai", kind)}
-			continue
+		provider := setting(providerKey, "")
+		if kind != "video" {
+			// A service chosen on purpose is used. With none chosen, an OpenAI key decides pictures.
+			if provider == "" && openAIConfigured {
+				provider = "openai"
+			}
+			if provider == "openai" && !openAIConfigured {
+				provider = "fal" // OpenAI was chosen, but its key has since been removed
+			}
 		}
-		if kind != "video" && provider == "openai" {
-			provider = "fal" // OpenAI was chosen, but its key has since been removed
+		if provider == "" {
+			provider = "fal"
 		}
-		selections[kind] = MediaChoice{provider, setting(modelKey, r.DefaultMediaModel(provider, kind))}
+		model := setting(modelKey, r.DefaultMediaModel(provider, kind))
+		if provider == "openai" {
+			model = r.DefaultMediaModel("openai", kind) // OpenAI pictures use the app's own model choice
+		}
+		selections[kind] = MediaChoice{provider, model}
 		// A saved choice of a service the app no longer uses is picked automatically instead.
 		retired := kind == "video" && costs.Retired[provider] != ""
 		if retired {

@@ -66,13 +66,9 @@ func (s *Server) handleAISetup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// The services pictures can be sent to. An OpenAI key decides pictures unless Google
-	// Gemini is chosen, so with one saved the other services would not be used.
+	// The services pictures can be sent to. A service chosen here is used, whichever keys are saved.
 	pictureService := map[string]any{"provider": provider, "model": model}
-	choices := []string{"fal", "openrouter", "gemini"}
-	if openAIKey, _, _, _ := routes.Credentials("openai"); strings.TrimSpace(openAIKey) != "" {
-		choices = []string{"openai", "gemini"}
-	}
+	choices := []string{"openai", "fal", "openrouter", "gemini"}
 	options := []map[string]any{}
 	for _, name := range choices {
 		options = append(options, map[string]any{"id": name, "label": label(name), "ready": connected(name)})

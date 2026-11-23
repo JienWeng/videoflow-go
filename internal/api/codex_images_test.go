@@ -226,10 +226,22 @@ func TestConfiguredOpenAIImageFallbackRoutes(t *testing.T) {
 	if response.Code != 200 {
 		t.Fatalf("saving OpenAI key: %d %s", response.Code, response.Body.String())
 	}
-	for _, kind := range []string{"image", "reference"} {
-		_, provider, model, err := s.selectedMedia(context.Background(), kind)
-		if err != nil || provider != "openai" || model != providers.OpenAIImageModel {
-			t.Fatalf("%s route: %s %s %v", kind, provider, model, err)
+	// A service chosen on purpose is used; with none chosen, the OpenAI key decides.
+	for _, choice := range []string{"openrouter", "", "openai"} {
+		if choice == "" {
+			s.database.SetAppSetting("default_image_provider", `""`)
+		} else {
+			s.database.SetAppSetting("default_image_provider", `"`+choice+`"`)
+		}
+		want := choice
+		if want == "" {
+			want = "openai"
+		}
+		for _, kind := range []string{"image", "reference"} {
+			_, provider, model, err := s.selectedMedia(context.Background(), kind)
+			if err != nil || provider != want || (want == "openai" && model != providers.OpenAIImageModel) {
+				t.Fatalf("choice %q, %s route: %s %s %v", choice, kind, provider, model, err)
+			}
 		}
 	}
 	if p, m := s.routes().MediaSelection("video"); p != video || m != videoModel {
