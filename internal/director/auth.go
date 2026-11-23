@@ -72,6 +72,9 @@ type AuthManager struct {
 	mu     sync.Mutex
 	logins map[string]*Login
 	cache  map[string]cachedAuth
+	// epoch counts the sign-ins that have ended for an engine. A check that began before
+	// one ended may carry an out-of-date answer, so it must not be remembered.
+	epoch map[string]int
 }
 
 type cachedAuth struct {
@@ -84,7 +87,7 @@ type cachedAuth struct {
 const authCacheTTL = 30 * time.Second
 
 func NewAuthManager(r *Runner) *AuthManager {
-	return &AuthManager{runner: r, logins: map[string]*Login{}, cache: map[string]cachedAuth{}}
+	return &AuthManager{runner: r, logins: map[string]*Login{}, cache: map[string]cachedAuth{}, epoch: map[string]int{}}
 }
 
 // Status checks the real sign-in state, not just whether the CLI is installed.
@@ -102,12 +105,25 @@ func (m *AuthManager) Status(ctx context.Context, engine string) AuthState {
 		state.SignedIn, state.SignedOut, state.Method = cached.signedIn, cached.signedOut, cached.method
 	} else {
 		var definitive bool
+		m.mu.Lock()
+		began := m.epoch[engine]
+		m.mu.Unlock()
 		state.SignedIn, state.SignedOut, state.Method, definitive = m.check(ctx, engine, path)
+		m.mu.Lock()
+		changed := m.epoch[engine] != began
+		began = m.epoch[engine]
+		m.mu.Unlock()
+		if changed {
+			// A sign-in ended while this check was running, so ask again for the new answer.
+			state.SignedIn, state.SignedOut, state.Method, definitive = m.check(ctx, engine, path)
+		}
 		// Only remember answers the CLI actually gave. A check cut short (the browser
 		// navigated away, or the CLI was slow) must not read as "signed out" for 30s.
 		if definitive {
 			m.mu.Lock()
-			m.cache[engine] = cachedAuth{state.SignedIn, state.SignedOut, state.Method, time.Now()}
+			if m.epoch[engine] == began {
+				m.cache[engine] = cachedAuth{state.SignedIn, state.SignedOut, state.Method, time.Now()}
+			}
 			m.mu.Unlock()
 		} else if ok {
 			state.SignedIn, state.SignedOut, state.Method = cached.signedIn, cached.signedOut, cached.method
@@ -202,6 +218,7 @@ func (m *AuthManager) Start(engine string) (*Login, error) {
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		delete(m.cache, engine)
+		m.epoch[engine]++
 		switch {
 		case login.Status == "cancelled":
 		case err == nil:
