@@ -287,3 +287,93 @@ func TestGeminiVideoDownloadsAFileURIWithTheKeyInTheHeader(t *testing.T) {
 		t.Fatal("the key would have been sent to another host")
 	}
 }
+
+// A 400 keeps Google's whole google.rpc.Status: status, message, the reason and the field
+// at fault, even when the body is longer than the usual 1000 kept bytes. The key, the
+// prompt and picture bytes are not kept.
+func TestGeminiVideo400KeepsGooglesStatusCodeAndDetails(t *testing.T) {
+	prompt := "In January 2009 a figure in a dark hoodie sends the first coins from a rainy home office, intercut with a warm study."
+	picture := strings.Repeat("QUJD", 400)
+	body := `{"error":{"code":400,"message":"Request contains an invalid argument. fixture-key","status":"INVALID_ARGUMENT","details":[` +
+		`{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"IMAGE_INPUT_TOO_LARGE","domain":"googleapis.com","metadata":{"service":"generativelanguage.googleapis.com"}},` +
+		`{"@type":"type.googleapis.com/google.rpc.BadRequest","fieldViolations":[{"field":"input[1].data","description":"Unsupported image ` + picture + `"},{"field":"input[2].text","description":"Bad text: ` + prompt + `"}]},` +
+		`{"@type":"type.googleapis.com/google.rpc.DebugInfo","detail":"` + strings.Repeat("x", 900) + `"}]}}`
+	client, _, _ := geminiVideoServer(t, [][2]any{{400, body}}, nil)
+	_, err := client.CreateVideo(context.Background(), map[string]any{"model": GeminiVideoModel, "prompt": prompt, "image_urls": []any{"data:image/png;base64," + geminiPNG}})
+	var httpErr *HTTPError
+	if !asHTTPError(err, &httpErr) || httpErr.Status != 400 {
+		t.Fatalf("err = %v", err)
+	}
+	for _, want := range []string{"Google Gemini HTTP 400: INVALID_ARGUMENT Request contains an invalid argument.", "reason IMAGE_INPUT_TOO_LARGE", "field input[1].data: Unsupported image [data]", "field input[2].text: Bad text: [prompt]", "DebugInfo"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("%q missing from %v", want, err)
+		}
+	}
+	for _, leak := range []string{"fixture-key", picture[:200], prompt[:40], "code 400"} {
+		if strings.Contains(err.Error(), leak) {
+			t.Errorf("%q leaked into %v", leak[:min(len(leak), 40)], err)
+		}
+	}
+	if InvalidKey(err) {
+		t.Fatal("an invalid argument is not a bad key")
+	}
+}
+
+// The Interactions API answers {"error": {"code": "invalid_request", "message"}}.
+func TestGeminiVideoInteractionsErrorKeepsItsCode(t *testing.T) {
+	client, _, _ := geminiVideoServer(t, [][2]any{{400, `{"error":{"code":"invalid_request","message":"The value '20s' is not supported for 'duration'."}}`}}, nil)
+	_, err := client.CreateVideo(context.Background(), map[string]any{"model": GeminiVideoModel, "prompt": "x"})
+	if err == nil || err.Error() != "Google Gemini HTTP 400: The value '20s' is not supported for 'duration'. (code invalid_request)" {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// A failed interaction reports each of Google's errors with code, status and details,
+// never the prompt echoed back in the user_input step.
+func TestGeminiVideoFailedInteractionReportsErrorsNotThePrompt(t *testing.T) {
+	prompt := "In January 2009, the anonymous figure sits at a dark home-office desk and sends the first coins."
+	echo := `"steps":[{"type":"user_input","content":[{"type":"image","data":"` + geminiPNG + `"},{"type":"text","text":"` + prompt + `"}]}]`
+	client, _, _ := geminiVideoServer(t, [][2]any{
+		{200, `{"id":"v1_abc","status":"failed",` + echo + `,"errors":[{"code":13,"status":"INTERNAL","message":"There was a problem processing your request. You will only be charged for tokens successfully generated.","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"GENERATION_FAILED"}]}]}`},
+		{200, `{"id":"v1_abc","status":"failed",` + echo + `,"errors":[{"code":"image_safety","message":"The input image was blocked."}]}`},
+		{200, `{"id":"v1_abc","status":"failed","error":{"code":"internal","message":"There was a problem processing your request."}}`},
+		{200, `{"id":"v1_abc","status":"failed","errors":["fixture-key exploded"]}`},
+	}, nil)
+	ctx := context.Background()
+	status, _, err := client.GetVideo(ctx, "v1_abc")
+	if status != "failed" || err == nil {
+		t.Fatalf("failed = %q %v", status, err)
+	}
+	for _, want := range []string{"(failed): INTERNAL There was a problem processing your request.", "code 13", "reason GENERATION_FAILED", "recognizable real people", "Try again"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("%q missing from %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "January 2009") || strings.Contains(err.Error(), geminiPNG) {
+		t.Fatalf("the echoed prompt or picture is in %v", err)
+	}
+	status, _, err = client.GetVideo(ctx, "v1_abc")
+	if status != "failed" || err == nil || !strings.Contains(err.Error(), "The input image was blocked. (code image_safety)") || !strings.Contains(err.Error(), "Google blocked the request") || strings.Contains(err.Error(), "recognizable") || strings.Contains(err.Error(), "January 2009") {
+		t.Fatalf("blocked = %q %v", status, err)
+	}
+	if status, _, err = client.GetVideo(ctx, "v1_abc"); status != "failed" || err == nil || !strings.Contains(err.Error(), "problem processing your request. (code internal)") || !strings.Contains(err.Error(), "recognizable") {
+		t.Fatalf("single error = %q %v", status, err)
+	}
+	if status, _, err = client.GetVideo(ctx, "v1_abc"); status != "failed" || err == nil || !strings.Contains(err.Error(), "[redacted] exploded") || strings.Contains(err.Error(), "fixture-key") || strings.Contains(err.Error(), "recognizable") {
+		t.Fatalf("string error = %q %v", status, err)
+	}
+}
+
+func TestGeminiVideoRefusesAPromptOverOmnisInputLimit(t *testing.T) {
+	client, calls, _ := geminiVideoServer(t, nil, nil)
+	long := strings.Repeat("a", geminiPromptLimit+1)
+	if err := client.ValidateVideo(context.Background(), map[string]any{"model": GeminiVideoModel, "prompt": long}); err == nil || !strings.Contains(err.Error(), "too long") && !strings.Contains(err.Error(), "longer than") {
+		t.Fatalf("err = %v", err)
+	}
+	if err := client.ValidateVideo(context.Background(), map[string]any{"model": GeminiVideoModel, "prompt": long[:geminiPromptLimit]}); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls()) != 0 {
+		t.Fatal("a request reached Google")
+	}
+}

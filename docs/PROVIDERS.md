@@ -107,7 +107,10 @@ Video**, choose the model **Gemini Omni Flash (Google)**. Google Gemini then
 appears as its only service. It shows "(no key saved)" until the key is saved.
 Google no longer offers Veo through the Gemini API: the Veo 3.1 previews shut
 down on 22 October 2026, and Google names `gemini-omni-1.2-flash` as the
-replacement. That is the model VideoFlow uses.
+replacement. That is the model VideoFlow uses. It is the only clip model the
+Gemini API lists (rechecked on 23 November 2026). Google offers no larger "Pro"
+Omni model, and `gemini-omni-1.1-flash` shuts down on 3 December 2026, after
+which Google routes it to 1.2 Flash.
 
 Clips go to the Interactions API (`POST /v1beta/interactions`) as a background
 interaction. The key travels only in the `x-goog-api-key` header. VideoFlow then
@@ -127,7 +130,21 @@ What a clip can be:
 | Sound | always on; a silent scene is asked for silence in its prompt |
 
 A seed, voice recordings, other shapes or sizes, and longer clips are refused
-before anything is sent.
+before anything is sent. So is a prompt longer than 131,072 bytes, because Omni's
+documented input limit is 131,072 tokens. Google documents no size limit for
+inline pictures, so VideoFlow keeps them to a conservative 15 MB per clip.
+
+When Google refuses or fails a clip, the job's error keeps everything Google said:
+the HTTP status, `error.status` (for example `INVALID_ARGUMENT`), `error.code`
+(for example `invalid_request`, or a number), the message, and each detail's
+reason and field violations. The key, picture bytes and any echo of the prompt
+are removed, and each piece is shortened. Google's generic failure ("There was a
+problem processing your request") comes with no reason. For that failure the
+error also lists the causes Google documents for Omni: it does not accept
+pictures that contain certain recognizable real people, and it blocks prompts
+that break its usage policies. VideoFlow never retries a failed clip
+automatically, because a retry is billed again. The clip's **Try again** button
+stays available.
 
 Google bills the video as output tokens at $12.00 per million. The quote uses
 Google's own per-second rate: about $0.023 at 360p, $0.070 at 720p, $0.104 at
