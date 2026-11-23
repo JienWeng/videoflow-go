@@ -318,6 +318,9 @@ func (s *Server) sceneSpeechFor(ctx context.Context, scene *models.Scene, lines 
 	var units []renderUnit
 	if len(shots) > 0 {
 		if plan, err := s.sceneProductionPlan(ctx, scene); err == nil {
+			if plan.Speech != nil && sameLines(lines, sceneSpokenLines(scene)) {
+				return *plan.Speech
+			}
 			units = plan.Units
 		}
 	}
@@ -349,4 +352,31 @@ func (s *Server) handleSceneSpeechFit(w http.ResponseWriter, r *http.Request) {
 		lines = body.Lines
 	}
 	writeJSON(w, http.StatusOK, s.sceneSpeechFor(r.Context(), scene, lines))
+}
+
+// sameLines says whether two scripts are the same lines.
+func sameLines(a, b []SpokenLine) bool {
+	x, _ := json.Marshal(a)
+	y, _ := json.Marshal(b)
+	return string(x) == string(y)
+}
+
+// overrun is how far over its most overfull clip is: "11.4 s of 8 s", or "clip 2: 6.1 s
+// of 5 s" when the scene is made in several clips. Empty when every clip has room.
+func (p sceneSpeech) overrun() string {
+	worst, at := 0.0, -1
+	for i, c := range p.Clips {
+		if c.Verdict == speech.TooLong && (at < 0 || c.Used-c.Seconds > worst) {
+			worst, at = c.Used-c.Seconds, i
+		}
+	}
+	if at < 0 {
+		return ""
+	}
+	c := p.Clips[at]
+	text := seconds1(c.Used) + " of " + seconds1(c.Seconds)
+	if len(p.Clips) > 1 {
+		text = fmt.Sprintf("clip %d: %s", at+1, text)
+	}
+	return text
 }

@@ -2,23 +2,28 @@
   import { errorMessage } from '../errors';
   import { editSceneHref } from '$lib/editor/links';
   import { untrack } from 'svelte';
-  import { get, put } from '$lib/api';
+  import { get, post, put } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
-  import type { ProductionPlan, ProductionSettings } from '$lib/api-types';
+  import type { ProductionPlan, ProductionSettings, ScriptFit } from '$lib/api-types';
+  import ScriptFitReview from '$lib/scenes/ScriptFitReview.svelte';
   let {
     scene,
     newVersion = $bindable(false),
     disabled = false,
     onstate,
     onplan,
-    onask
+    onask,
+    autofit = false
   }: {
     scene: string;
     newVersion?: boolean;
     disabled?: boolean;
-    onstate?: (s: { blocking: boolean; loading: boolean }) => void;
+    /** speechHold: Full auto must not start this render by itself yet (speech won't fit). */
+    onstate?: (s: { blocking: boolean; loading: boolean; speechHold: boolean }) => void;
     onplan?: (id: string, cost: { calls: number; seconds: number; storyboards: number }) => void;
     onask?: (text: string) => void;
+    /** Full auto: fit the script by itself, once, when the speech won't fit. */
+    autofit?: boolean;
   } = $props();
   const cost = $derived.by(() => {
     const extra = newVersion ? (plan?.units ?? []).filter(u => u.status === 'succeeded') : [];
@@ -40,7 +45,8 @@
   function report() {
     onstate?.({
       blocking: loading || saving || dirty || !plan || !!plan.blocked || !plan.references_ready,
-      loading: loading || saving
+      loading: loading || saving,
+      speechHold: loading || saving || fitting || !plan || (autofit && speechWontFit)
     });
   }
   async function load() {
@@ -80,6 +86,50 @@
     const quote = { calls: cost.calls, seconds: cost.seconds, storyboards: cost.storyboards };
     untrack(() => onplan?.(id, quote));
   });
+  // Speech preflight: before any video is paid for, whether each clip can say its lines.
+  // A clip that can't is a warning here (rendering still goes ahead on the click); Full
+  // auto fits the script itself first.
+  const speechWontFit = $derived(plan?.settings.audio_mode === 'native' && plan?.speech?.verdict === 'too_long');
+  let scriptFit = $state<ScriptFit | null>(null);
+  let fitting = $state(false);
+  // Full auto fits the script itself, once: saved when it then fits; otherwise the
+  // proposal is shown and the render waits for a click.
+  let autofitDone = $state(false);
+  $effect(() => {
+    if (!autofit || autofitDone || !plan || !speechWontFit || fitting) return;
+    autofitDone = true;
+    untrack(() => void autoFit());
+  });
+  async function autoFit() {
+    fitting = true;
+    report();
+    try {
+      const fit = await post<ScriptFit>(`/scenes/${encodeURIComponent(scene)}/spoken-lines/fit`);
+      if (fit.after_fit.verdict === 'too_long') scriptFit = fit;
+      else {
+        await put(`/scenes/${encodeURIComponent(scene)}/spoken-lines`, { lines: fit.after, expected_updated_at: fit.expected_updated_at });
+        await load();
+      }
+    } catch (e) {
+      error = errorMessage(e);
+    } finally {
+      fitting = false;
+      report();
+    }
+  }
+  async function fitScript() {
+    if (fitting) return;
+    fitting = true;
+    error = '';
+    try {
+      scriptFit = await post<ScriptFit>(`/scenes/${encodeURIComponent(scene)}/spoken-lines/fit`);
+    } catch (e) {
+      error = errorMessage(e);
+    } finally {
+      fitting = false;
+    }
+  }
+
   // The clip a shot is in, for a line whose shot was chosen in the spoken script.
   function clipOfShot(shot: string) {
     const unit = plan?.units.find(u => u.shot_ids.includes(shot));
@@ -207,6 +257,20 @@
          : cost.calls
            ? 'Current storyboard reused.'
            : 'Existing videos reused without image generation.'} Provider credits apply; no currency estimate is available.</p></div>
+ {#if plan.speech?.clips?.some(c => c.summary)}<div aria-label="Speech check" class="space-y-1">{#each plan.speech.clips.filter(c => c.summary) as clip (clip.index)}<p
+   class="text-xs {clip.verdict === 'too_long' ? 'text-destructive' : clip.verdict === 'tight' ? 'text-amber-700 dark:text-amber-300' : 'text-muted-foreground'}">{clip.summary}</p>{/each}{#if speechWontFit}<p
+   role="alert"
+   class="text-xs text-destructive">{autofit && autofitDone && !fitting
+       ? "Full auto fitted the script, but it still won't fit. Shorten its lines, or press Render scene to make it anyway."
+       : "The video model will cut off or rush lines that don't fit. Fit the script first (free), or make the video anyway."}</p>{/if}{#if plan.speech.verdict === 'too_long' || plan.speech.clips.some(c => c.shots_over)}<Button
+   type="button"
+   size="sm"
+   variant={speechWontFit ? 'default' : 'outline'}
+   disabled={fitting || disabled}
+   onclick={fitScript}>{fitting ? 'Fitting…' : 'Fit script'}</Button>{/if}{#if scriptFit}<ScriptFitReview
+   fits={[scriptFit]}
+   onapplied={async () => { scriptFit = null; await load(); }}
+   ondismiss={() => (scriptFit = null)} />{/if}</div>{/if}
  {#if plan.blocked}<p role="alert" class="text-xs text-destructive">{plan.blocked}</p>{/if}
  {#if !plan.references_ready}<p role="alert"
    class="text-xs text-destructive">Some character or scene pictures are missing or excluded. Fix them before making this video; saved work is kept.</p>{#if onask}<Button

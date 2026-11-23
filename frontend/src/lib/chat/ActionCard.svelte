@@ -99,6 +99,8 @@
   // Each card gets one fixed intent, so plain init from props is fine.
   let busy = $state(false);
   let sceneSetupBlocking = $state(true);
+  // Full auto waits to render a scene by itself until its speech fits its clips.
+  let speechHold = $state(true);
   // svelte-ignore state_referenced_locally
   let idea = $state(intent.idea ?? '');
   let creationBrief = $state(untrack(() => normalizeBrief(intent.creation_brief, intent.idea ?? '')));
@@ -363,6 +365,7 @@
   $effect(() => {
     if (!auto || autoStarted || busy || !ready || !(AUTO_FREE.has(intent.action) || (full && AUTO_FULL.has(intent.action))))
       return;
+    if (intent.action === 'render_scene' && speechHold) return;
     autoStarted = true;
     onautostart?.();
     untrack(() => void run());
@@ -784,7 +787,8 @@
           bind:newVersion={newRenderVersion}
           onplan={(id,cost)=>{renderPlanId=id;renderQuote=cost}}
           disabled={busy}
-          onstate={s=>sceneSetupBlocking=s.blocking||s.loading}
+          autofit={full}
+          onstate={s=>{sceneSetupBlocking=s.blocking||s.loading;speechHold=s.speechHold}}
           onask={text=>onsuggest?.(text)}/>{/if}{/if}
       {#if intent.action === 'generate_shots'}
         <label class="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">

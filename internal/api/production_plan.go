@@ -12,6 +12,7 @@ import (
 	"time"
 	"videoflow-go/internal/models"
 	"videoflow-go/internal/providers"
+	"videoflow-go/internal/speech"
 )
 
 type productionSettings struct {
@@ -67,6 +68,9 @@ type productionPlan struct {
 	VideoInput string `json:"video_input"`
 	// Pictures are what reference mode sends, scene-wide; each clip sends those it shows.
 	Pictures []referencePicture `json:"pictures,omitempty"`
+	// Speech is whether the scene's spoken lines can be said in each clip, checked before
+	// any video is paid for (speech_budget.go); nil for a scene with no spoken lines.
+	Speech *sceneSpeech `json:"speech,omitempty"`
 }
 
 // uncertainRenderBlock is what a scene shows while an earlier request has no answer.
@@ -374,7 +378,20 @@ func (s *Server) sceneProductionPlan(ctx context.Context, scene *models.Scene) (
 			p.Blocked = "Assign each spoken line to a clip below before generating multiple clips with native dialogue."
 		}
 	}
+	if len(p.Lines) > 0 {
+		fit := planSpeech(scene, spoken, shots, p.Units, s.speakerNames(*scene.ProjectID), s.speechCalibration())
+		p.Speech = &fit
+	}
 	return p, nil
+}
+
+// speechWontFit is what keeps Full auto from making a scene's video: the clips speak,
+// and a clip has more speech than it can hold. Empty when the speech fits.
+func (p productionPlan) speechWontFit() string {
+	if p.Settings.AudioMode != "native" || p.Speech == nil || p.Speech.Verdict != speech.TooLong {
+		return ""
+	}
+	return p.Speech.Summary
 }
 func (s *Server) productionScene(w http.ResponseWriter, r *http.Request) (*models.Scene, bool) {
 	project, err := s.activeProjectID(r.Context())

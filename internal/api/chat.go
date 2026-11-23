@@ -45,6 +45,9 @@ type chatTurn struct {
 	progress        projectProgress
 	// stages is the project's stage map as the turn began (see stages.go).
 	stages stageMap
+	// speechFit is, for each scene still to be made whose speech is tight or too long
+	// for its clips, the speech budget's verdict (speech_budget.go).
+	speechFit []map[string]string
 	// videoService is the video service as the planner saw it (chatVideoService).
 	videoService map[string]any
 	// decisions is the project's decision log as the planner saw it.
@@ -177,10 +180,11 @@ func (s *Server) chatPlannerContext(ctx context.Context, turn *chatTurn) ([]byte
 	turn.decisions, _ = s.database.ListDecisions(projectID) // an unreadable log reads as empty; the assistant may then ask again
 	if in, err := s.stageInputs(ctx, projectID, progress); err == nil {
 		turn.stages = computeStages(in)
+		turn.speechFit = chatSpeechFit(in.Scenes)
 		turn.selfChecks = append(s.flaggedPictures(projectID, turn.chars, turn.scenes), flaggedClips(in.Clips)...)
 	}
 	turn.videoService = s.chatVideoService()
-	contextJSON, _ := json.Marshal(map[string]any{"stages": chatStages(turn.stages), "self_check": chatSelfCheck(turn.selfChecks), "decided_so_far": chatDecidedSoFar(turn.decisions), "production_progress": chatProgress(progress), "recent_activity": s.chatActivity(projectID, turn.jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "video_service": turn.videoService, "episode_sound": s.episodeSound(projectID), "failed_video_attempts": failedShown, "assistant_mode": chatMode(body.Auto, body.Full), "attached_media": turn.attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": turn.sceneOptions, "characters": turn.charOptions, "outputs": turn.outputs, "selected_item": turn.selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "render_audio_modes": []string{"native", "silent"}, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false}})
+	contextJSON, _ := json.Marshal(map[string]any{"stages": chatStages(turn.stages), "speech_fit": turn.speechFit, "self_check": chatSelfCheck(turn.selfChecks), "decided_so_far": chatDecidedSoFar(turn.decisions), "production_progress": chatProgress(progress), "recent_activity": s.chatActivity(projectID, turn.jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "video_service": turn.videoService, "episode_sound": s.episodeSound(projectID), "failed_video_attempts": failedShown, "assistant_mode": chatMode(body.Auto, body.Full), "attached_media": turn.attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": turn.sceneOptions, "characters": turn.charOptions, "outputs": turn.outputs, "selected_item": turn.selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "render_audio_modes": []string{"native", "silent"}, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false}})
 	return contextJSON, nil
 }
 
@@ -680,4 +684,16 @@ func chatMode(auto, full bool) string {
 		return "auto: free steps (refine_scene, refine_shot, generate_shots, plan_assets, check_video) start by themselves right after your reply, so write a complete instruction and say what you are doing now (\"I'm rewriting the scene so that…\"), not \"press the button\". Steps that use credits or delete things still wait for the user's click, and so does fit_script (the user sees the script before and after and chooses); say so. Decide details yourself and do not ask for confirmation of free steps."
 	}
 	return "manual: every step waits for the user to press its button."
+}
+
+// chatSpeechFit tells the assistant which scenes still to be made cannot say their lines
+// in time, or only just, so it can offer fit_script before their video is made.
+func chatSpeechFit(scenes []stageScene) []map[string]string {
+	out := []map[string]string{}
+	for _, sc := range scenes {
+		if sc.Speech == "tight" || sc.Speech == "too_long" {
+			out = append(out, map[string]string{"scene_id": sc.ID, "title": sc.Title, "verdict": sc.Speech, "summary": sc.SpeechSummary})
+		}
+	}
+	return out
 }

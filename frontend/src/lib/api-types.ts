@@ -616,6 +616,8 @@ export type ProductionPlan = {
   storyboard_ready: boolean;
   references_ready: boolean;
   blocked?: string;
+  /** Whether the spoken lines can be said in each clip; absent when nothing is said. */
+  speech?: SceneSpeech;
   video_input: string;
   pictures?: { asset_id: string; name: string; kind: string; sheet?: boolean; character_id?: string }[];
 };
