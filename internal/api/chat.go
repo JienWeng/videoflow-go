@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"videoflow-go/internal/agents"
+	"videoflow-go/internal/db"
 	"videoflow-go/internal/models"
 	"videoflow-go/internal/presets"
 )
@@ -23,6 +24,8 @@ type chatRequest struct {
 	Attachments   []string              `json:"attachments"`
 	Auto          bool                  `json:"auto"`
 	Full          bool                  `json:"full"`
+	// Answer is the quick reply the user picked, kept in the decision log.
+	Answer *chatAnswer `json:"answer"`
 }
 
 // chatTurn is what one chat message is planned against: the request and the project
@@ -44,6 +47,8 @@ type chatTurn struct {
 	stages stageMap
 	// videoService is the video service as the planner saw it (chatVideoService).
 	videoService map[string]any
+	// decisions is the project's decision log as the planner saw it.
+	decisions []db.ProjectDecision
 }
 
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -59,6 +64,8 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), status)
 		return
 	}
+	// A quick reply settles its question before planning, so this turn already sees it.
+	s.recordAnswer(projectID, body.Answer)
 	contextJSON, err := s.chatPlannerContext(r.Context(), turn)
 	if err != nil {
 		http.Error(w, "could not load project connections", 500)
@@ -94,6 +101,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	intent := s.chatIntent(r.Context(), turn, res)
+	intent["remembered"] = s.rememberDecisions(projectID, res.Remember)
 	s.writeChatResponse(w, turn, intent, binding, snapshot)
 }
 
@@ -163,11 +171,12 @@ func (s *Server) chatPlannerContext(ctx context.Context, turn *chatTurn) ([]byte
 	progress, _ := s.projectProgress(ctx, projectID)
 	failedShown, _ := s.database.FailedRendersShown(projectID)
 	turn.style, turn.progress = style, progress
+	turn.decisions, _ = s.database.ListDecisions(projectID) // an unreadable log reads as empty; the assistant may then ask again
 	if in, err := s.stageInputs(ctx, projectID, progress); err == nil {
 		turn.stages = computeStages(in)
 	}
 	turn.videoService = s.chatVideoService()
-	contextJSON, _ := json.Marshal(map[string]any{"stages": chatStages(turn.stages), "production_progress": chatProgress(progress), "recent_activity": s.chatActivity(projectID, turn.jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "video_service": turn.videoService, "episode_sound": s.episodeSound(projectID), "failed_video_attempts": failedShown, "assistant_mode": chatMode(body.Auto, body.Full), "attached_media": turn.attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": turn.sceneOptions, "characters": turn.charOptions, "outputs": turn.outputs, "selected_item": turn.selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "render_audio_modes": []string{"native", "silent"}, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false}})
+	contextJSON, _ := json.Marshal(map[string]any{"stages": chatStages(turn.stages), "decided_so_far": chatDecidedSoFar(turn.decisions), "production_progress": chatProgress(progress), "recent_activity": s.chatActivity(projectID, turn.jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "video_service": turn.videoService, "episode_sound": s.episodeSound(projectID), "failed_video_attempts": failedShown, "assistant_mode": chatMode(body.Auto, body.Full), "attached_media": turn.attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": turn.sceneOptions, "characters": turn.charOptions, "outputs": turn.outputs, "selected_item": turn.selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "render_audio_modes": []string{"native", "silent"}, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false}})
 	return contextJSON, nil
 }
 
@@ -275,6 +284,7 @@ func (s *Server) chatIntent(ctx context.Context, turn *chatTurn, res *agents.Cha
 // turn ends with, and applies Full auto's rule on questions.
 func chatTurnDecision(turn *chatTurn, res *agents.ChatIntentResponse, action string) chatDecision {
 	decision := normalizeChatDecision(res.Decision, action)
+	decision = applySettledAsk(decision, action, turn.body.Message, turn.decisions)
 	if turn.body.Full {
 		decision = applyFullAutoAsk(decision, action, chatInputMissing(turn))
 	}

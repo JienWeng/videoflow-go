@@ -319,15 +319,15 @@
   }
   import { completeSceneRenders } from '$lib/production/completion.mjs';
   import { conversationTurns, conversationView } from './history.mjs';
-  import { answerChips, assumptionLine, isAsking, normalizeDecision } from './decision.mjs';
-  import type { DecisionAnswer } from './types';
+  import { answerChips, assumptionLine, decisionLabel, isAsking, normalizeDecision, rejectionKey } from './decision.mjs';
+  import type { DecisionAnswer, ProjectDecision } from './types';
   import { subscribeJobs } from '$lib/sse';
   import { runBackgroundOp } from '$lib/ops';
   import { workflowNext, storyReferencesApproved, hasPendingSceneReferences } from './workflow.mjs';
   import { protectDraft } from '$lib/protect-draft';
   import { storyCreation } from '$lib/create/story-creation.svelte';
   import { onMount, tick } from 'svelte';
-  import { APIError, get, mediaUrl, post } from '$lib/api';
+  import { APIError, del, get, mediaUrl, post, put } from '$lib/api';
   import ActionCard from '$lib/chat/ActionCard.svelte';
   import Response from '$lib/components/ai-elements/response/response.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -630,6 +630,7 @@
     cancelling = false;
     cancelError = '';
     void refreshCapabilities();
+    void refreshDecisions();
     try {
       const status = await get<DirectorStatus>('/director/status');
       if (generation !== conversationGeneration) return;
@@ -748,6 +749,35 @@
   }
 
   let graphData = $state<ApiGraph | null>(null);
+
+  // The project's decision log: what the assistant already knows and will not ask again.
+  let decisions = $state<ProjectDecision[]>([]);
+  const decisionNames = $derived((graphData?.nodes ?? []).map(n => ({ id: n.id, name: n.label })));
+  async function refreshDecisions() {
+    try {
+      decisions = (await get<{ decisions: ProjectDecision[] }>('/decisions')).decisions ?? [];
+    } catch {
+      // The list is a convenience; the assistant still reads the log on every message.
+    }
+  }
+  async function forgetDecision(key: string) {
+    try {
+      await del(`/decisions/${encodeURIComponent(key)}`);
+    } catch {
+      // Shown as still kept after the refresh below; nothing else to undo.
+    }
+    await refreshDecisions();
+  }
+  /** Dismissing a proposal also tells the assistant not to offer it again. */
+  function dismissProposal(m: Msg) {
+    m.dismissed = true;
+    const key = rejectionKey(m.intent);
+    if (!key) return;
+    const value = (m.intent?.idea || m.text || m.intent?.action || 'dismissed').slice(0, 200);
+    void put(`/decisions/${encodeURIComponent(key)}`, { value })
+      .then(refreshDecisions)
+      .catch(() => {});
+  }
   let styleData = $state<StyleGuide | null>(null);
   let progressData = $state<ProjectProgress | null>(null);
   const KIND_NAMES: Record<string, string> = {
@@ -1490,6 +1520,7 @@
       if (generation === conversationGeneration) {
         busy = false;
         refreshChips();
+        void refreshDecisions();
         focusComposer();
       }
     }
@@ -1829,7 +1860,7 @@
                 onop={handleOpStart}
                 onsuggest={(text) => { input=text; focusComposer(); }}
               />
-              <Button variant="ghost" size="sm" class="self-start" onclick={()=>m.dismissed=true}>Dismiss proposal</Button>
+              <Button variant="ghost" size="sm" class="self-start" onclick={()=>dismissProposal(m)}>Dismiss proposal</Button>
             {:else if m.dismissed}<p
               class="text-xs text-muted-foreground">{m.briefSuperseded?'Earlier creative brief · updated below':'Proposal dismissed from this view.'}</p>{/if}
             {#if m.role==='user'}<Message.Footer
@@ -1892,6 +1923,18 @@
         disabled={busy||historyLoading||isEmpty}
         onclick={clearChat}><Eraser class="size-4" /></Button>{/if}
     </div>{/if}
+    {#if !editing&&decisions.length}<details
+      class="mb-2 rounded-md border border-border px-2 py-1 text-xs"><summary
+        class="cursor-pointer select-none text-muted-foreground">What I know about this project ({decisions.length})</summary><ul
+        class="mt-1 max-h-40 space-y-0.5 overflow-y-auto"
+        aria-label="What the assistant knows about this project">{#each decisions as d (d.key)}<li
+          class="flex items-start gap-1"><span class="min-w-0 flex-1 break-words"><span
+            class="font-medium">{decisionLabel(d.key, decisionNames)}</span>: {d.value}</span><button
+            type="button"
+            class="grid size-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-muted"
+            aria-label={`Forget ${decisionLabel(d.key, decisionNames)}`}
+            title="Forget this; the assistant may ask again"
+            onclick={()=>forgetDecision(d.key)}><X class="size-3" /></button></li>{/each}</ul></details>{/if}
     {#if !editing&&!guidedSteps.length&&chips.length&&(!isEmpty||selected)}<div
       aria-label="Suggested prompts"
       class="mb-2 flex flex-wrap items-center gap-2">{@render chipRow(chips)}</div>{/if}

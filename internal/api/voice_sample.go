@@ -144,6 +144,11 @@ func (s *Server) handleVoiceSample(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to save the voice sample", 500)
 		return
 	}
+	sample := "uploaded recording"
+	if origin == "voice" {
+		sample = "spoken by the saved voice"
+	}
+	s.recordDecision(project, "voice_sample:"+id, sample)
 	writeJSON(w, 200, map[string]any{"character_id": id, "file_path": asset.FilePath, "source": origin})
 }
 
@@ -183,6 +188,9 @@ func (s *Server) handleDeleteVoiceSample(w http.ResponseWriter, r *http.Request)
 	if err = s.database.DeleteAsset(asset.ID); err != nil {
 		http.Error(w, "failed to remove the voice sample", 500)
 		return
+	}
+	if asset.CharacterID != nil {
+		s.forgetDecision(project, "voice_sample:"+*asset.CharacterID)
 	}
 	if full, e := s.storagePath(asset.FilePath); e == nil {
 		os.Remove(full)

@@ -31,3 +31,23 @@ test('options of a reply that does not ask are ignored', () => {
   assert.deepEqual(answerChips({ mode: 'act', question: 'Which?', options: [{ label: 'A' }] }), []);
   assert.equal(normalizeDecision({ mode: 'act', overruled: 'full_auto' }).overruled, 'full_auto');
 });
+
+import { rejectionKey, decisionLabel } from './decision.mjs';
+
+test('a dismissed proposal is kept under its action and target', () => {
+  assert.equal(rejectionKey({ action: 'render_scene', scene_id: 'scene_1a2b' }), 'rejected:render_scene:scene_1a2b');
+  assert.equal(rejectionKey({ action: 'update_character', character_id: 'char 9' }), 'rejected:update_character:char_9');
+  assert.equal(rejectionKey({ action: 'render_scenes', scene_ids: ['a', 'b'] }), 'rejected:render_scenes:project');
+  assert.equal(rejectionKey({ action: 'generate_script' }), 'rejected:generate_script:project');
+  for (const intent of [undefined, null, { action: 'unknown' }, { action: 'Bad Action' }]) assert.equal(rejectionKey(intent), '');
+});
+
+test('decision keys read as plain words', () => {
+  const named = [{ id: 'char_1', name: 'Satoshi' }, { id: 'scene_1', title: 'Opening' }];
+  assert.equal(decisionLabel('aspect_ratio'), 'Format');
+  assert.equal(decisionLabel('voice:char_1', named), 'Voice · Satoshi');
+  assert.equal(decisionLabel('voice:char_gone', named), 'Voice');
+  assert.equal(decisionLabel('rejected:render_scene:scene_1', named), 'Turned down: render scene for Opening');
+  assert.equal(decisionLabel('choice:which_scene_first'), 'Chose: which scene first');
+  assert.equal(decisionLabel('something_else'), 'something else');
+});

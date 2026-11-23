@@ -125,6 +125,7 @@ type stageScene struct {
 // stageInputs is everything computeStages reads. Gathering it touches the database
 // and storage; computing from it is pure, so tests build it by hand.
 type stageInputs struct {
+	// BriefDecided is set once the decision log holds a confirmed brief's choices.
 	BriefDecided bool
 	Characters   []stageCharacter
 	Scenes       []stageScene
@@ -133,7 +134,8 @@ type stageInputs struct {
 	// LastEditAt and LastExportAt are the newest saved edit and exported video.
 	LastEditAt   time.Time
 	LastExportAt time.Time
-	Reviewed     bool
+	// Reviewed is set when the decision log says the user watched the clips.
+	Reviewed bool
 }
 
 var stageLabels = map[string]string{
@@ -141,6 +143,9 @@ var stageLabels = map[string]string{
 	stageShots: "Shots", stageScenePictures: "Scene pictures", stageClips: "Scene videos", stageReview: "Review",
 	stageEdit: "Edit", stageExport: "Export",
 }
+
+// briefDecisionKeys are decision-log keys a confirmed creative brief records.
+var briefDecisionKeys = []string{"language", "aspect_ratio", "style_id", "target_duration", "platform"}
 
 // projectStages gathers the project's saved state and computes its stage map.
 func (s *Server) projectStages(ctx context.Context, projectID string) (stageMap, error) {
@@ -194,6 +199,13 @@ func (s *Server) stageInputs(ctx context.Context, projectID string, progress pro
 	}
 	in.LastEditAt = s.lastSavedEdit(projectID)
 	in.LastExportAt = s.lastExport(projectID)
+	decisions, _ := s.database.ListDecisions(projectID) // an unreadable log reads as empty; stages still come from saved work
+	for _, d := range decisions {
+		for _, key := range briefDecisionKeys {
+			in.BriefDecided = in.BriefDecided || d.Key == key
+		}
+		in.Reviewed = in.Reviewed || d.Key == "reviewed"
+	}
 	return in, nil
 }
 
@@ -296,8 +308,9 @@ func charactersStage(in stageInputs) projectStage {
 	st := newStage(stageCharacters)
 	st.Total = len(in.Characters)
 	if len(in.Characters) == 0 {
-		// A story can have no characters; once scenes exist none are needed.
-		if len(in.Scenes) > 0 {
+		// A story can have no characters, and the story run creates the ones it needs:
+		// once the brief is settled, writing the story comes first.
+		if len(in.Scenes) > 0 || in.BriefDecided {
 			st.Status = statusDone
 		} else {
 			st.Status = statusNotStarted

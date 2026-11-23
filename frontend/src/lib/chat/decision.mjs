@@ -50,3 +50,41 @@ export function answerChips(raw) {
     answer: { ...(d.key ? { key: d.key } : {}), question: d.question, label: o.label, value: o.value }
   }));
 }
+
+/** The decision-log key a dismissed proposal is kept under: rejected:<action>:<target>,
+ * where the target is the scene, character, finished video or story it was for, or
+ * "project". "" for a reply with nothing to reject.
+ * @param {{action?: string; scene_id?: string|null; character_id?: string|null; output_id?: string|null; script_id?: string|null; scene_ids?: string[]}|undefined|null} intent */
+export function rejectionKey(intent) {
+  const action = typeof intent?.action === 'string' ? intent.action : '';
+  if (!/^[a-z][a-z0-9_]*$/.test(action) || action === 'unknown') return '';
+  const target = intent?.scene_id || intent?.character_id || intent?.output_id || intent?.script_id || (intent?.scene_ids?.length === 1 ? intent.scene_ids[0] : '') || 'project';
+  const safe = String(target).replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 60);
+  return `rejected:${action}:${safe || 'project'}`;
+}
+
+const LABELS = /** @type {Record<string,string>} */ ({
+  language: 'Language', style_id: 'Visual style', aspect_ratio: 'Format', target_duration: 'Length', platform: 'Platform',
+  music: 'Music', conversation_mode: 'Voices or narration', tone: 'Tone', audience: 'Audience', resolution: 'Resolution',
+  notes: 'Note', reviewed: 'Reviewed'
+});
+const PREFIXES = /** @type {Record<string,string>} */ ({
+  voice: 'Voice', voice_sample: 'Voice sample', rejected: 'Turned down', choice: 'Chose', character: 'Character', scene: 'Scene', notes: 'Note'
+});
+
+/** A decision-log key in plain words, naming a character by its name when known.
+ * @param {string} key @param {{id: string; name?: string; title?: string}[]} [named] */
+export function decisionLabel(key, named = []) {
+  if (LABELS[key]) return LABELS[key];
+  const [prefix, ...rest] = key.split(':');
+  const head = PREFIXES[prefix];
+  if (!head) return key.replace(/_/g, ' ');
+  if (prefix === 'choice') return `${head}: ${rest.join(' ').replace(/_/g, ' ')}`;
+  if (prefix === 'rejected') {
+    const [action = '', target = ''] = rest;
+    const item = named.find(n => n.id === target);
+    return `${head}: ${action.replace(/_/g, ' ')}${item ? ` for ${item.name ?? item.title}` : ''}`;
+  }
+  const item = named.find(n => n.id === rest.join(':'));
+  return `${head}${item ? ` · ${item.name ?? item.title}` : ''}`;
+}

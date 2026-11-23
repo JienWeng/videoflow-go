@@ -66,6 +66,16 @@ export interface ChatIntent {
   image_calls?: number;
   /** Ask or decide (internal/api/chat_decision.go); read it through decision.mjs. */
   decision?: ChatDecision;
+  /** Decision-log entries the assistant kept from this reply (its remember list). */
+  remembered?: { key: string; value: string; source: string }[];
+}
+
+/** One entry of the project's decision log (GET /decisions, internal/db/decisions.go). */
+export interface ProjectDecision {
+  key: string;
+  value: string;
+  source: 'user' | 'assistant';
+  created_at: string;
 }
 
 /** Backend project-state snapshot attached to the chat reply. */

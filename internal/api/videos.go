@@ -127,6 +127,7 @@ func (s *Server) handleGenerateVideo(w http.ResponseWriter, r *http.Request) {
 			run.fail(err)
 		}
 	}()
+	s.recordBriefDecisions(project, brief)
 	writeJSON(w, 202, map[string]any{"op_id": op.ID, "status": models.StatusRunning, "automatic_assets": true, "character_references": true})
 }
 

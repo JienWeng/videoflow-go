@@ -225,6 +225,7 @@ func (s *Server) registerDirectorRoutes() {
 	s.registerDirectorEnsureRoute()
 	s.registerAutopilotRoute()
 	s.registerCostRoutes()
+	s.registerDecisionRoutes()
 	s.registerVideoServiceRoutes()
 	s.registerAISetupRoute()
 	s.router.Post("/director/sessions/{id}/repair-context", s.handleRepairChatContext)
