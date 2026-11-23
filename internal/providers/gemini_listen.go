@@ -36,6 +36,7 @@ func GeminiTranscribeWords(ctx context.Context, key, base string, wav []byte, la
 	}
 	c := newMediaHTTP(key, base, "Google Gemini", "")
 	c.header = "x-goog-api-key"
+	c.errorLimit = geminiErrorBodyLimit
 	c.client.Timeout = 2 * time.Minute
 	config := map[string]any{"mode": map[string]any{"type": "verbatim", "timestamp_granularities": []string{"word"}}}
 	if language != "" {

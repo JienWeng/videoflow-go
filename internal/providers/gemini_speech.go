@@ -78,6 +78,7 @@ func GeminiSpeech(ctx context.Context, key, base, model, voice, text string) ([]
 	}
 	c := newMediaHTTP(key, base, "Google Gemini", "")
 	c.header = "x-goog-api-key"
+	c.errorLimit = geminiErrorBodyLimit
 	c.limit = 32 << 20
 	c.client.Timeout = 2 * time.Minute
 	body := map[string]any{

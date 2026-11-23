@@ -31,8 +31,10 @@ import (
 // GET returns, per the Omni page) or a Files API "uri".
 //
 // Not stated by Google for Omni and therefore assumed: that "background": true is
-// accepted (the background page lists "standard Gemini models (such as ...)"), and that
-// a safety block ends as status "failed" or as a finished interaction with no video. A
+// accepted (the background page lists "standard Gemini models (such as ...)"), that a
+// safety block ends as status "failed" or as a finished interaction with no video, and
+// the shape of a failed interaction's errors (read as google.rpc.Status or the
+// Interactions {"code","message"} of aistudio.google.com/docs/api-errors). A
 // synchronous answer is handled too: create waits up to 10 minutes and keeps any clip
 // it already carries.
 const GeminiVideoModel = "gemini-omni-1.2-flash"
@@ -211,7 +213,7 @@ func (c *GeminiImages) CreateVideo(ctx context.Context, p map[string]any) (strin
 	h.client = &http.Client{Timeout: 10 * time.Minute, Transport: c.http.client.Transport, CheckRedirect: c.http.client.CheckRedirect}
 	raw, err := h.request(ctx, http.MethodPost, "/interactions", body)
 	if err != nil {
-		return "", geminiHTTPError(err)
+		return "", geminiHTTPErrorFor(err, stringValue(p["prompt"]))
 	}
 	var answer geminiInteraction
 	if json.Unmarshal(raw, &answer) != nil || !geminiSafeID(answer.ID) {
@@ -243,10 +245,10 @@ type geminiInteraction struct {
 		Type    string          `json:"type"`
 		Content []geminiContent `json:"content"`
 	} `json:"steps"`
-	Errors []struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	} `json:"errors"`
+	// Google does not document the shape of a failed interaction, so both an "errors"
+	// list and a single "error" are read, each as google.rpc.Status or a bare string.
+	Errors []json.RawMessage `json:"errors"`
+	Error  json.RawMessage   `json:"error"`
 }
 
 // geminiFinishedVideo is a finished clip: its bytes, or where Google keeps them.
@@ -269,22 +271,53 @@ func (i geminiInteraction) video() geminiFinishedVideo {
 	return out
 }
 
-// text is what the model said instead of a clip, shortened.
+// text is what the model said instead of a clip, shortened. Only the model's own steps
+// count: the user_input step repeats the prompt, which is not a reason.
 func (i geminiInteraction) text() string {
 	text := ""
 	for _, step := range i.Steps {
+		if step.Type != "model_output" {
+			continue
+		}
 		for _, content := range step.Content {
 			if content.Type == "text" {
 				text += content.Text
 			}
 		}
 	}
-	text = strings.TrimSpace(text)
-	if len(text) > 300 {
-		text = text[:300] + "…"
-	}
-	return text
+	return strings.TrimSpace(text)
 }
+
+// failure is everything Google said about why the interaction failed, scrubbed.
+func (i geminiInteraction) failure(key string) (reasons []string, blocked bool) {
+	statuses := append([]json.RawMessage{}, i.Errors...)
+	if len(i.Error) > 0 && string(i.Error) != "null" {
+		statuses = append(statuses, i.Error)
+	}
+	for _, raw := range statuses {
+		if text := geminiStatusText(raw, key); text != "" {
+			reasons = append(reasons, text)
+		}
+		var s geminiStatus
+		if json.Unmarshal(raw, &s) == nil && geminiBlockedCodes[strings.ToLower(s.code())] {
+			blocked = true
+		}
+	}
+	if text := geminiScrub(i.text(), key, ""); text != "" {
+		reasons = append(reasons, text)
+	}
+	return reasons, blocked
+}
+
+// geminiBlockedCodes are the "generation blocked" codes of aistudio.google.com/docs/api-errors:
+// "When you receive one of these codes, modify your input and retry."
+var geminiBlockedCodes = map[string]bool{"safety": true, "recitation": true, "language": true, "prohibited_content": true, "spii": true, "blocklist": true, "image_safety": true, "image_prohibited_content": true, "image_recitation": true, "image_other": true, "content_blocked": true}
+
+// geminiUnexplained is added when Google gives no specific reason (its generic "There was
+// a problem processing your request"). The causes named are the ones Google documents
+// for Omni (aistudio.google.com/docs/omni, Limitations and Technical details); a retry
+// is billed again, so it is left to the clip's Try again button.
+const geminiUnexplained = "Google gave no specific reason. Google refuses pictures that contain certain recognizable real people and prompts that break its usage policies, so if this clip names or shows a real person, change that reference picture or describe the person without the name, then use Try again"
 
 func (c *GeminiImages) keepVideo(id string, video geminiFinishedVideo) {
 	if video.data == "" && video.uri == "" {
@@ -325,8 +358,8 @@ func (c *GeminiImages) GetVideo(ctx context.Context, id string) (string, []strin
 		video := answer.video()
 		if video.data == "" && video.uri == "" {
 			reason := "Google Gemini finished without a video"
-			if text := answer.text(); text != "" {
-				reason += ": " + c.redact(text)
+			if text := geminiScrub(answer.text(), c.http.key, ""); text != "" {
+				reason += ": " + text
 			} else {
 				reason += "; it may have been blocked by Google's safety filters"
 			}
@@ -335,24 +368,32 @@ func (c *GeminiImages) GetVideo(ctx context.Context, id string) (string, []strin
 		c.keepVideo(id, video)
 		return "completed", link, nil
 	case "failed", "cancelled":
-		messages := []string{}
-		for _, e := range answer.Errors {
-			if message := strings.TrimSpace(e.Message); message != "" {
-				messages = append(messages, c.redact(message))
-			}
-		}
-		if text := answer.text(); text != "" {
-			messages = append(messages, c.redact(text))
-		}
-		message := strings.Join(messages, "; ")
+		reasons, blocked := answer.failure(c.http.key)
+		message := strings.Join(reasons, "; ")
 		if message == "" {
 			message = "no reason given"
+		}
+		if answer.Status == "failed" && !blocked && geminiGeneric(reasons) {
+			message += ". " + geminiUnexplained
+		} else if blocked {
+			message += ". Google blocked the request; change the prompt or pictures, then use Try again"
 		}
 		return "failed", nil, fmt.Errorf("Google Gemini could not make the video (%s): %s", answer.Status, message)
 	case "requires_action", "requires_continuation":
 		return "failed", nil, fmt.Errorf("Google Gemini stopped before finishing the video (%s)", answer.Status)
 	}
 	return "", nil, fmt.Errorf("unknown Google Gemini interaction status %q", answer.Status)
+}
+
+// geminiGeneric reports whether Google's reasons say nothing more specific than its
+// generic failure: no reasons, or only the "problem processing your request" message.
+func geminiGeneric(reasons []string) bool {
+	for _, reason := range reasons {
+		if !strings.Contains(strings.ToLower(reason), "problem processing your request") {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *GeminiImages) redact(text string) string {

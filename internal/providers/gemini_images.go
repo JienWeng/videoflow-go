@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -62,6 +61,7 @@ type GeminiImages struct {
 func NewGeminiImages(key, endpoint, model string) *GeminiImages {
 	h := newMediaHTTP(key, endpoint, "Google Gemini", "")
 	h.header = "x-goog-api-key"
+	h.errorLimit = geminiErrorBodyLimit
 	return &GeminiImages{http: h, model: model}
 }
 
@@ -180,23 +180,6 @@ var geminiReasons = map[string]string{
 	"NO_IMAGE":                 "the model answered without a picture",
 	"IMAGE_OTHER":              "the picture could not be made",
 	"OTHER":                    "the request could not be completed",
-}
-
-// geminiHTTPError shortens Google's JSON error body to its status and message.
-func geminiHTTPError(err error) error {
-	var httpErr *HTTPError
-	if errors.As(err, &httpErr) {
-		var detail struct {
-			Error struct {
-				Message string `json:"message"`
-				Status  string `json:"status"`
-			} `json:"error"`
-		}
-		if json.Unmarshal([]byte(httpErr.Message), &detail) == nil && detail.Error.Message != "" {
-			httpErr.Message = strings.TrimSpace(detail.Error.Status + " " + detail.Error.Message)
-		}
-	}
-	return err
 }
 
 func geminiReason(code string) string {

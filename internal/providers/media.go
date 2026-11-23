@@ -35,8 +35,10 @@ type mediaHTTP struct {
 	// header, when set, carries the bare key instead of Authorization (Google's x-goog-api-key).
 	header string
 	// limit caps a response body; zero means 8 MiB.
-	limit  int64
-	client *http.Client
+	limit int64
+	// errorLimit caps the error body kept in an HTTPError; zero means 1000 bytes.
+	errorLimit int
+	client     *http.Client
 }
 
 func newMediaHTTP(key, base, provider, auth string) mediaHTTP {
@@ -88,8 +90,12 @@ func (c *mediaHTTP) requestBody(ctx context.Context, method, path, contentType s
 		if c.key != "" {
 			message = strings.ReplaceAll(message, c.key, "[redacted]")
 		}
-		if len(message) > 1000 {
-			message = message[:1000]
+		keep := c.errorLimit
+		if keep <= 0 {
+			keep = 1000
+		}
+		if len(message) > keep {
+			message = message[:keep]
 		}
 		return nil, &HTTPError{Provider: c.provider, Status: res.StatusCode, Message: message}
 	}
