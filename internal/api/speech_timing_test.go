@@ -67,7 +67,9 @@ func TestCaptionsFollowTheSpeechHeardInAClip(t *testing.T) {
 	t.Cleanup(func() { listenToClip = old })
 	listenToClip = func(_ *Server, _ context.Context, _, language, hint string) ([]providers.SpokenWord, float64, error) {
 		listened++
-		if language != "en" || hint == "" {
+		// The language is detected by the listener, so a clip spoken in another one is
+		// heard as it is; the script is the hint.
+		if language != "" || hint == "" {
 			t.Errorf("listener asked with language %q hint %q", language, hint)
 		}
 		return spoken("It", 3.2, 3.4, "won't", 3.4, 3.7, "fly", 3.7, 4.0, "I", 4.3, 4.4, "give", 4.4, 4.6, "up", 4.6, 4.9,
@@ -84,7 +86,7 @@ func TestCaptionsFollowTheSpeechHeardInAClip(t *testing.T) {
 		t.Fatalf("listened %d times, want once", listened)
 	}
 	entries, _ := s.database.ListCosts(project)
-	if len(entries) != 1 || entries[0].Label != "Caption timing" || entries[0].Amount <= 0 || entries[0].Amount > 0.01 {
+	if len(entries) != 1 || entries[0].Label != "Listening to a clip" || entries[0].Amount <= 0 || entries[0].Amount > 0.01 {
 		t.Fatalf("cost: %+v", entries)
 	}
 	// With only a Google Gemini key, Gemini listens and is billed for it.

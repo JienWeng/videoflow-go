@@ -22,7 +22,20 @@ func (d *DB) SetAssetSelfCheck(project, id string, record json.RawMessage) error
 // SetRenderOutputSelfCheck stores a clip check result under qa_json.self_check, the
 // same way: other clip notes and updated_at are kept.
 func (d *DB) SetRenderOutputSelfCheck(id string, record json.RawMessage) error {
-	result, err := d.conn.Exec(`UPDATE render_outputs SET qa_json=json_set(CASE WHEN qa_json IS NULL OR qa_json='' THEN '{}' ELSE qa_json END,'$.self_check',json(?)) WHERE id=? AND (qa_json IS NULL OR qa_json='' OR (json_valid(qa_json) AND json_type(qa_json)='object'))`, string(record), id)
+	return d.SetRenderOutputNote(id, "self_check", record)
+}
+
+// renderOutputNotes are the qa_json keys written one at a time, so a note written by
+// one step (the speech check, caption timing) never erases another's.
+var renderOutputNotes = map[string]bool{"self_check": true, "audio_check": true, "speech_timing": true}
+
+// SetRenderOutputNote stores one note under qa_json.<key>, keeping every other note
+// and updated_at.
+func (d *DB) SetRenderOutputNote(id, key string, record json.RawMessage) error {
+	if !renderOutputNotes[key] {
+		return fmt.Errorf("unknown clip note %q", key)
+	}
+	result, err := d.conn.Exec(`UPDATE render_outputs SET qa_json=json_set(CASE WHEN qa_json IS NULL OR qa_json='' THEN '{}' ELSE qa_json END,'$.`+key+`',json(?)) WHERE id=? AND (qa_json IS NULL OR qa_json='' OR (json_valid(qa_json) AND json_type(qa_json)='object'))`, string(record), id)
 	if err != nil {
 		return err
 	}

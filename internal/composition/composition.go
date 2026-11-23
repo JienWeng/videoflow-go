@@ -127,6 +127,12 @@ type Cue struct {
 	Start        float64 `json:"start"`
 	End          float64 `json:"end"`
 	Text         string  `json:"text"`
+	// Timing says how the time was found: "heard" (when the words are spoken in the
+	// clip's own sound), "estimated" (spread over the shot) or "voice" (a voice-over
+	// line speaks it). Scripted is the script's wording when Text shows what was
+	// actually heard instead.
+	Timing   string `json:"timing,omitempty"`
+	Scripted string `json:"scripted,omitempty"`
 }
 
 func ValidID(s string) bool { return safeID.MatchString(s) }
