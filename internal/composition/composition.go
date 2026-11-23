@@ -200,7 +200,7 @@ func Save(root, project string, m Manifest, sources map[string]string) (string, 
 			}
 			// Allow rounding: clip lengths are kept to milliseconds, probes are finer.
 			if c.Trim+c.Duration > c.OriginalDuration+0.02 {
-				return fmt.Errorf("trim exceeds original duration")
+				return fmt.Errorf("clip %s uses %.3fs of its media (from %.3fs in, for %.3fs) but the media is only %.3fs long; make the clip shorter or trim less", c.ID, c.Trim+c.Duration, c.Trim, c.Duration, c.OriginalDuration)
 			}
 			switch ext {
 			case ".mp4", ".webm", ".mov", ".png", ".jpg", ".jpeg", ".webp", ".wav", ".mp3", ".m4a", ".ogg", ".aac", ".flac", ".opus":

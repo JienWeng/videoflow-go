@@ -200,3 +200,14 @@ func TestClipEndingAMillisecondPastTheLengthSavesButFarPastIsExplained(t *testin
 		t.Fatalf("a speed other than 1 should say so, got %v", err)
 	}
 }
+
+func TestTrimPastTheMediaNamesTheClipAndTheNumbers(t *testing.T) {
+	root := t.TempDir()
+	voice := filepath.Join(root, "voice.mp3")
+	os.WriteFile(voice, []byte("mp3"), 0600)
+	m := Manifest{Version: 1, Width: 640, Height: 360, FPS: 24, Duration: 10, Audio: []Clip{{ID: "line-7", AssetID: "asset-1", Duration: 6, OriginalDuration: 4, Speed: 1}}}
+	_, err := Save(root, "project", m, map[string]string{"asset-1": voice})
+	if err == nil || !strings.Contains(err.Error(), "line-7") || !strings.Contains(err.Error(), "6.000s") || !strings.Contains(err.Error(), "4.000s") {
+		t.Fatalf("the error should name the clip and say how long it is against the media, got %v", err)
+	}
+}
