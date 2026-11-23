@@ -339,7 +339,19 @@
   const AUTO_FREE = new Set(['refine_scene', 'refine_shot', 'generate_shots', 'plan_assets']);
   // Paid steps that start by themselves only in Full auto, where the user already agreed
   // that the assistant spends image credits without asking again.
-  const AUTO_FULL = new Set(['generate_character_references']);
+  const AUTO_FULL = new Set([
+    'generate_character_references',
+    'generate_character_reference',
+    'generate_scenes',
+    'storyboard',
+    'audit_storyboard',
+    'generate_assets',
+    'render_scene',
+    'render_shot',
+    'retry_render',
+    'generate_image',
+    'style_ingest'
+  ]);
   let autoStarted = false;
   $effect(() => {
     if (!auto || autoStarted || busy || !ready || !(AUTO_FREE.has(intent.action) || (full && AUTO_FULL.has(intent.action))))
