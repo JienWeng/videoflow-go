@@ -559,11 +559,32 @@ func (a *AgentEngine) FitScript(ctx context.Context, title, summary, language st
 - Use only the speakers given (character_id; empty for the narrator). Never add a speaker.
 - Lines are said one at a time, with a breath between them. Keep each line to one breath.
 Return JSON {"lines": [{"id": "...", "character_id": "...", "text": "...", "shot": <number from 1>}]} in speaking order.`, language)
-	facts, _ := json.Marshal(map[string]any{"scene": title, "summary": summary, "language": language, "speakers": speakers, "shots": shots, "lines": lines})
+	facts := map[string]any{"scene": title, "summary": summary, "language": language, "speakers": speakers, "shots": shots, "lines": lines}
+	return a.rewriteLines(ctx, "script_fit_agent", system, facts, shots, lines, speakers)
+}
+
+// RepairScript rewrites the spoken lines of one clip the speech check flagged (cut off,
+// words changed, lines missing) shorter and simpler, so the video model can say them
+// whole: heard are the check's findings in words. Only these lines are given; each
+// stays with its speaker and in its shot. One turn; the caller checks the answer.
+func (a *AgentEngine) RepairScript(ctx context.Context, title, summary, language string, shots []FitShot, lines []FitLine, speakers map[string]string, heard []string) ([]FittedLine, error) {
+	system := fmt.Sprintf(`A video clip was made from these spoken lines, and listening to it showed the video model could not say them as written (see what_was_heard). Rewrite ONLY these lines SHORTER and SIMPLER so they are easy to say whole in the time.
+- Each shot's lines together should take 60-75%% of the shot's seconds at a calm pace (its target_length) and must never take more than holds_at_most. Every line must come out shorter than it is now.
+- Keep the language (%s), the meaning, the order, who speaks each line and the shot each line is in. Use plain everyday words, no lists, no names the video model could stumble on. Do not add, merge or split lines; keep every id.
+- Use only the speakers given (character_id; empty for the narrator). Never add a speaker.
+Return JSON {"lines": [{"id": "...", "character_id": "...", "text": "...", "shot": <number from 1>}]} in speaking order.`, language)
+	facts := map[string]any{"scene": title, "summary": summary, "language": language, "speakers": speakers, "shots": shots, "lines": lines, "what_was_heard": heard}
+	return a.rewriteLines(ctx, "speech_repair_agent", system, facts, shots, lines, speakers)
+}
+
+// rewriteLines asks the writer once and checks every line has text, a known speaker
+// and a shot the scene has.
+func (a *AgentEngine) rewriteLines(ctx context.Context, name, system string, facts map[string]any, shots []FitShot, lines []FitLine, speakers map[string]string) ([]FittedLine, error) {
+	raw, _ := json.Marshal(facts)
 	var res struct {
 		Lines []FittedLine `json:"lines"`
 	}
-	if err := a.structured(ctx, "script_fit_agent", system, string(facts), &res); err != nil {
+	if err := a.structured(ctx, name, system, string(raw), &res); err != nil {
 		return nil, err
 	}
 	if len(res.Lines) == 0 && len(lines) > 0 {

@@ -447,7 +447,23 @@ export type CostEstimate = {
   seconds: number;
   model: string;
   known: boolean;
-  scenes?: { scene_id: string; title: string; seconds: number; clips: number; amount: number; note?: string }[];
+  scenes?: {
+    scene_id: string;
+    title: string;
+    seconds: number;
+    clips: number;
+    amount: number;
+    note?: string;
+    retry_seconds?: number;
+    retry_amount?: number;
+  }[];
+  /** full_auto=true: the worst case, each scene that speaks made once more by the
+   * automatic speech retry. */
+  retry_seconds?: number;
+  retry_amount?: number;
+  worst_seconds?: number;
+  worst_total?: number;
+  retry_note?: string;
 };
 
 /** One service selling a video model (videoService in internal/api). */
@@ -574,6 +590,25 @@ export type ScriptFit = {
   after: SavedSpokenLine[];
   before_fit: SceneSpeech;
   after_fit: SceneSpeech;
+};
+
+/** POST /outputs/{id}/speech-repair (speechRepair in internal/api/speech_repair.go):
+ * the scene's lines before and after (only the flagged clip's lines differ), what the
+ * speech check heard, and the price of making the clip again. Nothing is saved. */
+export type SpeechRepair = {
+  output_id: string;
+  scene_id: string;
+  scene_title: string;
+  expected_updated_at: string;
+  heard: string[];
+  speech_end?: number;
+  clip_length: number;
+  line_ids: string[];
+  before: SavedSpokenLine[];
+  after: SavedSpokenLine[];
+  before_fit: SceneSpeech;
+  after_fit: SceneSpeech;
+  quote: { plan_id: string; calls: number; seconds: number; storyboards: number; blocked?: string };
 };
 
 /** A scene's video settings (productionSettings in internal/api/production_plan.go). */

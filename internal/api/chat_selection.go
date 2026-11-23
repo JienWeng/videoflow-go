@@ -85,11 +85,11 @@ func selectedChatActionAllowed(kind, action string) bool {
 	}
 	switch kind {
 	case "scene":
-		return action == "refine_scene" || action == "render_scene" || action == "audit_storyboard" || action == "storyboard" || action == "generate_shots" || action == "delete_scene"
+		return action == "refine_scene" || action == "render_scene" || action == "audit_storyboard" || action == "storyboard" || action == "generate_shots" || action == "delete_scene" || action == speechRepairAction
 	case "shot":
 		return action == "refine_shot" || action == "render_shot"
 	case "output":
-		return action == "retry_render"
+		return action == "retry_render" || action == speechRepairAction
 	case "character":
 		return action == "generate_script" || action == "generate_character_reference" || action == "update_character"
 	}

@@ -64,6 +64,9 @@ export interface ChatIntent {
   character_ids?: string[];
   characters?: { id: string; name: string }[];
   image_calls?: number;
+  /** repair_clip_speech: the clip whose speech the check flagged, and what it heard. */
+  clip_label?: string;
+  issue?: string;
   /** Ask or decide (internal/api/chat_decision.go); read it through decision.mjs. */
   decision?: ChatDecision;
   /** Decision-log entries the assistant kept from this reply (its remember list). */

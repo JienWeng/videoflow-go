@@ -12,6 +12,7 @@
   import { onDestroy, untrack } from 'svelte';
   import { del as apiDel, get, patch as apiPatch, post as apiPost, put as apiPut } from '$lib/api';
   import ScriptFitReview from '$lib/scenes/ScriptFitReview.svelte';
+  import FullAutoCost from '$lib/costs/FullAutoCost.svelte';
   import { normalizeChatIntent } from './intent.mjs';
   import { runBackgroundOp, type Op } from '$lib/ops';
   import type {
@@ -22,6 +23,7 @@
     Scene,
     ScriptFit,
     Shot,
+    SpeechRepair,
     StyleFields
   } from '$lib/api-types';
   import type { ChatIntent, ChatOptions, ChatProjectState, RunContext } from './types';
@@ -143,6 +145,24 @@
   let plannedAssets = $state<PlannedAsset[] | null>(null);
   // fit_script: the scene's lines before and after, shown until the owner saves them.
   let scriptFit = $state<ScriptFit | null>(null);
+  // repair_clip_speech: the flagged clip's lines before and after and the price of the
+  // new clip; the clip is made again only on the second click (Full auto: by itself).
+  let speechRepair = $state<SpeechRepair | null>(null);
+  let repairStarted = $state(false);
+  const repairChanges = $derived.by(() => {
+    if (!speechRepair) return [];
+    const after = new Map(speechRepair.after.map(l => [l.id, l.text]));
+    return speechRepair.before
+      .filter(l => speechRepair?.line_ids.includes(l.id))
+      .map(l => ({ id: l.id, before: l.text, after: after.get(l.id) ?? '' }));
+  });
+  const repairQuote = $derived.by(() => {
+    const q = speechRepair?.quote;
+    if (!q) return '';
+    if (q.blocked) return `It can't be made again right now: ${q.blocked}`;
+    const clips = q.calls === 1 ? '1 clip' : `${q.calls} clips`;
+    return `Making “${speechRepair?.scene_title}” again: ${clips}, ${q.seconds} s of new video${q.storyboards ? ' and a new storyboard (image credits)' : ''}. Uses video credits.`;
+  });
   // Ideation phase for generate_script: null = phase 1 (raw idea),
   // set = phase 2 (pick one of the developed concepts).
   let ideaOptions = $state<IdeaOptions | null>(null);
@@ -193,7 +213,8 @@
     delete_scene: 'Delete scene',
     style_ingest: 'Ingest style from story',
     plan_assets: 'Suggest assets',
-    fit_script: 'Fit script to clips'
+    fit_script: 'Fit script to clips',
+    repair_clip_speech: 'Write shorter lines'
   };
 
   // generate_character_references: who is drawn, and whether the picture service can do it now.
@@ -276,6 +297,8 @@
         return true;
       case 'retry_render':
         return !!outputId;
+      case 'repair_clip_speech':
+        return !!outputId && !repairStarted && !speechRepair?.quote.blocked;
       default:
         return false;
     }
@@ -359,7 +382,8 @@
     'retry_render',
     'generate_image',
     'style_ingest',
-    'fit_script'
+    'fit_script',
+    'repair_clip_speech'
   ]);
   let autoStarted = false;
   $effect(() => {
@@ -377,6 +401,7 @@
       sceneId: sceneId || undefined,
       outputId: outputId || undefined
     };
+    if (intent.action === 'repair_clip_speech') return repairClipSpeech(ctx);
     switch (intent.action) {
       case 'generate_script': {
         if (!ready) {
@@ -588,6 +613,36 @@
     }
   }
 
+  /** repair_clip_speech: first the shorter lines and the price (free), then, on the
+   * owner's click, save them and make the scene's clip again. Full auto does both. */
+  async function repairClipSpeech(ctx: RunContext) {
+    busy = true;
+    try {
+      if (!speechRepair) {
+        speechRepair = await post<SpeechRepair>(`/outputs/${encodeURIComponent(outputId)}/speech-repair`);
+        if (!full) return;
+      }
+      const repair = speechRepair;
+      if (repair.quote.blocked) {
+        toast.error(repair.quote.blocked);
+        return;
+      }
+      const started = await post<{ scene_id: string; job_ids?: string[] }>(
+        `/outputs/${encodeURIComponent(outputId)}/speech-repair/apply`,
+        // In Full auto this is the clip's one automatic retry; the server refuses a second.
+        { after: repair.after, expected_updated_at: repair.expected_updated_at, quote: repair.quote, automatic: full }
+      );
+      repairStarted = true;
+      toast.success(`Shorter lines saved. Making “${repair.scene_title}” again.`);
+      await onran?.(started, { ...ctx, sceneId: repair.scene_id });
+      if (started.job_ids?.[0]) onfocus?.(started.job_ids[0]);
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      busy = false;
+    }
+  }
+
   // Card inputs are bg-muted/50 so the chat composer stays the primary input.
   const selectClass = 'w-full rounded-md border border-input bg-muted/50 px-2 py-1.5 text-sm';
   const labelClass = 'block text-xs text-muted-foreground mb-1';
@@ -704,6 +759,7 @@
           disabled={busy||developing}
           onchange={editBrief}
           onstyleapplied={onreference}/>
+        {#if full}<FullAutoCost seconds={creationBrief.target_duration} aspect={creationBrief.aspect_ratio} />{/if}
 
       {/if}
 
@@ -840,6 +896,24 @@
         {/if}
       {/if}
 
+      {#if intent.action === 'repair_clip_speech'}
+        <div class="space-y-2 text-sm">
+          {#if intent.clip_label}<p class="text-xs"><span class="font-medium">{intent.clip_label}</span>{#if intent.issue}: {intent.issue}{/if}</p>{/if}
+          {#if speechRepair}
+            <ul class="grid gap-1.5">
+              {#each repairChanges as c (c.id)}
+                <li><p class="text-xs text-muted-foreground line-through">{c.before}</p><p>{c.after}</p></li>
+              {/each}
+            </ul>
+            <p class="text-xs text-muted-foreground">{speechRepair.after_fit.summary}</p>
+            <p class="text-xs font-medium">{repairQuote}</p>
+            {#if repairStarted}<p class="text-xs text-muted-foreground">Saved. The new clip is being made; the speech check listens to it again.</p>{/if}
+          {:else}
+            <p class="text-xs text-muted-foreground">Rewrites only this clip's lines, shorter and simpler (free: one turn of your local AI session), then makes the scene's clip again (video credits). {full ? 'Full auto does this once by itself.' : 'You see the shorter lines and the price first.'}</p>
+          {/if}
+        </div>
+      {/if}
+
       {#if intent.action === 'plan_assets' && plannedAssets}
         <div class="text-xs space-y-1">
           {#if plannedAssets.length === 0}
@@ -924,7 +998,7 @@
             {:else}
               <Play class="size-4 mr-1" />
             {/if}
-            {busy ? 'Running…' : intent.action==='render_scene'&&renderPlanId&&!renderQuote.storyboards ? 'Render scene' : (labels[intent.action] ?? 'Run')}
+            {busy ? 'Running…' : intent.action==='render_scene'&&renderPlanId&&!renderQuote.storyboards ? 'Render scene' : intent.action==='repair_clip_speech'&&speechRepair ? `Save & re-render (${speechRepair.quote.seconds} s of video)` : (labels[intent.action] ?? 'Run')}
           </Button>
         {/if}
       </div>

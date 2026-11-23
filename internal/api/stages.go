@@ -12,6 +12,7 @@ import (
 
 	"videoflow-go/internal/composition"
 	"videoflow-go/internal/models"
+	"videoflow-go/internal/speech"
 )
 
 // The stage map is the app's own, deterministic answer to "where is this project and
@@ -21,7 +22,9 @@ import (
 // compact copy goes into every chat turn so the assistant decides from the same facts.
 //
 // Stages run in story order. Shots come before scene pictures because a scene's
-// storyboard is drawn from its shots and /production/progress checks shots first.
+// storyboard is drawn from its shots and /production/progress checks shots first. The
+// dialogue comes right after the shots: its lines are sized to each shot's seconds,
+// and fitting it changes the scene, so it is settled before pictures and videos.
 
 // Stage IDs, in order.
 const (
@@ -30,6 +33,7 @@ const (
 	stageVoices        = "voices"
 	stageScript        = "script"
 	stageShots         = "shots"
+	stageDialogue      = "dialogue"
 	stageScenePictures = "scene_pictures"
 	stageClips         = "clips"
 	stageReview        = "review"
@@ -38,7 +42,7 @@ const (
 )
 
 // stageOrder is every stage, in the order a project moves through them.
-var stageOrder = []string{stageBrief, stageCharacters, stageVoices, stageScript, stageShots, stageScenePictures, stageClips, stageReview, stageEdit, stageExport}
+var stageOrder = []string{stageBrief, stageCharacters, stageVoices, stageScript, stageShots, stageDialogue, stageScenePictures, stageClips, stageReview, stageEdit, stageExport}
 
 // Stage statuses.
 const (
@@ -124,7 +128,8 @@ type stageScene struct {
 	VideoSeconds int
 	// Speech is the speech budget's verdict on the scene's clips and SpeechSummary its
 	// line; SpeechWontFit is how far over the clip is ("11.4 s of 8 s") when the clips
-	// speak and one has more speech than it can hold.
+	// speak and one has more speech than it can hold. They are set for a scene that has
+	// shots and no video yet.
 	Speech        string
 	SpeechSummary string
 	SpeechWontFit string
@@ -150,7 +155,7 @@ type stageInputs struct {
 
 var stageLabels = map[string]string{
 	stageBrief: "Creative brief", stageCharacters: "Characters", stageVoices: "Voices", stageScript: "Story & scenes",
-	stageShots: "Shots", stageScenePictures: "Scene pictures", stageClips: "Scene videos", stageReview: "Review",
+	stageShots: "Shots", stageDialogue: "Dialogue", stageScenePictures: "Scene pictures", stageClips: "Scene videos", stageReview: "Review",
 	stageEdit: "Edit", stageExport: "Export",
 }
 
@@ -230,24 +235,30 @@ func (s *Server) characterHasVoice(projectID, characterID string) bool {
 	return profile.Approved && (voiceChoice{Provider: profile.Provider, VoiceID: profile.VoiceID}).usable()
 }
 
-// stageVideoSeconds is the new video seconds making this scene would generate, from the
-// scene's production plan (what the render button quotes), else the scene's length.
+// stageScene is a scene's facts: VideoSeconds is the new video seconds making it would
+// generate, from its production plan (what the render button quotes), else its length;
+// the speech verdicts come from the same plan, once the scene has shots.
 func (s *Server) stageScene(ctx context.Context, scene *models.Scene, p sceneProgress) stageScene {
 	st := stageScene{ID: p.SceneID, Title: p.Title, Progress: p, VideoSeconds: scene.Duration}
 	if p.Video.State == "ready" || p.Video.State == "making" {
 		st.VideoSeconds = 0
 		return st
 	}
+	if p.Stage == "needs_shots" {
+		return st
+	}
+	plan, err := s.sceneProductionPlan(ctx, scene)
+	if err != nil {
+		return st
+	}
 	if p.Stage == "ready_to_render" || p.Video.State == "failed" {
-		if plan, err := s.sceneProductionPlan(ctx, scene); err == nil {
-			st.VideoSeconds = plan.NewSeconds
-			if plan.Speech != nil {
-				st.Speech, st.SpeechSummary = plan.Speech.Verdict, plan.Speech.Summary
-			}
-			if plan.speechWontFit() != "" {
-				st.SpeechWontFit = plan.Speech.overrun()
-			}
-		}
+		st.VideoSeconds = plan.NewSeconds
+	}
+	if plan.Speech != nil {
+		st.Speech, st.SpeechSummary = plan.Speech.Verdict, plan.Speech.Summary
+	}
+	if plan.speechWontFit() != "" {
+		st.SpeechWontFit = plan.Speech.overrun()
 	}
 	return st
 }
@@ -292,7 +303,7 @@ func (s *Server) lastExport(projectID string) time.Time {
 // computeStages turns a project's facts into its stage map.
 func computeStages(in stageInputs) stageMap {
 	stages := []projectStage{
-		briefStage(in), charactersStage(in), voicesStage(in), scriptStage(in), shotsStage(in),
+		briefStage(in), charactersStage(in), voicesStage(in), scriptStage(in), shotsStage(in), dialogueStage(in),
 		scenePicturesStage(in), clipsStage(in), reviewStage(in), editStage(in), exportStage(in),
 	}
 	out := stageMap{Stages: stages, Current: stageExport, Complete: true}
@@ -427,6 +438,79 @@ func shotsStage(in stageInputs) projectStage {
 	return st
 }
 
+// dialogueStage is whether each scene still to be made can say its lines in its clips
+// (the speech budget, speech_budget.go). A scene whose clips speak and hold more speech
+// than they can is the step to take: fit_script rewrites only its lines, free and
+// reversible, before anything is paid for. A scene that only just fits (tight) is
+// offered the same step, but the stage is then optional: it never holds the project
+// back. The dialogue is never blocked; it waits for the shots its lines are sized to.
+func dialogueStage(in stageInputs) projectStage {
+	st := newStage(stageDialogue)
+	if len(in.Scenes) == 0 {
+		st.Status = statusNotStarted
+		return st
+	}
+	wontFit, tight, waiting := []stageScene{}, []stageScene{}, 0
+	for _, sc := range in.Scenes {
+		switch {
+		case sc.Progress.Video.State == "ready" || sc.Progress.Video.State == "making":
+			continue // its video is made; its dialogue is settled
+		case sc.Progress.Stage == "needs_shots":
+			waiting++
+			continue
+		case sc.Speech == "":
+			continue // the scene says nothing
+		}
+		st.Total++
+		switch {
+		case sc.SpeechWontFit != "" || sc.Speech == speech.TooLong:
+			wontFit = append(wontFit, sc)
+		case sc.Speech == speech.Tight:
+			tight = append(tight, sc)
+		default:
+			st.Done++
+		}
+	}
+	quoted := func(scenes []stageScene) string {
+		parts := []string{}
+		for i, sc := range scenes {
+			if i == 4 {
+				parts = append(parts, fmt.Sprintf("and %d more", len(scenes)-4))
+				break
+			}
+			detail := sc.SpeechWontFit
+			if detail == "" {
+				detail = sc.SpeechSummary
+			}
+			parts = append(parts, "“"+sc.Title+"” ("+detail+")")
+		}
+		return strings.Join(parts, ", ")
+	}
+	fit := func(scenes []stageScene) *stageAction {
+		return &stageAction{Action: "fit_script", Label: "Fit script to clips", SceneIDs: sceneIDs(scenes[:1]), Reversible: true,
+			Cost: stageCost{Class: costFree, Note: "one turn of the local AI session rewrites only what is said; the shots stay as they are"}}
+	}
+	switch {
+	case len(wontFit) > 0:
+		st.Status = statusReady
+		st.Missing = []string{"speech won't fit in " + countPhrase(len(wontFit), "scene", "scenes") + " — fit the script first: " + quoted(wontFit)}
+		if len(tight) > 0 {
+			st.Missing = append(st.Missing, "speech only just fits in "+quoted(tight))
+		}
+		st.Next = fit(wontFit)
+	case len(tight) > 0:
+		st.Status, st.Optional = statusReady, true
+		st.Missing = []string{"speech only just fits in " + quoted(tight)}
+		st.Next = fit(tight)
+	case st.Total == 0 && waiting > 0:
+		st.Status = statusNotStarted
+		st.Missing = []string{countPhrase(waiting, "scene needs", "scenes need") + " shots first; the lines are sized to them"}
+	default:
+		st.Status = statusDone
+	}
+	return st
+}
+
 // scenePicturesStage covers the pictures a scene's video is made from: its connected
 // reference pictures, and its storyboard unless its clips use the pictures directly.
 func scenePicturesStage(in stageInputs) projectStage {
@@ -506,15 +590,6 @@ func clipsStage(in stageInputs) projectStage {
 			seconds += sc.VideoSeconds
 		}
 		st.Missing = []string{countPhrase(len(ready), "scene has", "scenes have") + " no video yet: " + sceneTitles(ready)}
-		wontFit := []string{}
-		for _, sc := range ready {
-			if sc.SpeechWontFit != "" {
-				wontFit = append(wontFit, "“"+sc.Title+"” ("+sc.SpeechWontFit+")")
-			}
-		}
-		if len(wontFit) > 0 {
-			st.Missing = append(st.Missing, "speech won't fit in "+countPhrase(len(wontFit), "scene", "scenes")+" — fit the script first: "+strings.Join(wontFit, ", "))
-		}
 		action, label := "render_scenes", "Make these videos"
 		if len(ready) == 1 {
 			action, label = "render_scene", "Make video"

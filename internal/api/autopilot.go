@@ -239,7 +239,13 @@ func (a *autopilotRunner) run(ctx context.Context) (any, error) {
 		return stuck, err
 	}
 	if flagged := a.checkClips(ctx); len(flagged) > 0 {
-		return a.clipReviewResult(flagged), nil
+		flagged, stuck, err := a.retryClipSpeech(ctx, flagged)
+		if err != nil {
+			return stuck, err
+		}
+		if len(flagged) > 0 {
+			return a.clipReviewResult(flagged), nil
+		}
 	}
 	if a.body.VideosOnly {
 		return a.videosOnlyResult(waiting), nil

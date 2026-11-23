@@ -16,13 +16,16 @@ import (
 //	                          with the reviewer's change and checked again; a picture that
 //	                          still fails (or is not worth retrying) stops the run and is
 //	                          shown. Manual/Auto: checked on demand, findings shown only.
-//	clips (video credits)     never made again automatically. Full auto checks every new
-//	                          clip (and, for a clip made with its own sound, listens to
-//	                          it: the speech check, audio_check.go); a "fix"/"fail"
-//	                          stops before joining and asks the user ("Re-render with
-//	                          this change" or, for speech cut off, "Re-render with a
-//	                          shorter line" / "Keep it"). Manual/Auto: checked on
-//	                          demand, findings shown only.
+//	clips (video credits)     Full auto checks every new clip (and, for a clip made
+//	                          with its own sound, listens to it: the speech check,
+//	                          audio_check.go). A clip whose speech was cut off, changed
+//	                          or missing gets ONE automatic repair per scene: shorter
+//	                          lines, the clip made again and checked again
+//	                          (speech_retry.go). Anything else flagged, or still
+//	                          flagged after that retry, stops before joining and asks
+//	                          the user ("Re-render with this change" / "Re-render
+//	                          again" / "Keep it"). Manual/Auto: checked on demand,
+//	                          findings shown only; a clip is never made again by itself.
 //
 // A check that cannot run reads as "pass", so it never holds work back.
 
@@ -91,6 +94,9 @@ type selfCheckFlag struct {
 	Attempt    int    `json:"attempt,omitempty"`
 	// Problem is set when an automatic retry could not be made.
 	Problem string `json:"problem,omitempty"`
+	// Retried is set on a speech flag whose clip already had Full auto's one automatic
+	// retry (shorter lines, made again): it is asked about, never retried again.
+	Retried bool `json:"retried,omitempty"`
 }
 
 func newSelfCheckFlag(t *selfCheckTarget, r selfCheckRecord) selfCheckFlag {
@@ -115,17 +121,24 @@ func clipReviewDecision(f selfCheckFlag) chatDecision {
 	if change == "" {
 		change = "fix this: " + f.firstIssue()
 	}
-	checker, ask, label := "check", "Re-render it with a fix?", "Re-render with this change"
+	checker, ask, label, tried := "check", "Re-render it with a fix?", "Re-render with this change", false
 	if f.Kind == selfCheckClipAudio {
 		checker = "speech check"
 		if hasIssue(f.Issues, "speech_cut_off") {
 			ask, label = "Re-render it with a shorter line?", "Re-render with a shorter line"
 		}
+		if f.Retried {
+			tried, ask, label = true, "Re-render it again?", "Re-render again"
+		}
+	}
+	question := fmt.Sprintf("The %s flagged the %s: %s %s That uses video credits.", checker, f.Label, strings.TrimRight(f.firstIssue(), ".")+".", ask)
+	if tried {
+		question = fmt.Sprintf("I already shortened its lines and re-rendered it once, and the %s still flagged the %s: %s %s That uses video credits.", checker, f.Label, strings.TrimRight(f.firstIssue(), ".")+".", ask)
 	}
 	return chatDecision{
 		Mode:        decisionAsk,
 		Assumptions: []string{},
-		Question:    clip(fmt.Sprintf("The %s flagged the %s: %s %s That uses video credits.", checker, f.Label, strings.TrimRight(f.firstIssue(), ".")+".", ask), maxQuestionChars),
+		Question:    clip(question, maxQuestionChars),
 		Options: []chatDecisionOption{
 			{Label: label, Value: clip(fmt.Sprintf("Re-render the %s with this change: %s", strings.TrimSuffix(f.Label, "’s speech"), change), maxOptionValue)},
 			{Label: "Keep it", Value: clip("Keep the "+strings.TrimSuffix(f.Label, "’s speech")+" as it is.", maxOptionValue)},
@@ -517,10 +530,14 @@ func (s *Server) flaggedPictures(projectID string, chars []models.Character, sce
 	return out
 }
 
-// clipFlagged says whether a clip the self-check flagged is waiting on the user.
+// clipFlagged says whether a clip the self-check flagged is waiting on the user's
+// answer. Around speech only two questions remain in Full auto: after its one
+// automatic retry, and for what a shorter line can't fix (wrong language, no speech).
+// A speech flag that still has its retry to come is not asked about: Full auto
+// repairs it (repair_clip_speech) instead.
 func (t *chatTurn) clipFlagged() bool {
 	for _, f := range t.selfChecks {
-		if f.Kind == selfCheckClip || f.Kind == selfCheckClipAudio {
+		if f.Kind == selfCheckClip || f.Kind == selfCheckClipAudio && (f.Retried || flagRepairProblem(f) != "") {
 			return true
 		}
 	}
@@ -528,7 +545,7 @@ func (t *chatTurn) clipFlagged() bool {
 }
 
 // selfCheckRule tells the planner how to speak to the self-check's findings.
-const selfCheckRule = "Findings of the app's own checks of pictures and clips: kind clip is the frames, looked at by the local AI session (no credits); kind clip_audio is the speech check, which listened to the clip's sound and compared it with the script (said or not, the words, the language, cut off at the end). Speak to them plainly when relevant. For a flagged clip, ask once with decision mode ask, reason expensive, key decision_key, options \"Re-render with this change\" (or \"Re-render with a shorter line\" when speech was cut off; value: re-render that scene with the change) and \"Keep it\"; never re-render it yourself. Lip-sync is never checked, and without a clip_audio finding nothing was heard, so never claim anything about the sound."
+const selfCheckRule = "Findings of the app's own checks of pictures and clips: kind clip is the frames, looked at by the local AI session (no credits); kind clip_audio is the speech check, which listened to the clip's sound and compared it with the script (said or not, the words, the language, cut off at the end). Speak to them plainly when relevant. For a clip_audio finding marked repairable (lines cut off, changed or missing), offer repair_clip_speech with its id as output_id: it rewrites only that clip's lines shorter and simpler (free) and makes the scene's clip again (video credits). For any other flagged clip, ask once with decision mode ask, reason expensive, key decision_key, options \"Re-render with this change\" (value: re-render that scene with the change) and \"Keep it\"; never re-render it yourself. Lip-sync is never checked, and without a clip_audio finding nothing was heard, so never claim anything about the sound."
 
 // chatSelfCheck is the self-check part of a chat turn's context.
 func chatSelfCheck(flags []selfCheckFlag) map[string]any {
@@ -541,8 +558,14 @@ func chatSelfCheck(flags []selfCheckFlag) map[string]any {
 		if f.Change != "" {
 			item["change"] = f.Change
 		}
-		if f.Kind == selfCheckClip {
+		if f.Kind == selfCheckClip || f.Kind == selfCheckClipAudio {
 			item["decision_key"] = selfCheckDecisionKey(f.ID)
+		}
+		if f.Kind == selfCheckClipAudio {
+			item["repairable"] = flagRepairProblem(f) == "" && !f.Retried
+			if f.Retried {
+				item["auto_retried"] = true
+			}
 		}
 		items = append(items, item)
 	}
