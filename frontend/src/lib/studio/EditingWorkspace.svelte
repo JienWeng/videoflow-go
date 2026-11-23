@@ -43,8 +43,10 @@
     CompositionSourceInfo,
     Cue,
     SavedComposition,
-    VoiceLine
+    VoiceLine,
+    VoiceSound
   } from '$lib/composition/types';
+  import { applyVoiceSound, captionTimingNote } from './speech.mjs';
   let draft: Draft = {
     version: 1,
     width: 640,
@@ -369,8 +371,10 @@
     }
     if (id) await add('audio', id);
   }
-  // Voice lines replace earlier voice lines; music and other sounds stay. Video sound can be lowered under them.
-  async function addVoices(items: VoiceLine[], lower: boolean, replace = true) {
+  // Voice lines replace earlier voice lines; music and other sounds stay. A clip whose own
+  // voices are replaced is muted (never just lowered: two voices at once); music can be
+  // lowered under the voices.
+  async function addVoices(items: VoiceLine[], sound: VoiceSound, replace = true) {
     try {
       assets = await get<CompositionSource[]>('/compositions/sources');
     } catch {}
@@ -382,6 +386,7 @@
         start: i.start,
         trim: 0,
         duration: i.duration,
+        original_duration: i.original_duration ?? i.duration,
         speed: 1,
         has_audio: true,
         volume: 1,
@@ -389,12 +394,9 @@
         fade_out: Math.min(0.1, i.duration / 4)
       }))
     ];
-    if (lower)
-      draft.clips = draft.clips.map(c =>
-        String(c.asset_id).startsWith('output-') && c.has_audio && !c.muted
-          ? { ...c, volume: Math.min(c.volume ?? 1, 0.25) }
-          : c
-      );
+    const next = applyVoiceSound(draft.clips, draft.audio, sound);
+    draft.clips = next.clips;
+    draft.audio = next.audio;
     fitLength();
     invalidate();
   }
@@ -630,7 +632,7 @@
     error = '';
     scriptNote = '';
     try {
-      const r = await post<{ captions?: Cue[]; skipped?: { reason: string }[]; voice_timed?: boolean }>(
+      const r = await post<{ captions?: Cue[]; skipped?: { reason: string }[]; timing?: Record<string, number> }>(
         '/compositions/captions/from-script',
         { clips: draft.clips, audio: draft.audio }
       );
@@ -647,8 +649,8 @@
       invalidate();
       scriptNote =
         `Added ${r.captions.length} caption${r.captions.length === 1 ? '' : 's'} from your script. ` +
-        (r.voice_timed ? 'Timing follows the voice lines' : 'Timing follows each shot') +
-        '; drag them on the Captions track to fine-tune.' +
+        captionTimingNote(r.timing) +
+        ' Drag them on the Captions track to fine-tune.' +
         (skipped.length
           ? ` ${skipped.length} clip${skipped.length === 1 ? ' was' : 's were'} skipped: ${skipped[0].reason}`
           : '');
@@ -821,7 +823,7 @@
      <div class="space-y-2 rounded-md border border-border p-3">
       <p class="font-medium">Captions</p>
       <Button class="w-full" disabled={busy||!draft.clips.length} onclick={captionsFromScript}><Type class="size-4"/>Captions from script</Button>
-      <p class="text-xs text-muted-foreground">Free. Uses what each scene's script says and when each shot plays.</p>
+      <p class="text-xs text-muted-foreground">Free. Uses what each scene's script says, timed to when it is heard in clips made with their own sound (estimated from the shots otherwise).</p>
       {#if scriptNote}<p role="status" class="text-xs">{scriptNote}</p>{/if}
       <Button class="w-full" variant="outline" onclick={addCaptionAt}><Plus class="size-4"/>Add caption at playhead</Button>
      </div>
@@ -834,7 +836,8 @@
        class="w-full rounded-md border px-2 py-1.5 text-left {activeClip===cue.id?'border-primary bg-accent':'border-border hover:bg-accent'}"
        onclick={()=>{select(cue.id,'captions');playhead=cue.start}}><span
          class="block text-xs tabular-nums text-muted-foreground">{fmt(cue.start)} – {fmt(cue.end)}</span><span
-         class="line-clamp-2">{cue.text||'Empty caption'}</span></button></li>{/each}</ul>{/if}
+         class="line-clamp-2">{cue.text||'Empty caption'}</span>{#if cue.scripted}<span
+         class="block text-xs text-amber-700 dark:text-amber-400">Heard, not as scripted</span>{/if}</button></li>{/each}</ul>{/if}
      <FinishingPanel
        {draft}
        {assets}
@@ -1025,6 +1028,12 @@
     {:else if selTrack==='captions'&&selIndex>=0}
      <p class="text-xs text-muted-foreground">Caption</p>
      <label class="lbl">Text<textarea class="field" rows="3" bind:value={draft.captions[selIndex].text} oninput={invalidate}></textarea></label>
+     {#if draft.captions[selIndex].scripted}<div class="rounded-md border border-amber-500/50 p-2 text-xs"><p>This is what was heard in the clip. The script says: “{draft.captions[selIndex].scripted}”</p><Button
+       size="sm"
+       variant="ghost"
+       class="mt-1 h-7 px-2 text-xs"
+       onclick={()=>{const c=draft.captions[selIndex];draft.captions[selIndex]={...c,text:c.scripted??c.text,scripted:undefined};invalidate()}}>Use the script's words</Button></div>
+     {:else if draft.captions[selIndex].timing}<p class="text-xs text-muted-foreground">{draft.captions[selIndex].timing==='heard'?'Timed to when it is heard in the clip.':draft.captions[selIndex].timing==='voice'?'Timed to its voice line.':'Estimated from the shot.'}</p>{/if}
      <div class="grid grid-cols-2 gap-2"><label class="lbl">Starts (s)<input
        class="field"
        type="number"

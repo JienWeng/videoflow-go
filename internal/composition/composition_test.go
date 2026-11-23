@@ -211,3 +211,39 @@ func TestTrimPastTheMediaNamesTheClipAndTheNumbers(t *testing.T) {
 		t.Fatalf("the error should name the clip and say how long it is against the media, got %v", err)
 	}
 }
+
+// What Voice from script makes when it replaces a clip's own voices: the clip muted
+// (volume 0), and voice lines cut to their slot a few milliseconds before the end of
+// their file, ending on the millisecond-rounded length of the edit.
+func TestMutedClipAndVoiceLinesFittedToTheMillisecondSave(t *testing.T) {
+	root := t.TempDir()
+	video := filepath.Join(root, "clip.mp4")
+	voice := filepath.Join(root, "voice.mp3")
+	os.WriteFile(video, []byte("mp4"), 0600)
+	os.WriteFile(voice, []byte("mp3"), 0600)
+	zero := 0.0
+	sources := map[string]string{"output-1": video, "voice-1": voice}
+	m := Manifest{Version: 1, Width: 720, Height: 1280, FPS: 24, Duration: 18.001,
+		Clips: []Clip{{ID: "c1", AssetID: "output-1", Start: 10, Duration: 8, OriginalDuration: 8.0416, Speed: 1, HasAudio: true, Muted: true, Volume: &zero}},
+		Audio: []Clip{
+			// 2.75 s slot, file 2.768 s long: stops at the slot, inside the file.
+			{ID: "v1", AssetID: "voice-1", Start: 10.6, Duration: 2.75, OriginalDuration: 2.768, Speed: 1, HasAudio: true},
+			// 14.2 + 3.801 = 18.001 in floating point is 18.000999…, the edit's end.
+			{ID: "v2", AssetID: "voice-1", Start: 14.2, Duration: 3.801, OriginalDuration: 3.801, Speed: 1, HasAudio: true},
+		},
+		Captions: []Cue{{ID: "cue1", Start: 10.52, End: 12.7, Text: "他从一万年后回来，", Timing: "heard"}, {ID: "cue2", Start: 14.12, End: 18, Text: "守住这台机器不要让任", Timing: "heard", Scripted: "守住这台机器，不要让任何人靠近。"}},
+	}
+	revision, err := Save(root, "project", m, sources)
+	if err != nil {
+		t.Fatal("the voiced edit should save:", err)
+	}
+	saved, err := Load(root, "project", revision)
+	if err != nil || saved.Captions[1].Scripted == "" || saved.Captions[1].Timing != "heard" || !saved.Clips[0].Muted {
+		t.Fatalf("%v %+v", err, saved)
+	}
+	// A voice line longer than its file is still refused, with the numbers.
+	m.Audio[0].Duration = 2.8
+	if _, err := Save(root, "project", m, sources); err == nil || !strings.Contains(err.Error(), "2.800s") {
+		t.Fatalf("a voice line past its file should be refused, got %v", err)
+	}
+}
