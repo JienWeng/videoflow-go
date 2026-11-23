@@ -40,6 +40,8 @@ type chatTurn struct {
 	charOptions     []map[string]interface{}
 	style           *models.StyleGuide
 	progress        projectProgress
+	// stages is the project's stage map as the turn began (see stages.go).
+	stages stageMap
 }
 
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -159,8 +161,30 @@ func (s *Server) chatPlannerContext(ctx context.Context, turn *chatTurn) ([]byte
 	progress, _ := s.projectProgress(ctx, projectID)
 	failedShown, _ := s.database.FailedRendersShown(projectID)
 	turn.style, turn.progress = style, progress
-	contextJSON, _ := json.Marshal(map[string]any{"production_progress": progress, "recent_activity": s.chatActivity(projectID, turn.jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "video_service": s.chatVideoService(), "episode_sound": s.episodeSound(projectID), "failed_video_attempts": failedShown, "assistant_mode": chatMode(body.Auto, body.Full), "attached_media": turn.attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": turn.sceneOptions, "characters": turn.charOptions, "outputs": turn.outputs, "selected_item": turn.selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "render_audio_modes": []string{"native", "silent"}, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false}})
+	if in, err := s.stageInputs(ctx, projectID, progress); err == nil {
+		turn.stages = computeStages(in)
+	}
+	contextJSON, _ := json.Marshal(map[string]any{"stages": chatStages(turn.stages), "production_progress": chatProgress(progress), "recent_activity": s.chatActivity(projectID, turn.jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "video_service": s.chatVideoService(), "episode_sound": s.episodeSound(projectID), "failed_video_attempts": failedShown, "assistant_mode": chatMode(body.Auto, body.Full), "attached_media": turn.attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": turn.sceneOptions, "characters": turn.charOptions, "outputs": turn.outputs, "selected_item": turn.selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "render_audio_modes": []string{"native", "silent"}, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false}})
 	return contextJSON, nil
+}
+
+// chatProgress is the part of /production/progress the planner acts on: where each
+// scene and its video stand, with the ids its actions need. The stage map carries the
+// project-wide summary and next step, so the long per-scene help texts are left out.
+func chatProgress(progress projectProgress) map[string]any {
+	scenes := []map[string]any{}
+	for _, p := range progress.Scenes {
+		scene := map[string]any{"scene_id": p.SceneID, "title": p.Title, "order": p.Order, "stage": p.Stage, "shots": p.Shots, "video": p.Video, "next_action": p.Next.Action}
+		if p.ReferenceMode {
+			scene["reference_mode"] = true
+		}
+		scenes = append(scenes, scene)
+	}
+	out := map[string]any{"scenes": scenes, "total": progress.Total, "video_ready": progress.VideoReady, "attention": progress.Attention}
+	if progress.Next != nil {
+		out["next_scene_id"] = progress.Next.SceneID
+	}
+	return out
 }
 
 // chatAssetContext lists up to 64 of the project's library items for the planner.
