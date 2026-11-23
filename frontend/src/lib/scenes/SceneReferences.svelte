@@ -6,6 +6,7 @@
   import { Button } from '$lib/components/ui/button';
   import { Images, Plus, X, Check, TriangleAlert } from '@lucide/svelte';
   import type { Asset, Character, SceneReferenceState } from '$lib/api-types';
+  import SelfCheck from '$lib/selfcheck/SelfCheck.svelte';
   let {
     sceneId,
     characters = [],
@@ -155,7 +156,12 @@
      class="text-xs text-muted-foreground">From cast</span>{/if}{#if Object.keys(asset.metadata_json?.locked_traits??{}).length}<p
      class="basis-full text-xs text-muted-foreground">Locked: {Object.entries(asset.metadata_json?.locked_traits ?? {})
          .map(([key, value]) => `${key}: ${value}`)
-         .join(' · ')}</p>{/if}</li>{/each}</ul>
+         .join(' · ')}</p>{/if}{#if asset.type==='character_reference'}<div class="basis-full"><SelfCheck
+   kind="character_sheet"
+   id={asset.id}
+   record={asset.metadata_json}
+   compact
+   onchange={load}/></div>{/if}</li>{/each}</ul>
  {:else if !loading}<p class="text-xs text-muted-foreground">No references selected yet.</p>{/if}
  <div class="flex flex-wrap items-center gap-2"><Button
    variant="outline"
@@ -191,6 +197,11 @@
      class="size-4 shrink-0"/>{board
          ? 'This scene changed since its storyboard was made. Rendering again updates the storyboard first; your current video stays.'
          : 'A storyboard is made automatically when you render.'}{/if}</p>{/if}
+ {#if referenceState.storyboard_ready&&referenceState.active_storyboard_id}{@const active=referenceState.storyboards?.find(a=>a.id===referenceState?.active_storyboard_id)}<SelfCheck
+   kind="scene_picture"
+   id={referenceState.active_storyboard_id}
+   record={active?.metadata_json}
+   onchange={load}/>{/if}
  {/if}
  </section>
 </details>

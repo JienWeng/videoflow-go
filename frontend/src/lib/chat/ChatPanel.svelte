@@ -10,6 +10,7 @@
   import ScenesCard from './ScenesCard.svelte';
   import VideoSwitchCard from './VideoSwitchCard.svelte';
   import StuckVideo from '$lib/production/StuckVideo.svelte';
+  import SelfCheck from '$lib/selfcheck/SelfCheck.svelte';
   import { upload as apiUpload } from '$lib/api';
   import type { Op } from '$lib/ops';
   import type { ApiGraph } from '$lib/canvas/transform';
@@ -25,6 +26,7 @@
     Project,
     ProjectProgress,
     SceneProgress,
+    SelfCheckFlag,
     ProjectStylePreset,
     StyleFields,
     StyleGuide
@@ -69,6 +71,7 @@
   // Make scene videos hands-free on the server: finish a story (render every scene, join,
   // caption and export) or make the videos of chosen scenes side by side.
   // character_pictures: Full auto first makes the missing reference pictures of the scenes' cast.
+  // full_auto: the run checks the pictures before any video and the clips after (self-check).
   type VideoRun = { script_id?: string; scene_ids?: string[]; videos_only?: boolean; character_pictures?: boolean };
   async function watchAutopilot(m: Msg) {
     const id = m.autopilotOp;
@@ -82,6 +85,20 @@
         continue;
       }
       const rj = op.result_json ?? {};
+      if (op.status === 'succeeded' && rj.needs_review) {
+        // Full auto's clip check flagged something: nothing is re-made by itself; ask.
+        if (m.op) m.op.status = 'done';
+        m.text = 'The videos are made. The check found something worth a look before going on.';
+        messages.push({
+          role: 'assistant',
+          text: 'Here is what the check saw. Re-rendering uses video credits, so it is your call.',
+          intent: { action: 'unknown', decision: rj.decision } as ChatIntent,
+          selfChecks: rj.self_check ?? []
+        });
+        await onmutate?.();
+        void refreshChips();
+        return;
+      }
       if (op.status === 'succeeded' && rj.videos_only) {
         if (m.op) m.op.status = 'done';
         const titles = (rj.scene_titles ?? []).map(t => `“${t}”`).join(', ');
@@ -113,6 +130,18 @@
         }
         m.text = (op.error ?? 'The video could not be finished.') + ' Everything made so far is kept.';
         if (rj.stuck?.job_id) m.stuck = rj.stuck;
+        if (rj.self_check?.length) {
+          // The picture check stopped the run before any video: show what it saw, then offer to carry on.
+          m.selfChecks = rj.self_check;
+          if (m.run)
+            messages.push({
+              role: 'assistant',
+              text: 'Keep the pictures or make them again, then carry on.',
+              intent: m.run.videos_only
+                ? { action: 'render_scenes', scene_ids: m.run.scene_ids, scenes: (m.run.scene_ids ?? []).map(id => ({ id, title: '' })) }
+                : { action: 'finish_video', script_id: m.run.script_id }
+            });
+        }
         return;
       }
       if (rj.stage) m.text = rj.stage + '…';
@@ -143,7 +172,7 @@
     try {
       const started = await post<OpStarted>('/autopilot/finish?background=true', {
         ...run,
-        ...(mode === 'full' ? { character_pictures: true } : {})
+        ...(mode === 'full' ? { character_pictures: true, full_auto: true } : {})
       });
       live.autopilotOp = started.op_id;
       void watchAutopilot(live);
@@ -386,6 +415,8 @@
     video?: string;
     /** A video run stopped on a scene the video service never answered about. */
     stuck?: { job_id: string; scene_id?: string; service: string; message: string };
+    /** Pictures or clips Full auto's self-check flagged. */
+    selfChecks?: SelfCheckFlag[];
     run?: VideoRun;
     attachments?: { id: string; name: string; kind: string; file_path: string }[];
     retry?: string;
@@ -1813,6 +1844,11 @@
             {/if}
             {#if m.stuck}
               <StuckVideo jobId={m.stuck.job_id} service={m.stuck.service} onsettled={check=>offerResume(m,check)} />
+            {/if}
+            {#if m.selfChecks?.length}
+              <div class="mt-1 grid gap-2">{#each m.selfChecks as f (f.kind + f.id)}<div><p
+                class="text-xs font-medium">{f.label}{#if f.problem}<span class="font-normal text-muted-foreground"> · {f.problem}</span>{/if}</p><SelfCheck
+                kind={f.kind} id={f.id} load onchange={()=>void onmutate?.()} /></div>{/each}</div>
             {/if}
             {#if !editing && m.intent?.action === 'finish_video' && m.intent.script_id && !m.dismissed}
               <div class="mt-2 flex flex-wrap items-center gap-2"><Button

@@ -5,6 +5,8 @@
     $props();
   import { nodeTools } from '$lib/canvas/tools.mjs';
   import LibraryPreview from './LibraryPreview.svelte';
+  import SelfCheck from '$lib/selfcheck/SelfCheck.svelte';
+  import { needsAttention, readSelfCheck, selfCheckBadge, selfCheckKindFor } from '$lib/selfcheck/selfcheck.mjs';
   import AssetDescription from '$lib/assets/AssetDescription.svelte';
   import AssetDescriptionEditor from '$lib/assets/AssetDescriptionEditor.svelte';
   import { parseDescription } from '$lib/assets/description.mjs';
@@ -686,7 +688,8 @@
           class="mt-2 text-xs text-muted-foreground">{assets.filter(a=>versionGroup(a)===versionGroup(asset)).length} versions · Open detail to compare</p>{/if}
         {#if asset.metadata_json?.consistency_review||asset.tags_json?.length}<div
           class="mt-3 flex flex-wrap gap-1">{#if asset.metadata_json?.consistency_review}<Badge
-          variant="outline">{asset.metadata_json.consistency_review==='rejected'?'Excluded':'Ready to use'}</Badge>{/if}{#each (asset.tags_json??[]).slice(0,3) as tag}<Badge
+          variant="outline">{asset.metadata_json.consistency_review==='rejected'?'Excluded':'Ready to use'}</Badge>{/if}{#if needsAttention(readSelfCheck(asset.metadata_json))}<Badge
+          variant="outline" class="border-amber-500/50 text-amber-700 dark:text-amber-400">{selfCheckBadge(readSelfCheck(asset.metadata_json)).label}</Badge>{/if}{#each (asset.tags_json??[]).slice(0,3) as tag}<Badge
           variant="secondary">{tag}</Badge>{/each}{#if (asset.tags_json?.length ?? 0)>3}<span
           class="px-1 text-xs text-muted-foreground">+{(asset.tags_json?.length ?? 0)-3}</span>{/if}</div>{/if}
         </div>
@@ -799,6 +802,7 @@
         <div class="space-y-3 text-xs">
  {#if !detailedView}<AssetDescription description={detail.description??''}/>{/if}
  {#if detail.metadata_json?.consistency_review==='rejected'}<p class="text-sm">Excluded from generation.</p>{/if}
+ {#if selfCheckKindFor(detail.type)}{#key detail.id}<SelfCheck kind={selfCheckKindFor(detail.type)} id={detail.id} record={detail.metadata_json}/>{/key}{/if}
  {#if detailedView&&detail.metadata_json?.consistency_review}<Button
    variant="outline"
    size="sm"
