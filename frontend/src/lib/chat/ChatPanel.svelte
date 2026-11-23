@@ -68,7 +68,8 @@
   }
   // Make scene videos hands-free on the server: finish a story (render every scene, join,
   // caption and export) or make the videos of chosen scenes side by side.
-  type VideoRun = { script_id?: string; scene_ids?: string[]; videos_only?: boolean };
+  // character_pictures: Full auto first makes the missing reference pictures of the scenes' cast.
+  type VideoRun = { script_id?: string; scene_ids?: string[]; videos_only?: boolean; character_pictures?: boolean };
   async function watchAutopilot(m: Msg) {
     const id = m.autopilotOp;
     if (!id) return;
@@ -140,7 +141,10 @@
     messages.push(m);
     const live = messages[messages.length - 1];
     try {
-      const started = await post<OpStarted>('/autopilot/finish?background=true', run);
+      const started = await post<OpStarted>('/autopilot/finish?background=true', {
+        ...run,
+        ...(mode === 'full' ? { character_pictures: true } : {})
+      });
       live.autopilotOp = started.op_id;
       void watchAutopilot(live);
     } catch (e) {
@@ -1052,6 +1056,20 @@
       }
       return;
     }
+    if (ctx.action === 'generate_character_references') {
+      const made = rj.made ?? [],
+        failed = rj.failed ?? [];
+      m.text = [
+        made.length ? `Made pictures for ${made.map(c => c.name).join(', ')}. They are ready to use.` : '',
+        failed.length
+          ? `Couldn't make ${failed.map(c => `${c.name} (${c.error})`).join(', ')}. Ask me again to redo only those.`
+          : ''
+      ]
+        .filter(Boolean)
+        .join(' ');
+      m.chips = [{ label: 'View characters', href: '/library?tab=characters' }];
+      return;
+    }
     if (ctx.action === 'generate_character_reference') {
       m.text = 'Character reference generated and ready to use.';
       m.chips = [
@@ -1280,7 +1298,7 @@
     await onmutate?.();
     await refreshChips();
     if (!ctx) return;
-    if (ctx.action === 'generate_script' || ctx.action === 'generate_character_reference') return;
+    if (['generate_script', 'generate_character_reference', 'generate_character_references'].includes(ctx.action)) return;
     const follow = buildFollowUp(ctx);
     if (follow) messages.push(follow);
   }
@@ -1778,6 +1796,7 @@
             {:else if !editing && m.intent && m.intent.action !== 'unknown' && !m.dismissed}
               <ActionCard
                 auto={!!m.autoRun&&autoMode}
+                full={!!m.autoRun&&mode==='full'}
                 onautostart={()=>m.autoRun=false}
                 intent={m.intent}
  onbriefchange={brief=>{if(m.intent)m.intent={...m.intent,creation_brief:brief,idea:brief.idea}}}
