@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode"
 
 	"videoflow-go/internal/costs"
 	"videoflow-go/internal/db"
@@ -98,37 +97,80 @@ func speechCode(language string) string {
 	return ""
 }
 
-// heardWords returns the words spoken in a finished clip, listening to it the first
-// time and remembering the answer on the clip so it is paid for once.
-func (s *Server) heardWords(ctx context.Context, out *models.RenderOutput, job *models.RenderJob, language, hint string) []providers.SpokenWord {
-	notes := map[string]json.RawMessage{}
-	_ = json.Unmarshal(out.QAJSON, &notes) // unreadable notes mean the clip is listened to again
-	var saved struct {
-		Video string                 `json:"video"`
-		Words []providers.SpokenWord `json:"words"`
+// clipHearing is what was heard in a clip, kept on it as qa_json.speech_timing so a
+// clip is paid for once: the speech check and caption timing both read it.
+type clipHearing struct {
+	Video    string                 `json:"video"`
+	Words    []providers.SpokenWord `json:"words"`
+	Listener string                 `json:"listener,omitempty"`
+	Model    string                 `json:"model,omitempty"`
+	Seconds  float64                `json:"seconds,omitempty"`
+	// Fresh is set when this call listened (and paid); it is not stored.
+	Fresh bool `json:"-"`
+}
+
+// savedHearing is the clip's stored transcript when it is of the current video.
+func savedHearing(notes json.RawMessage, video string) *clipHearing {
+	var holder struct {
+		Hearing *clipHearing `json:"speech_timing"`
 	}
-	if json.Unmarshal(notes["speech_timing"], &saved) == nil && saved.Video == out.VideoPath {
-		return saved.Words
+	if json.Unmarshal(notes, &holder) != nil || holder.Hearing == nil || holder.Hearing.Video != video || holder.Hearing.Words == nil {
+		return nil
+	}
+	return holder.Hearing
+}
+
+// nativeSound says whether a clip was made with its own sound (voices included).
+func nativeSound(job *models.RenderJob) bool {
+	var request struct {
+		Sound  bool   `json:"generate_audio"`
+		Mode   string `json:"audio_mode"`
+		Policy struct {
+			Mode string `json:"mode"`
+		} `json:"voice_policy"`
+	}
+	if job == nil || json.Unmarshal(job.RequestJSON, &request) != nil {
+		return false
+	}
+	return request.Sound || request.Policy.Mode == "native" && request.Mode != "silent"
+}
+
+// clipTranscript returns the words spoken in a finished clip, listening to it the
+// first time and remembering the answer on the clip. The language is left to the
+// listener to detect, so a clip spoken in the wrong language is heard as it is; hint
+// is the expected script, which keeps names and spellings (and the Chinese character
+// set) the way they are written. errNoListener means no listening key is saved.
+func (s *Server) clipTranscript(ctx context.Context, out *models.RenderOutput, job *models.RenderJob, hint string) (clipHearing, error) {
+	if saved := savedHearing(out.QAJSON, out.VideoPath); saved != nil {
+		return *saved, nil
+	}
+	unlock, err := s.lockSelfCheck(ctx, "listen:"+out.ID)
+	if err != nil {
+		return clipHearing{}, err
+	}
+	defer unlock()
+	if fresh, e := s.database.GetRenderOutput(out.ID); e == nil { // listened meanwhile
+		if saved := savedHearing(fresh.QAJSON, out.VideoPath); saved != nil {
+			out.QAJSON = fresh.QAJSON
+			return *saved, nil
+		}
 	}
 	path, err := s.storagePath(out.VideoPath)
 	if err != nil {
-		return nil
+		return clipHearing{}, err
 	}
-	words, seconds, err := listenToClip(s, ctx, path, speechCode(language), hint)
+	listener := s.listener()
+	words, seconds, err := listenToClip(s, ctx, path, "", hint)
 	if err != nil {
-		if err != errNoListener {
-			slog.Warn("captions keep their estimated times: the clip could not be listened to", "output", out.ID, "reason", err.Error())
-		}
-		return nil
+		return clipHearing{}, err
 	}
-	saved.Video, saved.Words = out.VideoPath, words
-	notes["speech_timing"] = voiceJSON(saved)
-	out.QAJSON = voiceJSON(notes)
-	if err = s.database.UpdateRenderOutput(out); err != nil {
-		slog.Warn("heard caption times were not saved", "output", out.ID, "reason", err.Error())
+	hearing := clipHearing{Video: out.VideoPath, Words: words, Listener: listener, Model: providers.OpenAISpeechModel, Seconds: round3(seconds)}
+	if hearing.Words == nil {
+		hearing.Words = []providers.SpokenWord{}
 	}
-	entry := db.CostEntry{Ref: "listen:" + out.ID, Category: "voice", Provider: "openai", Model: providers.OpenAISpeechModel, Label: "Caption timing", Quantity: seconds, Unit: "seconds", Amount: seconds / 60 * providers.OpenAISpeechDollarsPerMin, Basis: costs.Rate}
-	if s.listener() == "gemini" {
+	entry := db.CostEntry{Ref: "listen:" + out.ID, Category: "voice", Provider: "openai", Model: providers.OpenAISpeechModel, Label: "Listening to a clip", Quantity: seconds, Unit: "seconds", Amount: seconds / 60 * providers.OpenAISpeechDollarsPerMin, Basis: costs.Rate}
+	if listener == "gemini" {
+		hearing.Model = providers.GeminiTranscribeModel
 		entry.Provider, entry.Model, entry.Amount = "gemini", providers.GeminiTranscribeModel, seconds/60*providers.GeminiTranscribeDollarsPerMin
 	}
 	if job.ProjectID != nil {
@@ -138,127 +180,83 @@ func (s *Server) heardWords(ctx context.Context, out *models.RenderOutput, job *
 		entry.SceneID = *job.SceneID
 	}
 	_ = s.database.RecordCost(entry)
-	return words
+	if err = s.database.SetRenderOutputNote(out.ID, "speech_timing", voiceJSON(hearing)); err != nil {
+		slog.Warn("what was heard in the clip was not saved", "output", out.ID, "reason", err.Error())
+	} else if fresh, e := s.database.GetRenderOutput(out.ID); e == nil {
+		out.QAJSON = fresh.QAJSON
+	}
+	hearing.Fresh = true
+	return hearing, nil
 }
 
-// speechLetters reduces text to the letters and digits that are compared, so
-// punctuation, spacing and capitals never matter; Chinese is compared character by
-// character, which is also how it is heard.
-func speechLetters(text string) []rune {
-	out := []rune{}
-	for _, r := range strings.ToLower(text) {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			out = append(out, r)
-		}
+// listenCost is what listening to seconds of a clip costs with the chosen listener.
+func (s *Server) listenCost(seconds float64) float64 {
+	if s.listener() == "gemini" {
+		return seconds / 60 * providers.GeminiTranscribeDollarsPerMin
 	}
-	return out
+	return seconds / 60 * providers.OpenAISpeechDollarsPerMin
 }
 
-// heardSpans finds when each line is spoken. Lines and words are both in order, so the
-// whole script is lined up against everything heard at once (the cheapest set of
-// insertions, deletions and substitutions); a line counts as heard when most of its
-// letters were found, and its time runs from its first heard word to its last.
-func heardSpans(lines []string, words []providers.SpokenWord) [][2]float64 {
-	spans := make([][2]float64, len(lines))
-	for i := range spans {
-		spans[i] = [2]float64{-1, -1}
-	}
-	var script, heard []rune
-	var lineOf, wordOf []int
-	for i, line := range lines {
-		for _, r := range speechLetters(line) {
-			script, lineOf = append(script, r), append(lineOf, i)
-		}
-	}
-	for i, word := range words {
-		for _, r := range speechLetters(word.Word) {
-			heard, wordOf = append(heard, r), append(wordOf, i)
-		}
-	}
-	if len(script) == 0 || len(heard) == 0 || len(script)*len(heard) > 4<<20 {
-		return spans
-	}
-	n, m := len(script), len(heard)
-	cost := make([][]int32, n+1)
-	for i := range cost {
-		cost[i] = make([]int32, m+1)
-		cost[i][0] = int32(i)
-	}
-	for j := 0; j <= m; j++ {
-		cost[0][j] = int32(j)
-	}
-	for i := 1; i <= n; i++ {
-		for j := 1; j <= m; j++ {
-			best := cost[i-1][j-1]
-			if script[i-1] != heard[j-1] {
-				best++
-			}
-			best = min(best, cost[i-1][j]+1, cost[i][j-1]+1)
-			cost[i][j] = best
-		}
-	}
-	found := make([]int, len(lines))
-	first, last := make([]int, len(lines)), make([]int, len(lines))
-	for i := range first {
-		first[i], last[i] = -1, -1
-	}
-	for i, j := n, m; i > 0 && j > 0; {
-		switch {
-		case script[i-1] == heard[j-1] && cost[i][j] == cost[i-1][j-1]:
-			line, word := lineOf[i-1], wordOf[j-1]
-			found[line]++
-			first[line] = word
-			if last[line] < 0 {
-				last[line] = word
-			}
-			i, j = i-1, j-1
-		case cost[i][j] == cost[i-1][j-1]+1:
-			i, j = i-1, j-1
-		case cost[i][j] == cost[i-1][j]+1:
-			i--
-		default:
-			j--
-		}
-	}
-	for i, line := range lines {
-		if letters := len(speechLetters(line)); letters > 0 && found[i]*5 >= letters*3 {
-			spans[i] = [2]float64{words[first[i]].Start, words[last[i]].End}
-		}
-	}
-	return spans
-}
+// Caption timing when a line is heard.
+const (
+	// captionLead shows a caption a moment before the first word; captionHold keeps it
+	// after the last, and captionMinimum is the shortest a caption is shown.
+	captionLead, captionHold, captionMinimum = 0.08, 0.3, 1.0
+	// heardWordingKept is the similarity from which a caption keeps the script's own
+	// wording; below it the caption shows what was actually said.
+	heardWordingKept = 0.8
+)
 
 // heardLines moves each caption of a clip to when its line is actually spoken. Lines
 // that were not heard keep their estimated time, kept clear of their neighbours.
 func (s *Server) heardLines(ctx context.Context, out *models.RenderOutput, job *models.RenderJob, lines []timedLine, length float64) []timedLine {
-	var request struct {
-		Sound bool `json:"generate_audio"`
-	}
-	if json.Unmarshal(job.RequestJSON, &request) != nil || !request.Sound || len(lines) == 0 {
+	if !nativeSound(job) || len(lines) == 0 {
 		return lines // silent clips get their voice (and its times) from Voice from script
 	}
 	texts := make([]string, len(lines))
 	for i, line := range lines {
 		texts[i] = line.Text
 	}
-	words := s.heardWords(ctx, out, job, lines[0].Language, strings.Join(texts, " "))
-	if len(words) == 0 {
+	hearing, err := s.clipTranscript(ctx, out, job, strings.Join(texts, " "))
+	if err != nil {
+		if err != errNoListener {
+			slog.Warn("captions keep their estimated times: the clip could not be listened to", "output", out.ID, "reason", err.Error())
+		}
 		return lines
 	}
-	spans := heardSpans(texts, words)
+	return placeHeardLines(lines, hearing.Words, length)
+}
+
+// placeHeardLines times each line by the words heard for it. A line heard close to
+// its script keeps the script's wording; one where something else was said shows what
+// was said, with the script kept in Scripted.
+func placeHeardLines(lines []timedLine, words []providers.SpokenWord, length float64) []timedLine {
 	timed := append([]timedLine{}, lines...)
-	for i, span := range spans {
-		if span[0] < 0 {
+	if len(words) == 0 {
+		return timed
+	}
+	texts := make([]string, len(lines))
+	for i, line := range lines {
+		texts[i] = line.Text
+	}
+	matches, _ := alignHeard(texts, words)
+	for i, m := range matches {
+		if !m.heard() {
 			continue
 		}
-		// Up a moment before the first word and held briefly after the last, long
-		// enough to read.
-		start := max(0, span[0]-0.08)
-		end := max(span[1]+0.3, start+1)
+		heard := joinHeard(words[m.First : m.Last+1])
+		spokenStart, spokenEnd := words[m.First].Start, words[m.Last].End
+		start := max(0, spokenStart-captionLead)
+		end := max(spokenEnd+captionHold, start+captionMinimum)
 		if length > 0 {
 			end = min(end, length)
 		}
-		timed[i].Start, timed[i].End = start, end
+		timed[i].Start, timed[i].End, timed[i].Timing = start, end, timingHeard
+		timed[i].SpokenStart, timed[i].SpokenEnd = round3(spokenStart), round3(spokenEnd)
+		timed[i].Heard, timed[i].Similarity = heard, speechSimilarity(lines[i].Text, heard)
+		if timed[i].Similarity < heardWordingKept && strings.TrimSpace(heard) != "" {
+			timed[i].Scripted, timed[i].Text = lines[i].Text, heard
+		}
 	}
 	for i := 0; i+1 < len(timed); i++ {
 		if timed[i].End > timed[i+1].Start && timed[i+1].Start > timed[i].Start {

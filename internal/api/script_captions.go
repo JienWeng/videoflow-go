@@ -25,7 +25,27 @@ type shotSpan struct {
 type timedLine struct {
 	ID, CharacterID, Language, Text string
 	Start, End                      float64
+	// Shot is the shot the line is assigned to; "" when it may fall anywhere in the clip.
+	Shot string
+	// Timing is timingHeard when the times come from the clip's own sound, otherwise
+	// timingEstimated (spread over the line's shot by length).
+	Timing string
+	// Heard is what was said where the line was found, and Similarity how close it is
+	// to the script (0-1). SpokenStart and SpokenEnd are the words themselves, without
+	// a caption's reading margins.
+	Heard                  string
+	Similarity             float64
+	SpokenStart, SpokenEnd float64
+	// Scripted is the script's line when Text shows what was heard instead.
+	Scripted string
 }
+
+// How a caption's time was found.
+const (
+	timingHeard     = "heard"     // when the line is spoken in the clip's own sound
+	timingEstimated = "estimated" // spread over the line's shot by its length
+	timingVoice     = "voice"     // when a voice-over line speaks it
+)
 
 // placeScriptLines spreads each line across its assigned shot (or the whole clip when
 // unassigned and includeUnassigned), splitting a shared window by text length.
@@ -86,7 +106,7 @@ func placeScriptLines(lines []SpokenLine, assign map[string]string, shots []shot
 			// centered in its slot, instead of stretching a short line over a long shot.
 			show := min(share, max(1.2, float64(runes)/14+0.6))
 			at := cursor + (share-show)/2
-			out = append(out, timedLine{ID: m.id, CharacterID: m.line.CharacterID, Language: m.line.Language, Text: strings.TrimSpace(m.line.Text), Start: round3(at), End: round3(at + show)})
+			out = append(out, timedLine{ID: m.id, CharacterID: m.line.CharacterID, Language: m.line.Language, Text: strings.TrimSpace(m.line.Text), Start: round3(at), End: round3(at + show), Shot: key, Timing: timingEstimated})
 			cursor += share
 		}
 	}
@@ -96,8 +116,31 @@ func placeScriptLines(lines []SpokenLine, assign map[string]string, shots []shot
 
 func round3(v float64) float64 { return float64(int64(v*1000+0.5)) / 1000 }
 
-// outputScriptLines returns script captions in the rendered video's own time.
-func (s *Server) outputScriptLines(ctx context.Context, project, outputID string) ([]timedLine, error) {
+// clipScript is a rendered clip with the script lines it should speak, at their
+// estimated times in the clip's own time.
+type clipScript struct {
+	Out    *models.RenderOutput
+	Job    *models.RenderJob
+	Scene  *models.Scene
+	Lines  []timedLine
+	Length float64
+}
+
+// outputScriptLines returns script captions in the rendered video's own time: heard
+// times when the clip has its own sound and was listened to, estimated otherwise.
+func (s *Server) outputScriptLines(ctx context.Context, project, outputID string) ([]timedLine, *clipScript, error) {
+	plan, err := s.outputScript(project, outputID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(plan.Lines) == 0 {
+		return nil, plan, fmt.Errorf("“%s” has no script lines for this clip", plan.Scene.Title)
+	}
+	return s.heardLines(ctx, plan.Out, plan.Job, plan.Lines, plan.Length), plan, nil
+}
+
+// outputScript resolves a finished scene clip and places its script lines by estimate.
+func (s *Server) outputScript(project, outputID string) (*clipScript, error) {
 	out, err := s.database.GetRenderOutput(outputID)
 	if err != nil {
 		return nil, fmt.Errorf("video not found")
@@ -164,18 +207,39 @@ func (s *Server) outputScriptLines(ctx context.Context, project, outputID string
 	// With several clips per scene, an unassigned line could belong to any of them.
 	partial := unit.Count > 1 || job.ShotID != nil
 	lines := placeScriptLines(spoken, settings.DialogueShots, spans, length, !partial)
-	if len(lines) == 0 {
-		return nil, fmt.Errorf("“%s” has no script lines for this clip", scene.Title)
-	}
-	return s.heardLines(ctx, out, job, lines, length), nil
+	return &clipScript{Out: out, Job: job, Scene: scene, Lines: lines, Length: length}, nil
+}
+
+// clipCue is a script line placed on the edit timeline, with when its words are
+// spoken there (Spoken*, -1 when not heard) and whether the clip speaks it itself.
+type clipCue struct {
+	Cue                    composition.Cue
+	SpokenStart, SpokenEnd float64
+	// Native is set when the clip was made with its own sound, so its own voices say it.
+	Native bool
+	// ClipEnd is where the clip that says it ends on the timeline.
+	ClipEnd float64
 }
 
 // scriptCuesForClip maps a rendered clip's script lines onto the edit timeline.
 func (s *Server) scriptCuesForClip(ctx context.Context, project string, clip composition.Clip) ([]composition.Cue, error) {
+	placed, err := s.clipCues(ctx, project, clip)
+	if err != nil {
+		return nil, err
+	}
+	cues := make([]composition.Cue, len(placed))
+	for i, p := range placed {
+		cues[i] = p.Cue
+	}
+	return cues, nil
+}
+
+// clipCues maps a rendered clip's script lines onto the edit timeline.
+func (s *Server) clipCues(ctx context.Context, project string, clip composition.Clip) ([]clipCue, error) {
 	if !strings.HasPrefix(clip.AssetID, "output-") {
 		return nil, fmt.Errorf("not a rendered scene video")
 	}
-	lines, err := s.outputScriptLines(ctx, project, strings.TrimPrefix(clip.AssetID, "output-"))
+	lines, plan, err := s.outputScriptLines(ctx, project, strings.TrimPrefix(clip.AssetID, "output-"))
 	if err != nil {
 		return nil, err
 	}
@@ -184,14 +248,22 @@ func (s *Server) scriptCuesForClip(ctx context.Context, project string, clip com
 		speed = 1
 	}
 	from, to := clip.Start, clip.Start+clip.Duration
-	cues := []composition.Cue{}
+	at := func(t float64) float64 { return clip.Start + (t-clip.Trim)/speed }
+	cues := []clipCue{}
 	for _, l := range lines {
-		start := max(from, clip.Start+(l.Start-clip.Trim)/speed)
-		end := min(to, clip.Start+(l.End-clip.Trim)/speed)
+		start := max(from, at(l.Start))
+		end := min(to, at(l.End))
 		if end-start < 0.3 {
 			continue // Trimmed away in this edit.
 		}
-		cues = append(cues, composition.Cue{ID: "script-" + compositionHash([]byte(clip.ID + ":" + l.ID))[:24], UtteranceID: l.ID, CharacterID: l.CharacterID, Language: l.Language, Start: round3(start), End: round3(end), Text: l.Text})
+		c := clipCue{Cue: composition.Cue{ID: "script-" + compositionHash([]byte(clip.ID + ":" + l.ID))[:24], UtteranceID: l.ID, CharacterID: l.CharacterID, Language: l.Language, Start: round3(start), End: round3(end), Text: l.Text, Timing: l.Timing, Scripted: l.Scripted}, SpokenStart: -1, SpokenEnd: -1, Native: nativeSound(plan.Job), ClipEnd: round3(to)}
+		if c.Cue.Timing == "" {
+			c.Cue.Timing = timingEstimated
+		}
+		if l.Timing == timingHeard {
+			c.SpokenStart, c.SpokenEnd = round3(max(from, at(l.SpokenStart))), round3(min(to, at(l.SpokenEnd)))
+		}
+		cues = append(cues, c)
 	}
 	return cues, nil
 }
@@ -226,7 +298,14 @@ func (s *Server) handleCompositionScriptCaptions(w http.ResponseWriter, r *http.
 	}
 	followed := s.alignCaptionsToVoice(project, captions, body.Audio)
 	sort.SliceStable(captions, func(i, j int) bool { return captions[i].Start < captions[j].Start })
-	writeJSON(w, 200, map[string]any{"captions": captions, "skipped": skipped, "voice_timed": followed})
+	timing := map[string]int{timingHeard: 0, timingEstimated: 0, timingVoice: 0, "changed": 0}
+	for _, c := range captions {
+		timing[c.Timing]++
+		if c.Scripted != "" {
+			timing["changed"]++
+		}
+	}
+	writeJSON(w, 200, map[string]any{"captions": captions, "skipped": skipped, "voice_timed": followed, "timing": timing})
 }
 
 // alignCaptionsToVoice times each caption to the voice-over clip that speaks the same
@@ -251,9 +330,14 @@ func (s *Server) alignCaptionsToVoice(project string, captions []composition.Cue
 	}
 	followed := 0
 	for i := range captions {
+		// A voice line speaks the script's words, so its caption shows them too.
 		key := strings.TrimSpace(captions[i].Text)
+		if captions[i].Scripted != "" {
+			key = strings.TrimSpace(captions[i].Scripted)
+		}
 		if clips := spoken[key]; len(clips) > 0 {
 			captions[i].Start, captions[i].End = round3(clips[0].Start), round3(clips[0].Start+clips[0].Duration)
+			captions[i].Text, captions[i].Scripted, captions[i].Timing = key, "", timingVoice
 			spoken[key] = clips[1:]
 			followed++
 		}

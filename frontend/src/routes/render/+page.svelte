@@ -236,6 +236,14 @@
     selectedId = groups.length ? groups[0].sceneId : editedVideos.length ? '__edited__' : null;
   });
 
+  // A clip made with its own sound can have its speech checked (what is said, against
+  // the script); a silent one has nothing to hear.
+  function madeWithItsOwnSound(job: RenderJob, out: RenderOutput): boolean {
+    const qa = out.qa_json && typeof out.qa_json === 'object' ? (out.qa_json as Record<string, unknown>) : {};
+    const request = job.request_json ?? {};
+    return !!qa.audio_check || !!qa.speech_timing || request.generate_audio === true || request.audio_mode === 'native';
+  }
+
   function sceneOutputs(g: SceneGroup): { job: RenderJob; out: RenderOutput }[] {
     const res: { job: RenderJob; out: RenderOutput }[] = [];
     for (const j of g.jobs) {
@@ -556,7 +564,7 @@
               <!-- Output gallery: each take is a card → open in editor -->
               {#if sceneOutputs(g).length}
                 <div class="flex flex-wrap gap-4">
-                  {#each sceneOutputs(g) as { out } (out.id)}
+                  {#each sceneOutputs(g) as { job, out } (out.id)}
                     <div class="flex-none w-[320px] {out.selected ? 'rounded-lg ring-2 ring-primary ring-offset-2 ring-offset-background' : ''}">
                       <div class="relative">
                         <VideoPreview
@@ -581,6 +589,7 @@
                         </Button>
                       </div>
                       <SelfCheck kind="clip" id={out.id} record={out.qa_json} compact />
+                      {#if madeWithItsOwnSound(job, out)}<SelfCheck kind="clip_audio" id={out.id} record={out.qa_json} compact />{/if}
 
                       <!-- Download controls (raw vs captioned). Captioned shown
                            first when available. -->

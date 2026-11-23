@@ -17,9 +17,12 @@ import (
 //	                          still fails (or is not worth retrying) stops the run and is
 //	                          shown. Manual/Auto: checked on demand, findings shown only.
 //	clips (video credits)     never made again automatically. Full auto checks every new
-//	                          clip; a "fix"/"fail" stops before joining and asks the user
-//	                          ("Re-render with this change" / "Keep it"). Manual/Auto:
-//	                          checked on demand, findings shown only.
+//	                          clip (and, for a clip made with its own sound, listens to
+//	                          it: the speech check, audio_check.go); a "fix"/"fail"
+//	                          stops before joining and asks the user ("Re-render with
+//	                          this change" or, for speech cut off, "Re-render with a
+//	                          shorter line" / "Keep it"). Manual/Auto: checked on
+//	                          demand, findings shown only.
 //
 // A check that cannot run reads as "pass", so it never holds work back.
 
@@ -112,13 +115,20 @@ func clipReviewDecision(f selfCheckFlag) chatDecision {
 	if change == "" {
 		change = "fix this: " + f.firstIssue()
 	}
+	checker, ask, label := "check", "Re-render it with a fix?", "Re-render with this change"
+	if f.Kind == selfCheckClipAudio {
+		checker = "speech check"
+		if hasIssue(f.Issues, "speech_cut_off") {
+			ask, label = "Re-render it with a shorter line?", "Re-render with a shorter line"
+		}
+	}
 	return chatDecision{
 		Mode:        decisionAsk,
 		Assumptions: []string{},
-		Question:    clip(fmt.Sprintf("The check flagged the %s: %s Re-render it with a fix? That uses video credits.", f.Label, strings.TrimRight(f.firstIssue(), ".")+"."), maxQuestionChars),
+		Question:    clip(fmt.Sprintf("The %s flagged the %s: %s %s That uses video credits.", checker, f.Label, strings.TrimRight(f.firstIssue(), ".")+".", ask), maxQuestionChars),
 		Options: []chatDecisionOption{
-			{Label: "Re-render with this change", Value: clip(fmt.Sprintf("Re-render the %s with this change: %s", f.Label, change), maxOptionValue)},
-			{Label: "Keep it", Value: clip("Keep the "+f.Label+" as it is.", maxOptionValue)},
+			{Label: label, Value: clip(fmt.Sprintf("Re-render the %s with this change: %s", strings.TrimSuffix(f.Label, "’s speech"), change), maxOptionValue)},
+			{Label: "Keep it", Value: clip("Keep the "+strings.TrimSuffix(f.Label, "’s speech")+" as it is.", maxOptionValue)},
 		},
 		Reason: askExpensive,
 		Key:    selfCheckDecisionKey(f.ID),
@@ -202,12 +212,14 @@ func currentSceneClipJobs(jobs []models.RenderJob) map[string][]models.RenderJob
 	return out
 }
 
-// stageClip is one clip the project currently uses, with its last check.
+// stageClip is one clip the project currently uses, with its last checks.
 type stageClip struct {
 	SceneID, SceneTitle, OutputID string
 	Check                         *selfCheckRecord
-	// Kept is set when the user kept the clip despite its findings.
-	Kept bool
+	// Audio is the clip's last speech check.
+	Audio *selfCheckRecord
+	// Kept and AudioKept are set when the user kept the clip despite the findings.
+	Kept, AudioKept bool
 }
 
 // stageClips lists the clips of each scene's newest finished video, in scene order.
@@ -218,8 +230,10 @@ func (s *Server) stageClips(scenes []stageScene, jobs []models.RenderJob, decisi
 		for _, job := range current[sc.ID] {
 			outs, _ := s.database.ListOutputsForJob(job.ID) // an unreadable clip has no check to show
 			for _, out := range outs {
-				c := stageClip{SceneID: sc.ID, SceneTitle: sc.Title, OutputID: out.ID, Check: storedSelfCheck(out.QAJSON)}
-				c.Kept = clipKeptInLog(decisions, out.ID) || c.Check != nil && c.Check.AcceptedAt != nil
+				c := stageClip{SceneID: sc.ID, SceneTitle: sc.Title, OutputID: out.ID, Check: storedSelfCheck(out.QAJSON), Audio: storedAudioCheck(out.QAJSON)}
+				kept := clipKeptInLog(decisions, out.ID)
+				c.Kept = kept || c.Check != nil && c.Check.AcceptedAt != nil
+				c.AudioKept = kept || c.Audio != nil && c.Audio.AcceptedAt != nil
 				clips = append(clips, c)
 			}
 		}
@@ -227,13 +241,17 @@ func (s *Server) stageClips(scenes []stageScene, jobs []models.RenderJob, decisi
 	return clips
 }
 
-// flagged says whether the clip's check found problems the user has not settled.
-func (c stageClip) flagged() bool {
-	return c.Check != nil && !c.Check.passes() && !c.Kept
-}
+// flagged says whether the clip's checks found problems the user has not settled.
+func (c stageClip) flagged() bool { return c.lookFlagged() || c.speechFlagged() }
+
+// lookFlagged is the frames check's part, speechFlagged the speech check's.
+func (c stageClip) lookFlagged() bool   { return c.Check != nil && !c.Check.passes() && !c.Kept }
+func (c stageClip) speechFlagged() bool { return c.Audio != nil && !c.Audio.passes() && !c.AudioKept }
 
 // stageFinding is one clip's check as the review stage shows it.
 type stageFinding struct {
+	// Kind is clip (the frames) or clip_audio (the speech check).
+	Kind     string           `json:"kind"`
 	SceneID  string           `json:"scene_id"`
 	OutputID string           `json:"output_id"`
 	Label    string           `json:"label"`
@@ -418,6 +436,20 @@ func (a *autopilotRunner) checkClips(ctx context.Context) []selfCheckFlag {
 				if err == nil && clipSelfCheckStep(true, record, clipKeptInLog(decisions, out.ID)) == selfCheckAsk {
 					flagged = append(flagged, newSelfCheckFlag(t, record))
 				}
+				// A clip with its own sound is listened to: were the lines said, whole,
+				// in the right language? The transcript is kept for the captions.
+				if !nativeSound(&job) {
+					continue
+				}
+				heard, err := a.s.clipAudioTarget(a.project, out.ID)
+				if err != nil {
+					continue
+				}
+				a.stage("Listening to the " + t.Label)
+				record, _, err = a.s.runSelfCheck(ctx, heard, selfCheckOptions{})
+				if err == nil && clipSelfCheckStep(true, record, clipKeptInLog(decisions, out.ID)) == selfCheckAsk {
+					flagged = append(flagged, newSelfCheckFlag(heard, record))
+				}
 			}
 		}
 	}
@@ -433,12 +465,18 @@ func (a *autopilotRunner) clipReviewResult(flagged []selfCheckFlag) map[string]a
 
 // --- The chat turn ---
 
-// flaggedClips are the clips whose check found problems the user has not settled.
+// flaggedClips are the clips whose checks found problems the user has not settled.
 func flaggedClips(clips []stageClip) []selfCheckFlag {
 	out := []selfCheckFlag{}
+	flag := func(c stageClip, kind, label string, r *selfCheckRecord) selfCheckFlag {
+		return selfCheckFlag{Kind: kind, ID: c.OutputID, Label: label, SceneID: c.SceneID, Verdict: r.Result.Verdict, Score: r.Result.Score, Issues: r.Result.Issues, Change: r.Result.Retry.Change, Suggestion: r.Result.Suggestion, Attempt: r.Attempt}
+	}
 	for _, c := range clips {
-		if c.flagged() {
-			out = append(out, selfCheckFlag{Kind: selfCheckClip, ID: c.OutputID, Label: "“" + c.SceneTitle + "” clip", SceneID: c.SceneID, Verdict: c.Check.Result.Verdict, Score: c.Check.Result.Score, Issues: c.Check.Result.Issues, Change: c.Check.Result.Retry.Change, Suggestion: c.Check.Result.Suggestion, Attempt: c.Check.Attempt})
+		if c.lookFlagged() {
+			out = append(out, flag(c, selfCheckClip, "“"+c.SceneTitle+"” clip", c.Check))
+		}
+		if c.speechFlagged() {
+			out = append(out, flag(c, selfCheckClipAudio, "“"+c.SceneTitle+"” clip’s speech", c.Audio))
 		}
 	}
 	return out
@@ -482,7 +520,7 @@ func (s *Server) flaggedPictures(projectID string, chars []models.Character, sce
 // clipFlagged says whether a clip the self-check flagged is waiting on the user.
 func (t *chatTurn) clipFlagged() bool {
 	for _, f := range t.selfChecks {
-		if f.Kind == selfCheckClip {
+		if f.Kind == selfCheckClip || f.Kind == selfCheckClipAudio {
 			return true
 		}
 	}
@@ -490,7 +528,7 @@ func (t *chatTurn) clipFlagged() bool {
 }
 
 // selfCheckRule tells the planner how to speak to the self-check's findings.
-const selfCheckRule = "Findings of the app's own check of pictures and clips (looked at by the local AI session, no credits). Speak to them plainly when relevant. For a flagged clip, ask once with decision mode ask, reason expensive, key decision_key, options \"Re-render with this change\" (value: re-render that scene with the change) and \"Keep it\"; never re-render it yourself. Sound and lip-sync were not checked: frames carry no sound, so never claim anything about them."
+const selfCheckRule = "Findings of the app's own checks of pictures and clips: kind clip is the frames, looked at by the local AI session (no credits); kind clip_audio is the speech check, which listened to the clip's sound and compared it with the script (said or not, the words, the language, cut off at the end). Speak to them plainly when relevant. For a flagged clip, ask once with decision mode ask, reason expensive, key decision_key, options \"Re-render with this change\" (or \"Re-render with a shorter line\" when speech was cut off; value: re-render that scene with the change) and \"Keep it\"; never re-render it yourself. Lip-sync is never checked, and without a clip_audio finding nothing was heard, so never claim anything about the sound."
 
 // chatSelfCheck is the self-check part of a chat turn's context.
 func chatSelfCheck(flags []selfCheckFlag) map[string]any {

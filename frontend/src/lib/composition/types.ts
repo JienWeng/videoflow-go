@@ -43,6 +43,11 @@ export type Cue = {
   character_id?: string;
   language?: string;
   source_clip_id?: string;
+  /** How the time was found: when the words are heard in the clip, estimated per
+   * shot, or when a voice-over line speaks it. */
+  timing?: 'heard' | 'estimated' | 'voice';
+  /** The script's wording when `text` shows what was actually said instead. */
+  scripted?: string;
 };
 
 export type TextLayer = {
@@ -119,9 +124,33 @@ export type VoiceLine = {
   asset_id: string;
   start: number;
   duration: number;
+  /** The whole voice file; `duration` may stop a few milliseconds short to fit. */
+  original_duration?: number;
   text: string;
   speaker: string;
   cached: boolean;
+  /** "heard" when placed where the character says the line in the clip. */
+  timing?: string;
+  slot?: number;
+  tempo?: number;
+};
+
+/** How voice lines treat the voices a clip was made with. */
+export type VoiceSound = {
+  mode: 'keep' | 'replace';
+  /** Clips that speak with their own voices, and those to mute. */
+  native: string[];
+  mute: string[];
+  lowerMusic: boolean;
+};
+
+/** POST /compositions/voiceover/status */
+export type VoiceoverStatus = {
+  native: { clip_id: string; output_id: string; check: 'passed' | 'flagged' | 'kept' | 'unchecked'; finding?: string }[];
+  verified: number;
+  flagged: number;
+  unchecked: number;
+  recommended: 'keep' | 'replace';
 };
 
 /** POST /compositions/voiceover */
@@ -132,4 +161,11 @@ export type VoiceoverResult = {
   reused: number;
   shifted: number;
   overrun: number;
+  mode?: 'keep' | 'replace';
+  native_clip_ids?: string[];
+  mute_clip_ids?: string[];
+  kept_native?: number;
+  too_long?: { text: string; speaker: string; start: number; duration: number; slot: number; tempo_needed: number; fits_with_speed_up: boolean }[];
+  sped_up?: number;
+  speed_up_limit?: number;
 };

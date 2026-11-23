@@ -533,11 +533,17 @@ func reviewStage(in stageInputs) projectStage {
 	st.Optional = true
 	flagged, checked, passed := []stageClip{}, 0, 0
 	for _, c := range in.Clips {
-		if c.Check == nil {
+		if c.Check == nil && c.Audio == nil {
 			continue
 		}
 		checked++
-		st.Findings = append(st.Findings, stageFinding{SceneID: c.SceneID, OutputID: c.OutputID, Label: "“" + c.SceneTitle + "” clip", Verdict: c.Check.Result.Verdict, Score: c.Check.Result.Score, Issues: c.Check.Result.Issues, Change: c.Check.Result.Retry.Change, Kept: c.Kept, Note: c.Check.Result.Note})
+		label := "“" + c.SceneTitle + "” clip"
+		if c.Check != nil {
+			st.Findings = append(st.Findings, stageFinding{Kind: selfCheckClip, SceneID: c.SceneID, OutputID: c.OutputID, Label: label, Verdict: c.Check.Result.Verdict, Score: c.Check.Result.Score, Issues: c.Check.Result.Issues, Change: c.Check.Result.Retry.Change, Kept: c.Kept, Note: c.Check.Result.Note})
+		}
+		if c.Audio != nil {
+			st.Findings = append(st.Findings, stageFinding{Kind: selfCheckClipAudio, SceneID: c.SceneID, OutputID: c.OutputID, Label: label + "’s speech", Verdict: c.Audio.Result.Verdict, Score: c.Audio.Result.Score, Issues: c.Audio.Result.Issues, Change: c.Audio.Result.Retry.Change, Kept: c.AudioKept, Note: c.Audio.Result.Note})
+		}
 		if c.flagged() {
 			flagged = append(flagged, c)
 		} else {
@@ -552,12 +558,26 @@ func reviewStage(in stageInputs) projectStage {
 		st.Status = statusNotStarted
 	case len(flagged) > 0:
 		st.Status = statusBlocked
+		number := map[string]int{}
+		for i, c := range in.Clips {
+			number[c.OutputID] = i + 1
+		}
 		for _, c := range flagged {
-			detail := "it doesn't match the scene"
-			if len(c.Check.Result.Issues) > 0 {
-				detail = strings.TrimRight(c.Check.Result.Issues[0].Detail, ".")
+			if c.lookFlagged() {
+				detail := "it doesn't match the scene"
+				if len(c.Check.Result.Issues) > 0 {
+					detail = strings.TrimRight(c.Check.Result.Issues[0].Detail, ".")
+				}
+				st.Missing = append(st.Missing, fmt.Sprintf("the check flagged the “%s” clip (%s): %s", c.SceneTitle, c.Check.Result.Verdict, detail))
 			}
-			st.Missing = append(st.Missing, fmt.Sprintf("the check flagged the “%s” clip (%s): %s", c.SceneTitle, c.Check.Result.Verdict, detail))
+			if c.speechFlagged() {
+				detail := "what is said doesn't match the script"
+				if len(c.Audio.Result.Issues) > 0 {
+					detail = strings.TrimRight(c.Audio.Result.Issues[0].Detail, ".")
+				}
+				// "clip 3 (“Chase”): speech cut off at 7.9 s: …"
+				st.Missing = append(st.Missing, fmt.Sprintf("clip %d (“%s”): %s", number[c.OutputID], c.SceneTitle, lowerFirst(detail)))
+			}
 		}
 		st.Next = &stageAction{Action: "watch_videos", Label: "Look at the flagged clips", SceneIDs: stageClipScenes(flagged), Reversible: true, Cost: stageCost{Class: costFree, Note: "re-rendering a clip uses video credits and is always your choice"}}
 	case in.Reviewed || editIsCurrent(in) || len(in.Clips) > 0 && passed == len(in.Clips):
@@ -567,6 +587,17 @@ func reviewStage(in stageInputs) projectStage {
 		st.Next = &stageAction{Action: "watch_videos", Label: "Watch the scene videos", Reversible: true, Cost: stageCost{Class: costFree}}
 	}
 	return st
+}
+
+// lowerFirst starts a finding lower-case to follow a colon, unless it starts with a
+// name ("Omni spoke …").
+func lowerFirst(text string) string {
+	word, _, _ := strings.Cut(text, " ")
+	switch word {
+	case "Speech", "Line", "No", "The":
+		return strings.ToLower(word[:1]) + text[1:]
+	}
+	return text
 }
 
 // stageClipScenes are the scenes of clips, each once.
