@@ -33,7 +33,7 @@ func (s *Server) prepareMediaSettings(ctx context.Context, body map[string]any) 
 		if raw, ok := body[providerKey]; ok {
 			var valid bool
 			provider, valid = raw.(string)
-			if !valid || (provider != "openrouter" && provider != "fal" && provider != "byteplus" && provider != "gemini" && provider != "openai" && !providers.VideoHost(provider)) || (kind == "image" && (provider == "byteplus" || providers.VideoHost(provider))) || (kind == "video" && (provider == "gemini" || provider == "openai")) {
+			if !valid || (provider != "openrouter" && provider != "fal" && provider != "byteplus" && provider != "gemini" && provider != "openai" && !providers.VideoHost(provider)) || (kind == "image" && (provider == "byteplus" || providers.VideoHost(provider))) || (kind == "video" && provider == "openai") {
 				return fmt.Errorf("unsupported %s provider", kind)
 			}
 			// OpenAI is picked automatically whenever its key is saved; choosing it by hand only

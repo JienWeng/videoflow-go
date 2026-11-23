@@ -34,6 +34,8 @@ type mediaHTTP struct {
 	key, base, provider, auth string
 	// header, when set, carries the bare key instead of Authorization (Google's x-goog-api-key).
 	header string
+	// limit caps a response body; zero means 8 MiB.
+	limit  int64
 	client *http.Client
 }
 
@@ -70,11 +72,15 @@ func (c *mediaHTTP) requestBody(ctx context.Context, method, path, contentType s
 		return nil, fmt.Errorf("%s request failed: %w", c.provider, err)
 	}
 	defer res.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(res.Body, (8<<20)+1))
+	limit := c.limit
+	if limit <= 0 {
+		limit = 8 << 20
+	}
+	data, err := io.ReadAll(io.LimitReader(res.Body, limit+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(data) > 8<<20 {
+	if int64(len(data)) > limit {
 		return nil, fmt.Errorf("%s response too large", c.provider)
 	}
 	if res.StatusCode < 200 || res.StatusCode >= 300 {

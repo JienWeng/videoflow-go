@@ -2,9 +2,11 @@ package api
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"strings"
 	"testing"
 	"videoflow-go/internal/providers"
@@ -113,5 +115,72 @@ func TestVoiceMatchDeterministicAndHonestWithoutMatches(t *testing.T) {
 	v, reason := voiceMatch([]providers.SpeechVoice{{ID: "b", Name: "One"}, {ID: "a", Name: "Two"}}, "unmatched trait")
 	if v.ID != "a" || !strings.Contains(reason, "No descriptive match") {
 		t.Fatal(v, reason)
+	}
+}
+
+// Google Gemini speaks with its prebuilt voices on the saved Gemini key; picking one
+// asks Google nothing.
+func TestGeminiVoicesUseTheGeminiKey(t *testing.T) {
+	s := voiceFixture(t, func(w http.ResponseWriter, r *http.Request) { t.Error("Gemini voices used fal") })
+	s.cfg.GeminiAPIKey = ""
+	c := voiceCharacter(t, s)
+	if r := call(t, s, "PUT", "/voice/preferences", `{"primary_provider":"gemini"}`); r.Code != 400 {
+		t.Fatalf("Gemini chosen without a key: %d", r.Code)
+	}
+	setup := call(t, s, "GET", "/ai/setup", "")
+	if !strings.Contains(setup.Body.String(), `{"id":"gemini","label":"Google Gemini","ready":false}`) {
+		t.Fatalf("voice options = %s", setup.Body.String())
+	}
+	s.cfg.GeminiAPIKey = "gemini-fixture"
+	models := call(t, s, "GET", "/voice/catalog/gemini/models", "")
+	if models.Code != 200 || !strings.Contains(models.Body.String(), `"id":"gemini-3.8-flash-tts"`) || strings.Contains(models.Body.String(), "2.5") {
+		t.Fatalf("models = %d %s", models.Code, models.Body.String())
+	}
+	voices := call(t, s, "GET", "/voice/catalog/gemini/voices?character_id="+c+"&search=firm", "")
+	if voices.Code != 200 || !strings.Contains(voices.Body.String(), `"id":"Kore"`) || strings.Contains(voices.Body.String(), `"id":"Puck"`) {
+		t.Fatalf("voices = %d %s", voices.Code, voices.Body.String())
+	}
+	if r := call(t, s, "PUT", "/voice/preferences", `{"primary_provider":"gemini"}`); r.Code != 200 {
+		t.Fatalf("choose gemini: %d %s", r.Code, r.Body.String())
+	}
+	if r := call(t, s, "PUT", "/voice/profiles/"+c, `{"revision":0,"data":{"provider":"gemini","model":"auto","voice_id":"Kore","approved":true}}`); r.Code != 200 {
+		t.Fatalf("save voice: %d %s", r.Code, r.Body.String())
+	}
+	if model, err := s.resolveSpeechModel(context.Background(), "gemini", "auto", "ms"); err != nil || model != "gemini-3.8-flash-tts" {
+		t.Fatalf("auto model = %q %v", model, err)
+	}
+	state := call(t, s, "GET", "/voice/state", "")
+	if !strings.Contains(state.Body.String(), `"primary_provider":"gemini"`) {
+		t.Fatalf("state = %s", state.Body.String())
+	}
+	if !strings.Contains(call(t, s, "GET", "/ai/setup", "").Body.String(), `"provider":"gemini","ready":true,"service":"Google Gemini"`) {
+		t.Fatal("AI setup does not show Gemini as the voice")
+	}
+}
+
+// Google's WAV speech is kept as MP3 like every other voice line.
+func TestGeminiSpeechWAVBecomesMP3(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg is not installed")
+	}
+	samples := 24000 / 2 // half a second of 24 kHz mono 16-bit silence
+	wav := append([]byte("RIFF"), binary.LittleEndian.AppendUint32(nil, uint32(36+samples*2))...)
+	wav = append(wav, "WAVEfmt "...)
+	wav = binary.LittleEndian.AppendUint32(wav, 16)
+	wav = binary.LittleEndian.AppendUint16(wav, 1)
+	wav = binary.LittleEndian.AppendUint16(wav, 1)
+	wav = binary.LittleEndian.AppendUint32(wav, 24000)
+	wav = binary.LittleEndian.AppendUint32(wav, 48000)
+	wav = binary.LittleEndian.AppendUint16(wav, 2)
+	wav = binary.LittleEndian.AppendUint16(wav, 16)
+	wav = append(wav, "data"...)
+	wav = binary.LittleEndian.AppendUint32(wav, uint32(samples*2))
+	wav = append(wav, make([]byte, samples*2)...)
+	mp3, err := wavToMP3(context.Background(), wav)
+	if err != nil || len(mp3) == 0 || http.DetectContentType(mp3) != "audio/mpeg" {
+		t.Fatalf("mp3 = %d bytes (%s), %v", len(mp3), http.DetectContentType(mp3), err)
+	}
+	if _, err = wavToMP3(context.Background(), []byte("not audio")); err == nil {
+		t.Fatal("garbage became MP3")
 	}
 }

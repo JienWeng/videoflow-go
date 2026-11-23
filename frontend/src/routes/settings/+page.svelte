@@ -152,7 +152,7 @@
     try {
       const result = await get<ModelList>(
         providerEndpoint(name, 'models') +
-          (name === 'fal' ? '?modality=all' : name === 'byteplus' ? '?modality=video' : name === 'gemini' ? '?modality=image' : '')
+          (name === 'fal' ? '?modality=all' : name === 'byteplus' ? '?modality=video' : name === 'gemini' ? '?modality=all' : '')
       );
       if (result.error) {
         toast.error(result.error);

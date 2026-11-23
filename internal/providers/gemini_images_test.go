@@ -154,8 +154,8 @@ func TestGeminiImageModelsAndValidation(t *testing.T) {
 	if strings.Join(ids, ",") != "gemini-3-pro-image,gemini-3.1-flash-image,gemini-2.5-flash-image" {
 		t.Fatalf("catalog = %v", ids)
 	}
-	if video, _ := client.Models(context.Background(), "video"); len(video) != 0 {
-		t.Fatal("Gemini must not list video models")
+	if video, _ := client.Models(context.Background(), "video"); len(video) != 1 || video[0].ID != GeminiVideoModel {
+		t.Fatalf("Gemini video catalog = %v", video)
 	}
 	pro, err := client.Model(context.Background(), "gemini-3-pro-image", "image")
 	if err != nil {
@@ -210,8 +210,8 @@ func TestGeminiImageModelsAndValidation(t *testing.T) {
 			t.Errorf("rejected %v: %v", payload, err)
 		}
 	}
-	if err := client.ValidateVideo(context.Background(), nil); err == nil {
-		t.Fatal("Gemini accepted a video")
+	if err := client.ValidateVideo(context.Background(), map[string]any{"model": GeminiImageModel, "prompt": "x"}); err == nil {
+		t.Fatal("Gemini accepted a picture model for video")
 	}
 }
 

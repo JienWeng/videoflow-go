@@ -30,7 +30,7 @@ var presetCatalog = map[string]ProviderPresetInfo{
 	"fish":       {Label: "Fish Audio", Protocol: "speech", URL: providers.FishURL, DefaultModel: "s2.1-pro", SuggestedModels: []string{"s2.1-pro", "s2.1-pro-free", "s2-pro"}, EnvKey: "FISH_API_KEY"},
 	"fal":        {Label: "fal.ai", Protocol: "media", URL: providers.FalURL, DefaultModel: providers.FalVideoModel, SuggestedModels: []string{providers.FalVideoModel, providers.FalImageModel}, EnvKey: "FAL_KEY"},
 	"openai":     {Label: "OpenAI Images", Protocol: "image", URL: providers.OpenAIURL, DefaultModel: providers.OpenAIImageModel, SuggestedModels: []string{providers.OpenAIImageModel}, EnvKey: "OPENAI_API_KEY"},
-	"gemini":     {Label: "Google Gemini", Protocol: "image", URL: providers.GeminiURL, DefaultModel: providers.GeminiImageModel, SuggestedModels: geminiModelIDs(), EnvKey: "GEMINI_API_KEY"},
+	"gemini":     {Label: "Google Gemini", Protocol: "media", URL: providers.GeminiURL, DefaultModel: providers.GeminiImageModel, SuggestedModels: geminiModelIDs(), EnvKey: "GEMINI_API_KEY"},
 	"byteplus":   {Label: "BytePlus ModelArk (Seedance)", Protocol: "video", URL: providers.BytePlusURL, DefaultModel: providers.BytePlusVideoModel, SuggestedModels: []string{providers.BytePlusVideoModel}, EnvKey: "BYTEPLUS_API_KEY"},
 	"openrouter": {Label: "OpenRouter", Protocol: "chat", URL: providers.OpenRouterURL, DefaultModel: "openai/gpt-4o-mini", SuggestedModels: []string{"openai/gpt-4o-mini", "meta-llama/llama-3.3-70b-instruct"}, EnvKey: "OPENROUTER_API_KEY"},
 }
@@ -40,7 +40,7 @@ func geminiModelIDs() []string {
 	for _, m := range providers.GeminiImageModels {
 		ids = append(ids, m.ID)
 	}
-	return ids
+	return append(ids, providers.GeminiVideoModel)
 }
 
 func init() {
@@ -153,6 +153,12 @@ func (s *Server) handlePutAppSettings(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), 400)
 				return
 			}
+		}
+	}
+	if raw, ok := body["listen_provider"]; ok {
+		if value, valid := raw.(string); !valid || (value != "openai" && value != "gemini") {
+			http.Error(w, "choose OpenAI or Google Gemini to listen to clips", 400)
+			return
 		}
 	}
 	if raw, ok := body["default_scene_duration"]; ok {
@@ -423,6 +429,9 @@ func (s *Server) handleVerifyModel(w http.ResponseWriter, r *http.Request) {
 			body.Modality = "video"
 		} else if name == "gemini" {
 			body.Modality = "image"
+			if body.Model == providers.GeminiVideoModel {
+				body.Modality = "video"
+			}
 		} else if name == "fal" {
 			body.Modality = "video"
 			if strings.HasPrefix(body.Model, providers.FalImageModel) {

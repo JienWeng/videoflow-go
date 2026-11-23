@@ -99,3 +99,79 @@ to `https://generativelanguage.googleapis.com/v1beta` with the key in the
 `x-goog-api-key` header. Pictures are requested at Google's default 1K size and
 cost about $0.134, $0.067 and $0.039 each respectively. Settings checks
 configuration without generating an image.
+
+### Google Gemini video (Gemini Omni Flash)
+
+The same Google Gemini key also makes scene videos. In **Settings → AI setup →
+Video**, choose the model **Gemini Omni Flash (Google)**. Google Gemini then
+appears as its only service. It shows "(no key saved)" until the key is saved.
+Google no longer offers Veo through the Gemini API: the Veo 3.1 previews shut
+down on 22 October 2026, and Google names `gemini-omni-1.2-flash` as the
+replacement. That is the model VideoFlow uses.
+
+Clips go to the Interactions API (`POST /v1beta/interactions`) as a background
+interaction. The key travels only in the `x-goog-api-key` header. VideoFlow then
+polls `GET /v1beta/interactions/{id}` every few seconds, within the usual
+30-minute job limit, and saves the finished MP4. When Google keeps the clip in
+its Files API instead, it is downloaded from Google's API host with the key in
+the header. A redirect to any other host is followed without the key.
+
+What a clip can be:
+
+| Setting | Gemini Omni Flash |
+|---|---|
+| Length | 3–15 seconds; 3–10 seconds with a first and last frame |
+| Shape | 16:9 or 9:16 |
+| Size | 360p, 720p (default), 1080p or 4K (the last two are upscaled by Google) |
+| Pictures | a first frame, a first and last frame, or up to 6 reference pictures |
+| Sound | always on; a silent scene is asked for silence in its prompt |
+
+A seed, voice recordings, other shapes or sizes, and longer clips are refused
+before anything is sent.
+
+Google bills the video as output tokens at $12.00 per million. The quote uses
+Google's own per-second rate: about $0.023 at 360p, $0.070 at 720p, $0.104 at
+1080p and $0.209 at 4K. The input prompt and pictures add well under a cent per
+clip and are left out. Prices were checked on 23 November 2026.
+
+### Google Gemini voices
+
+The Google Gemini key also speaks narration and character lines. Choose
+**Google Gemini** as the voice service in **Settings → AI setup → Voice**, or per
+character in **Voices**. It shows "(no key saved)" until the key is saved. The
+voice list is Google's 30 prebuilt voices, such as Kore (firm), Puck (upbeat)
+and Sulafat (warm). Searching filters them by name and style, and choosing one
+asks Google nothing. Google detects the language from the text.
+
+Speech uses `gemini-3.8-flash-tts` (the default) or `gemini-3.8-flash-lite-tts`
+through the Interactions API, with the key in the `x-goog-api-key` header. The
+2.5 and 3.1 preview TTS models shut down on 18 December 2026 and are not offered.
+Google returns WAV, which VideoFlow converts to MP3 with FFmpeg, as it keeps
+every other voice line. Lines are cached by voice and text, so an unchanged line
+is never paid for twice.
+
+Google bills speech per million tokens: $0.50 for the text and $9.00 (Flash) or
+$6.00 (Flash-Lite) for the audio, at 25 audio tokens per second. Both prices
+double on 1 January 2027, and the cost page uses the price in force on the day
+the line was made. A ten-second line costs about $0.002. A character's voice
+sample can be spoken by a Gemini voice, the same as with the other services.
+
+### Google Gemini listening (caption timing)
+
+Captions on clips with their own sound are placed where the words are actually
+heard. VideoFlow listens to the clip once and remembers the answer. **Settings →
+AI setup → Listening to audio** chooses who listens: OpenAI (`whisper-1`) or
+Google Gemini (`gemini-3.5-transcribe`, with word-level timestamps, on the
+Gemini key). A service without a key shows "(no key saved)". With none chosen,
+OpenAI listens when its key is saved, and otherwise Google Gemini does.
+
+Gemini receives the clip's audio inline as WAV through the Interactions API,
+with the key in the `x-goog-api-key` header. The script still supplies the
+words, and only the times are used. Google notes that word timestamps can lower
+transcription accuracy, and that they cannot be combined with a vocabulary
+hint, so none is sent. It costs about $0.005 per minute of audio (Google's
+estimate of $0.003 in plus $0.002 out).
+
+Looking at pictures still uses OpenRouter. The picture checks rely on
+OpenRouter's structured answers, so moving them to Gemini would need a separate
+change.

@@ -193,7 +193,7 @@ func (r Resolver) DefaultMediaModel(provider, kind string) string {
 		return providers.OpenAIImageModel
 	case "gemini":
 		if kind == "video" {
-			return ""
+			return providers.GeminiVideoModel
 		}
 		return providers.GeminiImageModel
 	case "fal":

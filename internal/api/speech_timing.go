@@ -23,7 +23,11 @@ import (
 // listenToClip returns the words heard in a clip's sound and how many seconds were
 // listened to. Tests replace it.
 var listenToClip = func(s *Server, ctx context.Context, video, language, hint string) ([]providers.SpokenWord, float64, error) {
-	key, endpoint, _, err := s.routes().Credentials("openai")
+	listener := s.listener()
+	key, endpoint, _, err := s.routes().Credentials(listener)
+	if err != nil && strings.Contains(err.Error(), "not configured") {
+		return nil, 0, errNoListener
+	}
 	if err != nil {
 		return nil, 0, err
 	}
@@ -43,7 +47,14 @@ var listenToClip = func(s *Server, ctx context.Context, video, language, hint st
 	if err != nil {
 		return nil, 0, err
 	}
-	words, err := providers.NewOpenAIImages(key, endpoint, "").TranscribeWords(ctx, audio, language, hint)
+	var words []providers.SpokenWord
+	if listener == "gemini" {
+		// Google's word timestamps cannot be combined with a vocabulary hint; the script
+		// still supplies the words.
+		words, err = providers.GeminiTranscribeWords(ctx, key, endpoint, audio, language)
+	} else {
+		words, err = providers.NewOpenAIImages(key, endpoint, "").TranscribeWords(ctx, audio, language, hint)
+	}
 	// 16 kHz mono 16-bit audio is 32,000 bytes a second.
 	return words, float64(len(audio)) / 32000, err
 }
@@ -52,7 +63,22 @@ type listenerError string
 
 func (e listenerError) Error() string { return string(e) }
 
-const errNoListener = listenerError("no OpenAI key is saved, so captions keep their estimated times")
+const errNoListener = listenerError("no OpenAI or Google Gemini key is saved, so captions keep their estimated times")
+
+// listener is the service that listens to clips: the one chosen in AI setup, or with
+// none chosen, OpenAI when its key is saved and otherwise Google Gemini when its key is.
+func (s *Server) listener() string {
+	routes := s.routes()
+	if chosen := routes.Setting("listen_provider", ""); chosen == "openai" || chosen == "gemini" {
+		return chosen
+	}
+	for _, name := range []string{"openai", "gemini"} {
+		if key, _, _, err := routes.Credentials(name); err == nil && strings.TrimSpace(key) != "" {
+			return name
+		}
+	}
+	return "openai"
+}
 
 // speechCode is the language code the listener takes; empty lets it detect the language.
 func speechCode(language string) string {
@@ -102,6 +128,9 @@ func (s *Server) heardWords(ctx context.Context, out *models.RenderOutput, job *
 		slog.Warn("heard caption times were not saved", "output", out.ID, "reason", err.Error())
 	}
 	entry := db.CostEntry{Ref: "listen:" + out.ID, Category: "voice", Provider: "openai", Model: providers.OpenAISpeechModel, Label: "Caption timing", Quantity: seconds, Unit: "seconds", Amount: seconds / 60 * providers.OpenAISpeechDollarsPerMin, Basis: costs.Rate}
+	if s.listener() == "gemini" {
+		entry.Provider, entry.Model, entry.Amount = "gemini", providers.GeminiTranscribeModel, seconds/60*providers.GeminiTranscribeDollarsPerMin
+	}
 	if job.ProjectID != nil {
 		entry.ProjectID = *job.ProjectID
 	}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 )
 
 // Google Gemini image generation (Nano Banana) through the Gemini API's generateContent.
@@ -48,9 +49,14 @@ func geminiModelInfo(id string) *GeminiImageModelInfo {
 	return nil
 }
 
+// GeminiImages is the Google Gemini media client: pictures through generateContent and
+// video through the Interactions API (gemini_video.go), on the same saved key.
 type GeminiImages struct {
 	http  mediaHTTP
 	model string
+	// video holds the last finished clip read while polling, so it is not fetched twice.
+	videoMu sync.Mutex
+	video   geminiFinishedVideo
 }
 
 func NewGeminiImages(key, endpoint, model string) *GeminiImages {
@@ -60,6 +66,9 @@ func NewGeminiImages(key, endpoint, model string) *GeminiImages {
 }
 
 func (c *GeminiImages) Model(_ context.Context, id, modality string) (*Model, error) {
+	if modality == "video" {
+		return geminiVideoModel(id)
+	}
 	info := geminiModelInfo(id)
 	if info == nil || modality != "image" {
 		return nil, fmt.Errorf("Google Gemini model %q is not a supported image model", id)
@@ -75,10 +84,14 @@ func (c *GeminiImages) Model(_ context.Context, id, modality string) (*Model, er
 }
 
 func (c *GeminiImages) Models(ctx context.Context, modality string) ([]Model, error) {
-	if modality != "image" && modality != "all" {
-		return []Model{}, nil
-	}
 	models := []Model{}
+	if modality == "video" || modality == "all" {
+		m, _ := geminiVideoModel(GeminiVideoModel)
+		models = append(models, *m)
+	}
+	if modality != "image" && modality != "all" {
+		return models, nil
+	}
 	for _, info := range GeminiImageModels {
 		m, _ := c.Model(ctx, info.ID, "image")
 		models = append(models, *m)
@@ -169,6 +182,23 @@ var geminiReasons = map[string]string{
 	"OTHER":                    "the request could not be completed",
 }
 
+// geminiHTTPError shortens Google's JSON error body to its status and message.
+func geminiHTTPError(err error) error {
+	var httpErr *HTTPError
+	if errors.As(err, &httpErr) {
+		var detail struct {
+			Error struct {
+				Message string `json:"message"`
+				Status  string `json:"status"`
+			} `json:"error"`
+		}
+		if json.Unmarshal([]byte(httpErr.Message), &detail) == nil && detail.Error.Message != "" {
+			httpErr.Message = strings.TrimSpace(detail.Error.Status + " " + detail.Error.Message)
+		}
+	}
+	return err
+}
+
 func geminiReason(code string) string {
 	if reason := geminiReasons[code]; reason != "" {
 		return reason + " (" + code + ")"
@@ -201,19 +231,7 @@ func (c *GeminiImages) GenerateImages(ctx context.Context, payload map[string]an
 	}
 	response, err := c.http.request(ctx, http.MethodPost, "/models/"+model+":generateContent", body)
 	if err != nil {
-		var httpErr *HTTPError
-		if errors.As(err, &httpErr) {
-			var detail struct {
-				Error struct {
-					Message string `json:"message"`
-					Status  string `json:"status"`
-				} `json:"error"`
-			}
-			if json.Unmarshal([]byte(httpErr.Message), &detail) == nil && detail.Error.Message != "" {
-				httpErr.Message = strings.TrimSpace(detail.Error.Status + " " + detail.Error.Message)
-			}
-		}
-		return nil, err
+		return nil, geminiHTTPError(err)
 	}
 	var result struct {
 		Candidates []struct {
@@ -274,17 +292,4 @@ func (c *GeminiImages) GenerateImages(ctx context.Context, payload map[string]an
 		return nil, fmt.Errorf("Google Gemini returned an unsupported picture type %q", mediaType)
 	}
 	return []GeneratedImage{{Data: data, MediaType: mediaType, Usage: result.UsageMetadata}}, nil
-}
-
-func (c *GeminiImages) ValidateVideo(context.Context, map[string]any) error {
-	return fmt.Errorf("Google Gemini is configured for pictures only")
-}
-func (c *GeminiImages) CreateVideo(ctx context.Context, payload map[string]any) (string, error) {
-	return "", c.ValidateVideo(ctx, payload)
-}
-func (c *GeminiImages) GetVideo(ctx context.Context, _ string) (string, []string, error) {
-	return "", nil, c.ValidateVideo(ctx, nil)
-}
-func (c *GeminiImages) VideoContent(ctx context.Context, _ string, _ int) ([]byte, error) {
-	return nil, c.ValidateVideo(ctx, nil)
 }

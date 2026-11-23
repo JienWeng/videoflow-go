@@ -1,6 +1,10 @@
 package costs
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"time"
+)
 
 func TestVideoUsesSeedanceTokenPrice(t *testing.T) {
 	// fal lists the fast model at $0.2419 per second of 720p video.
@@ -50,10 +54,25 @@ func TestImageAndVoice(t *testing.T) {
 	if _, basis := Image("gemini", "gemini-9-unknown-image", nil); basis != Unpriced {
 		t.Fatalf("unknown Gemini model should be unpriced, got %s", basis)
 	}
-	if amount, _ := Voice("fish", "s2.1-pro", string(make([]byte, 1000))); amount != 0.015 {
+	if amount, _ := Voice("fish", "s2.1-pro", string(make([]byte, 1000)), 0, time.Now()); amount != 0.015 {
 		t.Fatalf("1,000 bytes of speech = %v, want 0.015", amount)
 	}
-	if amount, basis := Voice("fish", "s2.1-pro-free", "hello"); amount != 0 || basis != Included {
+	if amount, basis := Voice("fish", "s2.1-pro-free", "hello", 0, time.Now()); amount != 0 || basis != Included {
 		t.Fatalf("free voice model should cost nothing: %v %s", amount, basis)
+	}
+	// Gemini speech is billed by the seconds spoken; Google doubles the price on 1 Jan 2027.
+	line := strings.Repeat("x", 60)
+	december, january := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC), time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+	if amount, basis := Voice("gemini", "gemini-3.8-flash-tts", line, 10, december); amount != 0.0023 || basis != Rate {
+		t.Fatalf("10 s of Gemini speech = %v %s", amount, basis)
+	}
+	if amount, _ := Voice("gemini", "gemini-3.8-flash-tts", line, 10, january); amount != 0.0045 {
+		t.Fatalf("10 s of Gemini speech in 2027 = %v", amount)
+	}
+	if amount, basis := Voice("gemini", "gemini-3.8-flash-lite-tts", line, 0, december); amount != 0.0006 || basis != Estimate {
+		t.Fatalf("unmeasured Gemini line = %v %s", amount, basis)
+	}
+	if _, basis := Voice("gemini", "gemini-2.5-flash-preview-tts", line, 10, december); basis != Unpriced {
+		t.Fatal("retired Gemini TTS priced")
 	}
 }

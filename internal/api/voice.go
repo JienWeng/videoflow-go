@@ -69,11 +69,17 @@ func (s *Server) voiceCharacter(project, id string) error {
 	return nil
 }
 
+// speechProvider reports whether a service speaks lines: Fish Audio, ElevenLabs, or
+// Google Gemini's prebuilt voices on the Gemini key.
+func speechProvider(name string) bool {
+	return name == "fish" || name == "elevenlabs" || name == "gemini"
+}
+
 // primaryVoiceProvider is the provider the voice picker opens on. "fal" was a
 // choice in earlier versions and now reads as Fish Audio.
 func (s *Server) primaryVoiceProvider() string {
-	if s.routes().Setting("voice_primary_provider", "fish") == "elevenlabs" {
-		return "elevenlabs"
+	if provider := s.routes().Setting("voice_primary_provider", "fish"); speechProvider(provider) {
+		return provider
 	}
 	return "fish"
 }
@@ -147,8 +153,8 @@ func (s *Server) handleVoiceProfile(w http.ResponseWriter, r *http.Request) {
 	if p.Provider == "" {
 		p.Provider = s.primaryVoiceProvider()
 	}
-	if p.Provider != "fish" && p.Provider != "elevenlabs" {
-		http.Error(w, "voice provider must be fish or elevenlabs", 400)
+	if !speechProvider(p.Provider) {
+		http.Error(w, "voice provider must be fish, elevenlabs or gemini", 400)
 		return
 	}
 	if p.Model == "" {

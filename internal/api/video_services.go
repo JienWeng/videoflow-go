@@ -183,8 +183,18 @@ func (s *Server) handleVideoRouting(w http.ResponseWriter, r *http.Request) {
 		return s.database.SetAppSetting(key, string(raw))
 	}
 	if body.Mode == "manual" && body.Provider == "" {
-		// No service named: keep the one in use, moved to the chosen model.
+		// No service named: keep the one in use, moved to the chosen model. When it does not
+		// sell that model, the cheapest connected service that does is used instead.
 		body.Provider, _ = s.routes().MediaSelection("video")
+		if host := costs.HostByName(body.Provider); host == nil || host.Models[body.Model] == "" {
+			settings, _ := s.database.AppSettingsSnapshot()
+			for _, v := range s.videoOffers(body.Model, settingText(settings, "default_resolution", "720p"), 1, settings) {
+				if v.Usable {
+					body.Provider = v.Provider
+					break
+				}
+			}
+		}
 	}
 	if body.Mode == "cheapest" {
 		settings, _ := s.database.AppSettingsSnapshot()
