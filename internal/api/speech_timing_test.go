@@ -87,9 +87,25 @@ func TestCaptionsFollowTheSpeechHeardInAClip(t *testing.T) {
 	if len(entries) != 1 || entries[0].Label != "Caption timing" || entries[0].Amount <= 0 || entries[0].Amount > 0.01 {
 		t.Fatalf("cost: %+v", entries)
 	}
+	// With only a Google Gemini key, Gemini listens and is billed for it.
+	s.cfg.OpenAIAPIKey, s.cfg.GeminiAPIKey = "", "gemini-fixture"
+	if s.listener() != "gemini" {
+		t.Fatalf("listener = %s", s.listener())
+	}
+	if _, err := s.scriptCuesForClip(t.Context(), project, composition.Clip{ID: "g", AssetID: "output-" + make(true).ID, Duration: 10, Speed: 1}); err != nil || listened != 2 {
+		t.Fatalf("gemini clip: %v listened=%d", err, listened)
+	}
+	entries, _ = s.database.ListCosts(project)
+	gemini := false
+	for _, e := range entries {
+		gemini = gemini || e.Provider == "gemini" && e.Model == "gemini-3.5-transcribe" && e.Amount > 0.00083 && e.Amount < 0.00084
+	}
+	if !gemini {
+		t.Fatalf("no Gemini listening cost: %+v", entries)
+	}
 	// A silent clip is never listened to: its voice is added, and timed, separately.
 	silent := make(false)
-	if cues, err := s.scriptCuesForClip(t.Context(), project, composition.Clip{ID: "s", AssetID: "output-" + silent.ID, Duration: 10, Speed: 1}); err != nil || len(cues) != 2 || listened != 1 {
+	if cues, err := s.scriptCuesForClip(t.Context(), project, composition.Clip{ID: "s", AssetID: "output-" + silent.ID, Duration: 10, Speed: 1}); err != nil || len(cues) != 2 || listened != 2 {
 		t.Fatalf("silent clip: %v %+v listened=%d", err, cues, listened)
 	}
 }

@@ -107,3 +107,34 @@ func TestAISetupChoosesGeminiAndItsModel(t *testing.T) {
 		t.Fatalf("a picture model accepted for video: %d", w.Code)
 	}
 }
+
+// The listener is OpenAI or Google Gemini: picked by hand, or by which key is saved.
+func TestAISetupChoosesWhoListens(t *testing.T) {
+	s := routerServer(t, fakeChatModel(`{}`))
+	s.cfg.OpenAIAPIKey, s.cfg.GeminiAPIKey = "", "gemini-fixture"
+	read := func() (map[string]any, map[string]any) {
+		w := call(t, s, "GET", "/ai/setup", "")
+		var out map[string]map[string]any
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &out) != nil {
+			t.Fatalf("ai setup: %d %s", w.Code, w.Body.String())
+		}
+		return out["listening"], out["listening_service"]
+	}
+	listening, service := read()
+	if listening["service"] != "Google Gemini" || listening["model"] != "gemini-3.5-transcribe" || listening["ready"] != true || service["provider"] != "gemini" {
+		t.Fatalf("listening = %v %v", listening, service)
+	}
+	options, _ := json.Marshal(service["options"])
+	if string(options) != `[{"id":"openai","label":"OpenAI","ready":false},{"id":"gemini","label":"Google Gemini","ready":true}]` {
+		t.Fatalf("options = %s", options)
+	}
+	if w := call(t, s, "PUT", "/settings/app", `{"listen_provider":"fish"}`); w.Code != 400 {
+		t.Fatalf("fish accepted as listener: %d", w.Code)
+	}
+	if w := call(t, s, "PUT", "/settings/app", `{"listen_provider":"openai"}`); w.Code != 200 {
+		t.Fatalf("choose openai: %d %s", w.Code, w.Body.String())
+	}
+	if listening, _ = read(); listening["service"] != "OpenAI" || listening["ready"] != false {
+		t.Fatalf("after choosing OpenAI = %v", listening)
+	}
+}

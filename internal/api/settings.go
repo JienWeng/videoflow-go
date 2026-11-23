@@ -155,6 +155,12 @@ func (s *Server) handlePutAppSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if raw, ok := body["listen_provider"]; ok {
+		if value, valid := raw.(string); !valid || (value != "openai" && value != "gemini") {
+			http.Error(w, "choose OpenAI or Google Gemini to listen to clips", 400)
+			return
+		}
+	}
 	if raw, ok := body["default_scene_duration"]; ok {
 		value, valid := raw.(float64)
 		if !valid || value < 1 || value > 120 || value != float64(int(value)) {

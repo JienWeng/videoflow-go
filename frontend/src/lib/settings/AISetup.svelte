@@ -31,6 +31,8 @@
     };
     vision: Choice;
     listening: Choice;
+    // Who listens to clips to time captions, and the services that can.
+    listening_service?: { provider: string; options: { id: string; label: string; ready: boolean }[] };
     video: {
       service: string;
       provider: string;
@@ -127,6 +129,7 @@
   const pictureModel = (model: string) =>
     change('pictures', () => put('/settings/app', { image_model: model, ref_image_model: model }));
   const voice = (provider: string) => change('voice', () => put('/voice/preferences', { primary_provider: provider }));
+  const listener = (provider: string) => change('listening', () => put('/settings/app', { listen_provider: provider }));
   onMount(() => void load());
   const usable = $derived(services?.services.filter(s => s.usable) ?? []);
 </script>
@@ -317,6 +320,14 @@ docker compose exec backend claude auth login</code></pre>
         {@render row(Mic, 'Listening to audio', 'Turns speech into text for subtitles.', setup.listening.ready, 'Needs a key')}
         <div class="grid gap-1">
           <p class="text-sm"><span class="font-medium">{setup.listening.service}</span> <span class="text-muted-foreground">· {setup.listening.model}</span></p>
+          {#if setup.listening_service}
+            {@const ls = setup.listening_service}
+            <label class="grid gap-1 text-xs text-muted-foreground">Service
+              <select class={select + ' w-64'} disabled={busy === 'listening'} value={ls.provider} onchange={(e) => listener(e.currentTarget.value)}>
+                {#each ls.options as o (o.id)}<option value={o.id} disabled={!o.ready && o.id !== ls.provider}>{o.label}{o.ready ? '' : ' (no key saved)'}</option>{/each}
+              </select>
+            </label>
+          {/if}
           {#if setup.listening.note}<p class="text-xs text-muted-foreground">{setup.listening.note}</p>{/if}
         </div>
       </li>

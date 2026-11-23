@@ -155,3 +155,23 @@ $6.00 (Flash-Lite) for the audio, at 25 audio tokens per second. Both prices
 double on 1 January 2027, and the cost page uses the price in force on the day
 the line was made. A ten-second line costs about $0.002. A character's voice
 sample can be spoken by a Gemini voice, the same as with the other services.
+
+### Google Gemini listening (caption timing)
+
+Captions on clips with their own sound are placed where the words are actually
+heard. VideoFlow listens to the clip once and remembers the answer. **Settings →
+AI setup → Listening to audio** chooses who listens: OpenAI (`whisper-1`) or
+Google Gemini (`gemini-3.5-transcribe`, with word-level timestamps, on the
+Gemini key). A service without a key shows "(no key saved)". With none chosen,
+OpenAI listens when its key is saved, and otherwise Google Gemini does.
+
+Gemini receives the clip's audio inline as WAV through the Interactions API,
+with the key in the `x-goog-api-key` header. The script still supplies the
+words, and only the times are used. Google notes that word timestamps can lower
+transcription accuracy, and that they cannot be combined with a vocabulary
+hint, so none is sent. It costs about $0.005 per minute of audio (Google's
+estimate of $0.003 in plus $0.002 out).
+
+Looking at pictures still uses OpenRouter. The picture checks rely on
+OpenRouter's structured answers, so moving them to Gemini would need a separate
+change.

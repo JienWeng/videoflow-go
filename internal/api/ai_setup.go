@@ -112,20 +112,29 @@ func (s *Server) handleAISetup(w http.ResponseWriter, r *http.Request) {
 	}
 	voice := map[string]any{"provider": primary, "service": label(primary), "ready": connected(primary), "options": voices}
 
-	// Looking at pictures goes through OpenRouter; listening to clips to time captions uses OpenAI.
+	// Looking at pictures goes through OpenRouter; listening to clips to time captions uses
+	// OpenAI or Google Gemini.
 	openrouter := connected("openrouter")
 	note := ""
 	if !openrouter {
 		note = "Add an OpenRouter key in AI connections."
 	}
-	listenKey, _, _, _ := routes.Credentials("openai")
-	listening := aiChoice{Service: "OpenAI", Model: providers.OpenAISpeechModel, Ready: strings.TrimSpace(listenKey) != "" && connected("openai")}
+	listener := s.listener()
+	listenKey, _, _, _ := routes.Credentials(listener)
+	listening := aiChoice{Service: label(listener), Model: providers.OpenAISpeechModel, Ready: strings.TrimSpace(listenKey) != "" && connected(listener)}
+	if listener == "gemini" {
+		listening.Model = providers.GeminiTranscribeModel
+	}
 	if !listening.Ready {
-		listening.Note = "Add an OpenAI key in AI connections. Without one, captions keep their estimated times."
+		listening.Note = "Add an OpenAI or Google Gemini key in AI connections. Without one, captions keep their estimated times."
+	}
+	listenOptions := []map[string]any{}
+	for _, name := range []string{"openai", "gemini"} {
+		listenOptions = append(listenOptions, map[string]any{"id": name, "label": label(name), "ready": connected(name)})
 	}
 	writeJSON(w, 200, map[string]any{
 		"assistant": assistant, "pictures": pictures, "picture_service": pictureService, "video": video, "voice": voice,
 		"vision":    aiChoice{Service: "OpenRouter", Model: routes.Setting("vl_model", s.cfg.OpenRouterVisionModel), Ready: openrouter, Note: note},
-		"listening": listening,
+		"listening": listening, "listening_service": map[string]any{"provider": listener, "options": listenOptions},
 	})
 }
