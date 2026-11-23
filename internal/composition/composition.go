@@ -53,7 +53,7 @@ type TextLayer struct {
 var HexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 func (t TextLayer) Valid(duration float64) bool {
-	return ValidID(t.ID) && strings.TrimSpace(t.Text) != "" && len(t.Text) <= 2000 && t.Start >= 0 && t.End > t.Start && t.End <= duration && t.Size >= 12 && t.Size <= 160 && HexColor.MatchString(t.Color) && (t.Background == "transparent" || HexColor.MatchString(t.Background)) && (t.Font == "sans-serif" || t.Font == "serif" || t.Font == "monospace") && (t.Position == "top" || t.Position == "center" || t.Position == "bottom")
+	return ValidID(t.ID) && strings.TrimSpace(t.Text) != "" && len(t.Text) <= 2000 && t.Start >= 0 && t.End > t.Start && t.End <= duration+0.002 && t.Size >= 12 && t.Size <= 160 && HexColor.MatchString(t.Color) && (t.Background == "transparent" || HexColor.MatchString(t.Background)) && (t.Font == "sans-serif" || t.Font == "serif" || t.Font == "monospace") && (t.Position == "top" || t.Position == "center" || t.Position == "bottom")
 }
 func (t TextLayer) CSS() string {
 	top := "50%"
@@ -160,8 +160,21 @@ func Save(root, project string, m Manifest, sources map[string]string) (string, 
 	prepare := func(clips []Clip) error {
 		for i := range clips {
 			c := &clips[i]
-			if !ValidID(c.ID) || seen[c.ID] || !ValidID(c.AssetID) || c.Speed != 1 || !(c.Start >= 0 && c.Trim >= 0 && c.Duration > 0 && c.Start+c.Duration <= m.Duration) {
-				return fmt.Errorf("invalid clip or unsupported speed (only 1 supported)")
+			if !ValidID(c.ID) || seen[c.ID] {
+				return fmt.Errorf("clip id %q is missing, not allowed, or used twice", c.ID)
+			}
+			if !ValidID(c.AssetID) {
+				return fmt.Errorf("clip %s has an invalid media id", c.ID)
+			}
+			if c.Speed != 1 {
+				return fmt.Errorf("clip %s has speed %v; only normal speed (1) is supported", c.ID, c.Speed)
+			}
+			if !(c.Start >= 0 && c.Trim >= 0 && c.Duration > 0) {
+				return fmt.Errorf("clip %s needs a start and trim of 0 or more and a length above 0 (start %.3fs, trim %.3fs, length %.3fs)", c.ID, c.Start, c.Trim, c.Duration)
+			}
+			// Times are kept to milliseconds, so a clip may end a hair past a rounded length.
+			if c.Start+c.Duration > m.Duration+0.002 {
+				return fmt.Errorf("clip %s ends at %.3fs, after the end of the video (%.3fs); lengthen the video or shorten the clip", c.ID, c.Start+c.Duration, m.Duration)
 			}
 			if (c.Volume != nil && !(*c.Volume >= 0 && *c.Volume <= 1)) || !(c.FadeIn >= 0 && c.FadeOut >= 0 && c.FadeIn+c.FadeOut <= c.Duration) {
 				return fmt.Errorf("audio volume must be 0–1 and fades must fit within the clip")
@@ -220,7 +233,7 @@ func Save(root, project string, m Manifest, sources map[string]string) (string, 
 		return "", e
 	}
 	for _, c := range m.Captions {
-		if !ValidID(c.ID) || seen[c.ID] || !(c.Start >= 0 && c.End > c.Start && c.End <= m.Duration) || strings.TrimSpace(c.Text) == "" {
+		if !ValidID(c.ID) || seen[c.ID] || !(c.Start >= 0 && c.End > c.Start && c.End <= m.Duration+0.002) || strings.TrimSpace(c.Text) == "" {
 			return "", fmt.Errorf("captions require unique IDs and explicit valid timings")
 		}
 		seen[c.ID] = true
@@ -240,7 +253,7 @@ func Save(root, project string, m Manifest, sources map[string]string) (string, 
 		}
 		ids := map[string]bool{}
 		for _, cue := range variant.Captions {
-			if !ValidID(cue.ID) || ids[cue.ID] || !(cue.Start >= 0 && cue.End > cue.Start && cue.End <= m.Duration) || strings.TrimSpace(cue.Text) == "" {
+			if !ValidID(cue.ID) || ids[cue.ID] || !(cue.Start >= 0 && cue.End > cue.Start && cue.End <= m.Duration+0.002) || strings.TrimSpace(cue.Text) == "" {
 				return "", fmt.Errorf("invalid translated caption timings")
 			}
 			ids[cue.ID] = true

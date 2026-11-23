@@ -518,7 +518,7 @@
       : 'New edit';
   const fmt = (t: number) => `${Math.floor(t / 60)}:${(t % 60).toFixed(2).padStart(5, '0')}`;
   function fitLength() {
-    draft.duration = Math.round(contentEnd(draft) * 1000) / 1000;
+    draft.duration = Math.ceil(contentEnd(draft) * 1000) / 1000;
   }
   function select(id: string, track: Track) {
     activeClip = id;
