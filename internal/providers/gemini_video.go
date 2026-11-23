@@ -42,8 +42,15 @@ const GeminiVideoModel = "gemini-omni-1.2-flash"
 // geminiVideoMaxBytes caps one clip. A 15 s 4K clip is the largest Omni makes.
 const geminiVideoMaxBytes = 200 << 20
 
-// geminiInlineLimit keeps the request under Google's 20 MB inline request size.
+// geminiInlineLimit caps the pictures sent inline in one request. Google's Omni page
+// (rechecked 23 Nov 2026) states no inline size limit, only that the Files API is
+// recommended for large media, so this stays a conservative 15 MB.
 const geminiInlineLimit = 15 << 20
+
+// geminiPromptLimit is Omni's documented input limit, "Input token limit 131,072 tokens"
+// (aistudio.google.com/docs/models/gemini-omni-flash). A token covers at least one byte,
+// so a prompt of this many bytes or fewer cannot exceed it on its own.
+const geminiPromptLimit = 131072
 
 func geminiVideoModel(id string) (*Model, error) {
 	if id != GeminiVideoModel {
@@ -60,7 +67,8 @@ func geminiVideoModel(id string) (*Model, error) {
 	// 1080p and 4k are upscaled by Google. All four are priced in costs.Hosts.
 	m.Resolutions = []string{"360p", "720p", "1080p", "4k"}
 	m.FrameImages = []string{"first_frame", "last_frame"}
-	// "up to 6" reference images; audio references are not supported.
+	// "up to 6 reference images per request (up to 3 images per character for up to 2
+	// characters)"; audio references are not supported.
 	m.ReferenceImages = 6
 	return m, nil
 }
@@ -129,6 +137,9 @@ func (c *GeminiImages) videoInput(ctx context.Context, p map[string]any, fetch b
 		task = "reference_to_video"
 	}
 	prompt := strings.TrimSpace(stringValue(p["prompt"]))
+	if len(prompt) > geminiPromptLimit {
+		return nil, "", fmt.Errorf("this clip's prompt is longer than Google Gemini accepts (Omni takes at most %d input tokens); shorten the scene's description", geminiPromptLimit)
+	}
 	if len(pictures) == 0 {
 		return prompt, "", nil
 	}

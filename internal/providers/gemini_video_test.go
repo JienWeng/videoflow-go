@@ -363,3 +363,17 @@ func TestGeminiVideoFailedInteractionReportsErrorsNotThePrompt(t *testing.T) {
 		t.Fatalf("string error = %q %v", status, err)
 	}
 }
+
+func TestGeminiVideoRefusesAPromptOverOmnisInputLimit(t *testing.T) {
+	client, calls, _ := geminiVideoServer(t, nil, nil)
+	long := strings.Repeat("a", geminiPromptLimit+1)
+	if err := client.ValidateVideo(context.Background(), map[string]any{"model": GeminiVideoModel, "prompt": long}); err == nil || !strings.Contains(err.Error(), "too long") && !strings.Contains(err.Error(), "longer than") {
+		t.Fatalf("err = %v", err)
+	}
+	if err := client.ValidateVideo(context.Background(), map[string]any{"model": GeminiVideoModel, "prompt": long[:geminiPromptLimit]}); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls()) != 0 {
+		t.Fatal("a request reached Google")
+	}
+}
