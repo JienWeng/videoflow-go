@@ -2,10 +2,13 @@ package api
 
 import (
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 
 	"videoflow-go/internal/agents"
+	"videoflow-go/internal/db"
+	"videoflow-go/internal/models"
 )
 
 func TestChatDecisionIsValidatedAndDefaultsSafely(t *testing.T) {
@@ -150,5 +153,85 @@ func TestChatEnforcesTheAskRuleServerSide(t *testing.T) {
 	answer = `{"reply":"ok","action":"none"}`
 	if d := decide(`{"message":"hi"}`); d.Mode != decisionInform {
 		t.Fatalf("no decision: %+v", d)
+	}
+}
+
+// A step the server does while planning (clearing failed attempts, saving a music
+// direction) waits when the reply asks first; in Full auto the question is overruled
+// and the step is done.
+func TestAQuestionNeverDoesTheStepItAsksAbout(t *testing.T) {
+	ask := `"decision":{"mode":"ask","question":"Clear the failed attempts?","reason":"options","options":[{"label":"Yes"},{"label":"No"}]}`
+	s := routerServer(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"data":[]}`)) })
+	answer := `{"reply":"Shall I tidy up?","action":"clear_failed_videos",` + ask + `}`
+	plannerSays(s, &answer)
+	failedAttempts(t, s)
+	before := len(listedJobs(t, s))
+	w := call(t, s, "POST", "/chat", `{"message":"clean up the failed ones"}`)
+	var out struct {
+		Intent struct {
+			Action   string       `json:"action"`
+			Decision chatDecision `json:"decision"`
+		} `json:"intent"`
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &out) != nil {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if out.Intent.Action != "unknown" || out.Intent.Decision.Mode != decisionAsk || len(listedJobs(t, s)) != before {
+		t.Fatalf("asking cleared the failed attempts: %+v, %d of %d shown", out.Intent, len(listedJobs(t, s)), before)
+	}
+	if w = call(t, s, "POST", "/chat", `{"message":"clean up the failed ones","auto":true,"full":true}`); w.Code != 200 || len(listedJobs(t, s)) >= before {
+		t.Fatalf("full auto did not clear: %d %s", w.Code, w.Body.String())
+	}
+
+	s, _ = falServer(t, "done")
+	answer = `{"reply":"Which music?","action":"set_music","episode_number":1,"music":"slow sparse piano","decision":{"mode":"ask","question":"Piano or strings?","reason":"options","key":"music","options":[{"label":"Piano"},{"label":"Strings"}]}}`
+	plannerSays(s, &answer)
+	project, _ := s.database.GetActiveProjectID()
+	script := &models.Script{ProjectID: &project, Idea: "end", Title: "The End", Summary: "end", DraftJSON: []byte("{}")}
+	if e := s.database.CreateScript(script); e != nil {
+		t.Fatal(e)
+	}
+	scene := renderableScene(t, s, &script.ID, "One", 1, "auto")
+	if out := sendChat(t, s, "this needs music"); out.Intent.Action != "unknown" {
+		t.Fatalf("asking about music offered %q", out.Intent.Action)
+	}
+	if saved, _ := s.database.GetScene(scene.ID); sceneProduction(saved).MusicPrompt != "" {
+		t.Fatalf("asking about music saved %q", sceneProduction(saved).MusicPrompt)
+	}
+}
+
+// A question the log settles is overruled unless the user's message changes it, in
+// English, Spanish, French or Chinese. The plan confirmation and a destructive step are
+// always asked.
+func TestSettledQuestionsAndChangeWords(t *testing.T) {
+	log := []db.ProjectDecision{{Key: "aspect_ratio", Value: "9:16", Source: db.DecisionByUser}}
+	ask := func(reason string) chatDecision {
+		return chatDecision{Mode: decisionAsk, Question: "Which format?", Key: "aspect_ratio", Reason: reason, Assumptions: []string{}}
+	}
+	for _, tc := range []struct {
+		message, reason, action string
+		want                    string
+	}{
+		{"make the videos", askOptions, "render_scenes", decisionAct},
+		{"let's change the format", askOptions, "render_scenes", decisionAsk},
+		{"use a different format instead", askOptions, "render_scenes", decisionAsk},
+		{"cambia el formato", askOptions, "render_scenes", decisionAsk},
+		{"cámbialo a horizontal", askOptions, "render_scenes", decisionAsk},
+		{"mejor en otro formato", askOptions, "render_scenes", decisionAsk},
+		{"haz los videos", askOptions, "render_scenes", decisionAct},
+		{"changer le format", askOptions, "render_scenes", decisionAsk},
+		{"plutôt en 16:9", askOptions, "render_scenes", decisionAsk},
+		{"un format différent", askOptions, "render_scenes", decisionAsk},
+		{"fais les vidéos", askOptions, "render_scenes", decisionAct},
+		{"换成横屏", askOptions, "render_scenes", decisionAsk},
+		{"改一下画幅", askOptions, "render_scenes", decisionAsk},
+		{"做视频", askOptions, "render_scenes", decisionAct},
+		{"make the story", askConfirmPlan, "generate_script", decisionAsk},
+		{"remove the second scene", askDestructive, "delete_scene", decisionAsk},
+	} {
+		got := applySettledAsk(ask(tc.reason), tc.action, tc.message, log)
+		if got.Mode != tc.want || (got.Mode == decisionAct) != (got.Overruled == "already_decided") {
+			t.Errorf("%q (%s): %+v, want %s", tc.message, tc.reason, got, tc.want)
+		}
 	}
 }

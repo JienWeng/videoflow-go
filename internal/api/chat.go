@@ -291,6 +291,12 @@ func chatTurnDecision(turn *chatTurn, res *agents.ChatIntentResponse, action str
 	return decision
 }
 
+// plannerAsks says whether the turn's reply, with action, would wait for the user's
+// answer. A step the server does at once while planning must then wait too.
+func plannerAsks(turn *chatTurn, res *agents.ChatIntentResponse, action string) bool {
+	return chatTurnDecision(turn, res, action).Mode == decisionAsk
+}
+
 // chatPlannedAction is the planner's action on the card contract. A retired one-off clip
 // replaces the planner's reply, and "try again" without a finished video makes the scene.
 func chatPlannedAction(turn *chatTurn, res *agents.ChatIntentResponse) string {
@@ -398,6 +404,11 @@ func (s *Server) resolveChatVideoActions(ctx context.Context, turn *chatTurn, re
 			intent["job_id"], intent["scene_id"], intent["scene_title"], intent["service"], intent["waiting_reason"] = waiting.Video.JobID, waiting.SceneID, waiting.Title, waiting.Video.Service, waiting.Video.Reason
 		}
 	}
+	if action == "set_music" && plannerAsks(turn, res, action) {
+		// Saving the music is done at once, so a reply that asks first saves nothing.
+		action = "unknown"
+		intent["action"] = action
+	}
 	if action == "set_music" {
 		// Saving the direction is free and done at once; making the videos again is the
 		// paid step, offered as one button with its price.
@@ -419,6 +430,11 @@ func (s *Server) resolveChatVideoActions(ctx context.Context, turn *chatTurn, re
 // resolveChatServiceActions handles clearing failed videos (done at once, it is free),
 // switching the video service and which editor panel to open.
 func (s *Server) resolveChatServiceActions(turn *chatTurn, res *agents.ChatIntentResponse, action string, intent map[string]interface{}) string {
+	if action == "clear_failed_videos" && plannerAsks(turn, res, action) {
+		// Clearing is done at once, so a reply that asks first clears nothing.
+		action = "unknown"
+		intent["action"] = action
+	}
 	if action == "clear_failed_videos" {
 		// Free and nothing is deleted, so the assistant does it straight away.
 		switch n, e := s.database.ClearFailedRenders(turn.projectID); {
