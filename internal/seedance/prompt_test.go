@@ -194,3 +194,49 @@ func TestVoiceRecordingsAreBoundAndChecked(t *testing.T) {
 		t.Fatalf("the writer is not told about the voice recording:\n%s", facts)
 	}
 }
+
+// Gemini Omni is told, per shot, when each line starts, who says it in which language,
+// and the exact words in quotes; Seedance's notation is left as it was.
+func TestOmniLinesAreTimedAndQuoted(t *testing.T) {
+	clip := Clip{
+		Family: "gemini-omni-flash", Summary: "Mei asks Jun about money", Language: "Chinese", Audio: Native,
+		Cast:  []Character{{Name: "Mei", Look: "Young woman in a grey coat", Voice: "warm, low"}, {Name: "Jun", Look: "Older man with glasses"}},
+		Shots: []Shot{{Seconds: 3, Action: "Mei looks up"}, {Seconds: 2, Action: "Jun smiles"}, {Seconds: 3, Action: "They walk"}},
+		Lines: []Line{
+			{Speaker: "Mei", Text: "如果钱不需要靠银行来信任呢？", Language: "Chinese", Shot: 1, At: 0, Until: 3.1},
+			{Speaker: "Jun", Text: "那就用代码。", Language: "Chinese", Shot: 2, At: 3, Until: 4.2},
+		},
+	}
+	prompt := Compose(clip)
+	for _, want := range []string{
+		"Shot 1 (0-3s): Mei looks up.\nAt 0s, Mei says in Chinese (warm, low): \"如果钱不需要靠银行来信任呢？\"",
+		"Shot 2 (3-5s): Jun smiles.\nAt 3s, Jun says in Chinese: \"那就用代码。\"",
+		"Only one person speaks at a time",
+		"word for word in Chinese",
+		"Sound design:",
+		"No subtitles",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("Omni prompt lacks %q:\n%s", want, prompt)
+		}
+	}
+	if err := Check(clip, prompt); err != nil {
+		t.Fatalf("Omni prompt refused: %v\n%s", err, prompt)
+	}
+	sections := strings.Join(Sections(clip), ",")
+	if !strings.Contains(sections, "speech-omni") || strings.Contains(sections, "speech-2.") {
+		t.Fatalf("Omni playbook: %s", sections)
+	}
+	_, facts := Brief(clip)
+	if !strings.Contains(facts, `"at": "0-3.1s"`) {
+		t.Fatalf("the writer is not told when a line is said:\n%s", facts)
+	}
+	// Seedance keeps its own notation and is never given times.
+	clip.Family = "seedance-2.5"
+	if prompt := Compose(clip); !strings.Contains(prompt, `Mei's line (warm, low): "如果钱不需要靠银行来信任呢？"`) || strings.Contains(prompt, "At 0s") {
+		t.Fatalf("Seedance notation changed:\n%s", prompt)
+	}
+	if _, facts := Brief(clip); strings.Contains(facts, `"at"`) {
+		t.Fatalf("Seedance writer was given times:\n%s", facts)
+	}
+}

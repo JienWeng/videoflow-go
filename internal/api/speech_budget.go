@@ -41,6 +41,9 @@ type speechLine struct {
 	Start   float64 `json:"start"`
 	End     float64 `json:"end"`
 	Verdict string  `json:"verdict"`
+	// lead is when a line placed by time starts in its shot: after the line before it
+	// (which may run on from the shot before) and a breath.
+	lead float64
 }
 
 type shotSpeech struct {
@@ -183,12 +186,17 @@ func planSpeech(scene *models.Scene, lines []SpokenLine, shots []models.Shot, un
 			}
 		}
 		line.ShotID = out.Shots[shot].ShotID
-		out.Shots[shot].Lines = append(out.Shots[shot].Lines, line)
-		gap := 0.0
+		begin := used[shot]
 		if used[shot] > 0 {
-			gap = speech.Pause
+			begin += speech.Pause
 		}
-		used[shot] += gap + line.Seconds
+		if line.Placed == placedAuto && out.Lines > 0 {
+			if carried := cursor + speech.Pause - out.Shots[shot].Start; carried > begin {
+				begin, line.lead = carried, carried
+			}
+		}
+		out.Shots[shot].Lines = append(out.Shots[shot].Lines, line)
+		used[shot] = begin + line.Seconds
 		cursor = out.Shots[shot].Start + used[shot]
 		out.Lines++
 	}
@@ -198,7 +206,7 @@ func planSpeech(scene *models.Scene, lines []SpokenLine, shots []models.Shot, un
 		language := out.Language
 		fitIn := []speech.Line{}
 		for _, l := range sh.Lines {
-			fitIn = append(fitIn, speech.Line{ID: l.ID, Text: l.Text, Language: l.Language, Hint: startHint(l.StartHint)})
+			fitIn = append(fitIn, speech.Line{ID: l.ID, Text: l.Text, Language: l.Language, Hint: l.hint()})
 			language = l.Language
 		}
 		f := speech.FitLines(fitIn, sh.Seconds, cal)
@@ -243,7 +251,7 @@ func planSpeech(scene *models.Scene, lines []SpokenLine, shots []models.Shot, un
 			}
 			sh := out.Shots[k]
 			for _, l := range sh.Lines {
-				fitIn = append(fitIn, speech.Line{ID: l.ID, Text: l.Text, Language: l.Language, Hint: offset + max(0, startHint(l.StartHint))})
+				fitIn = append(fitIn, speech.Line{ID: l.ID, Text: l.Text, Language: l.Language, Hint: offset + max(0, l.hint())})
 			}
 			if sh.Verdict == speech.TooLong {
 				c.ShotsOver++
@@ -278,12 +286,16 @@ func planSpeech(scene *models.Scene, lines []SpokenLine, shots []models.Shot, un
 	return out
 }
 
-// startHint is a saved start hint, or -1 (the line follows the one before) when none.
-func startHint(v *float64) float64 {
-	if v == nil {
-		return -1
+// hint is when a line starts in its shot: its saved start hint, else when the line
+// before it ends, else -1 (it follows the line before it in the same shot).
+func (l speechLine) hint() float64 {
+	switch {
+	case l.StartHint != nil:
+		return *l.StartHint
+	case l.lead > 0:
+		return l.lead
 	}
-	return *v
+	return -1
 }
 
 // speakerNames are the names of a project's characters by id.

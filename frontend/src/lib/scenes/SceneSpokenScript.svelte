@@ -2,14 +2,14 @@
   import { untrack } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { ChevronDown, ChevronUp, Plus, Trash2 } from '@lucide/svelte';
-  import { get, put } from '$lib/api';
-  import type { Character, Scene } from '$lib/api-types';
+  import { get, post, put } from '$lib/api';
+  import type { Character, Scene, SceneSpeech } from '$lib/api-types';
   import { errorMessage } from '$lib/errors';
   import { randomId } from '$lib/ids';
   import { protectDraft } from '$lib/protect-draft';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
-  import { moveLine, sceneSpokenLines, speakerLabel, type SpokenLine } from './spoken.mjs';
+  import { budgetText, fitBar, moveLine, sceneSpokenLines, secondsText, speakerLabel, type SpokenLine } from './spoken.mjs';
 
   // What the scene's characters and narrator say, as the story saved it. The panel loads
   // the scene itself so the story workspace and the canvas panel show the same lines.
@@ -78,6 +78,45 @@
     });
   });
 
+  // The speech budget of the lines as they are now (saved or not): per shot, how long
+  // its lines take against its seconds, and per clip whether everything can be said.
+  let fit = $state<SceneSpeech | null>(null);
+  let fitSeq = 0;
+  $effect(() => {
+    const id = sceneId;
+    const draft = JSON.stringify(lines);
+    if (!loadedFor) return;
+    const seq = ++fitSeq;
+    const timer = setTimeout(async () => {
+      try {
+        const next = await post<SceneSpeech>(`/scenes/${encodeURIComponent(id)}/speech-fit`, { lines: JSON.parse(draft) });
+        if (seq === fitSeq) fit = next;
+      } catch {
+        if (seq === fitSeq) fit = null; // the budget is advice; the script can still be edited and saved
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  });
+  const shotChoices = $derived((fit?.shots ?? []).filter(s => s.shot_id));
+  const lineFit = $derived(new Map((fit?.shots ?? []).flatMap(s => s.lines.map(l => [l.id, { ...l, shot: s.number }] as const))));
+  const toneClass = {
+    ok: 'bg-emerald-500',
+    tight: 'bg-amber-500',
+    too_long: 'bg-destructive',
+    empty: 'bg-muted-foreground/30'
+  } as const;
+  const textTone = {
+    ok: 'text-muted-foreground',
+    tight: 'text-amber-700 dark:text-amber-300',
+    too_long: 'text-destructive',
+    empty: 'text-muted-foreground'
+  } as const;
+  function setShot(line: SpokenLine, id: string) {
+    if (id) line.shot_id = id;
+    else delete line.shot_id;
+    delete line.start_hint; // a start inside the old shot means nothing in the new one
+  }
+
   function addLine() {
     const last = lines[lines.length - 1];
     lines = [
@@ -135,6 +174,28 @@
     </div>
   </div>
 
+  {#if fit && fit.lines > 0}
+    <div class="mt-3 space-y-2 rounded-md bg-muted/40 p-2" aria-label="Speech budget">
+      {#each fit.clips.filter(c => c.summary) as clip (clip.index)}
+        <p class="text-xs font-medium {textTone[fitBar(clip.used, clip.seconds, clip.verdict).tone]}" role="status">{clip.summary}</p>
+      {/each}
+      {#each fit.shots as shot (shot.shot_id || 'scene')}
+        {@const bar = fitBar(shot.used, shot.seconds, shot.verdict)}
+        <div class="text-xs">
+          <div class="flex flex-wrap items-baseline gap-x-2">
+            <span class="font-medium">{shot.number ? `Shot ${shot.number}` : 'Whole scene'} · {secondsText(shot.seconds)}</span>
+            <span class={textTone[bar.tone]}>{shot.lines.length ? bar.label : 'no lines'}{bar.tone === 'too_long' ? ' — too long' : bar.tone === 'tight' ? ' — tight' : ''}</span>
+            {#if budgetText(shot.budget)}<span class="ml-auto text-muted-foreground">aim for {budgetText(shot.budget)}</span>{/if}
+          </div>
+          <div class="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted" role="meter" aria-label="Speech in shot {shot.number || 1}" aria-valuemin="0" aria-valuemax={shot.seconds} aria-valuenow={Math.min(shot.used, shot.seconds)} aria-valuetext={bar.label}>
+            <div class="h-full rounded-full {toneClass[bar.tone]}" style="width: {bar.percent}%"></div>
+          </div>
+        </div>
+      {/each}
+      <p class="text-[11px] text-muted-foreground">Estimated at a calm speaking pace. Lines without a chosen shot are placed by time.</p>
+    </div>
+  {/if}
+
   {#if loading && !lines.length}
     <p class="mt-2 text-xs text-muted-foreground">Loading spoken script…</p>
   {:else if !lines.length}
@@ -169,6 +230,22 @@
               <input type="checkbox" class="w-auto" disabled={!line.character_id} bind:checked={line.visible} />
               On screen
             </label>
+            {#if shotChoices.length}
+              {@const est = lineFit.get(line.id)}
+              <label class="sr-only" for="shot-{sceneId}-{i}">Shot for line {i + 1}</label>
+              <select
+                id="shot-{sceneId}-{i}"
+                class="rounded-md border border-input bg-background px-2 py-1 text-xs"
+                value={line.shot_id && shotChoices.some(s => s.shot_id === line.shot_id) ? line.shot_id : ''}
+                onchange={e => setShot(line, (e.currentTarget as HTMLSelectElement).value)}>
+                <option value="">{est && !line.shot_id ? `By time (shot ${est.shot})` : 'By time'}</option>
+                {#each shotChoices as s (s.shot_id)}<option value={s.shot_id}>Shot {s.number} · {secondsText(s.seconds)}</option>{/each}
+              </select>
+            {/if}
+            {#if lineFit.get(line.id)}
+              {@const est = lineFit.get(line.id)!}
+              <span class="text-xs {textTone[est.verdict === 'too_long' ? 'too_long' : est.verdict === 'tight' ? 'tight' : 'ok']}" title="Estimated time to say this line">≈{secondsText(est.seconds)}</span>
+            {/if}
             <div class="ml-auto flex items-center">
               <Button variant="ghost" size="icon" class="size-7" title="Move up" disabled={i === 0}
                 onclick={() => (lines = moveLine(lines, i, -1))}><ChevronUp class="size-3.5" /></Button>

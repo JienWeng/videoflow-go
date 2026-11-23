@@ -1,4 +1,4 @@
-/** @typedef {{ id: string, character_id: string, language: string, text: string, visible: boolean }} SpokenLine */
+/** @typedef {{ id: string, character_id: string, language: string, text: string, visible: boolean, shot_id?: string, start_hint?: number }} SpokenLine */
 
 /**
  * The lines a scene's script has its characters or narrator speak, as the backend saves
@@ -16,8 +16,48 @@ export function sceneSpokenLines(scene) {
       character_id: String(line.character_id ?? ''),
       language: String(line.language ?? ''),
       text: String(line.text ?? ''),
-      visible: !!line.visible
+      visible: !!line.visible,
+      // The shot it is spoken in, when one was chosen; lines without one are placed by time.
+      ...(line.shot_id ? { shot_id: String(line.shot_id) } : {}),
+      ...(typeof line.start_hint === 'number' && Number.isFinite(line.start_hint) ? { start_hint: line.start_hint } : {})
     }));
+}
+
+/**
+ * Seconds with at most one decimal: 7.2 s, 8 s.
+ * @param {number} value
+ */
+export function secondsText(value) {
+  const v = Math.round((Number(value) || 0) * 10) / 10;
+  return `${Number.isInteger(v) ? v : v.toFixed(1)} s`;
+}
+
+/**
+ * The fit bar of some speech in some seconds: how full it is (never past 100) and its
+ * tone. Above 90 % is tight, past the end is too long.
+ * @param {number} used
+ * @param {number} seconds
+ * @param {string} [verdict] the server's verdict, when known
+ * @returns {{ percent: number, tone: 'ok' | 'tight' | 'too_long' | 'empty', label: string }}
+ */
+export function fitBar(used, seconds, verdict) {
+  const percent = seconds > 0 ? Math.min(100, Math.round((used / seconds) * 100)) : used > 0 ? 100 : 0;
+  /** @type {'ok' | 'tight' | 'too_long' | 'empty'} */
+  let tone = 'ok';
+  if (!used) tone = 'empty';
+  else if (verdict === 'too_long' || (!verdict && used > seconds)) tone = 'too_long';
+  else if (verdict === 'tight' || (!verdict && used > seconds * 0.9)) tone = 'tight';
+  return { percent, tone, label: `${secondsText(used)} of ${secondsText(seconds)}` };
+}
+
+/**
+ * How much a writer should aim for in a shot: "8–10 characters", "5–6 words".
+ * @param {{ unit: string, low: number, high: number } | null | undefined} budget
+ */
+export function budgetText(budget) {
+  if (!budget || !budget.high) return '';
+  const low = Math.max(1, budget.low);
+  return low >= budget.high ? `about ${budget.high} ${budget.unit}` : `${low}–${budget.high} ${budget.unit}`;
 }
 
 /**

@@ -80,6 +80,11 @@
     const quote = { calls: cost.calls, seconds: cost.seconds, storyboards: cost.storyboards };
     untrack(() => onplan?.(id, quote));
   });
+  // The clip a shot is in, for a line whose shot was chosen in the spoken script.
+  function clipOfShot(shot: string) {
+    const unit = plan?.units.find(u => u.shot_ids.includes(shot));
+    return unit ? `Clip ${unit.index + 1} · ${unit.start}–${unit.start + unit.length}s` : 'No clip';
+  }
   function changed() {
     dirty = true;
     error = '';
@@ -168,16 +173,17 @@
      class="text-xs text-muted-foreground">Leave empty for dialogue and ambience only. For music spanning several clips, add one continuous track in the editor.</p>{/if}
  </div></details>
  {#if plan.units.length>1&&settings.audio_mode==='native'&&plan.lines?.length}<div class="space-y-2"><p
-   class="text-xs text-muted-foreground">Assign each line to one clip so it is not repeated in every clip. Save the strategy first if you changed the grouping.</p>{#each plan.lines as line (line.id)}<label
+   class="text-xs text-muted-foreground">Assign each line to one clip so it is not repeated in every clip. Save the strategy first if you changed the grouping.</p>{#each plan.lines as line (line.id)}{#if line.from_script}<p
+   class="text-xs">{line.text}<span class="block text-muted-foreground">{clipOfShot(line.shot_id)} · shot chosen in the spoken script</span></p>{:else}<label
    class="block text-xs">{line.text}<select
    aria-label={`Clip for dialogue ${line.id}`}
    class="mt-1 min-h-11 w-full rounded-md border border-input bg-background p-2"
-   value={settings.dialogue_shots?.[line.id]??''}
+   value={plan.units.find(u => u.shot_ids.includes(settings!.dialogue_shots?.[line.id] ?? ''))?.shot_ids[0] ?? ''}
    onchange={e => {
      settings!.dialogue_shots = { ...settings!.dialogue_shots, [line.id]: e.currentTarget.value };
      changed();
    }}><option value="">Choose clip…</option>{#each plan.units as unit}<option
-     value={unit.shot_ids[0]}>Clip {unit.index+1} · {unit.start}–{unit.start+unit.length}s</option>{/each}</select></label>{/each}</div>{/if}
+     value={unit.shot_ids[0]}>Clip {unit.index+1} · {unit.start}–{unit.start+unit.length}s</option>{/each}</select></label>{/if}{/each}</div>{/if}
  {#if dirty}<div class="flex flex-wrap items-center gap-2"><Button
    type="button"
    size="sm"

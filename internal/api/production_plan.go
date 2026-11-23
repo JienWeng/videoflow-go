@@ -41,6 +41,8 @@ type productionLine struct {
 	Text    string `json:"text"`
 	Speaker string `json:"speaker"`
 	ShotID  string `json:"shot_id"`
+	// FromScript is set when the shot was chosen in the spoken script, not in these options.
+	FromScript bool `json:"from_script,omitempty"`
 }
 type productionPlan struct {
 	Resolution       string             `json:"resolution"`
@@ -367,7 +369,7 @@ func (s *Server) sceneProductionPlan(ctx context.Context, scene *models.Scene) (
 				}
 			}
 		}
-		p.Lines = append(p.Lines, productionLine{ID: id, Text: line.Text, Speaker: line.CharacterID, ShotID: assigned})
+		p.Lines = append(p.Lines, productionLine{ID: id, Text: line.Text, Speaker: line.CharacterID, ShotID: assigned, FromScript: line.ShotID != "" && line.ShotID == assigned})
 		if p.Settings.AudioMode == "native" && len(p.Units) > 1 && !valid {
 			p.Blocked = "Assign each spoken line to a clip below before generating multiple clips with native dialogue."
 		}

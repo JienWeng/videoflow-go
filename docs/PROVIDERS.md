@@ -151,6 +151,54 @@ Google's own per-second rate: about $0.023 at 360p, $0.070 at 720p, $0.104 at
 1080p and $0.209 at 4K. The input prompt and pictures add well under a cent per
 clip and are left out. Prices were checked on 23 November 2026.
 
+#### Speech in Gemini Omni clips
+
+What Google documents about spoken lines, checked on 23 November 2026:
+
+- **Timed cues.** The Omni prompt guide (<https://aistudio.google.com/docs/omni>,
+  "Prompt guide") describes sound in plain sentences ("Sound design: Gentle
+  breeze, distant bird chirps. No dialogue.") and times a cue by the second ("At
+  5s the chorus starts in the background audio").
+- **Quotes for exact speech.** Omni's own guide gives no dialogue syntax. Google's
+  video guide for Veo (<https://aistudio.google.com/docs/veo>, "Prompting for
+  audio") says "Dialogue: Use quotes for specific speech". Its examples put a
+  speaker label first, as in `Man: (Hand on his hunting knife) "That's no ordinary
+  bear."`.
+- **Languages.** Omni's technical details say: "English (EN) is fully supported,
+  but other languages have not been evaluated, so they may work but results can
+  vary." The pages read don't mention Chinese or Mandarin anywhere.
+- **Length.** Omni makes "synchronized video and native audio up to 15 seconds
+  long". The duration set in `response_format` (3–15 s) wins over any length
+  written in the prompt.
+- **Extending a clip.** Speech is supported when extending a clip Omni made
+  itself. It is not supported when extending an uploaded clip in which someone
+  talks.
+
+Google does not document how much speech fits in a clip: there is no speaking
+rate, maximum line length or words-per-second figure. Nor does it give guidance on
+lip sync, on one speaker per shot or several, or on non-English dialogue, and it
+has no `SFX:` or `Ambient noise:` label syntax for Omni.
+(<https://aistudio.google.com/docs/omni/prompting> returned 404.)
+
+What VideoFlow does with this:
+
+- An Omni clip's prompt puts every line in its shot with its start time, the
+  speaker, the language, and the words in quotes. For example: `At 3.5s, Jun says
+  in Chinese: "那就用代码。"`.
+- The prompt asks for one speaker at a time, the exact words with no translating,
+  and a last line that ends before the final second. It ends with one `Sound
+  design:` sentence.
+- Start times come from the speech budget (`internal/speech`). The budget is an
+  estimate from published speaking rates, because Google gives none:
+  - Chinese at 4.2 characters a second; Japanese and Korean at 4.5.
+  - English at 2.5 words a second; Spanish, French, Italian and Portuguese at 2.6;
+    German at 2.3.
+  - Plus about 0.35 s at each clause break and between lines.
+- The budget is checked before a scene is made. A clip whose lines take longer
+  than the clip is flagged "Won't fit", and **Fit script to clips** rewrites only
+  the spoken lines to fit.
+- Seedance clips keep their own BytePlus notation and are not given start times.
+
 ### Google Gemini voices
 
 The Google Gemini key also speaks narration and character lines. Choose
