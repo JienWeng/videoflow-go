@@ -29,7 +29,7 @@ func (r Resolver) Credentials(name string) (key, endpoint string, fromDB bool, e
 	if label := costs.Retired[name]; label != "" {
 		return "", "", false, fmt.Errorf("%s is no longer available in VideoFlow; choose another video service", label)
 	}
-	if name == "openai" || name == "fal" || name == "byteplus" || name == "fish" || name == "elevenlabs" || providers.VideoHost(name) {
+	if name == "openai" || name == "gemini" || name == "fal" || name == "byteplus" || name == "fish" || name == "elevenlabs" || providers.VideoHost(name) {
 		return r.mediaCredentials(name)
 	}
 	endpoint = r.Config.OpenRouterBaseURL

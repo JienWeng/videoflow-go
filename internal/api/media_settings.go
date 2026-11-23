@@ -12,6 +12,8 @@ func (s *Server) mediaCatalogClient(provider, model string) (providers.MediaClie
 	switch provider {
 	case "openai":
 		return providers.NewOpenAIImages("", providers.OpenAIURL, s.routes().DefaultMediaModel("openai", "image")), nil
+	case "gemini":
+		return providers.NewGeminiImages("", providers.GeminiURL, model), nil
 	case "fal":
 		return providers.NewFalClientAt("", providers.FalURL, model), nil
 	case "byteplus":
@@ -31,8 +33,13 @@ func (s *Server) prepareMediaSettings(ctx context.Context, body map[string]any) 
 		if raw, ok := body[providerKey]; ok {
 			var valid bool
 			provider, valid = raw.(string)
-			if !valid || (provider != "openrouter" && provider != "fal" && provider != "byteplus" && !providers.VideoHost(provider)) || (kind == "image" && (provider == "byteplus" || providers.VideoHost(provider))) {
+			if !valid || (provider != "openrouter" && provider != "fal" && provider != "byteplus" && provider != "gemini" && provider != "openai" && !providers.VideoHost(provider)) || (kind == "image" && (provider == "byteplus" || providers.VideoHost(provider))) || (kind == "video" && (provider == "gemini" || provider == "openai")) {
 				return fmt.Errorf("unsupported %s provider", kind)
+			}
+			// OpenAI is picked automatically whenever its key is saved; choosing it by hand only
+			// makes sense then.
+			if provider == "openai" && !s.routes().Connected("openai") {
+				return fmt.Errorf("save an OpenAI key in AI connections before choosing OpenAI for pictures")
 			}
 		}
 		keys := []string{kind + "_model"}

@@ -41,6 +41,15 @@ func TestImageAndVoice(t *testing.T) {
 	if amount, basis := Image("codex", "native-image-generation", nil); amount != 0 || basis != Included {
 		t.Fatalf("Codex pictures are part of the plan: %v %s", amount, basis)
 	}
+	if amount, basis := Image("gemini", "gemini-3-pro-image", nil); amount != 0.134 || basis != Rate {
+		t.Fatalf("Nano Banana Pro picture = %v (%s), want 0.134 rate", amount, basis)
+	}
+	if amount, basis := Image("gemini", "gemini-2.5-flash-image", nil); amount != 0.039 || basis != Rate {
+		t.Fatalf("Nano Banana picture = %v (%s), want 0.039 rate", amount, basis)
+	}
+	if _, basis := Image("gemini", "gemini-9-unknown-image", nil); basis != Unpriced {
+		t.Fatalf("unknown Gemini model should be unpriced, got %s", basis)
+	}
 	if amount, _ := Voice("fish", "s2.1-pro", string(make([]byte, 1000))); amount != 0.015 {
 		t.Fatalf("1,000 bytes of speech = %v, want 0.015", amount)
 	}

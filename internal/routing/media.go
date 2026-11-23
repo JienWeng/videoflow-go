@@ -24,6 +24,8 @@ func ValidProviderURL(provider, raw string) bool {
 		return strings.TrimRight(raw, "/") == providers.FishURL
 	case "fal":
 		return strings.TrimRight(raw, "/") == providers.FalURL
+	case "gemini":
+		return strings.TrimRight(raw, "/") == providers.GeminiURL
 	case "byteplus":
 		return strings.TrimRight(raw, "/") == providers.BytePlusURL
 	}
@@ -63,6 +65,8 @@ func (r Resolver) mediaCredentials(name string) (key, endpoint string, fromDB bo
 		if endpoint == "" {
 			endpoint = providers.FalURL
 		}
+	case "gemini":
+		key, endpoint = r.Config.GeminiAPIKey, providers.GeminiURL
 	case "byteplus":
 		key = r.Config.BytePlusAPIKey
 		endpoint = r.Config.BytePlusBaseURL
@@ -130,11 +134,15 @@ func (r Resolver) MediaSelections() (map[string]MediaChoice, error) {
 		} else if kind == "reference" {
 			modelKey = "ref_image_model"
 		}
-		if kind != "video" && openAIConfigured {
+		provider := setting(providerKey, "fal")
+		// An OpenAI key decides pictures unless Google Gemini was chosen on purpose.
+		if kind != "video" && openAIConfigured && provider != "gemini" {
 			selections[kind] = MediaChoice{"openai", r.DefaultMediaModel("openai", kind)}
 			continue
 		}
-		provider := setting(providerKey, "fal")
+		if kind != "video" && provider == "openai" {
+			provider = "fal" // OpenAI was chosen, but its key has since been removed
+		}
 		selections[kind] = MediaChoice{provider, setting(modelKey, r.DefaultMediaModel(provider, kind))}
 		// A saved choice of a service the app no longer uses is picked automatically instead.
 		retired := kind == "video" && costs.Retired[provider] != ""
@@ -175,6 +183,11 @@ func (r Resolver) DefaultMediaModel(provider, kind string) string {
 			return r.Config.OpenAIImageModel
 		}
 		return providers.OpenAIImageModel
+	case "gemini":
+		if kind == "video" {
+			return ""
+		}
+		return providers.GeminiImageModel
 	case "fal":
 		if kind == "video" {
 			return providers.FalVideoModel
@@ -218,6 +231,8 @@ func (r Resolver) Media(provider, model, endpoint string) (providers.MediaClient
 	switch provider {
 	case "openai":
 		return providers.NewOpenAIImages(key, endpoint, model), endpoint, nil
+	case "gemini":
+		return providers.NewGeminiImages(key, endpoint, model), endpoint, nil
 	case "fal":
 		return providers.NewFalClientAt(key, endpoint, model), endpoint, nil
 	case "byteplus":

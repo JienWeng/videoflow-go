@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -53,13 +54,40 @@ func (s *Server) handleAISetup(w http.ResponseWriter, r *http.Request) {
 	} else {
 		pictures = aiChoice{Service: label(provider), Model: model, Ready: connected(provider)}
 		if provider == "openai" {
-			pictures.Note = "Used whenever an OpenAI key is saved. About $0.15 per picture."
+			pictures.Note = "Used whenever an OpenAI key is saved, unless Google Gemini is chosen. About $0.15 per picture."
+		}
+		if price, ok := costs.GeminiImagePrices[model]; ok && provider == "gemini" {
+			pictures.Note = fmt.Sprintf("About $%.3f per picture.", price)
 		}
 		if problem := s.serviceProblem(provider); problem != "" {
 			pictures.Note = problem
 		} else if !pictures.Ready {
 			pictures.Note = "Add a key for " + pictures.Service + " in AI connections."
 		}
+	}
+
+	// The services pictures can be sent to. An OpenAI key decides pictures unless Google
+	// Gemini is chosen, so with one saved the other services would not be used.
+	pictureService := map[string]any{"provider": provider, "model": model}
+	choices := []string{"fal", "openrouter", "gemini"}
+	if openAIKey, _, _, _ := routes.Credentials("openai"); strings.TrimSpace(openAIKey) != "" {
+		choices = []string{"openai", "gemini"}
+	}
+	options := []map[string]any{}
+	for _, name := range choices {
+		options = append(options, map[string]any{"id": name, "label": label(name), "ready": connected(name)})
+	}
+	pictureService["options"] = options
+	if provider == "gemini" {
+		models := []map[string]any{}
+		for _, m := range providers.GeminiImageModels {
+			entry := map[string]any{"id": m.ID, "label": m.Label}
+			if price, ok := costs.GeminiImagePrices[m.ID]; ok {
+				entry["per_picture"] = price
+			}
+			models = append(models, entry)
+		}
+		pictureService["models"] = models
 	}
 
 	// Video: one service, picked by hand or by price.
@@ -100,7 +128,7 @@ func (s *Server) handleAISetup(w http.ResponseWriter, r *http.Request) {
 		listening.Note = "Add an OpenAI key in AI connections. Without one, captions keep their estimated times."
 	}
 	writeJSON(w, 200, map[string]any{
-		"assistant": assistant, "pictures": pictures, "video": video, "voice": voice,
+		"assistant": assistant, "pictures": pictures, "picture_service": pictureService, "video": video, "voice": voice,
 		"vision":    aiChoice{Service: "OpenRouter", Model: routes.Setting("vl_model", s.cfg.OpenRouterVisionModel), Ready: openrouter, Note: note},
 		"listening": listening,
 	})

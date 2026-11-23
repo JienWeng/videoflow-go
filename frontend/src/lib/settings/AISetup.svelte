@@ -22,6 +22,13 @@
       effort?: string;
     };
     pictures: Choice;
+    // Where pictures go when Codex does not draw them, and the models that service offers.
+    picture_service: {
+      provider: string;
+      model: string;
+      options: { id: string; label: string; ready: boolean }[];
+      models?: { id: string; label: string; per_picture?: number }[];
+    };
     vision: Choice;
     listening: Choice;
     video: {
@@ -65,25 +72,20 @@
     connectOpen = $state(false),
     connectChecked = false;
   const connectedTools = $derived((tools?.engines ?? []).filter(e => e.signed_in).length);
-  // The paid picture service saved in settings; 'openai' means an OpenAI key decides it.
-  let pictureService = $state('');
   const engineName: Record<string, string> = { claude: 'Claude Code', codex: 'Codex' };
   const select = 'h-9 min-w-0 max-w-full rounded-md border border-input bg-background px-2 text-sm';
 
   async function load() {
     try {
-      let app: { default_image_provider?: string } | null;
-      [setup, catalog, app, tools] = await Promise.all([
+      [setup, catalog, tools] = await Promise.all([
         get<Setup>('/ai/setup'),
         get<Record<string, { models: string[]; efforts: string[] }>>('/director/models'),
-        get<{ default_image_provider?: string }>('/settings/app').catch(() => null),
         get<DirectorStatus>('/director/status').catch(() => null)
       ]);
       if (!connectChecked) {
         connectChecked = true;
         connectOpen = !connectedTools;
       }
-      pictureService = app?.default_image_provider ?? '';
       services = await get<Services>('/video-services' + (setup?.video.family ? '?model=' + setup.video.family : ''));
       error = '';
     } catch (e) {
@@ -119,6 +121,9 @@
     });
   const pictures = (provider: string) =>
     change('pictures', () => put('/settings/app', { default_image_provider: provider }));
+  // Character sheets and props use the same model as scene pictures.
+  const pictureModel = (model: string) =>
+    change('pictures', () => put('/settings/app', { image_model: model, ref_image_model: model }));
   const voice = (provider: string) => change('voice', () => put('/voice/preferences', { primary_provider: provider }));
   onMount(() => void load());
   const usable = $derived(services?.services.filter(s => s.usable) ?? []);
@@ -216,14 +221,26 @@ docker compose exec backend claude auth login</code></pre>
         <div class="grid gap-1">
           <p class="text-sm"><span class="font-medium">{setup.pictures.service}</span> <span class="text-muted-foreground">· {setup.pictures.model}</span></p>
           {#if setup.pictures.note}<p class="text-xs text-muted-foreground">{setup.pictures.note}</p>{/if}
-          {#if pictureService && pictureService !== 'openai'}
+          {#if setup.picture_service}
+          {@const ps = setup.picture_service}
+          <div class="flex flex-wrap items-end gap-2">
             <label class="grid gap-1 text-xs text-muted-foreground">{setup.pictures.service === 'Codex' ? 'Service when Codex is not used' : 'Service'}
-              <select class={select + ' w-64'} disabled={busy === 'pictures'} value={pictureService} onchange={(e) => pictures(e.currentTarget.value)}>
-                <option value="fal">fal.ai</option><option value="openrouter">OpenRouter</option>
+              <select class={select + ' w-64'} disabled={busy === 'pictures'} value={ps.provider} onchange={(e) => pictures(e.currentTarget.value)}>
+                {#if !ps.options.some((o) => o.id === ps.provider)}<option value={ps.provider}>{ps.provider} (current)</option>{/if}
+                {#each ps.options as o (o.id)}<option value={o.id}>{o.label}{o.ready ? '' : ' (no key saved)'}</option>{/each}
               </select>
             </label>
+            {#if ps.models?.length}
+              <label class="grid gap-1 text-xs text-muted-foreground">Model
+                <select class={select + ' w-64'} disabled={busy === 'pictures'} value={ps.model} onchange={(e) => pictureModel(e.currentTarget.value)}>
+                  {#if !ps.models.some((m) => m.id === ps.model)}<option value={ps.model}>{ps.model} (current)</option>{/if}
+                  {#each ps.models as m (m.id)}<option value={m.id}>{m.label}{m.per_picture ? ` · about $${m.per_picture.toFixed(3)} each` : ''}</option>{/each}
+                </select>
+              </label>
+            {/if}
+          </div>
           {/if}
-          <p class="text-xs text-muted-foreground">Codex makes the pictures when the conversation runs on Codex, and OpenAI whenever its key is saved. Otherwise the service chosen here is used.</p>
+          <p class="text-xs text-muted-foreground">Codex makes the pictures when the conversation runs on Codex. Otherwise the service chosen here is used; with an OpenAI key saved, that is OpenAI unless you choose Google Gemini.</p>
         </div>
       </li>
 

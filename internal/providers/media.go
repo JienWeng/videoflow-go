@@ -32,7 +32,9 @@ const BytePlusVideoModel = "dreamina-seedance-2-0-260128"
 
 type mediaHTTP struct {
 	key, base, provider, auth string
-	client                    *http.Client
+	// header, when set, carries the bare key instead of Authorization (Google's x-goog-api-key).
+	header string
+	client *http.Client
 }
 
 func newMediaHTTP(key, base, provider, auth string) mediaHTTP {
@@ -57,7 +59,11 @@ func (c *mediaHTTP) requestBody(ctx context.Context, method, path, contentType s
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", c.auth+c.key)
+	if c.header != "" {
+		req.Header.Set(c.header, c.key)
+	} else {
+		req.Header.Set("Authorization", c.auth+c.key)
+	}
 	req.Header.Set("Content-Type", contentType)
 	res, err := c.client.Do(req)
 	if err != nil {

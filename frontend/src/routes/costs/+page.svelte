@@ -59,6 +59,7 @@
   const services: Record<string, string> = {
     fal: 'fal.ai',
     openai: 'OpenAI',
+    gemini: 'Google Gemini',
     fish: 'Fish Audio',
     elevenlabs: 'ElevenLabs',
     openrouter: 'OpenRouter',

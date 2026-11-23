@@ -115,7 +115,7 @@ type costGroup struct {
 }
 
 var costLabels = map[string]string{"video": "Video clips", "image": "Pictures", "voice": "Voice", "text": "Text analysis"}
-var serviceLabels = map[string]string{"fal": "fal.ai", "openai": "OpenAI", "fish": "Fish Audio", "elevenlabs": "ElevenLabs", "openrouter": "OpenRouter", "codex": "Codex", "claude": "Claude Code", "byteplus": "BytePlus"}
+var serviceLabels = map[string]string{"fal": "fal.ai", "openai": "OpenAI", "gemini": "Google Gemini", "fish": "Fish Audio", "elevenlabs": "ElevenLabs", "openrouter": "OpenRouter", "codex": "Codex", "claude": "Claude Code", "byteplus": "BytePlus"}
 
 func serviceLabel(provider string) string {
 	if l := serviceLabels[provider]; l != "" {
@@ -147,7 +147,7 @@ func (s *Server) handleCosts(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{
 		"currency": "USD", "total": money(sum.total), "estimated": money(sum.uncertain),
 		"categories": flatCostGroups(sum.categories, []string{"video", "image", "voice", "text"}),
-		"services":   flatCostGroups(sum.services, []string{"fal", "openai", "fish"}),
+		"services":   flatCostGroups(sum.services, []string{"fal", "openai", "gemini", "fish"}),
 		"episodes":   sum.byEpisode(), "included": s.includedCosts(project, sum.included),
 		"unconfirmed": sum.unconfirmed, "unpriced": sum.unpriced, "items": entries,
 	}
