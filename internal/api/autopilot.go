@@ -52,6 +52,10 @@ type autopilotRequest struct {
 	// JoinOnly joins and exports what is already made and never makes a video: the run
 	// is refused, naming the scenes, when one has no finished video. Free.
 	JoinOnly bool `json:"join_only"`
+	// CharacterPictures first makes, side by side, the reference pictures of every cast
+	// member of these scenes that has none, using image credits. Full auto sends it; a
+	// run started by a click elsewhere spends only what its button showed.
+	CharacterPictures bool `json:"character_pictures"`
 }
 
 // autopilotRuns are the background runs in progress, by what they make.
@@ -215,6 +219,9 @@ func (a *autopilotRunner) run(ctx context.Context) (any, error) {
 	if err != nil {
 		return stuck, err
 	}
+	if err = a.makeCharacterPictures(ctx); err != nil {
+		return nil, err
+	}
 	waiting, err := a.startSceneVideos(ctx, adopted)
 	if err != nil {
 		return nil, err
@@ -253,7 +260,50 @@ func (a *autopilotRunner) askAboutEarlierRequests(ctx context.Context) (map[stri
 	return adopted, nil, nil
 }
 
-// startSceneVideos is step 2. Start every scene that has no finished video yet. The
+// makeCharacterPictures is step 2, only when the run asks for it: the cast of the scenes
+// gets every missing reference picture in one batch, so the videos keep each character's
+// look. A picture that cannot be made stops the run before any video is paid for; the
+// pictures that were made are kept, so running again only makes the rest.
+func (a *autopilotRunner) makeCharacterPictures(ctx context.Context) error {
+	if !a.body.CharacterPictures || a.body.JoinOnly {
+		return nil
+	}
+	cast := map[string]bool{}
+	for _, scene := range a.scenes {
+		for _, id := range models.IDList(scene.CharacterIDsJSON) {
+			cast[id] = true
+		}
+	}
+	missing, err := a.s.sheetCharacters(a.project, nil)
+	if err != nil {
+		return err
+	}
+	chars := []models.Character{}
+	for _, c := range missing {
+		if cast[c.ID] {
+			chars = append(chars, c)
+		}
+	}
+	if len(chars) == 0 {
+		return nil
+	}
+	if err = a.sameProject(); err != nil {
+		return err
+	}
+	if problem := a.s.characterSheetProblem(ctx); problem != "" {
+		return fmt.Errorf("couldn't make the character pictures: %s", problem)
+	}
+	a.stage(fmt.Sprintf("Making pictures for %d characters", len(chars)))
+	batch := a.s.makeCharacterSheets(ctx, chars, false, "", func(done, total int) {
+		a.stage(fmt.Sprintf("Making character pictures: %d of %d done", done, total))
+	})
+	if err = failedSheetsError(batch.Failed); err != nil {
+		return fmt.Errorf("%w. The other pictures are saved; ask me again to carry on", err)
+	}
+	return nil
+}
+
+// startSceneVideos is step 3. Start every scene that has no finished video yet. The
 // video service makes them side by side while the run moves on to the next scene. It
 // returns the job ids to wait on, by scene id.
 func (a *autopilotRunner) startSceneVideos(ctx context.Context, adopted map[string][]string) (map[string][]string, error) {
@@ -296,7 +346,7 @@ func (a *autopilotRunner) startSceneVideos(ctx context.Context, adopted map[stri
 	return waiting, nil
 }
 
-// waitForSceneVideos is step 3. Wait for the video service. A request that loses its
+// waitForSceneVideos is step 4. Wait for the video service. A request that loses its
 // answer is asked about again.
 func (a *autopilotRunner) waitForSceneVideos(ctx context.Context, waiting map[string][]string) (any, error) {
 	for {
@@ -356,7 +406,7 @@ func (a *autopilotRunner) videosOnlyResult(waiting map[string][]string) map[stri
 	return map[string]any{"stage": "Done", "videos_only": true, "script_id": a.body.ScriptID, "scene_ids": ids, "scene_titles": titles, "job_ids": jobIDs, "scene_count": len(a.scenes)}
 }
 
-// joinAndExport is step 4. Put the clips in story order, caption them, save and export.
+// joinAndExport is step 5. Put the clips in story order, caption them, save and export.
 func (a *autopilotRunner) joinAndExport(ctx context.Context) (any, error) {
 	if err := a.sameProject(); err != nil {
 		return nil, err

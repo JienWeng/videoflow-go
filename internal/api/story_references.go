@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -111,6 +112,18 @@ func (s *Server) storyCharacterReferences(ctx context.Context, project string, c
 	ids := []string{}
 	approved := true
 	seen := map[string]bool{}
+	chars := []models.Character{}
+	for _, id := range cast {
+		c, err := s.database.GetCharacter(id)
+		if err != nil || c.ProjectID == nil || *c.ProjectID != project {
+			return ids, false, fmt.Errorf("story character is not in this project")
+		}
+		chars = append(chars, *c)
+	}
+	// Missing sheets are made side by side; the loop below then finds each one made.
+	if batch := s.makeCharacterSheets(ctx, chars, true, style, nil); len(batch.Failed) > 0 {
+		return ids, false, errors.New(batch.Failed[0].Error)
+	}
 	for _, id := range cast {
 		c, err := s.database.GetCharacter(id)
 		if err != nil || c.ProjectID == nil || *c.ProjectID != project {

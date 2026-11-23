@@ -305,8 +305,11 @@ type ChatIntentResponse struct {
 	SceneCount    int            `json:"scene_count,omitempty"`
 	SceneID       string         `json:"scene_id,omitempty"`
 	CharacterID   string         `json:"character_id,omitempty"`
-	OutputID      string         `json:"output_id,omitempty"`
-	EditorPanel   string         `json:"editor_panel,omitempty"`
+	// CharacterIDs names the characters generate_character_references draws; empty means
+	// every character without a reference picture.
+	CharacterIDs []string `json:"character_ids,omitempty"`
+	OutputID     string   `json:"output_id,omitempty"`
+	EditorPanel  string   `json:"editor_panel,omitempty"`
 	// UserLanguage is the ISO 639-1 code of the language the user writes in.
 	UserLanguage     string            `json:"user_language,omitempty"`
 	CharacterChanges *CharacterChanges `json:"character_changes,omitempty"`

@@ -205,6 +205,8 @@ func (s *Server) registerProjectRoutes() {
 	// Characters
 	s.router.Get("/characters", s.handleListCharacters)
 	s.router.Post("/characters", s.handleCreateCharacter)
+	s.router.Get("/characters/reference-sheets", s.handleCharacterSheetsPlan)
+	s.router.Post("/characters/reference-sheets", s.handleCharacterSheetsBatch)
 	s.router.Get("/characters/{id}", s.handleGetCharacter)
 	s.router.Patch("/characters/{id}", s.handleUpdateCharacter)
 	s.router.Delete("/characters/{id}", s.handleDeleteCharacter)

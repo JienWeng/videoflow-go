@@ -58,6 +58,10 @@ export interface ChatIntent {
   service?: string;
   waiting_reason?: string;
   video_switch?: VideoSwitchChoice;
+  /** generate_character_references: who is drawn and how many picture calls it takes. */
+  character_ids?: string[];
+  characters?: { id: string; name: string }[];
+  image_calls?: number;
 }
 
 /** Backend project-state snapshot attached to the chat reply. */

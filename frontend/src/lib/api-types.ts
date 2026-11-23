@@ -248,6 +248,26 @@ export type OpResult = {
   video_url?: string;
   /** Set when a video run stopped on a scene the video service never answered about. */
   stuck?: { job_id: string; scene_id?: string; service: string; message: string };
+  /** POST /characters/reference-sheets: the characters drawn and those that failed. */
+  made?: CharacterSheetOutcome[];
+  failed?: CharacterSheetOutcome[];
+  image_calls?: number;
+};
+
+/** One character in a picture batch (internal/api/character_batch.go). */
+export type CharacterSheetOutcome = {
+  character_id: string;
+  name: string;
+  reference_asset_ids?: string[];
+  error?: string;
+};
+
+/** GET /characters/reference-sheets: what a picture batch would draw, before anything is spent. */
+export type CharacterSheetPlan = {
+  characters: CharacterSheetOutcome[];
+  image_calls: number;
+  ready: boolean;
+  problem?: string;
 };
 
 /**

@@ -16,19 +16,8 @@ func (s *Server) generationPrerequisites(ctx context.Context, brief generationBr
 		}
 		missing = append(missing, map[string]string{"route": route, "setting": setting, "reason": reason})
 	}
-	session, err := s.directorSession(ctx)
-	if err != nil {
-		add("local_text", err.Error())
-	} else if _, err = s.directorRunner.Available(session.Engine); err != nil {
-		add("local_text", err.Error())
-	} else if s.authManager().Status(ctx, session.Engine).SignedOut {
-		name := "Codex"
-		if session.Engine == "claude" {
-			name = "Claude Code"
-		}
-		add("local_text", name+" is signed out, so it can't plan this story. Switch to a connected AI, or sign in again.")
-	} else if session.Status != "ready" {
-		add("local_text", "The AI session is busy with another request. Wait for it to finish, or stop it.")
+	if problem := s.localTextProblem(ctx, "plan this story"); problem != "" {
+		add("local_text", problem)
 	}
 	needsSheets := brief.CreateCharacters
 	for _, id := range brief.CharacterIDs {
@@ -41,11 +30,8 @@ func (s *Server) generationPrerequisites(ctx context.Context, brief generationBr
 	}
 	nativeImages := s.preferCodexImages(ctx)
 	if needsSheets && !nativeImages {
-		client, _, model, e := s.selectedMedia(ctx, "reference")
-		if e != nil {
-			add("reference", e.Error())
-		} else if e = client.ValidateImage(ctx, map[string]any{"model": model, "prompt": "preflight", "aspect_ratio": "1:1"}); e != nil {
-			add("reference", e.Error())
+		if problem := s.referenceImageProblem(ctx); problem != "" {
+			add("reference", problem)
 		}
 	}
 	if !nativeImages {
@@ -116,4 +102,41 @@ func (s *Server) generationPrerequisites(ctx context.Context, brief generationBr
 		}
 	}
 	return missing
+}
+
+// localTextProblem says why the selected local AI session cannot take a turn now, or ""
+// when it can. task finishes "… is signed out, so it can't …".
+func (s *Server) localTextProblem(ctx context.Context, task string) string {
+	session, err := s.directorSession(ctx)
+	if err != nil {
+		return err.Error()
+	}
+	if _, err = s.directorRunner.Available(session.Engine); err != nil {
+		return err.Error()
+	}
+	if s.authManager().Status(ctx, session.Engine).SignedOut {
+		name := "Codex"
+		if session.Engine == "claude" {
+			name = "Claude Code"
+		}
+		return name + " is signed out, so it can't " + task + ". Switch to a connected AI, or sign in again."
+	}
+	if session.Status != "ready" {
+		return "The AI session is busy with another request. Wait for it to finish, or stop it."
+	}
+	return ""
+}
+
+// referenceImageProblem says why the selected picture service cannot make a character
+// sheet (a missing key, or a model that refuses a square picture), or "" when it can.
+// It only reads the service's catalog; nothing is generated.
+func (s *Server) referenceImageProblem(ctx context.Context) string {
+	client, _, model, err := s.selectedMedia(ctx, "reference")
+	if err != nil {
+		return err.Error()
+	}
+	if err = client.ValidateImage(ctx, map[string]any{"model": model, "prompt": "preflight", "aspect_ratio": "1:1"}); err != nil {
+		return err.Error()
+	}
+	return ""
 }

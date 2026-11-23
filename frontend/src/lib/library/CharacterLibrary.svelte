@@ -6,7 +6,8 @@
   import { characterMatches } from './catalog.mjs';
   import { protectDraft } from '$lib/protect-draft';
   import { goto } from '$app/navigation';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
+  import { runBackgroundOp } from '$lib/ops';
   import { get, post, del, isImage } from '$lib/api';
   import { Button } from '$lib/components/ui/button';
   import { Card, CardContent } from '$lib/components/ui/card';
@@ -14,8 +15,8 @@
   import { Textarea } from '$lib/components/ui/textarea';
   import * as Dialog from '$lib/components/ui/dialog';
   import { toast } from 'svelte-sonner';
-  import { Images, Trash2, X } from '@lucide/svelte';
-  import type { Asset, Character } from '$lib/api-types';
+  import { Images, LoaderCircle, Sparkles, Trash2, X } from '@lucide/svelte';
+  import type { Asset, Character, CharacterSheetPlan } from '$lib/api-types';
 
   let search = $state(''),
     referenceFilter = $state(''),
@@ -79,6 +80,69 @@
       )
   );
 
+  // --- pictures for every character without one, made side by side in one go ---
+  const sheetScope = new AbortController();
+  onDestroy(() => sheetScope.abort());
+  let sheetPlan = $state<CharacterSheetPlan | null>(null);
+  let sheetPlanError = $state('');
+  let drawing = $state(false);
+  let sheetNote = $state('');
+  async function loadSheetPlan() {
+    try {
+      sheetPlan = await get<CharacterSheetPlan>('/characters/reference-sheets');
+      sheetPlanError = '';
+    } catch (e) {
+      sheetPlan = null;
+      sheetPlanError = errorMessage(e);
+    }
+  }
+  const sheetReason = $derived(
+    drawing
+      ? ''
+      : sheetPlanError
+        ? `Can't check the picture service: ${sheetPlanError}`
+        : sheetPlan && !sheetPlan.ready
+          ? (sheetPlan.problem ?? '')
+          : ''
+  );
+  async function drawAll() {
+    const plan = sheetPlan;
+    if (!plan?.ready || drawing || busy) return;
+    drawing = true;
+    sheetNote = '';
+    const finish = async (text: string) => {
+      if (sheetScope.signal.aborted) return;
+      drawing = false;
+      sheetNote = text;
+      await retryCharacters();
+    };
+    try {
+      await runBackgroundOp(
+        '/characters/reference-sheets',
+        { character_ids: plan.characters.map(c => c.character_id), expected_image_calls: plan.image_calls },
+        {
+          signal: sheetScope.signal,
+          label: 'Character pictures',
+          onDone: op => {
+            const made = op.result_json?.made ?? [],
+              failed = op.result_json?.failed ?? [];
+            return finish(
+              [
+                made.length ? `Made pictures for ${made.map(c => c.name).join(', ')}.` : '',
+                failed.length ? `Couldn't make ${failed.map(c => `${c.name} (${c.error})`).join(', ')}. Try again to redo only those.` : ''
+              ]
+                .filter(Boolean)
+                .join(' ')
+            );
+          },
+          onFail: op => finish(op.error ?? 'The pictures could not be made. Check Activity before trying again.')
+        }
+      );
+    } catch (e) {
+      await finish(errorMessage(e));
+    }
+  }
+
   // --- delete confirm ---
   let deleteTarget = $state<Character | null>(null);
 
@@ -94,6 +158,7 @@
       characters = nextCharacters;
       assets = Object.fromEntries(all.map(a => [a.id, a]));
       oncounts?.(characters.length, all.length);
+      void loadSheetPlan();
     } catch (e) {
       if (sequence === loadSequence) throw e;
     }
@@ -167,6 +232,12 @@
           : loaded
             ? `${characters.length} ${characters.length === 1 ? 'character' : 'characters'}`
             : 'Loading collection…'}</p></div>
+    <div class="flex flex-wrap items-center gap-2"><Button
+      variant="outline"
+      disabled={!loaded||!!loadError||!sheetPlan?.ready||drawing||!!busy}
+      title={sheetReason||undefined}
+      onclick={drawAll}>{#if drawing}<LoaderCircle class="size-4 motion-safe:animate-spin"/>{:else}<Sparkles
+        class="size-4"/>{/if}{drawing?'Making pictures…':'Make pictures for all characters'}</Button>
     <Dialog.Root open={createOpen} onOpenChange={changeCreateOpen}>
       <Dialog.Trigger>{#snippet child({props})}<Button {...props} disabled={!loaded||!!loadError}>Create character</Button>{/snippet}</Dialog.Trigger>
       <Dialog.Content
@@ -206,8 +277,12 @@
           disabled={busy==='create'}
           onclick={()=>changeCreateOpen(false)}><X class="size-4" /></Button>
       </Dialog.Content>
-    </Dialog.Root>
+    </Dialog.Root></div>
   </div>
+  {#if loaded&&!loadError&&characters.length}<div class="-mt-2 mb-4 space-y-1 text-xs text-muted-foreground" aria-live="polite">
+    {#if sheetReason}<p>{sheetReason}</p>{:else if sheetPlan?.ready}<p>Makes {sheetPlan.characters.length===1?'a reference picture':'reference pictures'} for {sheetPlan.characters.map(c=>c.name).join(', ')}, side by side: {sheetPlan.image_calls} picture {sheetPlan.image_calls===1?'call':'calls'} (one each, with the face close-up and full body in one picture). Uses image credits.</p>{/if}
+    {#if sheetNote}<p role="status" class="text-foreground">{sheetNote}</p>{/if}
+  </div>{/if}
 
   <div
     class="mb-6 flex flex-wrap gap-3"

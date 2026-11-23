@@ -123,11 +123,44 @@ For HTML composition, animation, captions and local rendering, read the project-
 	}
 	return base, nil
 }
+
+// directorTurnGateKey carries a gate that work running side by side (such as a batch of
+// character sheets) shares, so its turns on the one local session take turns instead of
+// finding the session busy.
+type directorTurnGateKey struct{}
+
+// withDirectorTurnGate gives ctx a turn gate, keeping one it already has.
+func withDirectorTurnGate(ctx context.Context) context.Context {
+	if _, ok := ctx.Value(directorTurnGateKey{}).(chan struct{}); ok {
+		return ctx
+	}
+	return context.WithValue(ctx, directorTurnGateKey{}, make(chan struct{}, 1))
+}
+
+// takeDirectorTurn waits for ctx's turn gate, if it has one, and returns its release.
+func takeDirectorTurn(ctx context.Context) (func(), error) {
+	gate, ok := ctx.Value(directorTurnGateKey{}).(chan struct{})
+	if !ok {
+		return func() {}, nil
+	}
+	select {
+	case gate <- struct{}{}:
+		return func() { <-gate }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
 func (s *Server) localTextJSON(ctx context.Context, kind, system, prompt string, target any) error {
 	session, err := s.directorSession(ctx)
 	if err != nil {
 		return err
 	}
+	release, err := takeDirectorTurn(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	if _, err = s.directorRunner.Available(session.Engine); err != nil {
 		return err
 	}

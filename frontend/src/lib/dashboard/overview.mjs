@@ -6,8 +6,8 @@ const timestamp = item => {
 };
 const unique = items => [...new Map(items.map(item => [item.id, item])).values()];
 const statusLabel = value => ({ pending: 'Queued', running: 'In progress', succeeded: 'Completed', failed: 'Failed', reconciliation_required: 'Review needed' })[value] ?? 'Saved';
-const kindLabel = value => ({ video_generation: 'Story generation', storyboard: 'Storyboard images', assets: 'Asset generation', shots: 'Shot planning', caption: 'Captions', style_ingest: 'Project style' })[value] ?? String(value || 'Project task').replaceAll('_', ' ');
-const operationHref = op => op.kind === 'video_generation' ? `/?view=story&new_story=1&op_id=${encodeURIComponent(op.id)}` : op.scene_id ? `/?view=story&scene_id=${encodeURIComponent(op.scene_id)}` : ['assets', 'style_ingest'].includes(op.kind) ? '/library?tab=media' : op.kind === 'caption' ? '/render' : '/?view=story';
+const kindLabel = value => ({ video_generation: 'Story generation', character_references: 'Character pictures', storyboard: 'Storyboard images', assets: 'Asset generation', shots: 'Shot planning', caption: 'Captions', style_ingest: 'Project style' })[value] ?? String(value || 'Project task').replaceAll('_', ' ');
+const operationHref = op => op.kind === 'video_generation' ? `/?view=story&new_story=1&op_id=${encodeURIComponent(op.id)}` : op.scene_id ? `/?view=story&scene_id=${encodeURIComponent(op.scene_id)}` : ['assets', 'style_ingest'].includes(op.kind) ? '/library?tab=media' : op.kind === 'character_references' ? '/library?tab=characters' : op.kind === 'caption' ? '/render' : '/?view=story';
 
 export function makeOverview(snapshot, now = Date.now()) {
   if (!Array.isArray(snapshot.graph?.nodes) || !['assets', 'ops', 'jobs'].every(key => Array.isArray(snapshot[key]))) {

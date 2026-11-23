@@ -13,7 +13,15 @@
   import { del as apiDel, get, patch as apiPatch, post as apiPost } from '$lib/api';
   import { normalizeChatIntent } from './intent.mjs';
   import { runBackgroundOp, type Op } from '$lib/ops';
-  import type { AssetPlan, PlannedAsset, ProjectStylePreset, Scene, Shot, StyleFields } from '$lib/api-types';
+  import type {
+    AssetPlan,
+    CharacterSheetPlan,
+    PlannedAsset,
+    ProjectStylePreset,
+    Scene,
+    Shot,
+    StyleFields
+  } from '$lib/api-types';
   import type { ChatIntent, ChatOptions, ChatProjectState, RunContext } from './types';
 
   import { Badge } from '$lib/components/ui/badge';
@@ -56,10 +64,13 @@
     onbriefchange,
     onreference,
     auto = false,
+    full = false,
     onautostart
   }: {
     /** Auto mode: run this step right away when it is free and ready. */
     auto?: boolean;
+    /** Full auto: also start the paid steps in AUTO_FULL by themselves. */
+    full?: boolean;
     onautostart?: () => void;
     intent: ChatIntent;
     options: ChatOptions;
@@ -162,6 +173,7 @@
     generate_script: 'Create story & references',
     generate_image: 'Generate image',
     generate_character_reference: 'Generate character reference',
+    generate_character_references: 'Make pictures for all characters',
     generate_scenes: 'Expand scene',
     generate_shots: 'Generate shots',
     storyboard: 'Generate storyboard',
@@ -176,6 +188,19 @@
     style_ingest: 'Ingest style from story',
     plan_assets: 'Suggest assets'
   };
+
+  // generate_character_references: who is drawn, and whether the picture service can do it now.
+  const sheetCharacters = $derived(intent.characters ?? []);
+  let sheetProblem = $state('');
+  $effect(() => {
+    if (intent.action !== 'generate_character_references' || !intent.character_ids?.length) return;
+    const ids = intent.character_ids.join(',');
+    untrack(() => {
+      get<CharacterSheetPlan>(`/characters/reference-sheets?character_ids=${encodeURIComponent(ids)}`)
+        .then(plan => (sheetProblem = plan.ready ? '' : (plan.problem ?? '')))
+        .catch(() => (sheetProblem = '')); // the button's own request checks again before spending
+    });
+  });
 
   const needsShot = (action: string) => action === 'render_shot' || action === 'refine_shot';
 
@@ -218,6 +243,8 @@
         return !!idea.trim();
       case 'generate_character_reference':
         return !!characterId;
+      case 'generate_character_references':
+        return !!intent.character_ids?.length && !sheetProblem;
       case 'update_character':
         return !!characterId && Object.values(characterDraft).some(v => v?.trim());
       case 'generate_script':
@@ -310,9 +337,13 @@
   // Free planning steps the assistant may carry out itself in Auto mode. Nothing here
   // spends image, video or voice credits, and each result can be changed again.
   const AUTO_FREE = new Set(['refine_scene', 'refine_shot', 'generate_shots', 'plan_assets']);
+  // Paid steps that start by themselves only in Full auto, where the user already agreed
+  // that the assistant spends image credits without asking again.
+  const AUTO_FULL = new Set(['generate_character_references']);
   let autoStarted = false;
   $effect(() => {
-    if (!auto || autoStarted || busy || !ready || !AUTO_FREE.has(intent.action)) return;
+    if (!auto || autoStarted || busy || !ready || !(AUTO_FREE.has(intent.action) || (full && AUTO_FULL.has(intent.action))))
+      return;
     autoStarted = true;
     onautostart?.();
     untrack(() => void run());
@@ -376,6 +407,14 @@
         onfocus?.(characterId);
         return;
       }
+      case 'generate_character_references':
+        return runInBackground(
+          '/characters/reference-sheets',
+          { character_ids: intent.character_ids ?? [], expected_image_calls: intent.image_calls },
+          'Character pictures',
+          () => intent.character_ids?.[0],
+          ctx
+        );
       case 'generate_character_reference':
         return runInBackground(
           `/characters/${characterId}/reference-sheets`,
@@ -647,6 +686,11 @@
           value="">Choose a character…</option>{#each options.characters as c(c.id)}<option
           value={c.id}>{c.name}</option>{/each}</select><p
           class="mt-2 text-xs text-muted-foreground">Generates a full-body reference candidate. Review it before use. Provider calls may incur charges.</p></div>{/if}
+      {#if intent.action==='generate_character_references'}<div class="space-y-2"><p
+        class="text-xs text-muted-foreground">Makes a reference picture for each of these characters, side by side:</p><ul
+        class="list-disc pl-5 text-sm">{#each sheetCharacters as c (c.id)}<li>{c.name}</li>{/each}</ul><p
+        class="text-xs text-muted-foreground">{intent.image_calls ?? sheetCharacters.length} picture {(intent.image_calls ?? sheetCharacters.length)===1?'call':'calls'} in all (one each, with the face close-up and full body in one picture). Uses image credits.</p>{#if sheetProblem}<p
+        role="alert" class="text-xs text-destructive">{sheetProblem}</p>{/if}</div>{/if}
 
       {#if intent.action === 'generate_script' && options.characters.length}
       <fieldset class="space-y-1"><legend
