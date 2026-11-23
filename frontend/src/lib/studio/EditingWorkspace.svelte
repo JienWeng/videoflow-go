@@ -1,5 +1,6 @@
 <script lang="ts">
   import { errorMessage } from '../errors';
+  import { randomId } from '../ids';
   import FinishingPanel from './FinishingPanel.svelte';
   import VoiceoverPanel from './VoiceoverPanel.svelte';
   import ChatPanel from '$lib/chat/ChatPanel.svelte';
@@ -173,7 +174,7 @@
   let advanced = '';
   let advancedDirty = false;
   let notice = '';
-  const uid = (prefix: string) => prefix + '-' + crypto.randomUUID();
+  const uid = (prefix: string) => prefix + '-' + randomId();
   const assetName = (id: string) => assets.find(a => a.id === id)?.name ?? id;
   let historyQueued = false;
   function invalidate() {

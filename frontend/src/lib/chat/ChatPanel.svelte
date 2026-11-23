@@ -1,5 +1,6 @@
 <script lang="ts">
   import { errorMessage } from '$lib/errors';
+  import { randomId } from '$lib/ids';
   import { editHref, editOutputHref, editSceneHref } from '$lib/editor/links';
   import { editChanges, applyEditProposal } from '$lib/composition/proposals.mjs';
   import StyleReference from '$lib/brief/StyleReference.svelte';
@@ -125,14 +126,14 @@
       ? {
           role: 'assistant',
           text: 'Starting: making the scene videos side by side…',
-          op: { id: crypto.randomUUID(), label: 'Making scene videos', status: 'running' },
+          op: { id: randomId(), label: 'Making scene videos', status: 'running' },
           autopilotScript: key,
           run
         }
       : {
           role: 'assistant',
           text: 'Starting: making the video for every scene…',
-          op: { id: crypto.randomUUID(), label: 'Finishing your video', status: 'running' },
+          op: { id: randomId(), label: 'Finishing your video', status: 'running' },
           autopilotScript: key,
           run
         };
@@ -1169,7 +1170,7 @@
 
   /** ActionCard launched a background op: append the in-chat progress row. */
   function handleOpStart(label: string, ctx: RunContext): OpHandle {
-    const id = crypto.randomUUID();
+    const id = randomId();
     messages.push({ role: 'assistant', text: '', op: { id, label, status: 'running' } });
     const find = () => messages.find(m => m.op?.id === id);
     return {
