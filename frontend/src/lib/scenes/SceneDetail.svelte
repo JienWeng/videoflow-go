@@ -8,6 +8,7 @@
   import { tick } from 'svelte';
   import SceneStyle from './SceneStyle.svelte';
   import SceneReferences from './SceneReferences.svelte';
+  import SceneSpokenScript from './SceneSpokenScript.svelte';
   import { sceneStages } from './stages.mjs';
   import type { SceneRenderRequest, SceneStep } from './types';
   import type { Asset, AssetPlan, Character, SceneProgress, SceneReferenceState, Scene, Shot, StyleGuide } from '$lib/api-types';
@@ -280,6 +281,7 @@
     cast={characters.filter((character: {id: string}) => (s.character_ids_json ?? []).includes(character.id))}
     onchanged={refreshSceneLook} onstoryboard={() => openStage('storyboard')}/>
   <SceneReferences bind:this={references} sceneId={s.id} {characters} onchanged={onReferencesChanged} onstate={value=>referenceInfo=value}/>
+  <SceneSpokenScript sceneId={s.id} version={s.updated_at} {characters} onchanged={onReferencesChanged}/>
 
   <div class="mt-5 space-y-3">
     <div class="flex flex-wrap items-center justify-between gap-2"><Button

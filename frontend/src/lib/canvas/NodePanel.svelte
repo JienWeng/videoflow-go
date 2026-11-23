@@ -5,6 +5,7 @@
   import RenderProgress from './RenderProgress.svelte';
   import AssetDescriptionEditor from '$lib/assets/AssetDescriptionEditor.svelte';
   import CharacterReferences from './CharacterReferences.svelte';
+  import SceneSpokenScript from '$lib/scenes/SceneSpokenScript.svelte';
   import { changedFields } from '$lib/scenes/drafts.mjs';
   import { beforeNavigate } from '$app/navigation';
   import { untrack } from 'svelte';
@@ -521,6 +522,7 @@
             <Badge variant="outline" class="text-muted-foreground">unsaved</Badge>
           {/if}
         </div>
+        {#if shown}<SceneSpokenScript sceneId={shown.id} onchanged={onsaved} />{/if}
       {:else if kind === 'shot'}
         <div class="grid gap-1.5">
           <Label for="np-prompt">Prompt</Label>
