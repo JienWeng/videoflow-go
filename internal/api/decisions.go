@@ -63,9 +63,9 @@ func assistantMayRemember(key string) bool {
 	return assistantDecisionKeys[key]
 }
 
-// rememberDecisions keeps up to maxRememberPerTurn valid entries of the planner's
-// remember list and returns the ones saved. Invalid entries are skipped, and a
-// decision the user made is never replaced.
+// rememberDecisions reads the first maxRememberPerTurn entries of the planner's
+// remember list and returns the ones saved. Invalid entries are skipped (they still
+// count toward the limit), and a decision the user made is never replaced.
 func (s *Server) rememberDecisions(projectID string, items []agents.RememberItem) []db.ProjectDecision {
 	saved := []db.ProjectDecision{}
 	for i, item := range items {
@@ -168,14 +168,19 @@ func chatDecidedSoFar(decisions []db.ProjectDecision) map[string]any {
 }
 
 // changeWords mark a message that changes an earlier choice, so a question about it
-// is the user's own doing and stands.
-var changeWords = regexp.MustCompile(`(?i)\b(change|changing|different|instead|switch|another|rather|redo|other)\b`)
+// is the user's own doing and stands: English, Spanish and French words, and Chinese
+// characters (which have no word boundaries). Other languages are not recognised, so
+// there a question the log settles is overruled even when the user asks for a change.
+// A word matched by mistake only lets the assistant ask once more.
+var changeWords = regexp.MustCompile(`(?i)\b(change|changing|different|instead|switch|another|rather|redo|other|` +
+	`c[aá]mbi\w*|diferente|distint[oa]|otr[oa]s?|en vez|en lugar|rehac\w*|rehaz|` +
+	`chang(e|er|eons|ez)|autres?|diff[ée]rente?s?|plut[oô]t|au lieu|refai\w*)\b|改|换|更换|另外|别的|不同|而是`)
 
 // applySettledAsk overrules a question the decision log already answers: with a step
 // to take, the assistant goes ahead with the earlier choice, unless the user's message
-// is about changing it.
+// is about changing it. The plan confirmation and a destructive step are always asked.
 func applySettledAsk(d chatDecision, action, message string, decisions []db.ProjectDecision) chatDecision {
-	if d.Mode != decisionAsk || d.Key == "" || action == "unknown" || changeWords.MatchString(message) {
+	if d.Mode != decisionAsk || d.Key == "" || action == "unknown" || d.Reason == askConfirmPlan || d.Reason == askDestructive || changeWords.MatchString(message) {
 		return d
 	}
 	for _, entry := range decisions {
