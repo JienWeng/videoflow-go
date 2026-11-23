@@ -152,7 +152,7 @@
     try {
       const result = await get<ModelList>(
         providerEndpoint(name, 'models') +
-          (name === 'fal' ? '?modality=all' : name === 'byteplus' ? '?modality=video' : '')
+          (name === 'fal' ? '?modality=all' : name === 'byteplus' ? '?modality=video' : name === 'gemini' ? '?modality=image' : '')
       );
       if (result.error) {
         toast.error(result.error);
@@ -228,6 +228,7 @@
   // ------------------------------------------------------------- labels
   const providerLabels: Record<string, string> = {
     openai: 'OpenAI Images',
+    gemini: 'Google Gemini',
     elevenlabs: 'ElevenLabs',
     fish: 'Fish Audio',
     fal: 'fal.ai',

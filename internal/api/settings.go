@@ -30,8 +30,17 @@ var presetCatalog = map[string]ProviderPresetInfo{
 	"fish":       {Label: "Fish Audio", Protocol: "speech", URL: providers.FishURL, DefaultModel: "s2.1-pro", SuggestedModels: []string{"s2.1-pro", "s2.1-pro-free", "s2-pro"}, EnvKey: "FISH_API_KEY"},
 	"fal":        {Label: "fal.ai", Protocol: "media", URL: providers.FalURL, DefaultModel: providers.FalVideoModel, SuggestedModels: []string{providers.FalVideoModel, providers.FalImageModel}, EnvKey: "FAL_KEY"},
 	"openai":     {Label: "OpenAI Images", Protocol: "image", URL: providers.OpenAIURL, DefaultModel: providers.OpenAIImageModel, SuggestedModels: []string{providers.OpenAIImageModel}, EnvKey: "OPENAI_API_KEY"},
+	"gemini":     {Label: "Google Gemini", Protocol: "image", URL: providers.GeminiURL, DefaultModel: providers.GeminiImageModel, SuggestedModels: geminiModelIDs(), EnvKey: "GEMINI_API_KEY"},
 	"byteplus":   {Label: "BytePlus ModelArk (Seedance)", Protocol: "video", URL: providers.BytePlusURL, DefaultModel: providers.BytePlusVideoModel, SuggestedModels: []string{providers.BytePlusVideoModel}, EnvKey: "BYTEPLUS_API_KEY"},
 	"openrouter": {Label: "OpenRouter", Protocol: "chat", URL: providers.OpenRouterURL, DefaultModel: "openai/gpt-4o-mini", SuggestedModels: []string{"openai/gpt-4o-mini", "meta-llama/llama-3.3-70b-instruct"}, EnvKey: "OPENROUTER_API_KEY"},
+}
+
+func geminiModelIDs() []string {
+	ids := []string{}
+	for _, m := range providers.GeminiImageModels {
+		ids = append(ids, m.ID)
+	}
+	return ids
 }
 
 func init() {
@@ -58,7 +67,7 @@ func init() {
 	}
 }
 
-var presetOrder = []string{"fal", "openai", "openrouter", "byteplus", "fish", "elevenlabs"}
+var presetOrder = []string{"fal", "openai", "gemini", "openrouter", "byteplus", "fish", "elevenlabs"}
 
 func maskKey(raw string) string {
 	if raw == "" {
@@ -108,7 +117,7 @@ func (s *Server) handleGetAppSettings(w http.ResponseWriter, r *http.Request) {
 	appSettings["ref_image_model"] = s.routes().MediaModel("reference")
 	appSettings["video_model"] = videoModel
 	prefs := map[string]map[string]string{}
-	for _, provider := range []string{"fal", "openrouter", "byteplus"} {
+	for _, provider := range []string{"fal", "gemini", "openrouter", "byteplus"} {
 		prefs[provider] = map[string]string{}
 		for _, kind := range []string{"image", "reference", "video"} {
 			prefs[provider][kind] = s.routes().Setting(routing.MediaPreferenceKey(provider, kind), s.routes().DefaultMediaModel(provider, kind))
@@ -349,7 +358,7 @@ func (s *Server) handleTestProvider(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"ok": true, "error": nil, "latency_ms": 0, "checked": "key", "credentials_verified": false, "generation_tested": false, "message": costs.HostByName(name).Label + " has no free way to check the balance, so VideoFlow will use it again. The next video shows whether the top-up worked."})
 		return
 	}
-	if name == "openai" || name == "fal" || name == "byteplus" || name == "fish" || name == "elevenlabs" {
+	if name == "openai" || name == "gemini" || name == "fal" || name == "byteplus" || name == "fish" || name == "elevenlabs" {
 		_, _, _, err := s.routes().Credentials(name)
 		var message any
 		if err != nil {
@@ -377,7 +386,7 @@ func (s *Server) handleDiscoverModels(w http.ResponseWriter, r *http.Request) {
 	}
 	name := chi.URLParam(r, "name")
 	if r.URL.Query().Get("modality") == "" {
-		if name == "fal" {
+		if name == "fal" || name == "gemini" {
 			modality = "image"
 		} else if name == "byteplus" || providers.VideoHost(name) {
 			modality = "video"
@@ -412,6 +421,8 @@ func (s *Server) handleVerifyModel(w http.ResponseWriter, r *http.Request) {
 		name := chi.URLParam(r, "name")
 		if name == "byteplus" || providers.VideoHost(name) {
 			body.Modality = "video"
+		} else if name == "gemini" {
+			body.Modality = "image"
 		} else if name == "fal" {
 			body.Modality = "video"
 			if strings.HasPrefix(body.Model, providers.FalImageModel) {

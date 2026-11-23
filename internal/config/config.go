@@ -18,6 +18,7 @@ type Config struct {
 	FishAPIKey            string
 	FishBaseURL           string
 	FalAPIKey             string
+	GeminiAPIKey          string
 	FalBaseURL            string
 	BytePlusAPIKey        string
 	BytePlusBaseURL       string
@@ -41,7 +42,7 @@ func Load() *Config {
 		CodexExecutable: os.Getenv("VIDEOFLOW_CODEX_BIN"), ClaudeExecutable: os.Getenv("VIDEOFLOW_CLAUDE_BIN"),
 		ElevenAPIKey: os.Getenv("ELEVENLABS_API_KEY"), ElevenBaseURL: "https://api.elevenlabs.io",
 		FishAPIKey: os.Getenv("FISH_API_KEY"), FishBaseURL: "https://api.fish.audio",
-		FalAPIKey: os.Getenv("FAL_KEY"), FalBaseURL: "https://queue.fal.run", BytePlusAPIKey: os.Getenv("BYTEPLUS_API_KEY"), BytePlusBaseURL: "https://ark.ap-southeast.bytepluses.com/api/v3",
+		FalAPIKey: os.Getenv("FAL_KEY"), GeminiAPIKey: os.Getenv("GEMINI_API_KEY"), FalBaseURL: "https://queue.fal.run", BytePlusAPIKey: os.Getenv("BYTEPLUS_API_KEY"), BytePlusBaseURL: "https://ark.ap-southeast.bytepluses.com/api/v3",
 		Port:                  8000,
 		StorageRoot:           "storage",
 		DatabasePath:          "db.sqlite",

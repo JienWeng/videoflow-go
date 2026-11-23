@@ -59,8 +59,23 @@ type ImageUsage struct {
 	} `json:"input_tokens_details"`
 }
 
+// GeminiImagePrices is Google's paid-tier list price per picture at the default 1K
+// size (VideoFlow does not ask for larger ones), read from
+// https://aistudio.google.com/docs/pricing on 23 Nov 2026. Thinking drafts are not charged.
+var GeminiImagePrices = map[string]float64{
+	"gemini-3-pro-image":     0.134,
+	"gemini-3.1-flash-image": 0.067,
+	"gemini-2.5-flash-image": 0.039,
+}
+
 // Image prices one generated picture. usage may be nil when it was not recorded.
 func Image(provider, model string, usage *ImageUsage) (float64, string) {
+	if provider == "gemini" {
+		if price, ok := GeminiImagePrices[model]; ok {
+			return price, Rate
+		}
+		return 0, Unpriced
+	}
 	switch {
 	case provider == "codex" || provider == "local":
 		return 0, Included

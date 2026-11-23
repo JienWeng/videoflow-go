@@ -81,3 +81,20 @@ the selected local session.
 An uncertain or failed native generation stops for review to avoid a second
 image call. OpenAI API usage can incur charges. Settings checks configuration
 without generating an image.
+
+### Google Gemini images (Nano Banana)
+
+Save a Google AI Studio key under **Settings → AI connections → Google Gemini**,
+or provide `GEMINI_API_KEY` to the backend, then choose **Google Gemini** as the
+picture service in **Settings → AI setup**. Choosing Gemini there takes
+precedence over a saved OpenAI key; pictures still come from Codex when the
+conversation runs on Codex.
+
+The model picker next to the service offers Nano Banana Pro
+(`gemini-3-pro-image`, the default, up to 14 reference pictures), Nano Banana 2
+(`gemini-3.1-flash-image`, up to 14) and Nano Banana (`gemini-2.5-flash-image`,
+up to 3; Google plans to retire it no earlier than 15 March 2027). Requests go
+to `https://generativelanguage.googleapis.com/v1beta` with the key in the
+`x-goog-api-key` header. Pictures are requested at Google's default 1K size and
+cost about $0.134, $0.067 and $0.039 each respectively. Settings checks
+configuration without generating an image.
