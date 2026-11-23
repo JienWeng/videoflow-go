@@ -555,6 +555,27 @@ export type SceneSpeech = {
   }[];
 };
 
+/** A spoken line as saved on a scene (SpokenLine in internal/api/caption_script.go). */
+export type SavedSpokenLine = {
+  id: string;
+  character_id: string;
+  language: string;
+  text: string;
+  visible: boolean;
+  shot_id?: string;
+  start_hint?: number;
+};
+
+/** POST /scenes/{id}/spoken-lines/fit: the scene's lines fitted to its shots, not saved. */
+export type ScriptFit = {
+  scene_id: string;
+  expected_updated_at: string;
+  before: SavedSpokenLine[];
+  after: SavedSpokenLine[];
+  before_fit: SceneSpeech;
+  after_fit: SceneSpeech;
+};
+
 /** A scene's video settings (productionSettings in internal/api/production_plan.go). */
 export type ProductionSettings = {
   dialogue_shots?: Record<string, string>;

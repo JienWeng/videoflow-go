@@ -63,7 +63,7 @@ export function budgetText(budget) {
 /**
  * Who says a line: the narrator when no character is set.
  * @param {{ character_id?: string | null }} line
- * @param {readonly { id: string, name: string }[]} characters
+ * @param {readonly { id: string, name?: string }[]} characters
  */
 export function speakerLabel(line, characters) {
   if (!line.character_id) return 'Narrator';

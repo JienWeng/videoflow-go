@@ -10,7 +10,8 @@
   let renderPlanId = $state(''),
     renderQuote = $state({ calls: 0, seconds: 0, storyboards: 0 });
   import { onDestroy, untrack } from 'svelte';
-  import { del as apiDel, get, patch as apiPatch, post as apiPost } from '$lib/api';
+  import { del as apiDel, get, patch as apiPatch, post as apiPost, put as apiPut } from '$lib/api';
+  import ScriptFitReview from '$lib/scenes/ScriptFitReview.svelte';
   import { normalizeChatIntent } from './intent.mjs';
   import { runBackgroundOp, type Op } from '$lib/ops';
   import type {
@@ -19,6 +20,7 @@
     PlannedAsset,
     ProjectStylePreset,
     Scene,
+    ScriptFit,
     Shot,
     StyleFields
   } from '$lib/api-types';
@@ -137,6 +139,8 @@
   let maxAssets = $state(4);
   let autoAssets = $state(true);
   let plannedAssets = $state<PlannedAsset[] | null>(null);
+  // fit_script: the scene's lines before and after, shown until the owner saves them.
+  let scriptFit = $state<ScriptFit | null>(null);
   // Ideation phase for generate_script: null = phase 1 (raw idea),
   // set = phase 2 (pick one of the developed concepts).
   let ideaOptions = $state<IdeaOptions | null>(null);
@@ -186,7 +190,8 @@
     refine_shot: 'AI refine shot',
     delete_scene: 'Delete scene',
     style_ingest: 'Ingest style from story',
-    plan_assets: 'Suggest assets'
+    plan_assets: 'Suggest assets',
+    fit_script: 'Fit script to clips'
   };
 
   // generate_character_references: who is drawn, and whether the picture service can do it now.
@@ -257,6 +262,7 @@
       case 'generate_assets':
       case 'delete_scene':
       case 'plan_assets':
+      case 'fit_script':
         return !!sceneId;
       case 'refine_scene':
         return !!sceneId && idea.trim().length > 0;
@@ -350,7 +356,8 @@
     'render_shot',
     'retry_render',
     'generate_image',
-    'style_ingest'
+    'style_ingest',
+    'fit_script'
   ]);
   let autoStarted = false;
   $effect(() => {
@@ -546,6 +553,21 @@
           toast.success(`${plan.assets?.length ?? 0} asset suggestions`);
           break;
         }
+        case 'fit_script': {
+          const fit = await post<ScriptFit>(`/scenes/${sceneId}/spoken-lines/fit`);
+          result = fit;
+          focusId = sceneId;
+          if (full) {
+            // Full auto saves the fitted lines itself; the card still shows what changed.
+            await apiPut(`/scenes/${encodeURIComponent(sceneId)}/spoken-lines`, {
+              lines: fit.after,
+              expected_updated_at: fit.expected_updated_at
+            });
+            toast.success(`Script fitted: ${fit.after_fit.summary}`);
+          }
+          scriptFit = fit;
+          break;
+        }
         case 'retry_render': {
           const started = await post<{ job_id: string }>(`/outputs/${outputId}/retry`);
           result = started;
@@ -723,7 +745,8 @@
           'refine_scene',
           'refine_shot',
           'delete_scene',
-          'plan_assets'
+          'plan_assets',
+          'fit_script'
         ].includes(intent.action)}
         <div>
           <label class={labelClass} for="scene-{intent.action}">Scene</label>
@@ -801,6 +824,16 @@
           <input id="max-{intent.action}" type="number" min="1" max="8"
             bind:value={maxAssets} class={selectClass} />
         </div>
+      {/if}
+
+      {#if intent.action === 'fit_script'}
+        {#if scriptFit && !full}
+          <ScriptFitReview fits={[scriptFit]} characters={options.characters} onapplied={async () => { scriptFit = null; await onran?.({ scene_id: sceneId }, { action: 'fit_script', sceneId: sceneId || undefined }); }} ondismiss={() => (scriptFit = null)} />
+        {:else if scriptFit}
+          <p class="text-xs text-muted-foreground">Fitted and saved: {scriptFit.after_fit.summary}</p>
+        {:else}
+          <p class="text-xs text-muted-foreground">Rewrites only what is said, so each shot can say its lines in time. Free: one turn of your local AI session. {full ? 'Saved by itself in Full auto.' : 'You see the script before and after, and choose.'}</p>
+        {/if}
       {/if}
 
       {#if intent.action === 'plan_assets' && plannedAssets}

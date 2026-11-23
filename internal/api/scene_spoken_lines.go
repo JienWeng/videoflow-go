@@ -55,26 +55,33 @@ func (s *Server) handleSceneSpokenLines(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	var snapshot map[string]json.RawMessage
-	if err = json.Unmarshal(scene.SceneJSON, &snapshot); err != nil && len(scene.SceneJSON) > 0 {
-		http.Error(w, "scene metadata is invalid", http.StatusConflict)
+	if err = s.saveSpokenLines(scene, lines); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
 		return
+	}
+	writeJSON(w, http.StatusOK, scene)
+}
+
+// saveSpokenLines saves checked lines on the scene, keeping a revision of the scene as
+// it was.
+func (s *Server) saveSpokenLines(scene *models.Scene, lines []SpokenLine) error {
+	var snapshot map[string]json.RawMessage
+	if err := json.Unmarshal(scene.SceneJSON, &snapshot); err != nil && len(scene.SceneJSON) > 0 {
+		return fmt.Errorf("scene metadata is invalid")
 	}
 	if snapshot == nil {
 		snapshot = make(map[string]json.RawMessage)
 	}
 	old, _ := json.Marshal(scene)
-	if _, err = s.database.CreateRevision("scene", scene.ID, old); err != nil {
-		http.Error(w, "cannot save scene revision", http.StatusInternalServerError)
-		return
+	if _, err := s.database.CreateRevision("scene", scene.ID, old); err != nil {
+		return fmt.Errorf("cannot save scene revision")
 	}
 	snapshot["spoken_lines"], _ = json.Marshal(lines)
 	scene.SceneJSON, _ = json.Marshal(snapshot)
-	if err = s.database.UpdateScene(scene); err != nil {
-		http.Error(w, "could not save spoken script; reload and try again", http.StatusConflict)
-		return
+	if err := s.database.UpdateScene(scene); err != nil {
+		return fmt.Errorf("could not save spoken script; reload and try again")
 	}
-	writeJSON(w, http.StatusOK, scene)
+	return nil
 }
 
 // validSpokenLines trims each line and checks it can be spoken: text and language are

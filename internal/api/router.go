@@ -226,6 +226,7 @@ func (s *Server) registerSceneRoutes() {
 	s.router.Patch("/scenes/{id}", s.handleUpdateScene)
 	s.router.Put("/scenes/{id}/style", s.handleSceneStyle)
 	s.router.Put("/scenes/{id}/spoken-lines", s.handleSceneSpokenLines)
+	s.router.Post("/scenes/{id}/spoken-lines/fit", s.handleSceneScriptFit)
 	s.router.Get("/scenes/{id}/speech-fit", s.handleSceneSpeechFit)
 	s.router.Post("/scenes/{id}/speech-fit", s.handleSceneSpeechFit)
 	s.router.Delete("/scenes/{id}", s.handleDeleteScene)

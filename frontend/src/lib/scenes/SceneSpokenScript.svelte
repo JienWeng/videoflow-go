@@ -3,12 +3,13 @@
   import { toast } from 'svelte-sonner';
   import { ChevronDown, ChevronUp, Plus, Trash2 } from '@lucide/svelte';
   import { get, post, put } from '$lib/api';
-  import type { Character, Scene, SceneSpeech } from '$lib/api-types';
+  import type { Character, Scene, SceneSpeech, ScriptFit } from '$lib/api-types';
   import { errorMessage } from '$lib/errors';
   import { randomId } from '$lib/ids';
   import { protectDraft } from '$lib/protect-draft';
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
+  import ScriptFitReview from './ScriptFitReview.svelte';
   import { budgetText, fitBar, moveLine, sceneSpokenLines, secondsText, speakerLabel, type SpokenLine } from './spoken.mjs';
 
   // What the scene's characters and narrator say, as the story saved it. The panel loads
@@ -117,6 +118,31 @@
     delete line.start_hint; // a start inside the old shot means nothing in the new one
   }
 
+  // Fit script to clips: one turn of the local AI session rewrites only what is said, so
+  // each shot's lines fill most of its seconds. Shown before and after; saved on a click.
+  let proposal = $state<ScriptFit | null>(null);
+  let fitting = $state(false);
+  const needsFit = $derived(
+    !!fit && (fit.verdict === 'too_long' || fit.shots.some(s => s.verdict === 'too_long'))
+  );
+  async function fitScript() {
+    if (fitting || dirty) return;
+    fitting = true;
+    error = '';
+    try {
+      proposal = await post<ScriptFit>(`/scenes/${encodeURIComponent(sceneId)}/spoken-lines/fit`);
+    } catch (e) {
+      error = errorMessage(e, 'Could not fit the script.');
+    } finally {
+      fitting = false;
+    }
+  }
+  async function fitted() {
+    proposal = null;
+    await load(sceneId);
+    await onchanged?.();
+  }
+
   function addLine() {
     const last = lines[lines.length - 1];
     lines = [
@@ -193,7 +219,17 @@
         </div>
       {/each}
       <p class="text-[11px] text-muted-foreground">Estimated at a calm speaking pace. Lines without a chosen shot are placed by time.</p>
+      <div class="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant={needsFit ? 'default' : 'outline'} disabled={fitting || saving || dirty} onclick={fitScript}
+          title={dirty ? 'Save or cancel your edits first' : 'Rewrite only what is said so each shot can say it in time (no credits)'}>
+          {fitting ? 'Fitting…' : 'Fit script to clips'}
+        </Button>
+        {#if dirty}<span class="text-[11px] text-muted-foreground">Save or cancel your edits first.</span>{/if}
+      </div>
     </div>
+  {/if}
+  {#if proposal}
+    <div class="mt-3"><ScriptFitReview fits={[proposal]} {characters} onapplied={fitted} ondismiss={() => (proposal = null)} /></div>
   {/if}
 
   {#if loading && !lines.length}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -239,7 +240,7 @@ func (g *videoGeneration) writeShots(ctx context.Context, scenes []models.Scene)
 		scene := &scenes[i]
 		localBrief := sceneBrief(scene)
 		sceneCtx := localBrief.context(guidedStoryContext(ctx, g.project, localBrief.CharacterIDs))
-		drafts, err := g.s.agents.GenerateShots(sceneCtx, scene.Title, scene.Summary+"\n"+localBrief.prompt(), scene.Duration)
+		drafts, err := g.s.agents.GenerateShots(sceneCtx, scene.Title, scene.Summary+"\n"+localBrief.prompt(), scene.Duration, g.s.shotLines(scene)...)
 		if err != nil {
 			return err
 		}
@@ -248,8 +249,16 @@ func (g *videoGeneration) writeShots(ctx context.Context, scenes []models.Scene)
 			camera, movement := d.Camera, d.Movement
 			shots = append(shots, models.Shot{ShotOrder: d.Order, Duration: d.Duration, Prompt: d.Prompt, Camera: &camera, Movement: &movement})
 		}
+		placeDraftLines(scene, shots, drafts)
 		if err = g.s.database.ReplaceSceneShots(scene, shots); err != nil {
 			return err
+		}
+		// A new story's script is checked against its shots once: a scene with a line
+		// that cannot be said in its shot gets one rewrite of its spoken lines.
+		if speechNeedsFit(g.s.sceneSpeechFor(sceneCtx, scene, nil)) {
+			if _, err = g.s.fitSceneScript(sceneCtx, scene); err != nil {
+				slog.Warn("the new script was not fitted to its shots; it is flagged before rendering", "scene", scene.ID, "reason", err.Error())
+			}
 		}
 	}
 	return nil

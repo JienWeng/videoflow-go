@@ -44,10 +44,13 @@
     ProjectProgress,
     RenderJob,
     Scene,
+    SceneSpeech,
     Script,
+    ScriptFit,
     Shot,
     StyleGuide
   } from '$lib/api-types';
+  import ScriptFitReview from '$lib/scenes/ScriptFitReview.svelte';
 
   let scenes: Scene[] = $state([]);
   let scripts: Script[] = $state([]);
@@ -138,6 +141,33 @@
       selectScene(id);
     }
   }
+  // Fit script to clips for the whole story: every scene whose speech can't be said in
+  // its shots is fitted by the local AI session (one turn per scene, no credits); the
+  // results are shown before and after and saved only when the owner chooses.
+  let storyFits = $state<ScriptFit[] | null>(null);
+  let fittingStory = $state('');
+  async function fitStoryScript() {
+    if (fittingStory) return;
+    const spoken = scenes.filter(sc => sceneSpokenLines(sc).length);
+    const found: ScriptFit[] = [];
+    try {
+      for (const [i, sc] of spoken.entries()) {
+        fittingStory = `Checking ${i + 1} of ${spoken.length}…`;
+        const speech = await get<SceneSpeech>(`/scenes/${encodeURIComponent(sc.id)}/speech-fit`);
+        if (speech.verdict !== 'too_long' && !speech.shots.some(sh => sh.verdict === 'too_long')) continue;
+        fittingStory = `Fitting “${sc.title}”…`;
+        found.push(await post<ScriptFit>(`/scenes/${encodeURIComponent(sc.id)}/spoken-lines/fit`));
+      }
+      if (!found.length) toast.success(spoken.length ? 'Every scene can say its lines in time.' : 'No scene has spoken lines yet.');
+      else storyFits = found;
+    } catch (e) {
+      toast.error(errorMessage(e, 'Could not fit the script.'));
+      if (found.length) storyFits = found;
+    } finally {
+      fittingStory = '';
+    }
+  }
+
   export async function reload() {
     try {
       await refresh();
@@ -930,6 +960,10 @@
       <Button size="sm" class="w-full" disabled={busy['conv-all']} onclick={convertAllScenesConversationalGuarded}>
         {busy['conv-all'] ? 'Rewriting…' : 'Make story conversational'}
       </Button>
+      <p class="pt-2 text-xs text-muted-foreground">Rewrite only what is said, so every shot can say its lines in time. Free; you see before and after.</p>
+      <Button size="sm" variant="secondary" class="w-full" disabled={!!fittingStory} onclick={fitStoryScript}>
+        {fittingStory || 'Fit script to clips'}
+      </Button>
     </div></details>
     </div>
   </div>
@@ -1154,6 +1188,16 @@
     {#if lightbox}
       <img class="w-full rounded-lg" src={mediaUrl(lightbox.file_path)} alt="Storyboard" />
     {/if}
+  </Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root open={storyFits !== null} onOpenChange={(open) => !open && (storyFits = null)}>
+  <Dialog.Content class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+    <Dialog.Header>
+      <Dialog.Title>Fit script to clips</Dialog.Title>
+      <Dialog.Description>These scenes had lines that couldn't be said in their shots.</Dialog.Description>
+    </Dialog.Header>
+    {#if storyFits}<ScriptFitReview fits={storyFits} {characters} onapplied={async () => { storyFits = null; await reload(); }} ondismiss={() => (storyFits = null)} />{/if}
   </Dialog.Content>
 </Dialog.Root>
 
