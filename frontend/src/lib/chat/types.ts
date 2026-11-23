@@ -1,4 +1,6 @@
 /** Shapes of the chat endpoints (POST /chat, /chat/review, GET /chat/capabilities). */
+import type { ChatDecision } from './decision.d.mts';
+export type { ChatDecision, DecisionAnswer } from './decision.d.mts';
 
 /** A scene, character or output the action card can target. */
 export interface ChatOption {
@@ -62,6 +64,8 @@ export interface ChatIntent {
   character_ids?: string[];
   characters?: { id: string; name: string }[];
   image_calls?: number;
+  /** Ask or decide (internal/api/chat_decision.go); read it through decision.mjs. */
+  decision?: ChatDecision;
 }
 
 /** Backend project-state snapshot attached to the chat reply. */

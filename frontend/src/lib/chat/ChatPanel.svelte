@@ -319,6 +319,8 @@
   }
   import { completeSceneRenders } from '$lib/production/completion.mjs';
   import { conversationTurns, conversationView } from './history.mjs';
+  import { answerChips, assumptionLine, isAsking, normalizeDecision } from './decision.mjs';
+  import type { DecisionAnswer } from './types';
   import { subscribeJobs } from '$lib/sse';
   import { runBackgroundOp } from '$lib/ops';
   import { workflowNext, storyReferencesApproved, hasPendingSceneReferences } from './workflow.mjs';
@@ -1363,7 +1365,12 @@
       return m.intent.creation_brief ?? (m.intent.idea ? { idea: m.intent.idea } : undefined);
     }
   }
-  async function send(text?: string) {
+  /** A quick reply to the assistant's question: sent as the user's message, and the
+   * server keeps the choice in the project's decision log. */
+  function sendAnswer(chip: { send: string; answer: DecisionAnswer }) {
+    void send(chip.send, chip.answer);
+  }
+  async function send(text?: string, answer?: DecisionAnswer) {
     const message = (text ?? input).trim();
     if (!message || busy || attaching || pendingOps.length || historyLoading || sessionRequired || historyError) return;
     const sent = editing || (!editing && reviewMode && specialistSupported) ? [] : attachments;
@@ -1421,7 +1428,8 @@
         ...(useSpecialists ? {} : { history, creation_brief: activeCreativeBrief() }),
         selected: selected ? { id: selected.id, kind: selected.kind } : null,
         ...(autoMode && !useSpecialists ? { auto: true, ...(mode === 'full' ? { full: true } : {}) } : {}),
-        ...(sent.length ? { attachments: sent.map(a => a.id) } : {})
+        ...(sent.length ? { attachments: sent.map(a => a.id) } : {}),
+        ...(answer && !useSpecialists ? { answer } : {})
       });
       if (generation !== conversationGeneration) return;
       if (useSpecialists) {
@@ -1437,7 +1445,9 @@
             m.briefSuperseded = true;
           }
       }
-      if (intent.action === 'finish_video' && intent.script_id && mode === 'full') {
+      // A reply that asks waits for the answer: its button never starts by itself.
+      const asking = isAsking(intent.decision);
+      if (intent.action === 'finish_video' && intent.script_id && mode === 'full' && !asking) {
         messages.push({ role: 'assistant', text: intent.reply, dismissed: true, intent });
         void startAutopilot(intent.script_id);
         return;
@@ -1449,7 +1459,7 @@
         void refreshChips();
         return;
       }
-      if (intent.action === 'render_scenes' && intent.scene_ids?.length && mode === 'full') {
+      if (intent.action === 'render_scenes' && intent.scene_ids?.length && mode === 'full' && !asking) {
         messages.push({ role: 'assistant', text: intent.reply, dismissed: true, intent });
         void startScenes(intent.scene_ids);
         return;
@@ -1458,7 +1468,7 @@
         role: 'assistant',
         text: intent.reply,
         intent,
-        autoRun: autoMode,
+        autoRun: autoMode && !asking,
         options: r.options,
         warnings: r.warnings ?? [],
         state: r.state,
@@ -1681,7 +1691,18 @@
                 aria-label={a.name}></video>{/if}{/each}</span>{/if}{m.text}</Bubble.Content>{/if}</Bubble.Root>
 
             {/if}
-            {#if m.intent?.action==='unknown' && m.state?.next_steps?.length}<ol
+            {#if m.role==='assistant'&&assumptionLine(m.intent?.decision)}<p
+              class="text-xs text-muted-foreground">{assumptionLine(m.intent?.decision)}</p>{/if}
+            {#if m.role==='assistant'&&isAsking(m.intent?.decision)}<div
+              class="mt-1 space-y-2"><p class="text-sm font-medium">{normalizeDecision(m.intent?.decision).question}</p>{#if i===messages.length-1&&answerChips(m.intent?.decision).length}<div
+                class="flex flex-wrap items-center gap-1.5"
+                aria-label="Quick replies">{#each answerChips(m.intent?.decision) as c (c.label)}<Button
+                variant="secondary"
+                size="sm"
+                class="min-h-9 h-auto whitespace-normal text-left shrink-0 rounded-full px-3 text-xs font-normal"
+                disabled={busy}
+                onclick={() => sendAnswer(c)}>{c.label}</Button>{/each}</div>{/if}</div>{/if}
+            {#if m.intent?.action==='unknown' && m.state?.next_steps?.length && !isAsking(m.intent?.decision)}<ol
               class="list-decimal space-y-1 pl-5 text-sm">{#each m.state.next_steps as step}<li>{step}</li>{/each}</ol>{/if}
             {#if m.repairContext}<Button
               variant="outline"

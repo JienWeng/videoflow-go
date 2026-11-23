@@ -42,6 +42,8 @@ type chatTurn struct {
 	progress        projectProgress
 	// stages is the project's stage map as the turn began (see stages.go).
 	stages stageMap
+	// videoService is the video service as the planner saw it (chatVideoService).
+	videoService map[string]any
 }
 
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -164,7 +166,8 @@ func (s *Server) chatPlannerContext(ctx context.Context, turn *chatTurn) ([]byte
 	if in, err := s.stageInputs(ctx, projectID, progress); err == nil {
 		turn.stages = computeStages(in)
 	}
-	contextJSON, _ := json.Marshal(map[string]any{"stages": chatStages(turn.stages), "production_progress": chatProgress(progress), "recent_activity": s.chatActivity(projectID, turn.jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "video_service": s.chatVideoService(), "episode_sound": s.episodeSound(projectID), "failed_video_attempts": failedShown, "assistant_mode": chatMode(body.Auto, body.Full), "attached_media": turn.attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": turn.sceneOptions, "characters": turn.charOptions, "outputs": turn.outputs, "selected_item": turn.selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "render_audio_modes": []string{"native", "silent"}, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false}})
+	turn.videoService = s.chatVideoService()
+	contextJSON, _ := json.Marshal(map[string]any{"stages": chatStages(turn.stages), "production_progress": chatProgress(progress), "recent_activity": s.chatActivity(projectID, turn.jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "video_service": turn.videoService, "episode_sound": s.episodeSound(projectID), "failed_video_attempts": failedShown, "assistant_mode": chatMode(body.Auto, body.Full), "attached_media": turn.attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": turn.sceneOptions, "characters": turn.charOptions, "outputs": turn.outputs, "selected_item": turn.selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "render_audio_modes": []string{"native", "silent"}, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false}})
 	return contextJSON, nil
 }
 
@@ -264,7 +267,18 @@ func (s *Server) chatIntent(ctx context.Context, turn *chatTurn, res *agents.Cha
 	chatIntentTargets(turn, res, action, intent)
 	action = chatGuardSelection(turn, res, action, selectionApplies, intent)
 	s.pinChatSelection(turn, res, action, selectionApplies, intent)
+	intent["decision"] = chatTurnDecision(turn, res, action)
 	return intent
+}
+
+// chatTurnDecision validates the planner's ask-or-decide choice for the action the
+// turn ends with, and applies Full auto's rule on questions.
+func chatTurnDecision(turn *chatTurn, res *agents.ChatIntentResponse, action string) chatDecision {
+	decision := normalizeChatDecision(res.Decision, action)
+	if turn.body.Full {
+		decision = applyFullAutoAsk(decision, action, chatInputMissing(turn))
+	}
+	return decision
 }
 
 // chatPlannedAction is the planner's action on the card contract. A retired one-off clip
@@ -630,7 +644,7 @@ const retiredClipReply = "I can't make a one-off clip straight from a picture an
 
 func chatMode(auto, full bool) string {
 	if full {
-		return "full auto: the user wants the finished video with as few clicks as possible. For a new story they confirm the plan once; the app then makes the pictures, renders every scene, joins them with captions and exports the final video by itself, using image and video credits. Say that confirming is the only click. Free planning steps and check_video start by themselves, and finish_video, render_scenes, generate_character_references, generate_character_reference, generate_scenes, storyboard, audit_storyboard, generate_assets, render_scene, render_shot, retry_render and generate_image start by themselves as soon as they are ready; only delete_scene and edits to a character's details wait for the user; finish_video and render_scenes first make the missing reference pictures of the scenes' characters, all at once, so never offer per-character picture buttons first. Decide every detail yourself and never ask the user to press per-scene buttons."
+		return "full auto: the user wants the finished video with as few clicks as possible. For a new story they confirm the plan once; the app then makes the pictures, renders every scene, joins them with captions and exports the final video by itself, using image and video credits. Say that confirming is the only click. Free planning steps and check_video start by themselves, and finish_video, render_scenes, generate_character_references, generate_character_reference, generate_scenes, storyboard, audit_storyboard, generate_assets, render_scene, render_shot, retry_render and generate_image start by themselves as soon as they are ready; only delete_scene and edits to a character's details wait for the user; finish_video and render_scenes first make the missing reference pictures of the scenes' characters, all at once, so never offer per-character picture buttons first. Decide every detail yourself and never ask the user to press per-scene buttons. The only questions allowed are the one plan confirmation, a destructive step and a required input that is missing; any other question is overruled and the step goes ahead."
 	}
 	if auto {
 		return "auto: free steps (refine_scene, refine_shot, generate_shots, plan_assets, check_video) start by themselves right after your reply, so write a complete instruction and say what you are doing now (\"I'm rewriting the scene so that…\"), not \"press the button\". Steps that use credits or delete things still wait for the user's click; say so. Decide details yourself and do not ask for confirmation of free steps."
