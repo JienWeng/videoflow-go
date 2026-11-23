@@ -504,6 +504,78 @@ export type AssetUsage = {
   review_stale?: boolean;
 };
 
+/** A speech estimate's verdict (internal/speech): fits, fits with little room, or cannot be said in the time. */
+export type SpeechVerdict = 'ok' | 'tight' | 'too_long' | '';
+
+/** One spoken line in a scene's speech budget (speechLine in internal/api/speech_budget.go). */
+export type SpeechLine = {
+  id: string;
+  character_id: string;
+  speaker: string;
+  language: string;
+  text: string;
+  shot_id: string;
+  /** line: its own shot; clip: the clip chosen in video options; auto: placed by time; scene: no shots yet */
+  placed: 'line' | 'clip' | 'auto' | 'scene';
+  start_hint?: number;
+  seconds: number;
+  start: number;
+  end: number;
+  verdict: SpeechVerdict;
+};
+
+/** GET/POST /scenes/{id}/speech-fit */
+export type SceneSpeech = {
+  scene_id: string;
+  title: string;
+  language: string;
+  lines: number;
+  verdict: SpeechVerdict;
+  summary: string;
+  shots: {
+    shot_id: string;
+    number: number;
+    start: number;
+    seconds: number;
+    used: number;
+    free: number;
+    verdict: SpeechVerdict;
+    budget: { unit: string; low: number; high: number; max: number };
+    lines: SpeechLine[];
+  }[];
+  clips: {
+    index: number;
+    shot_ids: string[];
+    seconds: number;
+    used: number;
+    free: number;
+    verdict: SpeechVerdict;
+    shots_over: number;
+    summary: string;
+  }[];
+};
+
+/** A spoken line as saved on a scene (SpokenLine in internal/api/caption_script.go). */
+export type SavedSpokenLine = {
+  id: string;
+  character_id: string;
+  language: string;
+  text: string;
+  visible: boolean;
+  shot_id?: string;
+  start_hint?: number;
+};
+
+/** POST /scenes/{id}/spoken-lines/fit: the scene's lines fitted to its shots, not saved. */
+export type ScriptFit = {
+  scene_id: string;
+  expected_updated_at: string;
+  before: SavedSpokenLine[];
+  after: SavedSpokenLine[];
+  before_fit: SceneSpeech;
+  after_fit: SceneSpeech;
+};
+
 /** A scene's video settings (productionSettings in internal/api/production_plan.go). */
 export type ProductionSettings = {
   dialogue_shots?: Record<string, string>;
@@ -523,7 +595,7 @@ export type ProductionPlan = {
   provider: string;
   model: string;
   audio_supported: boolean;
-  lines: { id: string; text: string; speaker: string; shot_id: string }[];
+  lines: { id: string; text: string; speaker: string; shot_id: string; from_script?: boolean }[];
   units: {
     count: number;
     index: number;
@@ -544,6 +616,8 @@ export type ProductionPlan = {
   storyboard_ready: boolean;
   references_ready: boolean;
   blocked?: string;
+  /** Whether the spoken lines can be said in each clip; absent when nothing is said. */
+  speech?: SceneSpeech;
   video_input: string;
   pictures?: { asset_id: string; name: string; kind: string; sheet?: boolean; character_id?: string }[];
 };

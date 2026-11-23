@@ -192,3 +192,57 @@ func sceneClipPrompts(t *testing.T, s *Server, sceneID string, write bool) []cli
 	}
 	return clips
 }
+
+// A Gemini Omni clip is told, per shot, who says what and when; lines saved for the
+// whole scene are placed by time. A Seedance clip of the same scene keeps its notation.
+func TestOmniClipPromptPlacesEachLineInItsShot(t *testing.T) {
+	s, scene := productionFixture(t, "auto")
+	project := *scene.ProjectID
+	mei := &models.Character{ProjectID: &project, Name: "Mei", Appearance: "Young woman in a grey coat"}
+	jun := &models.Character{ProjectID: &project, Name: "Jun", Appearance: "Older man with glasses"}
+	for _, c := range []*models.Character{mei, jun} {
+		if e := s.database.CreateCharacter(c); e != nil {
+			t.Fatal(e)
+		}
+	}
+	shots, _ := s.database.ListShots(scene.ID)
+	scene.CharacterIDsJSON = voiceJSON([]string{mei.ID, jun.ID})
+	scene.SceneJSON = voiceJSON(map[string]any{
+		"production":       productionSettings{AudioMode: "native", Strategy: "auto"},
+		"generation_brief": map[string]any{"language": "Chinese"},
+		"spoken_lines": []SpokenLine{
+			{ID: "l1", CharacterID: mei.ID, Language: "Chinese", Text: "如果钱不需要靠银行来信任呢？", Visible: true},
+			{ID: "l2", CharacterID: jun.ID, Language: "zh", Text: "那就用代码。", Visible: true},
+			{ID: "l3", CharacterID: mei.ID, Language: "Chinese", Text: "我们试试吧。", Visible: true, ShotID: shots[2].ID},
+		},
+	})
+	if e := s.database.UpdateScene(scene); e != nil {
+		t.Fatal(e)
+	}
+	ids := []string{shots[0].ID, shots[1].ID, shots[2].ID}
+	prompt := func(provider, model string) string {
+		job := &models.RenderJob{ProjectID: &project, SceneID: &scene.ID, Provider: provider, Model: model, RequestJSON: voiceJSON(map[string]any{"render_unit": renderUnit{ShotIDs: ids, Length: 8, Count: 1}, "voice_policy": map[string]any{"mode": "native"}})}
+		s.writeScenePrompt(context.Background(), job, false)
+		var payload map[string]any
+		_ = json.Unmarshal(job.RequestJSON, &payload)
+		text, _ := payload[finalPromptKey].(string)
+		return text
+	}
+	omni := prompt("gemini", "gemini-omni-1.2-flash")
+	for _, want := range []string{
+		"Shot 1 (0-3s): Action 1.\nAt 0s, Mei says in Chinese: \"如果钱不需要靠银行来信任呢？\"",
+		"Shot 2 (3-5s): Action 2.\nAt 3.5s, Jun says in Chinese: \"那就用代码。\"",
+		"Shot 3 (5-8s): Action 3.\nAt 5s, Mei says in Chinese: \"我们试试吧。\"",
+	} {
+		if !strings.Contains(omni, want) {
+			t.Errorf("Omni prompt lacks %q", want)
+		}
+	}
+	if t.Failed() {
+		t.Log("\n" + omni)
+	}
+	seedance := prompt("fal", "bytedance/seedance-2.0/fast/image-to-video")
+	if strings.Contains(seedance, "At 0s") || !strings.Contains(seedance, "Mei says: {如果钱不需要靠银行来信任呢？}") || !strings.Contains(seedance, "Shot 3: Action 3.\nMei says: {我们试试吧。}") {
+		t.Fatalf("Seedance prompt changed:\n%s", seedance)
+	}
+}

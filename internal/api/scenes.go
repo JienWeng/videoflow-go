@@ -238,7 +238,7 @@ func (s *Server) handleGenerateShots(w http.ResponseWriter, r *http.Request) {
 	s.operation(w, r, &models.Op{Kind: "shots", SceneID: &sceneID, ProjectID: scene.ProjectID}, func(ctx context.Context) (any, error) {
 		brief := sceneBrief(scene)
 		brief.Style = s.sceneVisualStyle(scene)
-		drafts, err := s.agents.GenerateShots(brief.context(ctx), scene.Title, scene.Summary+"\n"+brief.prompt()+notes, scene.Duration)
+		drafts, err := s.agents.GenerateShots(brief.context(ctx), scene.Title, scene.Summary+"\n"+brief.prompt()+notes, scene.Duration, s.shotLines(scene)...)
 		if err != nil {
 			return nil, err
 		}
@@ -247,6 +247,7 @@ func (s *Server) handleGenerateShots(w http.ResponseWriter, r *http.Request) {
 			camera, movement := draft.Camera, draft.Movement
 			shots = append(shots, models.Shot{SceneID: scene.ID, ShotOrder: draft.Order, Duration: draft.Duration, Prompt: draft.Prompt, Camera: &camera, Movement: &movement})
 		}
+		placeDraftLines(scene, shots, drafts)
 		if err = s.database.ReplaceSceneShots(scene, shots); err != nil {
 			return nil, err
 		}

@@ -122,6 +122,12 @@ type stageScene struct {
 	Progress  sceneProgress
 	// VideoSeconds is what making this scene's video would generate now.
 	VideoSeconds int
+	// Speech is the speech budget's verdict on the scene's clips and SpeechSummary its
+	// line; SpeechWontFit is how far over the clip is ("11.4 s of 8 s") when the clips
+	// speak and one has more speech than it can hold.
+	Speech        string
+	SpeechSummary string
+	SpeechWontFit string
 }
 
 // stageInputs is everything computeStages reads. Gathering it touches the database
@@ -190,7 +196,7 @@ func (s *Server) stageInputs(ctx context.Context, projectID string, progress pro
 		if scene == nil {
 			continue
 		}
-		in.Scenes = append(in.Scenes, stageScene{ID: p.SceneID, Title: p.Title, Progress: p, VideoSeconds: s.stageVideoSeconds(ctx, scene, p)})
+		in.Scenes = append(in.Scenes, s.stageScene(ctx, scene, p))
 	}
 	jobs, err := s.database.ListRenderJobs(projectID)
 	if err != nil {
@@ -226,16 +232,24 @@ func (s *Server) characterHasVoice(projectID, characterID string) bool {
 
 // stageVideoSeconds is the new video seconds making this scene would generate, from the
 // scene's production plan (what the render button quotes), else the scene's length.
-func (s *Server) stageVideoSeconds(ctx context.Context, scene *models.Scene, p sceneProgress) int {
+func (s *Server) stageScene(ctx context.Context, scene *models.Scene, p sceneProgress) stageScene {
+	st := stageScene{ID: p.SceneID, Title: p.Title, Progress: p, VideoSeconds: scene.Duration}
 	if p.Video.State == "ready" || p.Video.State == "making" {
-		return 0
+		st.VideoSeconds = 0
+		return st
 	}
 	if p.Stage == "ready_to_render" || p.Video.State == "failed" {
 		if plan, err := s.sceneProductionPlan(ctx, scene); err == nil {
-			return plan.NewSeconds
+			st.VideoSeconds = plan.NewSeconds
+			if plan.Speech != nil {
+				st.Speech, st.SpeechSummary = plan.Speech.Verdict, plan.Speech.Summary
+			}
+			if plan.speechWontFit() != "" {
+				st.SpeechWontFit = plan.Speech.overrun()
+			}
 		}
 	}
-	return scene.Duration
+	return st
 }
 
 // lastSavedEdit is when the project's newest edit (composition) was saved.
@@ -492,6 +506,15 @@ func clipsStage(in stageInputs) projectStage {
 			seconds += sc.VideoSeconds
 		}
 		st.Missing = []string{countPhrase(len(ready), "scene has", "scenes have") + " no video yet: " + sceneTitles(ready)}
+		wontFit := []string{}
+		for _, sc := range ready {
+			if sc.SpeechWontFit != "" {
+				wontFit = append(wontFit, "“"+sc.Title+"” ("+sc.SpeechWontFit+")")
+			}
+		}
+		if len(wontFit) > 0 {
+			st.Missing = append(st.Missing, "speech won't fit in "+countPhrase(len(wontFit), "scene", "scenes")+" — fit the script first: "+strings.Join(wontFit, ", "))
+		}
 		action, label := "render_scenes", "Make these videos"
 		if len(ready) == 1 {
 			action, label = "render_scene", "Make video"

@@ -12,6 +12,7 @@ import (
 	"time"
 	"videoflow-go/internal/models"
 	"videoflow-go/internal/providers"
+	"videoflow-go/internal/speech"
 )
 
 type productionSettings struct {
@@ -41,6 +42,8 @@ type productionLine struct {
 	Text    string `json:"text"`
 	Speaker string `json:"speaker"`
 	ShotID  string `json:"shot_id"`
+	// FromScript is set when the shot was chosen in the spoken script, not in these options.
+	FromScript bool `json:"from_script,omitempty"`
 }
 type productionPlan struct {
 	Resolution       string             `json:"resolution"`
@@ -65,6 +68,9 @@ type productionPlan struct {
 	VideoInput string `json:"video_input"`
 	// Pictures are what reference mode sends, scene-wide; each clip sends those it shows.
 	Pictures []referencePicture `json:"pictures,omitempty"`
+	// Speech is whether the scene's spoken lines can be said in each clip, checked before
+	// any video is paid for (speech_budget.go); nil for a scene with no spoken lines.
+	Speech *sceneSpeech `json:"speech,omitempty"`
 }
 
 // uncertainRenderBlock is what a scene shows while an earlier request has no answer.
@@ -79,6 +85,16 @@ func sceneProduction(scene *models.Scene) productionSettings {
 		d.Production.Strategy = "auto"
 	}
 	d.Production.AudioMode = currentAudioMode(d.Production.AudioMode)
+	// A line saved with its own shot is spoken in that shot. The older clip choice in the
+	// video options (dialogue_shots) still places the lines that have none.
+	for _, line := range sceneSpokenLines(scene) {
+		if line.ShotID != "" && line.ID != "" {
+			if d.Production.DialogueShots == nil {
+				d.Production.DialogueShots = map[string]string{}
+			}
+			d.Production.DialogueShots[line.ID] = line.ShotID
+		}
+	}
 	return d.Production
 }
 
@@ -357,12 +373,25 @@ func (s *Server) sceneProductionPlan(ctx context.Context, scene *models.Scene) (
 				}
 			}
 		}
-		p.Lines = append(p.Lines, productionLine{ID: id, Text: line.Text, Speaker: line.CharacterID, ShotID: assigned})
+		p.Lines = append(p.Lines, productionLine{ID: id, Text: line.Text, Speaker: line.CharacterID, ShotID: assigned, FromScript: line.ShotID != "" && line.ShotID == assigned})
 		if p.Settings.AudioMode == "native" && len(p.Units) > 1 && !valid {
 			p.Blocked = "Assign each spoken line to a clip below before generating multiple clips with native dialogue."
 		}
 	}
+	if len(p.Lines) > 0 {
+		fit := planSpeech(scene, spoken, shots, p.Units, s.speakerNames(*scene.ProjectID), s.speechCalibration())
+		p.Speech = &fit
+	}
 	return p, nil
+}
+
+// speechWontFit is what keeps Full auto from making a scene's video: the clips speak,
+// and a clip has more speech than it can hold. Empty when the speech fits.
+func (p productionPlan) speechWontFit() string {
+	if p.Settings.AudioMode != "native" || p.Speech == nil || p.Speech.Verdict != speech.TooLong {
+		return ""
+	}
+	return p.Speech.Summary
 }
 func (s *Server) productionScene(w http.ResponseWriter, r *http.Request) (*models.Scene, bool) {
 	project, err := s.activeProjectID(r.Context())
@@ -388,6 +417,12 @@ func (s *Server) handleProductionPlan(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		body.Settings.AudioMode = currentAudioMode(body.Settings.AudioMode)
+		// Shots chosen in the spoken script are saved on the lines, not here.
+		for _, line := range sceneSpokenLines(scene) {
+			if line.ShotID != "" {
+				delete(body.Settings.DialogueShots, line.ID)
+			}
+		}
 		if err := validateProduction(body.Settings); err != nil {
 			http.Error(w, err.Error(), 400)
 			return

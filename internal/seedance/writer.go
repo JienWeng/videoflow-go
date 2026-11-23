@@ -36,7 +36,9 @@ func Sections(c Clip) []string {
 	}
 	names := []string{"index", "bindings", frame, "shots-" + series, "action", "camera"}
 	if c.Audio == Native {
-		if c.speaks() {
+		if c.speaks() && c.omni() {
+			names = append(names, "speech-omni")
+		} else if c.speaks() {
 			names = append(names, "speech-"+series)
 		}
 		names = append(names, "music-"+series)
@@ -65,6 +67,8 @@ func Brief(c Clip) (system, facts string) {
 	type line struct {
 		Speaker string `json:"speaker"`
 		Text    string `json:"text"`
+		// At is when the line is said in the clip (Gemini Omni only), from the speech budget.
+		At string `json:"at,omitempty"`
 	}
 	type shot struct {
 		Number  int    `json:"number"`
@@ -117,10 +121,14 @@ func Brief(c Clip) (system, facts string) {
 		if who == "" {
 			who = "Narrator"
 		}
+		said := line{Speaker: who, Text: l.Text}
+		if c.omni() && l.Until > l.At {
+			said.At = fmt.Sprintf("%s-%ss", seconds(l.At), seconds(l.Until))
+		}
 		if l.Shot >= 1 && l.Shot <= len(shots) {
-			shots[l.Shot-1].Lines = append(shots[l.Shot-1].Lines, line{who, l.Text})
+			shots[l.Shot-1].Lines = append(shots[l.Shot-1].Lines, said)
 		} else {
-			loose = append(loose, line{who, l.Text})
+			loose = append(loose, said)
 		}
 	}
 	doc["shots"] = shots

@@ -222,6 +222,9 @@ func (a *autopilotRunner) run(ctx context.Context) (any, error) {
 	if err != nil {
 		return stuck, err
 	}
+	if err = a.fitScripts(ctx, adopted); err != nil {
+		return nil, err
+	}
 	if err = a.makeCharacterPictures(ctx); err != nil {
 		return nil, err
 	}
@@ -267,6 +270,38 @@ func (a *autopilotRunner) askAboutEarlierRequests(ctx context.Context) (map[stri
 		}
 	}
 	return adopted, nil, nil
+}
+
+// fitScripts is Full auto's speech check, before anything is paid for: a scene whose
+// clips speak and have more speech than they can hold gets Fit script to clips (one turn
+// of the local AI session) and is checked again. A scene that still cannot say its
+// lines in time stops the run. Runs started by a click elsewhere were confirmed with the
+// warning in view, so they go ahead.
+func (a *autopilotRunner) fitScripts(ctx context.Context, adopted map[string][]string) error {
+	if !a.body.FullAuto || a.body.JoinOnly {
+		return nil
+	}
+	for i := range a.scenes {
+		scene := &a.scenes[i]
+		if len(adopted[scene.ID]) > 0 {
+			continue // the service already has this scene's video
+		}
+		plan, err := a.s.sceneProductionPlan(ctx, scene)
+		if err != nil || plan.speechWontFit() == "" || plan.Calls == 0 {
+			continue // a plan problem is reported when the video is started; made clips are kept
+		}
+		if err = a.sameProject(); err != nil {
+			return err
+		}
+		a.stage("Fitting the script of " + scene.Title + " to its clips")
+		if _, err = a.s.fitSceneScript(ctx, scene); err != nil {
+			return fmt.Errorf("“%s” has more speech than its clips can hold, and fitting the script failed: %w. Shorten its lines in the spoken script, then ask me again", scene.Title, err)
+		}
+		if plan, err = a.s.sceneProductionPlan(ctx, scene); err == nil && plan.speechWontFit() != "" {
+			return fmt.Errorf("“%s” still has more speech than its clip can hold after fitting the script (%s). Shorten its lines in the spoken script, then ask me again; no video was paid for", scene.Title, plan.speechWontFit())
+		}
+	}
+	return nil
 }
 
 // makeCharacterPictures is step 2, only when the run asks for it: the cast of the scenes

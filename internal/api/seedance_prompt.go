@@ -140,17 +140,48 @@ func (s *Server) writeScenePrompt(ctx context.Context, job *models.RenderJob, wr
 		}
 		return *v
 	}
-	place := map[string]int{} // shot id → its number in this clip
+	place := map[string]int{}      // shot id → its number in this clip
+	offset := map[string]float64{} // shot id → when it starts in this clip
 	for _, id := range unit.ShotIDs {
 		if shot, e := s.database.GetShot(id); e == nil {
+			offset[id] = 0
+			for _, sh := range clip.Shots {
+				offset[id] += float64(sh.Seconds)
+			}
 			clip.Shots = append(clip.Shots, seedance.Shot{Seconds: shot.Duration, Framing: text(shot.Camera), Move: text(shot.Movement), Action: shot.Prompt})
 			place[id] = len(clip.Shots)
 		}
 	}
 	spoken := sceneSpokenLines(scene)
+	sceneShots, _ := s.database.ListShots(scene.ID) // unreadable shots leave every line unplaced
+	inScene := map[string]bool{}
+	for _, sh := range sceneShots {
+		inScene[sh.ID] = true
+	}
+	if strings.HasPrefix(clip.Family, "gemini-omni") && clip.Audio == seedance.Native {
+		// Gemini Omni is told, per shot, who says what and when: every line has its shot
+		// (its own, the clip chosen for it, or the one on screen when it would start)
+		// and a start time from the speech budget.
+		plan := planSpeech(scene, spoken, sceneShots, nil, names, s.speechCalibration())
+		for _, sh := range plan.Shots {
+			if place[sh.ShotID] == 0 {
+				continue
+			}
+			for _, line := range sh.Lines {
+				speaker := names[line.CharacterID]
+				at := offset[sh.ShotID] + line.Start
+				clip.Lines = append(clip.Lines, seedance.Line{Speaker: speaker, Text: line.Text, Language: line.Language, Shot: place[sh.ShotID], At: at, Until: offset[sh.ShotID] + line.End})
+			}
+		}
+		spoken = nil
+	}
 	for _, line := range spoken {
-		// A line pinned to a shot is spoken only in the clip that has that shot.
+		// A line pinned to a shot is spoken only in the clip that has that shot; a pin to
+		// a shot the scene no longer has pins it nowhere.
 		target := settings.DialogueShots[line.ID]
+		if !inScene[target] {
+			target = ""
+		}
 		if target != "" && place[target] == 0 {
 			continue
 		}

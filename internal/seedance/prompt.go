@@ -8,6 +8,7 @@ package seedance
 import (
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 // ShotRules is the part of the guides a writer of single shots needs, and no more. It is
@@ -35,6 +36,9 @@ type Line struct {
 	Text     string
 	Language string
 	Shot     int // the shot it is spoken over, counted from 1; 0 when not pinned to one
+	// At and Until are when the line is said, in seconds from the start of the clip, as
+	// the speech budget estimates it; both 0 when not known. Only Gemini Omni is told.
+	At, Until float64
 }
 
 // Character is a member of the cast as the video model should see them.
@@ -94,7 +98,13 @@ type Clip struct {
 	Music    string // music direction; empty means no music
 }
 
-func (c Clip) timed() bool { return strings.Contains(c.Family, "2.5") }
+func (c Clip) timed() bool { return strings.Contains(c.Family, "2.5") || c.omni() }
+
+// omni is Google's Gemini Omni, which gets this prompt too. Its prompt guide describes
+// sound in plain sentences ("Sound design: ...") and times cues by the second ("At 5s
+// the chorus starts"), and Google's video guide asks for quotes around exact speech;
+// see docs/PROVIDERS.md, "Speech in Gemini Omni clips".
+func (c Clip) omni() bool { return strings.HasPrefix(c.Family, "gemini-omni") }
 
 // binding defines what a reference picture shows, the way the guides ask: "Define ... in
 // Image N as <name>", after which the name alone refers to it.
@@ -187,6 +197,8 @@ func (c Clip) say(line func(string, ...any), shot int) {
 		}
 		how = join(", ", how, strings.ToLower(c.Tone))
 		switch {
+		case c.omni():
+			line("%s", c.omniLine(l, who, how, language, text))
 		case c.timed() && how != "":
 			line("%s's line (%s): %q", who, how, text)
 		case c.timed():
@@ -197,6 +209,34 @@ func (c Clip) say(line func(string, ...any), shot int) {
 			line("%s says%s: {%s}", who, marked(language), text)
 		}
 	}
+}
+
+// omniLine is one spoken line for Gemini Omni: when it starts, who says it in which
+// language and how, and the exact words in quotes.
+func (c Clip) omniLine(l Line, who, how, language, text string) string {
+	when := ""
+	if l.Until > l.At {
+		when = fmt.Sprintf("At %ss, ", seconds(l.At))
+	}
+	if l.Speaker == "" {
+		who = "the unseen narrator"
+	}
+	if r := []rune(who); when == "" && len(r) > 0 {
+		who = string(unicode.ToUpper(r[0])) + string(r[1:])
+	}
+	in := ""
+	if language != "" {
+		in = " in " + language
+	}
+	if how != "" {
+		how = " (" + how + ")"
+	}
+	return fmt.Sprintf("%s%s says%s%s: %q", when, who, in, how, text)
+}
+
+// seconds writes a time with at most one decimal.
+func seconds(v float64) string {
+	return strings.TrimSuffix(fmt.Sprintf("%.1f", v), ".0")
 }
 
 // speech writes the lines not pinned to a shot, then how the voices should sound.
@@ -219,12 +259,29 @@ func (c Clip) speech(line func(string, ...any)) {
 	if language != "" {
 		in = " in " + language
 	}
+	if c.omni() {
+		c.omniSpeech(line, in)
+		return
+	}
 	if c.Narration {
 		line("The voice is one unseen narrator, a warm, natural, expressive human voice%s, telling this like a documentary: unhurried, with real feeling, natural breaths and a short pause between sentences. Nobody on screen moves their lips. Each line is spoken once and the last one ends before the final second.", in)
 	} else {
 		line("Each character speaks%s in their own natural, expressive human voice, at a relaxed conversational pace with small pauses, and their lips match the words. Each line is spoken once and the last one ends before the final second.", in)
 	}
 	line("Natural ambient sound fits each shot and stays under the voice.")
+}
+
+// omniSpeech is how the voices should sound for Gemini Omni. Google documents English
+// as fully supported and other languages as not evaluated, so the language and the
+// exact wording are stated outright.
+func (c Clip) omniSpeech(line func(string, ...any), in string) {
+	if c.Narration {
+		line("The voice is one unseen narrator, a warm, natural, expressive human voice%s, unhurried, with natural breaths and a short pause between sentences. Nobody on screen moves their lips.", in)
+	} else {
+		line("Each character speaks%s in their own natural, expressive human voice at a relaxed conversational pace. Only one person speaks at a time; the speaker is on screen and their lips match the words.", in)
+	}
+	line("Say every quoted line exactly once, word for word%s, starting at its time; never translate, add or skip words. The last line ends before the final second.", in)
+	line("Sound design: natural ambient sound that fits each shot, quiet under the voices.")
 }
 
 func (c Clip) music(line func(string, ...any)) {
