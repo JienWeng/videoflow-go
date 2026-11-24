@@ -100,6 +100,9 @@ func (s *Server) writeScenePrompt(ctx context.Context, job *models.RenderJob, wr
 	}
 	clip.References = clipReferences(payload)
 	clip.Voices = textValues(payload["reference_voices"])
+	if track, _ := payload["voice_track"].(string); track != "" && len(textValues(payload["audio_urls"])) == 1 {
+		clip.Voices, clip.VoiceTrack = nil, true
+	}
 	if clip.Music, _ = payload["music_prompt"].(string); clip.Music == "" {
 		clip.Music = settings.MusicPrompt
 	}

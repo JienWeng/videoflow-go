@@ -448,6 +448,8 @@ type ChatIntentResponse struct {
 	// SwitchTo names the video service switch_video_service moves to: an id from
 	// video_service.can_switch_to, or "cheapest".
 	SwitchTo string `json:"switch_to,omitempty"`
+	// SoundMode is what set_sound_mode sets: "together" or "voice_first".
+	SoundMode string `json:"sound_mode,omitempty"`
 	// Music is the music direction set_music saves on an episode ("none" removes it).
 	Music string `json:"music,omitempty"`
 	// NextEpisode marks a new story that continues this project's series.

@@ -60,6 +60,8 @@ export interface ChatIntent {
   service?: string;
   waiting_reason?: string;
   video_switch?: VideoSwitchChoice;
+  /** set_sound_mode: "together" or "voice_first". */
+  sound_mode?: 'together' | 'voice_first';
   /** generate_character_references: who is drawn and how many picture calls it takes. */
   character_ids?: string[];
   characters?: { id: string; name: string }[];
@@ -153,4 +155,18 @@ export interface RunContext {
   characterId?: string;
   sceneId?: string;
   outputId?: string;
+}
+
+/** Voice first: the dialogue track of one clip of a scene. */
+export interface VoiceTrack {
+  unit_index: number;
+  shot_ids: string[];
+  asset_id?: string;
+  url?: string;
+  seconds: number;
+  clip_seconds: number;
+  ready: boolean;
+  cached?: boolean;
+  too_long?: boolean;
+  lines: { line_id: string; text: string; speaker: string; character_id?: string; start: number; duration: number }[];
 }

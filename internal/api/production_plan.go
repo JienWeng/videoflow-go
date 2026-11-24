@@ -71,6 +71,12 @@ type productionPlan struct {
 	// Speech is whether the scene's spoken lines can be said in each clip, checked before
 	// any video is paid for (speech_budget.go); nil for a scene with no spoken lines.
 	Speech *sceneSpeech `json:"speech,omitempty"`
+	// SoundMode is "voice_first" when the clips are made to dialogue tracks made first
+	// (voice_first.go); VoiceTracks are those tracks, one per clip.
+	SoundMode   string       `json:"sound_mode,omitempty"`
+	VoiceTracks []voiceTrack `json:"voice_tracks,omitempty"`
+	// voiceFirstBlock is what stops a voice-first plan, applied after the clip states.
+	voiceFirstBlock string
 }
 
 // uncertainRenderBlock is what a scene shows while an earlier request has no answer.
@@ -278,6 +284,7 @@ func (s *Server) sceneProductionPlan(ctx context.Context, scene *models.Scene) (
 	if err != nil {
 		return p, err
 	}
+	s.applyVoiceFirst(ctx, scene, &p, model.ReferenceAudios, model.Durations)
 	refs, err := s.sceneReferenceState(ctx, scene)
 	if err != nil {
 		return p, err
@@ -292,6 +299,13 @@ func (s *Server) sceneProductionPlan(ctx context.Context, scene *models.Scene) (
 	if p.Resolution == "auto" {
 		delete(identity, "resolution")
 	} // Preserve existing default-resolution plan IDs.
+	if p.SoundMode == soundVoiceFirst {
+		tracks := []string{}
+		for _, t := range p.VoiceTracks {
+			tracks = append(tracks, t.AssetID)
+		}
+		identity["sound_mode"], identity["voice_tracks"] = p.SoundMode, tracks
+	}
 	planID := func() string {
 		hash := sha256.Sum256(voiceJSON(identity))
 		return hex.EncodeToString(hash[:])
@@ -377,6 +391,12 @@ func (s *Server) sceneProductionPlan(ctx context.Context, scene *models.Scene) (
 		if p.Settings.AudioMode == "native" && len(p.Units) > 1 && !valid {
 			p.Blocked = "Assign each spoken line to a clip below before generating multiple clips with native dialogue."
 		}
+	}
+	if p.SoundMode == soundVoiceFirst && p.voiceFirstBlock == "" && p.VideoInput != inputReferences {
+		p.voiceFirstBlock = "Voice first sends the voice track with the scene's pictures: connect the characters' reference pictures to this scene first."
+	}
+	if p.Blocked == "" && p.voiceFirstBlock != "" {
+		p.Blocked = p.voiceFirstBlock
 	}
 	if len(p.Lines) > 0 {
 		fit := planSpeech(scene, spoken, shots, p.Units, s.speakerNames(*scene.ProjectID), s.speechCalibration())
