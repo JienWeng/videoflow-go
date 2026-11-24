@@ -49,6 +49,28 @@ Configuration is read from environment variables (the `environment:` block of `c
 
 Use the running Go backend for request schemas. Posting generation endpoints can incur provider usage. Health and model listing are not substitutes for an end-to-end generation check.
 
+### Chat over AG-UI (`POST /agui`)
+
+The chat panel talks to the assistant over [AG-UI](https://docs.ag-ui.com) (protocol 1.0), an open event protocol for agent front ends. `POST /agui` takes an AG-UI `RunAgentInput` (`threadId`, `runId`, `messages`, `state`, `tools`, `context`) and answers with a server-sent event stream (`text/event-stream`, one JSON event per `data:` line). It runs the same chat turn as `POST /chat` (`runChatTurn` in `internal/api/chat.go`), sits behind the same login and has no 5-minute request limit, like `/events`. The chat's own fields (`selected`, `attachments`, `auto`, `full`, `answer`, `creation_brief`) go in `forwardedProps`.
+
+A run whose last message is the user's plans that message:
+
+| Event | When |
+|---|---|
+| `RUN_STARTED` | at once |
+| `STATE_SNAPSHOT` | the shared state: `{stages, decisions, mode}`, i.e. `GET /stages`, the decision log of `GET /decisions`, and `manual`/`auto`/`full` |
+| `STEP_STARTED` / `STEP_FINISHED` | for each phase: `read_project`, `ask_ai_session`, `check_answer` |
+| `TEXT_MESSAGE_START` / `_CONTENT` / `_END` | the reply. The AI session answers with one JSON object and the server may rewrite its reply, so the final reply is sent in chunks of about 48 bytes after the turn; it is not streamed token by token |
+| `TOOL_CALL_START` / `_ARGS` / `_END` | the prepared button: the tool name is the card's action, the arguments are the card (intent) as JSON, including `decision`. No tool call when there is no button (`unknown`) |
+| `TOOL_CALL_RESULT` | only for `clear_failed_videos`, which is done while planning |
+| `STATE_DELTA` | an RFC 6902 JSON Patch when the turn changed the stage map or the decision log (a quick reply's answer, the assistant's `remember` list) |
+| `RUN_FINISHED` | `result` is exactly the `POST /chat` response, plus `tool_call_id` |
+| `RUN_ERROR` | instead of `RUN_FINISHED`; `code` is `chat_context_invalid` or `http_<status /chat would answer>` |
+
+A run whose last message is a `tool` message reports a card the user ran (`toolCallId` is the tool call; `content` is `{"op_id": "…"}` for a background op, or how the card ended). With an op, the run follows it on the event bus: it sends a `STATE_DELTA` when the project changes, a `TOOL_CALL_RESULT` (`{op_id, kind, status, error, result}`) when the op ends, and `RUN_FINISHED`. It stops following after 30 minutes or when the page leaves. An op of another project is a `RUN_ERROR` with `http_404`.
+
+The panel's client is `frontend/src/lib/chat/agui.mjs`. It is on by default; set `localStorage['videoflow.chat.agui'] = 'off'` to use `POST /chat` only. When a run cannot start (an older backend, a refused request, no stream), the panel sends the same message to `POST /chat` instead. A run that started and then failed is shown as an error, never sent again, so a turn is never planned twice. At most two runs follow ops at a time; a further card reports its op once it ends.
+
 ## Maintainer checks
 
 From the repository root:
