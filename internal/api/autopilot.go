@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -226,6 +227,13 @@ func (a *autopilotRunner) run(ctx context.Context) (any, error) {
 	if err = a.fitScripts(ctx, adopted); err != nil {
 		return nil, err
 	}
+	// Real people become fictional stand-ins before any picture or clip is paid for:
+	// video services refuse them (real_people.go).
+	// A check that can't run doesn't stop the run: a refusal is still caught after the
+	// clips are made (retryRefusedScenes).
+	if _, err = a.replaceRealPeople(ctx, false); err != nil && !errors.Is(err, errStandInCheck) {
+		return nil, err
+	}
 	if err = a.makeCharacterPictures(ctx); err != nil {
 		return nil, err
 	}
@@ -243,7 +251,13 @@ func (a *autopilotRunner) run(ctx context.Context) (any, error) {
 		return nil, err
 	}
 	if stuck, err := a.waitForSceneVideos(ctx, waiting); err != nil {
-		return stuck, err
+		retried, stuck2, err2 := a.retryRefusedScenes(ctx, waiting)
+		if !retried {
+			return stuck, err
+		}
+		if err2 != nil {
+			return stuck2, err2
+		}
 	}
 	if flagged := a.checkClips(ctx); len(flagged) > 0 {
 		flagged, stuck, err := a.retryClipSpeech(ctx, flagged)
