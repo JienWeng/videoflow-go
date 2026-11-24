@@ -727,6 +727,12 @@ func selfCheckPrompt(t *selfCheckTarget, images int) string {
 // and model the chat uses, in a private folder, without resuming the chat's own
 // conversation (the pictures stay out of it). The turn is recorded in Local sessions.
 func (s *Server) selfCheckTurn(ctx context.Context, prompt string, images []string) (json.RawMessage, string, string, error) {
+	return s.localImageTurn(ctx, "self_check", prompt, images)
+}
+
+// localImageTurn runs one private picture-reading turn on the selected local session
+// (Claude Code or Codex, which read the attached images natively).
+func (s *Server) localImageTurn(ctx context.Context, kind, prompt string, images []string) (json.RawMessage, string, string, error) {
 	session, err := s.directorSession(ctx)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("no local AI session is selected")
@@ -748,11 +754,11 @@ func (s *Server) selfCheckTurn(ctx context.Context, prompt string, images []stri
 		return nil, session.Engine, session.Model, err
 	}
 	defer release()
-	request, _ := json.Marshal(map[string]any{"self_check": true, "images": len(images)})
+	request, _ := json.Marshal(map[string]any{kind: true, "images": len(images)})
 	deadline := time.Now().Add(selfCheckBusyWait)
 	var turnID string
 	for {
-		turn, e := s.database.BeginDirectorTurn(session.ID, session.ProjectID, uuid.NewString(), "self_check", request)
+		turn, e := s.database.BeginDirectorTurn(session.ID, session.ProjectID, uuid.NewString(), kind, request)
 		if e == nil {
 			turnID = turn.ID
 			break

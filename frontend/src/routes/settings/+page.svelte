@@ -974,7 +974,6 @@
                 { key: 'image_model', label: 'Image model', hint: `Image generation via ${providerLabels[app.default_image_provider] ?? app.default_image_provider}.` },
                 { key: 'ref_image_model', label: 'Character and prop image model', hint: `Character references and props via ${providerLabels[app.default_image_provider] ?? app.default_image_provider}.` },
                 { key: 'video_model', label: 'Video model', hint: videoModelHint() },
-                { key: 'vl_model', label: 'Vision model', hint: 'Reads frames for QA.' }
               ] as const}
               {#each engines as eng (eng.key)}
                 {@const cur = app[eng.key] as string}

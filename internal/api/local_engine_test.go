@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -45,6 +46,18 @@ func fakeEngineTurn(url string, args []string) int {
 	if at := strings.Index(system, "\nSelected project context: "); at >= 0 {
 		if cut := strings.Index(system[at:], "\nRequest: "); cut >= 0 {
 			system, user = system[:at+cut], system[at+cut+len("\nRequest: "):]
+		}
+	}
+	// Attached pictures reach the fake service as data URLs, the way a real session sees them.
+	for i, arg := range args {
+		path := strings.TrimPrefix(arg, "--image=")
+		if arg == "--image" && i+1 < len(args) {
+			path = args[i+1]
+		} else if path == arg {
+			continue
+		}
+		if data, err := os.ReadFile(path); err == nil {
+			user += "\nattached image: data:" + http.DetectContentType(data) + ";base64," + base64.StdEncoding.EncodeToString(data)
 		}
 	}
 	body, _ := json.Marshal(map[string]any{"model": "local-session", "messages": []map[string]string{{"role": "system", "content": system}, {"role": "user", "content": user}}})

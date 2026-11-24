@@ -126,14 +126,7 @@ func (s *Server) auditStoryboard(ctx context.Context, scene *models.Scene, repai
 	if !repair {
 		return map[string]any{"status": "needs_repair", "evidence": reason}, nil
 	}
-	client, model, err := s.routes().Vision(ctx, "style_agent")
-	if err != nil {
-		return nil, err
-	}
-	if _, err = client.Model(ctx, model, "vision"); err != nil {
-		return nil, err
-	}
-	if err = unchanged(); err != nil {
+	if err := unchanged(); err != nil {
 		return nil, err
 	}
 	candidates, err := s.storyboardCandidates(ctx, scene, "\nVisual audit notes for the new keyframe: "+reason)
