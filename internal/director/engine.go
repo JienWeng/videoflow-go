@@ -22,6 +22,13 @@ type Request struct {
 	Model, Effort   string
 	ImageGeneration bool
 	Images          []string
+	// Tools makes a fresh tool turn (tools.go): commands may run in Workspace.
+	Tools bool
+	// Env is added to a tool turn's environment (its PATH, for the vetted tools).
+	Env []string
+	// Contain, when set, prepares the process so that cancelling it stops everything
+	// it started.
+	Contain func(*exec.Cmd)
 }
 type Runner struct{ Codex, Claude string }
 
@@ -81,7 +88,7 @@ func (r *Runner) Run(ctx context.Context, request Request, saveNative func(strin
 	}
 	defer func() {
 		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
+			_ = cmd.Cancel() // the whole process group of a contained turn
 		}
 	}()
 	scanner := bufio.NewScanner(io.LimitReader(stdout, 8<<20))
@@ -89,7 +96,7 @@ func (r *Runner) Run(ctx context.Context, request Request, saveNative func(strin
 	turn := &turnReader{engine: request.Engine, native: request.NativeID, saveNative: saveNative}
 	for scanner.Scan() {
 		if err = turn.read(scanner.Bytes()); err != nil {
-			_ = cmd.Process.Kill()
+			_ = cmd.Cancel() // the whole process group of a contained turn
 			_ = cmd.Wait()
 			return nil, err
 		}
@@ -107,6 +114,13 @@ func (r *Runner) Run(ctx context.Context, request Request, saveNative func(strin
 
 // turnArgs builds the CLI arguments for one turn and the text sent on its stdin.
 func turnArgs(request Request) ([]string, string, error) {
+	if request.Tools {
+		args, err := toolArgs(request)
+		if err == nil && ValidModel(request.Model) && ValidEffort(request.Engine, request.Effort) {
+			args = withModelArgs(request, args)
+		}
+		return args, request.Prompt, err
+	}
 	args := CodexArgs(request.NativeID)
 	if request.ImageGeneration {
 		if request.Engine != "codex" || request.NativeID != "" {
@@ -183,8 +197,14 @@ func turnCommand(ctx context.Context, executable string, args []string, request 
 		}
 		cmd.Env = filtered
 	}
+	if request.Tools {
+		cmd.Env = append(ToolEnvironment(os.Environ()), request.Env...)
+	}
 	cmd.Stdin = strings.NewReader(stdin)
 	cmd.WaitDelay = 2 * time.Second
+	if request.Contain != nil {
+		request.Contain(cmd)
+	}
 	return cmd
 }
 
