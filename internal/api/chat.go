@@ -63,52 +63,106 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "message is required", http.StatusBadRequest)
 		return
 	}
+	response, failure := s.runChatTurn(r.Context(), body, nil)
+	if failure != nil {
+		failure.write(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
 
-	projectID, _ := s.activeProjectID(r.Context())
+// The phases of a chat turn, in order. POST /agui shows each as an AG-UI step.
+const (
+	chatStepReadProject = "read_project"
+	chatStepAskSession  = "ask_ai_session"
+	chatStepCheckAnswer = "check_answer"
+)
+
+// chatTurnError is why a chat turn stopped, with the HTTP status /chat answers with.
+// Code is set for the failures the chat panel acts on (chat_context_invalid).
+type chatTurnError struct {
+	status  int
+	code    string
+	message string
+}
+
+func (e *chatTurnError) Error() string { return e.message }
+
+// write answers /chat with the failure, as it always has: JSON when it has a code,
+// plain text otherwise.
+func (e *chatTurnError) write(w http.ResponseWriter) {
+	if e.code != "" {
+		writeJSON(w, e.status, map[string]string{"code": e.code, "error": e.message})
+		return
+	}
+	http.Error(w, e.message, e.status)
+}
+
+func turnFailure(status int, message string) *chatTurnError {
+	return &chatTurnError{status: status, message: message}
+}
+
+// runChatTurn plans one chat message and returns the /chat response: the action card,
+// the pickable options and the project state. POST /chat and POST /agui both answer
+// through it. onStep, when set, hears each phase start (started) and finish.
+func (s *Server) runChatTurn(ctx context.Context, body chatRequest, onStep func(name string, started bool)) (map[string]interface{}, *chatTurnError) {
+	open := ""
+	step := func(name string) {
+		if onStep == nil {
+			return
+		}
+		if open != "" {
+			onStep(open, false)
+		}
+		if open = name; name != "" {
+			onStep(name, true)
+		}
+	}
+	defer step("")
+
+	step(chatStepReadProject)
+	projectID, _ := s.activeProjectID(ctx)
 	turn, status, err := s.newChatTurn(projectID, body)
 	if err != nil {
-		http.Error(w, err.Error(), status)
-		return
+		return nil, turnFailure(status, err.Error())
 	}
 	// A quick reply settles its question before planning, so this turn already sees it.
 	s.recordAnswer(projectID, body.Answer)
-	contextJSON, err := s.chatPlannerContext(r.Context(), turn)
+	contextJSON, err := s.chatPlannerContext(ctx, turn)
 	if err != nil {
-		http.Error(w, "could not load project connections", 500)
-		return
+		return nil, turnFailure(500, "could not load project connections")
 	}
-	ctx := r.Context()
 	binding, _ := ctx.Value(directorBindingKey{}).(directorBinding)
 	snapshot, err := s.buildDirectorContext(projectID, binding.Selection)
 	if err != nil {
-		chatContextError(w)
-		return
+		return nil, &chatTurnError{status: 409, code: chatContextInvalid, message: chatContextInvalidMessage}
 	}
 	turn.body.History = nil
-	ctx, previewDir := chatDirectorContext(ctx, snapshot, turn.body.Message, turn.attachments)
+	planCtx, previewDir := chatDirectorContext(ctx, snapshot, turn.body.Message, turn.attachments)
 	if previewDir != "" {
 		defer os.RemoveAll(previewDir)
 	}
-	res, err := s.agents.Chat(ctx, turn.body.Message, turn.body.History, string(contextJSON))
+
+	step(chatStepAskSession)
+	res, err := s.agents.Chat(planCtx, turn.body.Message, turn.body.History, string(contextJSON))
 	if err != nil {
 		status := 500
 		if errors.Is(err, errDirectorContextChanged) {
 			status = 409
 		}
-		http.Error(w, err.Error(), status)
-		return
+		return nil, turnFailure(status, err.Error())
 	}
 
+	step(chatStepCheckAnswer)
 	if turn.body.Selected != nil {
 		current, e := s.chatSelectionContext(projectID, turn.body.Selected)
 		if e != nil || !bytes.Equal(current, turn.selectedContext) {
-			http.Error(w, "Selected item changed during planning; review it and try again", 409)
-			return
+			return nil, turnFailure(409, "Selected item changed during planning; review it and try again")
 		}
 	}
-	intent := s.chatIntent(r.Context(), turn, res)
+	intent := s.chatIntent(ctx, turn, res)
 	intent["remembered"] = s.rememberDecisions(projectID, res.Remember)
-	s.writeChatResponse(w, turn, intent, binding, snapshot)
+	return s.chatResponse(turn, intent, binding, snapshot)
 }
 
 // newChatTurn checks the message's attachments and selection and loads the project's
@@ -609,10 +663,10 @@ func (s *Server) pinChatSelection(turn *chatTurn, res *agents.ChatIntentResponse
 	}
 }
 
-// writeChatResponse answers with the action card, the pickable options and the project
-// state, after checking the director context did not change while planning and
-// recording the proposal.
-func (s *Server) writeChatResponse(w http.ResponseWriter, turn *chatTurn, intent map[string]interface{}, binding directorBinding, snapshot *directorContext) {
+// chatResponse is the action card, the pickable options and the project state, after
+// checking the director context did not change while planning and recording the
+// proposal.
+func (s *Server) chatResponse(turn *chatTurn, intent map[string]interface{}, binding directorBinding, snapshot *directorContext) (map[string]interface{}, *chatTurnError) {
 	projectID := turn.projectID
 	options := map[string]interface{}{
 		"scenes":     turn.sceneOptions,
@@ -622,8 +676,7 @@ func (s *Server) writeChatResponse(w http.ResponseWriter, turn *chatTurn, intent
 
 	state, err := s.projectState(projectID)
 	if err != nil {
-		http.Error(w, "failed to load project state", 500)
-		return
+		return nil, turnFailure(500, "failed to load project state")
 	}
 
 	response := map[string]interface{}{
@@ -638,20 +691,18 @@ func (s *Server) writeChatResponse(w http.ResponseWriter, turn *chatTurn, intent
 	_ = json.Unmarshal(currentSelectionRaw, &currentSelection) // a missing or unreadable selection reads as none; the revision check rejects it
 	current, err := s.buildDirectorContext(projectID, currentSelection)
 	if err != nil || current.Revision != snapshot.Revision {
-		http.Error(w, errDirectorContextChanged.Error(), 409)
-		return
+		return nil, turnFailure(409, errDirectorContextChanged.Error())
 	}
 	selection, _ := json.Marshal(binding.Selection)
 	id, err := s.database.CreateDirectorProposal(binding.SessionID, projectID, snapshot.Revision, selection)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
+		return nil, turnFailure(500, err.Error())
 	}
 	intent["director_proposal"] = id
 	response["session_id"] = binding.SessionID
 	response["context_revision"] = snapshot.Revision
 	response["warnings"] = snapshot.Warnings
-	writeJSON(w, http.StatusOK, response)
+	return response, nil
 }
 
 // Keep model output on the action-card contract, including legacy agent replies.

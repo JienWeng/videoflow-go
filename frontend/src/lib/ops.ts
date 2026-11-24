@@ -18,6 +18,8 @@ export type Op<R = OpResult> = {
 };
 
 type OpHandlers<R> = {
+  /** The op was accepted and is running. */
+  onStarted?: (opId: string) => unknown;
   onDone?: (op: Op<R>) => unknown;
   onFail?: (op: Op<R>) => unknown;
   label: string;
@@ -34,13 +36,14 @@ type OpHandlers<R> = {
 export async function runBackgroundOp<R = OpResult>(
   path: string,
   body: unknown,
-  { onDone, onFail, label, method = 'POST', signal }: OpHandlers<R>
+  { onStarted, onDone, onFail, label, method = 'POST', signal }: OpHandlers<R>
 ): Promise<void> {
   const sep = path.includes('?') ? '&' : '?';
   const send = method === 'PUT' ? put : post;
   const started = await send<OpStarted>(`${path}${sep}background=true`, body);
   const opId: string = started.op_id;
   toast.info(`${label} started`);
+  onStarted?.(opId);
 
   let settled = false;
   let failures = 0;

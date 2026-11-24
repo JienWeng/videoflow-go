@@ -53,6 +53,7 @@
 
   /** Settles the chat's in-conversation progress row for a background op. */
   interface OpHandle {
+    started?: (opId: string) => unknown;
     done: (op: Op) => unknown;
     fail: (op: Op) => unknown;
   }
@@ -346,6 +347,7 @@
       await runBackgroundOp(proposalPath(path), body, {
         signal: operationScope.signal,
         label,
+        onStarted: opId => handle?.started?.(opId),
         onDone: async op => {
           busy = false;
           await handle?.done(op); // settle the chat progress row (thumbs + nav chips) first

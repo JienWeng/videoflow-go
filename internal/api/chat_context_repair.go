@@ -9,8 +9,14 @@ import (
 	"videoflow-go/internal/models"
 )
 
+// chatContextInvalid is the code of the failure the chat panel offers to repair.
+const (
+	chatContextInvalid        = "chat_context_invalid"
+	chatContextInvalidMessage = "Saved chat context is out of date. Repair it to remove unavailable characters or assets, then retry your message."
+)
+
 func chatContextError(w http.ResponseWriter) {
-	writeJSON(w, 409, map[string]string{"code": "chat_context_invalid", "error": "Saved chat context is out of date. Repair it to remove unavailable characters or assets, then retry your message."})
+	writeJSON(w, 409, map[string]string{"code": chatContextInvalid, "error": chatContextInvalidMessage})
 }
 
 // Explicitly removes unavailable saved context only. No turns, approval or native history are changed.
