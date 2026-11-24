@@ -3,6 +3,8 @@
   import { randomId } from '../ids';
   import FinishingPanel from './FinishingPanel.svelte';
   import VoiceoverPanel from './VoiceoverPanel.svelte';
+  import AIEditPanel from './AIEditPanel.svelte';
+  import { latestEdit, savedEditLabel } from '$lib/composition/ai-edit.mjs';
   import ChatPanel from '$lib/chat/ChatPanel.svelte';
   import NleTimeline from './NleTimeline.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -25,7 +27,8 @@
     Bot,
     SlidersHorizontal,
     ArrowLeft,
-    SkipBack
+    SkipBack,
+    Sparkles
   } from '@lucide/svelte';
   import { moveClip } from '$lib/composition/proposals.mjs';
   import CompositionPreview from '$lib/composition/CompositionPreview.svelte';
@@ -79,6 +82,28 @@
     'You have unsaved composition changes. Discard them and leave?'
   );
   let savedEdits: SavedComposition[] = [];
+  // The AI editor panel: the story it edits, and the proposal open now, if any.
+  let aiEditOpen = false;
+  let aiScriptId = '';
+  $: openProposal = savedEdits.find(e => e.revision === revision && e.ai_edit?.status === 'proposed') ? revision : '';
+  $: if (openProposal) aiEditOpen = true;
+  async function toggleAIEdit() {
+    aiEditOpen = !aiEditOpen;
+    if (aiEditOpen && !aiScriptId) {
+      const wanted = new URL(window.location.href).searchParams.get('script_id');
+      const fromEdit = savedEdits.find(e => e.revision === revision)?.ai_edit?.script_id;
+      try {
+        const scripts = (await get<Script[] | null>('/scripts')) ?? [];
+        aiScriptId = scripts.find(s => s.id === (wanted ?? fromEdit))?.id ?? scripts[0]?.id ?? '';
+      } catch (e) {
+        error = errorMessage(e);
+      }
+      if (!aiScriptId) error = 'The AI editor works on a story’s finished film. Make a story first.';
+    }
+  }
+  function openRevision(rev: string) {
+    window.location.href = `/?view=edit&revision=${encodeURIComponent(rev)}`;
+  }
   let indexError = '';
   async function refreshIndex() {
     try {
@@ -262,8 +287,9 @@
       if (!saved && !seed && !scene && !story && !draft.clips.length && !draft.audio.length) {
         await refreshIndex();
         try {
-          if (savedEdits.length) {
-            const latest = [...savedEdits].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0];
+          // An AI edit proposal waiting for Accept is not the current edit.
+          const latest = latestEdit(savedEdits);
+          if (latest) {
             draft = await get<Draft>('/compositions/' + encodeURIComponent(latest.revision));
             revision = draft.revision ?? '';
             dirty = false;
@@ -705,7 +731,7 @@
       class="block rounded-md px-2 py-2 hover:bg-accent"
       data-sveltekit-reload
       href={`/?view=edit&revision=${encodeURIComponent(edit.revision)}`}>{new Date(edit.created_at).toLocaleString([], {dateStyle:'medium',timeStyle:'short'})}{edit.revision===revision?' · open now':''}<span
-        class="block text-xs text-muted-foreground">{fmt(edit.duration)} long</span></a></li>{/each}</ul>
+        class="block text-xs text-muted-foreground">{fmt(edit.duration)} long{#if edit.ai_edit} · {savedEditLabel(edit)}{/if}</span></a></li>{/each}</ul>
     {:else}<p class="p-2 text-muted-foreground">No saved edits yet. Press Ctrl/⌘ S or Export → Save edit to keep this one.</p>{/if}
    </div>
   </details>
@@ -735,9 +761,25 @@
    {#if runtime && !runtime.ready}<span
      class="hidden rounded-md border border-amber-500/50 px-2 py-1 text-xs text-amber-700 dark:text-amber-300 sm:inline"
      title={runtime.message}>Exporter needs setup</span>{/if}
+   <Button
+     variant={aiEditOpen?'secondary':'ghost'}
+     size="sm"
+     title="Let a separate local AI session propose a better look and sound"
+     aria-expanded={aiEditOpen}
+     onclick={toggleAIEdit}><Sparkles class="size-4"/>AI edit</Button>
    <Button size="sm" onclick={()=>exportOpen=true}><Download class="size-4"/>Export</Button>
   </div>
  </div>
+ {#if aiEditOpen&&(aiScriptId||openProposal)}<section
+   aria-label="AI edit"
+   class="border-b border-border bg-muted/30 px-4 py-3"><div class="mb-2 flex items-center justify-between gap-2"><h2
+     class="text-sm font-medium">{openProposal?'AI edit proposal':'AI edit'}</h2><button
+     class="text-xs text-muted-foreground underline"
+     onclick={()=>aiEditOpen=false}>Close</button></div>{#key openProposal||aiScriptId}<AIEditPanel
+     scriptId={aiScriptId||savedEdits.find(e=>e.revision===openProposal)?.ai_edit?.script_id||''}
+     revision={dirty?'':revision}
+     proposal={openProposal}
+     onopen={openRevision}/>{/key}</section>{/if}
  {#if notice&&!exportOpen&&!error}<div
    role="status"
    class="flex items-start gap-3 border-b border-border bg-muted/40 px-4 py-2 text-xs"><p class="flex-1">{notice}</p><button

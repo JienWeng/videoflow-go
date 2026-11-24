@@ -17,6 +17,7 @@ This handbook describes the local VideoFlow workflow inspected on 27 September 2
 | [7. Scenes and shots](07-scenes-shots.md) | Build and inspect a story in controllable stages |
 | [8. Studio](08-studio.md) | Use the relationship canvas and guided chat |
 | [9. Renders and outputs](09-renders.md) | Understand jobs, QA, retries, and downloads |
+| [10. The AI editor](10-ai-editor.md) | A separate AI session proposes a better look and sound; you accept or discard |
 | [11. Troubleshooting](11-troubleshooting.md) | Recover from setup, generation, and media errors |
 | [12. Reference](12-reference.md) | Glossary, configuration, routes, and maintainer commands |
 

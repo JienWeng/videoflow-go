@@ -9,6 +9,27 @@ FROM node:24-bookworm-slim AS video-runtime
 ENV PUPPETEER_SKIP_DOWNLOAD=true PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 RUN npm install --prefix /opt/videoflow-hyperframes --save-exact --no-audit --no-fund hyperframes@0.9.33 && npm cache clean --force
 
+FROM debian:bookworm-slim AS earshot
+# earshot (MIT, CPU only) makes sound effects and ambience for the AI editor and, with the
+# listen extra, describes a soundtrack. Pinned to one reviewed commit; nothing is fetched
+# at run time. The base install makes sounds without models or network (about 350 MB).
+# EARSHOT_LISTEN=1 adds the listening extra: CPU torch plus two models fetched here at
+# build time (about 1.1 GB to download, 2.2 GB on disk), so the image never downloads later.
+ARG EARSHOT_COMMIT=7a7f7c5c70d4a763a1eca4b3666af7c77e313f97
+ARG EARSHOT_LISTEN=0
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv git ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3 -m venv /opt/earshot \
+    && if [ "$EARSHOT_LISTEN" = "1" ]; then \
+         /opt/earshot/bin/pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+         && /opt/earshot/bin/pip install --no-cache-dir "earshot[listen] @ git+https://github.com/Leonxlnx/earshot@${EARSHOT_COMMIT}" \
+         && EARSHOT_HOME=/opt/earshot/home /opt/earshot/bin/earshot doctor --fetch; \
+       else \
+         /opt/earshot/bin/pip install --no-cache-dir "earshot @ git+https://github.com/Leonxlnx/earshot@${EARSHOT_COMMIT}"; \
+       fi \
+    && mkdir -p /opt/earshot/home \
+    && /opt/earshot/bin/earshot --version
+
 FROM golang:1.26-bookworm AS build
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -17,13 +38,16 @@ COPY cmd ./cmd
 COPY internal ./internal
 RUN CGO_ENABLED=0 GOMAXPROCS=2 go build -p 2 -trimpath -o /videoflow ./cmd/server
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg chromium ca-certificates fonts-noto-core fonts-noto-cjk && rm -rf /var/lib/apt/lists/* \
+ARG EARSHOT_LISTEN=0
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg chromium ca-certificates fonts-noto-core fonts-noto-cjk python3 && rm -rf /var/lib/apt/lists/* \
     && useradd --uid 10001 --create-home videoflow && chmod 700 /home/videoflow \
     && mkdir /data && chown videoflow /data
 COPY --from=build /videoflow /usr/local/bin/videoflow
 COPY --from=agents /usr/local/bin/node /usr/local/bin/node
 COPY --from=agents /opt/agent-clis /opt/agent-clis
 COPY --from=video-runtime /opt/videoflow-hyperframes /opt/videoflow-hyperframes
+COPY --from=earshot /opt/earshot /opt/earshot
+ENV VIDEOFLOW_EARSHOT_BIN=/opt/earshot/bin/earshot EARSHOT_HOME=/opt/earshot/home EARSHOT_OFFLINE=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 VIDEOFLOW_EARSHOT_LISTEN=${EARSHOT_LISTEN}
 ENV VIDEOFLOW_HYPERFRAMES_BIN=/opt/videoflow-hyperframes/node_modules/.bin/hyperframes HYPERFRAMES_BROWSER_PATH=/usr/bin/chromium HYPERFRAMES_NO_TELEMETRY=1 DO_NOT_TRACK=1
 ENV PATH="/opt/agent-clis/bin:${PATH}"
 USER videoflow

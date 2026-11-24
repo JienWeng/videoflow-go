@@ -117,6 +117,66 @@ export type SavedComposition = {
   duration: number;
   clip_count: number;
   caption_count: number;
+  /** Set on an AI edit proposal (internal/api/ai_edit.go). */
+  ai_edit?: AIEditNote;
+};
+
+/** What an AI edit proposal changes, in words and counts. */
+export type AIEditDiff = {
+  lines: string[];
+  reordered: boolean;
+  cuts: number;
+  removed: number;
+  titles_added: number;
+  sounds_added: number;
+  overlays_added: number;
+  volume_changes: number;
+  length_before: number;
+  length_after: number;
+};
+
+/** A file the AI editor made, imported as an ai_edit_media asset. */
+export type AIEditMedia = {
+  file: string;
+  kind?: string;
+  made_with?: string;
+  description?: string;
+  asset_id: string;
+  media_kind: string;
+  seconds: number;
+};
+
+/** ai-edit.json beside a proposal's revision. */
+export type AIEditNote = {
+  label: string;
+  status: 'proposed' | 'accepted' | 'discarded';
+  base_revision: string;
+  script_id?: string;
+  pass: number;
+  refined_by?: string;
+  engine: string;
+  summary: string;
+  diff: AIEditDiff;
+  media: AIEditMedia[];
+  decided_by?: string;
+  created_at: string;
+  decided_at?: string;
+};
+
+/** result_json of an ai_edit op (POST /scripts/{id}/ai-edit). */
+export type AIEditResult = {
+  stage: string;
+  status?: 'proposed' | 'accepted' | 'rejected' | 'unchanged';
+  revision?: string;
+  base_revision: string;
+  summary?: string;
+  reasons?: string[];
+  diff?: AIEditDiff;
+  media?: AIEditMedia[];
+  pass: number;
+  video_url?: string;
+  asset_id?: string;
+  script_id: string;
 };
 
 /** A spoken line VoiceoverPanel hands the editor to place on the audio track. */

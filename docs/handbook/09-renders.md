@@ -1,6 +1,6 @@
 # 9. Render jobs and outputs
 
-[Handbook](README.md) · Previous: [Studio](08-studio.md) · Next: [Troubleshooting](11-troubleshooting.md)
+[Handbook](README.md) · Previous: [Studio](08-studio.md) · Next: [The AI editor](10-ai-editor.md)
 
 Open **My videos** to monitor scene jobs, compare outputs, and download media. A job is an attempt; an output is a local result from a successful attempt.
 

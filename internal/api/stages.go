@@ -275,7 +275,8 @@ func (s *Server) lastSavedEdit(projectID string) time.Time {
 		return latest
 	}
 	for _, e := range entries {
-		if !e.IsDir() || !composition.ValidID(e.Name()) {
+		// An AI edit proposal the owner has not accepted is not the project's edit.
+		if !e.IsDir() || !composition.ValidID(e.Name()) || pendingProposal(filepath.Join(dir, e.Name())) {
 			continue
 		}
 		if info, err := os.Lstat(filepath.Join(dir, e.Name(), "manifest.json")); err == nil && info.Mode().IsRegular() && info.ModTime().After(latest) {
