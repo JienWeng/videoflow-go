@@ -568,6 +568,11 @@ export type SceneSpeech = {
     verdict: SpeechVerdict;
     shots_over: number;
     summary: string;
+    /** Seconds the words take, the room kept for music and ambience, and whether it is left. */
+    speech_seconds?: number;
+    breathing_room?: number;
+    room_for_music?: boolean;
+    room?: string;
   }[];
 };
 

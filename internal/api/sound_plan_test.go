@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"videoflow-go/internal/composition"
 	"videoflow-go/internal/models"
 )
 
@@ -146,5 +147,44 @@ func TestAISoundPlanIsKeptOnlyWithinTheChecks(t *testing.T) {
 	s.decideSoundPlan(context.Background(), project, script.ID)
 	if asked != 2 {
 		t.Errorf("a decided plan was asked for again: %d", asked)
+	}
+}
+
+func TestEditStageSaysWhoMakesTheSoundAndWhetherTheBedIsWhole(t *testing.T) {
+	line := "Sound: the clips' own voices, ambience and action sounds (Gemini Omni); music: one bed under the whole film from your upload “rain.mp3”, lowered under speech"
+	in := stageInputs{Sound: &stageSound{Line: line, WantsBed: true, Edit: &composition.Soundtrack{Music: true, Continuous: true, Ducks: 3, CutFades: 2}}}
+	st := editStage(in)
+	want := line + "; in the edit: one music bed, continuous, lowered under speech 3 times; 2 cuts crossfaded"
+	if st.Sound != want {
+		t.Fatalf("sound line\n got %q\nwant %q", st.Sound, want)
+	}
+	chat := chatStages(stageMap{Stages: []projectStage{st}})
+	if lines := chat["stages"].([]string); !strings.Contains(lines[0], "in the edit: one music bed, continuous") {
+		t.Errorf("the assistant is not told: %v", lines)
+	}
+	in.Sound.Edit = &composition.Soundtrack{CutFades: 0}
+	if got := editStage(in).Sound; !strings.HasSuffix(got, "no music bed yet (add music: upload a track in Edit video, or join the scenes again once it is made)") {
+		t.Errorf("missing bed: %q", got)
+	}
+	in.Sound.Edit = nil
+	if got := editStage(in).Sound; got != line {
+		t.Errorf("before any edit: %q", got)
+	}
+}
+
+// "What is the sound provider?" is answered from the episode's facts.
+func TestAssistantIsToldWhoMakesTheSound(t *testing.T) {
+	s, _ := falServer(t, "done")
+	answer := `{"reply":"The clips make their own voices and ambience; music is one bed.","action":"none"}`
+	system, prompt := plannerSays(s, &answer)
+	soundStory(t, s)
+	sendChat(t, s, "what is the sound provider")
+	for _, want := range []string{`"sound":"Sound: the clips' own voices, ambience and action sounds (`, `music: one bed under the whole film (“warm acoustic guitar”), not made yet`, `"clip_audio":"dialogue_and_ambience"`, `"clips":2`} {
+		if !strings.Contains(*prompt, want) {
+			t.Errorf("the planner was not told %s:\n%.600s", want, (*prompt)[strings.Index(*prompt, "episode_sound"):])
+		}
+	}
+	if !strings.Contains(*system, "`sound` is the plain answer to \"what is the sound provider?\"") {
+		t.Error("the planner's rules do not say how to answer it")
 	}
 }

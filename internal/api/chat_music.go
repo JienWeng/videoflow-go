@@ -10,34 +10,31 @@ import (
 	"videoflow-go/internal/models"
 )
 
-// episodeSound tells the assistant, per episode, where the voice comes from and what
-// music was asked for, so it can answer "where is the music?" from facts.
-func (s *Server) episodeSound(project string) []map[string]any {
+// episodeSound tells the assistant, per episode, who makes the sound and where the
+// music comes from, so it can answer "where is the music?" or "what is the sound
+// provider?" from facts: the clips' own voices and ambience come from the video model,
+// and a story made in several clips has one music bed in the edit (sound_plan.go).
+func (s *Server) episodeSound(ctx context.Context, project string) []map[string]any {
 	scenes, _ := s.database.ListScenes(project)
 	out := []map[string]any{}
 	for _, e := range s.seriesEpisodes(project) {
-		voice, music, speech := "", "", ""
+		voice, speech := "", ""
 		for i := range scenes {
 			scene := &scenes[i]
 			if scene.ScriptID == nil || *scene.ScriptID != e.ScriptID {
 				continue
 			}
-			settings, brief := sceneProduction(scene), sceneBrief(scene)
-			speech = brief.ConversationMode
-			switch settings.AudioMode {
+			speech = sceneBrief(scene).ConversationMode
+			switch sceneProduction(scene).AudioMode {
 			case "silent":
 				voice = "silent"
 			default:
 				voice = "video model"
 			}
-			if music = settings.MusicPrompt; music == "" {
-				music = brief.Music
-			}
 		}
-		if music == "" {
-			music = "none"
-		}
-		out = append(out, map[string]any{"episode_number": e.Number, "title": e.Title, "speech": speech, "voice": voice, "music": music})
+		plan, clips := s.storySound(ctx, project, e.ScriptID)
+		out = append(out, map[string]any{"episode_number": e.Number, "title": e.Title, "speech": speech, "voice": voice, "clips": clips,
+			"music": s.musicLine(project, plan), "music_mode": plan.Music.Mode, "clip_audio": plan.ClipAudio, "sound": s.soundLine(ctx, project, e.ScriptID, plan)})
 	}
 	return out
 }

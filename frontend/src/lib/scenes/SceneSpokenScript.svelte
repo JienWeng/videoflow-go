@@ -204,6 +204,7 @@
     <div class="mt-3 space-y-2 rounded-md bg-muted/40 p-2" aria-label="Speech budget">
       {#each fit.clips.filter(c => c.summary) as clip (clip.index)}
         <p class="text-xs font-medium {textTone[fitBar(clip.used, clip.seconds, clip.verdict).tone]}" role="status">{clip.summary}</p>
+        {#if clip.room}<p class="text-xs text-muted-foreground">{clip.room}</p>{/if}
       {/each}
       {#each fit.shots as shot (shot.shot_id || 'scene')}
         {@const bar = fitBar(shot.used, shot.seconds, shot.verdict)}
