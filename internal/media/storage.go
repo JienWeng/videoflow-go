@@ -60,3 +60,29 @@ func ImageDataURL(storageRoot, path string) (string, error) {
 	}
 	return "data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
 }
+
+// WriteDataURLs saves base64 image data URLs as files in dir, in order, so a local AI
+// session can read them.
+func WriteDataURLs(dir string, urls []string) ([]string, error) {
+	paths := make([]string, 0, len(urls))
+	for i, url := range urls {
+		header, encoded, ok := strings.Cut(url, ",")
+		if !ok || !strings.HasPrefix(header, "data:image/") || !strings.HasSuffix(header, ";base64") {
+			return nil, fmt.Errorf("image %d is not an image data URL", i+1)
+		}
+		data, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			return nil, fmt.Errorf("image %d could not be decoded: %w", i+1, err)
+		}
+		ext := "." + strings.TrimSuffix(strings.TrimPrefix(header, "data:image/"), ";base64")
+		if ext == ".jpeg" {
+			ext = ".jpg"
+		}
+		path := filepath.Join(dir, fmt.Sprintf("image-%02d%s", i+1, ext))
+		if err = os.WriteFile(path, data, 0o600); err != nil {
+			return nil, err
+		}
+		paths = append(paths, path)
+	}
+	return paths, nil
+}

@@ -46,6 +46,13 @@ func (s *Server) handleAISetup(w http.ResponseWriter, r *http.Request) {
 		assistant["model"], assistant["effort"], assistant["ready"] = session.Model, session.Effort, engines[session.Engine]
 	}
 
+	// Looking at pictures: the assistant's own Claude Code or Codex session reads them.
+	vision := aiChoice{Service: "Local AI session", Note: "Choose a Claude Code or Codex session for the assistant."}
+	if engine, ok := assistant["engine"].(string); ok {
+		vision = aiChoice{Service: label(engine), Ready: assistant["ready"] == true, Note: "The assistant's own session reads pictures itself. No extra charge."}
+		vision.Model, _ = assistant["model"].(string)
+	}
+
 	// Pictures: Codex draws them itself when the conversation runs on Codex; otherwise a paid service does.
 	pictures := aiChoice{}
 	provider, model := routes.MediaSelection("image")
@@ -112,13 +119,7 @@ func (s *Server) handleAISetup(w http.ResponseWriter, r *http.Request) {
 	}
 	voice := map[string]any{"provider": primary, "service": label(primary), "ready": connected(primary), "options": voices}
 
-	// Looking at pictures goes through OpenRouter; listening to clips to time captions uses
-	// OpenAI or Google Gemini.
-	openrouter := connected("openrouter")
-	note := ""
-	if !openrouter {
-		note = "Add an OpenRouter key in AI connections."
-	}
+	// Listening to clips to time captions uses OpenAI or Google Gemini.
 	listener := s.listener()
 	listenKey, _, _, _ := routes.Credentials(listener)
 	listening := aiChoice{Service: label(listener), Model: providers.OpenAISpeechModel, Ready: strings.TrimSpace(listenKey) != "" && connected(listener)}
@@ -134,7 +135,7 @@ func (s *Server) handleAISetup(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{
 		"assistant": assistant, "pictures": pictures, "picture_service": pictureService, "video": video, "voice": voice,
-		"vision":    aiChoice{Service: "OpenRouter", Model: routes.Setting("vl_model", s.cfg.OpenRouterVisionModel), Ready: openrouter, Note: note},
+		"vision":    vision,
 		"listening": listening, "listening_service": map[string]any{"provider": listener, "options": listenOptions},
 	})
 }

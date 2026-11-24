@@ -95,7 +95,6 @@ func (s *Server) handleGetAppSettings(w http.ResponseWriter, r *http.Request) {
 		"image_model":            s.cfg.OpenRouterImageModel,
 		"ref_image_model":        s.cfg.OpenRouterImageModel,
 		"video_model":            s.cfg.OpenRouterVideoModel,
-		"vl_model":               s.cfg.OpenRouterVisionModel,
 		"render_negatives":       []string{"blurry", "low quality", "distorted", "watermark"},
 	}
 
