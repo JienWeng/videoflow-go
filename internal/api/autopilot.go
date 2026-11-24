@@ -466,6 +466,10 @@ func (a *autopilotRunner) joinAndExport(ctx context.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	var aiEdit map[string]any
+	if a.body.FullAuto {
+		revision, aiEdit = a.aiEditOnce(ctx, revision)
+	}
 	a.stage("Exporting the final video")
 	code, raw := a.s.internalCall(ctx, "POST", "/compositions/"+revision+"/run", map[string]string{"operation": "render", "revision": revision})
 	var exported struct {
@@ -482,10 +486,46 @@ func (a *autopilotRunner) joinAndExport(ctx context.Context) (any, error) {
 		return nil, fmt.Errorf("the scenes are ready but the export failed (%s). Open Edit video and press Export", detail)
 	}
 	result := map[string]any{"stage": "Done", "script_id": a.body.ScriptID, "revision": revision, "video_url": exported.AssetURL, "scene_count": len(a.scenes)}
+	if aiEdit != nil {
+		result["ai_edit"] = aiEdit
+	}
 	if exported.Asset != nil {
 		result["asset_id"] = exported.Asset.ID
 	}
 	return result, nil
+}
+
+// aiEditOnce is Full auto's one AI edit (ai_edit.go): the clips passed their review,
+// so a fresh local session edits the joined film once. Its proposal is kept only when
+// every check passed (speech whole, captions on their heard times, media and length
+// within bounds); otherwise the joined edit is exported as it is. It returns the
+// revision to export and what happened. Without a local session it is skipped.
+func (a *autopilotRunner) aiEditOnce(ctx context.Context, revision string) (string, map[string]any) {
+	session, err := a.s.directorSession(ctx)
+	if err == nil {
+		_, err = a.s.directorRunner.Available(session.Engine)
+	}
+	if err != nil {
+		return revision, map[string]any{"status": "skipped", "reason": err.Error()}
+	}
+	a.stage("The AI editor is improving the look and sound")
+	result, err := a.s.runAIEdit(ctx, a.project, a.body.ScriptID, "", aiEditRequest{Revision: revision, AutoAccept: true})
+	note := map[string]any{"status": result.Status, "base_revision": revision, "summary": result.Summary, "reasons": result.Reasons}
+	if result.Diff != nil {
+		note["changes"] = result.Diff.Lines
+	}
+	if err != nil {
+		if result.Status == "" {
+			note["status"] = "failed"
+		}
+		note["reason"] = err.Error()
+		return revision, note
+	}
+	if result.Status == aiEditAccepted {
+		note["revision"] = result.Revision
+		return result.Revision, note
+	}
+	return revision, note
 }
 
 // saveCaptionedComposition lines the story's clips up, adds captions from the script

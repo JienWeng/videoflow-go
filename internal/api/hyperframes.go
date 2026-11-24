@@ -35,6 +35,7 @@ func (s *Server) registerCompositionRoutes() {
 	s.router.Post("/compositions", s.handleCompositionSave)
 	s.router.Get("/compositions/{revision}", s.handleCompositionGet)
 	s.router.Post("/compositions/{revision}/run", s.handleCompositionRun)
+	s.registerAIEditRoutes()
 }
 func compositionHash(data []byte) string  { return voiceHash(data) }
 func (s *Server) compositionRoot() string { return filepath.Join(s.cfg.StorageRoot, "compositions") }
@@ -60,6 +61,8 @@ func (s *Server) handleCompositionList(w http.ResponseWriter, r *http.Request) {
 		Duration     float64   `json:"duration"`
 		ClipCount    int       `json:"clip_count"`
 		CaptionCount int       `json:"caption_count"`
+		// AIEdit is set on an AI edit proposal: its label, status and what it changes.
+		AIEdit *aiEditNote `json:"ai_edit,omitempty"`
 	}
 	result := []entry{}
 	directory := filepath.Join(s.compositionRoot(), project)
@@ -85,7 +88,7 @@ func (s *Server) handleCompositionList(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			continue
 		}
-		result = append(result, entry{file.Name(), info.ModTime().UTC(), manifest.Duration, len(manifest.Clips), len(manifest.Captions)})
+		result = append(result, entry{file.Name(), info.ModTime().UTC(), manifest.Duration, len(manifest.Clips), len(manifest.Captions), readAIEditNote(filepath.Join(directory, file.Name()))})
 	}
 	sort.Slice(result, func(i, j int) bool {
 		if result[i].CreatedAt.Equal(result[j].CreatedAt) {
