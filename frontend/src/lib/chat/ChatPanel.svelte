@@ -356,7 +356,9 @@
   import { protectDraft } from '$lib/protect-draft';
   import { storyCreation } from '$lib/create/story-creation.svelte';
   import { onMount, tick } from 'svelte';
-  import { APIError, del, get, mediaUrl, post, put } from '$lib/api';
+  import { API_BASE, APIError, del, get, mediaUrl, post, put } from '$lib/api';
+  import { AguiRunError, AguiUnavailable, runAgent, stepsActivity } from './agui.mjs';
+  import type { AguiView } from './agui.d.mts';
   import ActionCard from '$lib/chat/ActionCard.svelte';
   import Response from '$lib/components/ai-elements/response/response.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -442,6 +444,9 @@
     op?: OpProgress;
     /** Generated-image thumbnails (storyboard / assets results). */
     thumbs?: { src: string; alt: string }[];
+    /** The AG-UI tool call this card is (POST /agui); running the card reports its result. */
+    toolCallId?: string;
+    toolReported?: boolean;
   }
 
   interface SelectedNode {
@@ -617,7 +622,8 @@
       storyStage,
       storyReady,
       referenceIds,
-      castIds
+      castIds,
+      toolCallId
     } = m;
     return {
       role,
@@ -638,7 +644,8 @@
       storyStage,
       storyReady,
       referenceIds,
-      castIds
+      castIds,
+      toolCallId
     };
   }
 
@@ -783,6 +790,102 @@
 
   // The project's decision log: what the assistant already knows and will not ask again.
   let decisions = $state<ProjectDecision[]>([]);
+
+  // AG-UI (POST /agui, ./agui.mjs): the chat streams its reply, shows each step, and
+  // keeps the stage map and decision log in step as shared state. On by default; set
+  // localStorage videoflow.chat.agui to "off" to use POST /chat only. A run that cannot
+  // start falls back to POST /chat by itself.
+  let aguiOn = true;
+  try {
+    aguiOn = localStorage.getItem('videoflow.chat.agui') !== 'off';
+  } catch {}
+  const aguiThread = randomId();
+  /** The shared AG-UI state: { stages, decisions, mode } (internal/api/agui.go). */
+  let aguiState: unknown = null;
+  let stageSummary = $state('');
+  /** Open runs that follow a card's background op; aborted when the panel goes. */
+  const followers = new Set<AbortController>();
+  const MAX_FOLLOWERS = 2;
+
+  function aguiInput(message: { role: 'user' | 'tool'; content: string; toolCallId?: string }, forwardedProps?: unknown) {
+    return {
+      threadId: aguiThread,
+      runId: randomId(),
+      state: aguiState ?? {},
+      messages: [{ id: randomId(), ...message }],
+      tools: [],
+      context: [],
+      ...(forwardedProps ? { forwardedProps } : {})
+    };
+  }
+
+  /** Takes the run's state as the panel's: the decision list and the stage line. */
+  function takeAguiState(view: AguiView) {
+    const state = view.state as { stages?: { summary?: string } | null; decisions?: ProjectDecision[] | null } | null;
+    if (!state || state === aguiState) return;
+    aguiState = state;
+    if (Array.isArray(state.decisions)) decisions = state.decisions;
+    stageSummary = state.stages?.summary ?? '';
+  }
+
+  /** Plans a chat message over AG-UI, showing the reply and steps as they stream in;
+   * falls back to POST /chat when the run cannot start. Resolves with the /chat reply. */
+  async function planTurn(body: Record<string, unknown> & { message: string }, generation: number): Promise<ChatReply> {
+    if (!aguiOn) return post<ChatReply>('/chat', body);
+    const { message, ...forwardedProps } = body;
+    let live: Msg | null = null;
+    const drop = () => {
+      const i = live ? messages.indexOf(live) : -1;
+      if (i >= 0) messages.splice(i, 1);
+      live = null;
+    };
+    let steps: AguiView['steps'] = [];
+    try {
+      const result = (await runAgent({
+        url: `${API_BASE}/agui`,
+        input: aguiInput({ role: 'user', content: message }, forwardedProps),
+        onView: view => {
+          if (generation !== conversationGeneration) return;
+          takeAguiState(view);
+          steps = view.steps;
+          if (!live) {
+            messages.push({ role: 'assistant', text: '' });
+            live = messages[messages.length - 1];
+          }
+          live.text = view.text;
+          live.activity = normalizeActivity(stepsActivity(view.steps));
+        }
+      })) as ChatReply;
+      drop();
+      return { ...result, activity: result.activity ?? stepsActivity(steps) };
+    } catch (e) {
+      drop();
+      if (e instanceof AguiUnavailable) return post<ChatReply>('/chat', body);
+      if (e instanceof AguiRunError) throw new APIError(e.status, e.message, e.code);
+      throw e;
+    }
+  }
+
+  /** Reports a card the user ran as its AG-UI tool call's result. With a running op the
+   * run follows it and keeps the state in step until it ends; past MAX_FOLLOWERS open
+   * runs, the op is reported once it settles instead. */
+  function reportToolResult(m: Msg | undefined, content: { op_id?: string; status?: string; error?: string }, settled = true) {
+    if (!aguiOn || !m?.toolCallId || m.toolReported) return;
+    if (!settled && followers.size >= MAX_FOLLOWERS) return;
+    m.toolReported = true;
+    const controller = new AbortController();
+    followers.add(controller);
+    void runAgent({
+      url: `${API_BASE}/agui`,
+      input: aguiInput({ role: 'tool', toolCallId: m.toolCallId, content: JSON.stringify(content) }),
+      signal: controller.signal,
+      onView: takeAguiState
+    })
+      .catch(() => {
+        // The card's own progress row shows how the op ended; the state catches up on the next turn.
+      })
+      .finally(() => followers.delete(controller));
+  }
   const decisionNames = $derived((graphData?.nodes ?? []).map(n => ({ id: n.id, name: n.label })));
   async function refreshDecisions() {
     try {
@@ -1028,6 +1131,7 @@
     window.addEventListener('videoflow-ask-assistant', ask);
     return () => {
       stop();
+      for (const follower of followers) follower.abort();
       window.removeEventListener('videoflow-session-changed', update);
       window.removeEventListener('focus', refreshChips);
       window.removeEventListener('videoflow-ask-assistant', ask);
@@ -1049,8 +1153,10 @@
 
   /** Result handed to ActionCard so it can settle the progress row. */
   interface OpHandle {
+    /** The op is running; its id is known. */
+    started?: (opId: string) => unknown;
     done: (op: Op) => unknown;
-    fail: (op: { error?: string | null }) => unknown;
+    fail: (op: { id?: string; error?: string | null }) => unknown;
   }
 
   /** Map generated asset ids to image thumbnails (cap 4, click → Library). */
@@ -1250,17 +1356,20 @@
   }
 
   /** ActionCard launched a background op: append the in-chat progress row. */
-  function handleOpStart(label: string, ctx: RunContext): OpHandle {
+  function handleOpStart(label: string, ctx: RunContext, card?: Msg): OpHandle {
     const id = randomId();
     messages.push({ role: 'assistant', text: '', op: { id, label, status: 'running' } });
     const find = () => messages.find(m => m.op?.id === id);
     return {
+      started: opId => reportToolResult(card, { op_id: opId }, false),
       done: async op => {
+        reportToolResult(card, { op_id: op.id });
         const m = find();
         if (m?.op) m.op.status = 'done';
         await attachOpResults(m, ctx, op);
       },
       fail: op => {
+        reportToolResult(card, op.id ? { op_id: op.id } : { status: 'failed', error: op.error ?? 'failed' });
         const m = find();
         if (!m?.op) return;
         m.op.status = 'failed';
@@ -1358,7 +1467,8 @@
   }
 
   /** Card ran successfully: refresh, then keep the conversation moving. */
-  async function handleRan(_result: unknown, ctx?: RunContext) {
+  async function handleRan(_result: unknown, ctx?: RunContext, card?: Msg) {
+    reportToolResult(card, { status: 'succeeded' });
     await onmutate?.();
     await refreshChips();
     if (!ctx) return;
@@ -1485,14 +1595,17 @@
         });
         return;
       }
-      const r = await post<ChatReply & ChatReview>(useSpecialists ? '/chat/review' : '/chat', {
+      const request = {
         message,
         ...(useSpecialists ? {} : { history, creation_brief: activeCreativeBrief() }),
         selected: selected ? { id: selected.id, kind: selected.kind } : null,
         ...(autoMode && !useSpecialists ? { auto: true, ...(mode === 'full' ? { full: true } : {}) } : {}),
         ...(sent.length ? { attachments: sent.map(a => a.id) } : {}),
         ...(answer && !useSpecialists ? { answer } : {})
-      });
+      };
+      const r = useSpecialists
+        ? await post<ChatReply & ChatReview>('/chat/review', request)
+        : ((await planTurn(request, generation)) as ChatReply & ChatReview);
       if (generation !== conversationGeneration) return;
       if (useSpecialists) {
         messages[reviewIndex] = { role: 'assistant', text: r.reply, activity: subagentEvents(r.subagents ?? []) };
@@ -1534,7 +1647,8 @@
         options: r.options,
         warnings: r.warnings ?? [],
         state: r.state,
-        activity: normalizeActivity(r.activity)
+        activity: normalizeActivity(r.activity),
+        ...(r.tool_call_id ? { toolCallId: r.tool_call_id } : {})
       });
     } catch (e) {
       if (generation !== conversationGeneration) return;
@@ -1893,8 +2007,8 @@
                 options={m.options!}
                 projectState={m.state}
                 onfocus={onguide??onfocus}
-                onran={handleRan}
-                onop={handleOpStart}
+                onran={(result, ctx) => handleRan(result, ctx, m)}
+                onop={(label, ctx) => handleOpStart(label, ctx, m)}
                 onsuggest={(text) => { input=text; focusComposer(); }}
               />
               <Button variant="ghost" size="sm" class="self-start" onclick={()=>dismissProposal(m)}>Dismiss proposal</Button>
@@ -1960,6 +2074,9 @@
         disabled={busy||historyLoading||isEmpty}
         onclick={clearChat}><Eraser class="size-4" /></Button>{/if}
     </div>{/if}
+    {#if !editing&&stageSummary}<p
+      class="mb-1 text-[11px] text-muted-foreground"
+      aria-live="polite">{stageSummary}</p>{/if}
     {#if !editing&&decisions.length}<details
       class="mb-2 rounded-md border border-border px-2 py-1 text-xs"><summary
         class="cursor-pointer select-none text-muted-foreground">What I know about this project ({decisions.length})</summary><ul

@@ -106,6 +106,8 @@ export interface ChatReply {
   activity?: unknown;
   session_id?: string;
   context_revision?: string;
+  /** POST /agui only: the AG-UI tool call the card is, reported back when it runs. */
+  tool_call_id?: string;
 }
 
 /** One specialist's answer in POST /chat/review (specialistResult). */
