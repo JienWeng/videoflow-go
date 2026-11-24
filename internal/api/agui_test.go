@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -388,8 +389,10 @@ func TestAGUIToolResultFollowsBackgroundOp(t *testing.T) {
 	// The run is now waiting on the op. A decision saved meanwhile reaches the client
 	// as a delta once the bus reports a change.
 	call(t, s, "PUT", "/decisions/tone", `{"value":"calm"}`)
-	s.broker.Publish(map[string]any{"type": "asset_changed"})
+	// Publish until heard: the stream may subscribe after a single publish.
+	stop := keepPublishing(s, map[string]any{"type": "asset_changed"})
 	delta := next()
+	stop()
 	if delta["type"] != aguiStateDelta || !strings.Contains(mustJSON(delta), "calm") {
 		t.Fatalf("expected a decision delta, got %v", delta)
 	}
@@ -397,11 +400,12 @@ func TestAGUIToolResultFollowsBackgroundOp(t *testing.T) {
 	if err = s.database.UpdateOp("op-follow", models.StatusSucceeded, result, nil); err != nil {
 		t.Fatal(err)
 	}
-	s.broker.Publish(map[string]any{"type": "op_done", "op_id": "op-follow", "status": models.StatusSucceeded})
+	stop = keepPublishing(s, map[string]any{"type": "op_done", "op_id": "op-follow", "status": models.StatusSucceeded})
 	got := next()
 	for got["type"] == aguiStateDelta {
 		got = next()
 	}
+	stop()
 	if got["type"] != aguiToolCallResult || got["toolCallId"] != "call-7" || !strings.Contains(got["content"].(string), `"status":"succeeded"`) || !strings.Contains(got["content"].(string), `"shots":3`) {
 		t.Fatalf("tool result %v", got)
 	}
@@ -474,4 +478,21 @@ func TestReplyChunksKeepWordsAndRunes(t *testing.T) {
 	if len(replyChunks("", 16)) != 0 {
 		t.Fatal("an empty reply has no chunks")
 	}
+}
+
+// keepPublishing publishes event every few milliseconds until stop is called.
+func keepPublishing(s *Server, event map[string]any) (stop func()) {
+	done := make(chan struct{})
+	go func() {
+		for {
+			s.broker.Publish(event)
+			select {
+			case <-done:
+				return
+			case <-time.After(20 * time.Millisecond):
+			}
+		}
+	}()
+	var once sync.Once
+	return func() { once.Do(func() { close(done) }) }
 }

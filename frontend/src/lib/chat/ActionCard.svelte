@@ -202,6 +202,7 @@
     generate_image: 'Generate image',
     generate_character_reference: 'Generate character reference',
     generate_character_references: 'Make pictures for all characters',
+    replace_real_people: 'Replace real people with fictional characters',
     generate_scenes: 'Expand scene',
     generate_shots: 'Generate shots',
     storyboard: 'Generate storyboard',
@@ -276,6 +277,8 @@
         return !!characterId;
       case 'generate_character_references':
         return !!intent.character_ids?.length && !sheetProblem;
+      case 'replace_real_people':
+        return true;
       case 'update_character':
         return !!characterId && Object.values(characterDraft).some(v => v?.trim());
       case 'generate_script':
@@ -375,6 +378,7 @@
   // Paid steps that start by themselves only in Full auto, where the user already agreed
   // that the assistant spends image credits without asking again.
   const AUTO_FULL = new Set([
+    'replace_real_people',
     'generate_character_references',
     'generate_character_reference',
     'generate_scenes',
@@ -458,6 +462,14 @@
         onfocus?.(characterId);
         return;
       }
+      case 'replace_real_people':
+        return runInBackground(
+          '/characters/stand-ins',
+          { character_ids: intent.character_ids ?? [] },
+          'Fictional characters',
+          () => intent.character_ids?.[0],
+          ctx
+        );
       case 'generate_character_references':
         return runInBackground(
           '/characters/reference-sheets',
@@ -789,6 +801,12 @@
           value="">Choose a character…</option>{#each options.characters as c(c.id)}<option
           value={c.id}>{c.name}</option>{/each}</select><p
           class="mt-2 text-xs text-muted-foreground">Generates a full-body reference candidate. Review it before use. Provider calls may incur charges.</p></div>{/if}
+      {#if intent.action === 'replace_real_people'}
+        <p class="text-sm text-muted-foreground">
+          {intent.characters?.length ? intent.characters.map((c: { name: string }) => c.name).join(', ') : 'Everyone who could pass for a real person'}
+          gets a new fictional name and a different look. Every scene and line is rewritten to the new names, and new pictures are drawn (picture credits).
+        </p>
+      {/if}
       {#if intent.action==='generate_character_references'}<div class="space-y-2"><p
         class="text-xs text-muted-foreground">Makes a reference picture for each of these characters, side by side:</p><ul
         class="list-disc pl-5 text-sm">{#each sheetCharacters as c (c.id)}<li>{c.name}</li>{/each}</ul><p

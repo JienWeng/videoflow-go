@@ -66,3 +66,13 @@ func TestRefusedForSafety(t *testing.T) {
 		}
 	}
 }
+
+func TestStandInsEndpointNeedsCharacters(t *testing.T) {
+	s := routerServer(t, nil)
+	if r := call(t, s, "POST", "/characters/stand-ins", `{}`); r.Code != 409 {
+		t.Fatal(r.Code, r.Body.String())
+	}
+	if !selectedChatActionAllowed("character", standInAction) {
+		t.Fatal("replace_real_people must work whatever is selected")
+	}
+}
