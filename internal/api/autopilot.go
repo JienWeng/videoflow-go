@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"videoflow-go/internal/composition"
 	"videoflow-go/internal/models"
 
 	"github.com/go-chi/chi/v5"
@@ -537,21 +538,27 @@ func (a *autopilotRunner) aiEditOnce(ctx context.Context, revision string) (stri
 // saveCaptionedComposition lines the story's clips up, adds captions from the script
 // when they can be made, and saves the edit. It returns the saved revision.
 func (a *autopilotRunner) saveCaptionedComposition(ctx context.Context) (string, error) {
+	if plan, _ := a.s.storySound(ctx, a.project, a.body.ScriptID); plan.Music.Mode == musicBed && plan.Music.Source == "" {
+		a.stage("Making the music")
+		a.s.ensureMusicBed(ctx, a.project, a.body.ScriptID)
+	}
 	code, raw := a.s.internalCall(ctx, "GET", "/scripts/"+a.body.ScriptID+"/composition-draft", nil)
 	if code != 200 {
 		return "", fmt.Errorf("couldn't line up the scenes: %s", strings.TrimSpace(string(raw)))
 	}
-	var manifest map[string]any
+	var manifest composition.Manifest
 	if json.Unmarshal(raw, &manifest) != nil {
 		return "", fmt.Errorf("couldn't read the assembled video plan")
 	}
-	if code, raw = a.s.internalCall(ctx, "POST", "/compositions/captions/from-script", map[string]any{"clips": manifest["clips"], "audio": manifest["audio"]}); code == 200 {
+	if code, raw = a.s.internalCall(ctx, "POST", "/compositions/captions/from-script", map[string]any{"clips": manifest.Clips, "audio": manifest.Audio}); code == 200 {
 		var captions struct {
-			Captions []any `json:"captions"`
+			Captions []composition.Cue `json:"captions"`
 		}
 		if json.Unmarshal(raw, &captions) == nil && len(captions.Captions) > 0 {
-			manifest["captions"] = captions.Captions
+			manifest.Captions = captions.Captions
 		}
+		// Captions listened to the clips; the bed ducks at the times they were heard.
+		manifest, _ = a.s.scoreStory(ctx, a.project, a.body.ScriptID, manifest)
 	}
 	code, raw = a.s.internalCall(ctx, "POST", "/compositions", manifest)
 	var saved struct {
