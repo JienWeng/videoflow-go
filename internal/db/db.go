@@ -818,6 +818,19 @@ func (d *DB) ListScripts(projectID string) ([]models.Script, error) {
 }
 
 func (d *DB) CreateScript(s *models.Script) error { return insertScript(d.conn, s) }
+
+// SetScriptSoundPlan keeps a story's sound plan in its draft under "sound_plan". The
+// story's other fields and its updated time are left as they are.
+func (d *DB) SetScriptSoundPlan(id string, plan []byte) error {
+	result, err := d.conn.Exec(`UPDATE scripts SET draft_json=json_set(CASE WHEN json_valid(draft_json) THEN draft_json ELSE '{}' END,'$.sound_plan',json(?)) WHERE id=?`, string(plan), id)
+	if err != nil {
+		return err
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
 func insertScript(conn sqlExecutor, s *models.Script) error {
 	if s.ID == "" {
 		s.ID = "script_" + uuid.New().String()[:8]

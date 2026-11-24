@@ -108,6 +108,12 @@ func Brief(c Clip) (system, facts string) {
 	}
 	if c.Audio == Native && c.Music == "" {
 		doc["music"] = "none"
+		if c.MusicInEdit {
+			doc["music"] = "none in this clip: one music track is laid under the whole film in the edit, so the clip has voices, ambience and action sounds only; say there is no music"
+		}
+	}
+	if c.Audio == Native {
+		doc["ambience"] = c.ambience() + " (the scene's steady background sound: keep it the same in every shot, under the voices)"
 	}
 	shots, loose := []shot{}, []line{}
 	for i, s := range c.Shots {

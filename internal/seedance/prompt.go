@@ -96,6 +96,13 @@ type Clip struct {
 	Language string
 	Audio    string
 	Music    string // music direction; empty means no music
+	// Ambience is the scene's steady background sound ("light rain on a tin roof"),
+	// said the same way in every clip of the scene so the cuts do not change the room.
+	// Empty means natural ambient sound that fits each shot.
+	Ambience string
+	// MusicInEdit is set when one music track is laid under the whole film in the edit:
+	// the clip then has voices and ambience only, so the music does not restart at a cut.
+	MusicInEdit bool
 }
 
 func (c Clip) timed() bool { return strings.Contains(c.Family, "2.5") || c.omni() }
@@ -252,7 +259,14 @@ func (c Clip) speech(line func(string, ...any)) {
 		}
 	}
 	if spoken == 0 {
-		line("Nobody speaks. Natural ambient sound and action sounds only.")
+		switch {
+		case c.omni():
+			line("Nobody speaks. Sound design: %s, and the sounds of the action.", c.ambience())
+		case c.Ambience != "":
+			line("Nobody speaks. Ambient sound: %s, and the sounds of the action only.", c.ambience())
+		default:
+			line("Nobody speaks. Natural ambient sound and action sounds only.")
+		}
 		return
 	}
 	in := ""
@@ -268,7 +282,23 @@ func (c Clip) speech(line func(string, ...any)) {
 	} else {
 		line("Each character speaks%s in their own natural, expressive human voice, at a relaxed conversational pace with small pauses, and their lips match the words. Each line is spoken once and the last one ends before the final second.", in)
 	}
-	line("Natural ambient sound fits each shot and stays under the voice.")
+	switch {
+	case c.Ambience != "" && !c.timed():
+		// The 2.0 guide marks a sound with angle brackets.
+		line("< %s can be heard throughout, under the voice >", c.ambience())
+	case c.Ambience != "":
+		line("Ambient sound: %s, steady through every shot and quiet under the voice.", c.ambience())
+	default:
+		line("Natural ambient sound fits each shot and stays under the voice.")
+	}
+}
+
+// ambience is the scene's background sound as one phrase.
+func (c Clip) ambience() string {
+	if a := strings.TrimRight(strings.TrimSpace(c.Ambience), "."); a != "" {
+		return a
+	}
+	return "natural ambient sound that fits each shot"
 }
 
 // omniSpeech is how the voices should sound for Gemini Omni. Google documents English
@@ -281,7 +311,7 @@ func (c Clip) omniSpeech(line func(string, ...any), in string) {
 		line("Each character speaks%s in their own natural, expressive human voice at a relaxed conversational pace. Only one person speaks at a time; the speaker is on screen and their lips match the words.", in)
 	}
 	line("Say every quoted line exactly once, word for word%s, starting at its time; never translate, add or skip words. The last line ends before the final second.", in)
-	line("Sound design: natural ambient sound that fits each shot, quiet under the voices.")
+	line("Sound design: %s, quiet under the voices.", c.ambience())
 }
 
 func (c Clip) music(line func(string, ...any)) {
@@ -291,8 +321,14 @@ func (c Clip) music(line func(string, ...any)) {
 		line("Background music: %s, quiet under the voice from start to end, fading out at the end.", music)
 	case music != "":
 		line("(%s plays quietly in the background under the voice, fading out at the end)", music)
+	case c.omni():
+		// Omni takes no negative prompt; its guide asks for negatives as plain
+		// sentences in the prompt ("Do not do X").
+		line("No music: do not add background music, a score, a song or a melody; only the voices, the ambient sound and the sounds of the action.")
 	case c.timed():
 		line("No music of any kind: no background music, BGM, score, instrumental, melody or ambient pad.")
+	case c.MusicInEdit:
+		line("No BGM; generate only voices, environmental sounds and action sounds.")
 	default:
 		line("No BGM.")
 	}

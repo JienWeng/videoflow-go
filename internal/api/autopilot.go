@@ -231,6 +231,12 @@ func (a *autopilotRunner) run(ctx context.Context) (any, error) {
 	if flagged, err := a.checkPictures(ctx); err != nil {
 		return flagged, err
 	}
+	if a.body.FullAuto {
+		// The AI decides the story's sound once, before any clip is made: what each
+		// clip's ambience is, and the one music bed the edit lays under the film.
+		a.stage("Planning the sound")
+		a.s.decideSoundPlan(ctx, a.project, a.body.ScriptID)
+	}
 	waiting, err := a.startSceneVideos(ctx, adopted)
 	if err != nil {
 		return nil, err

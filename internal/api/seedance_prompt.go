@@ -103,6 +103,13 @@ func (s *Server) writeScenePrompt(ctx context.Context, job *models.RenderJob, wr
 	if clip.Music, _ = payload["music_prompt"].(string); clip.Music == "" {
 		clip.Music = settings.MusicPrompt
 	}
+	// A story made in several clips has one music bed in the edit (sound_plan.go): its
+	// clips make voices and the scene's ambience, and no music of their own.
+	sound := s.sceneSound(ctx, scene)
+	clip.Ambience = sound.ambienceFor(scene.ID)
+	if !sound.musicInClip() {
+		clip.Music, clip.MusicInEdit = "", sound.Music.Mode == musicBed
+	}
 
 	names := map[string]string{}
 	ids := models.IDList(scene.CharacterIDsJSON)

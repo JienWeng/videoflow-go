@@ -135,6 +135,11 @@ func (s *Server) voicePolicy(ctx context.Context, job *models.RenderJob) error {
 				prompt += fmt.Sprintf("\nSpeaker %s (%s): %s", speaker, line.Language, line.Text)
 			}
 		}
+		if job.SceneID != nil {
+			if scene, e := s.database.GetScene(*job.SceneID); e == nil && !s.sceneSound(ctx, scene).musicInClip() {
+				music = "" // the story's music is one bed in the edit (sound_plan.go)
+			}
+		}
 		if strings.TrimSpace(music) != "" {
 			prompt += "\nBackground music direction: " + music + ". Keep music below dialogue."
 		} else {
