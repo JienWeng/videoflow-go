@@ -235,7 +235,7 @@ func ScriptSpeechRules(language string) string {
 		rate = r.Chars
 	}
 	eight, ten, shot := speech.BudgetFor(8, language, nil), speech.BudgetFor(10, language, nil), speech.BudgetFor(3, language, nil)
-	return fmt.Sprintf(`Spoken lines are spoken inside the scene's video, so write enough for the speakers to talk through most of each scene, and never more than fits: in total aim for 70-90%% of the scene's seconds at a calm pace, leaving a breath at the end. In %s that is about %.1f %s a second: an 8-second scene holds %d-%d %s in total, a 10-second scene %d-%d. Do not write one short line for a whole scene. Split the dialogue into short lines of one breath each (one sentence or two short clauses, at most about %d %s), so each line can be spoken within a single 2-4 second shot.`,
+	return fmt.Sprintf(`Spoken lines are spoken inside the scene's video, so write enough for the speakers to talk through most of each scene, and never more than fits: in total aim for 70-90%% of the scene's seconds at a calm pace, leaving a breath at the end. In %s that is about %.1f %s a second: an 8-second scene holds %d-%d %s in total, a 10-second scene %d-%d. Do not write one short line for a whole scene. Split the dialogue into short lines of one breath each (one sentence or two short clauses, at most about %d %s), so each line can be spoken within a single 2-4 second shot. Leave room for the sound: one music track runs under the whole film and each scene has its own ambience, so give each scene a moment without speech (about a second before the first line, or a pause between lines) where they are heard; the 70-90%% target already leaves it, so stay inside it.`,
 		language, rate, unit, eight.Low, eight.High, unit, ten.Low, ten.High, shot.High, unit)
 }
 

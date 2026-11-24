@@ -23,6 +23,10 @@ func TestMain(m *testing.M) {
 	if url := os.Getenv(fakeEngineURL); url != "" {
 		os.Exit(fakeEngineTurn(url, os.Args[1:]))
 	}
+	// Tests never run earshot: a test that needs a music bed makes its own.
+	makeMusicBed = func(context.Context, string, int, string) error {
+		return fmt.Errorf("earshot is not run in tests")
+	}
 	os.Exit(m.Run())
 }
 

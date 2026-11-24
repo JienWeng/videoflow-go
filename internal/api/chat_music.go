@@ -10,34 +10,31 @@ import (
 	"videoflow-go/internal/models"
 )
 
-// episodeSound tells the assistant, per episode, where the voice comes from and what
-// music was asked for, so it can answer "where is the music?" from facts.
-func (s *Server) episodeSound(project string) []map[string]any {
+// episodeSound tells the assistant, per episode, who makes the sound and where the
+// music comes from, so it can answer "where is the music?" or "what is the sound
+// provider?" from facts: the clips' own voices and ambience come from the video model,
+// and a story made in several clips has one music bed in the edit (sound_plan.go).
+func (s *Server) episodeSound(ctx context.Context, project string) []map[string]any {
 	scenes, _ := s.database.ListScenes(project)
 	out := []map[string]any{}
 	for _, e := range s.seriesEpisodes(project) {
-		voice, music, speech := "", "", ""
+		voice, speech := "", ""
 		for i := range scenes {
 			scene := &scenes[i]
 			if scene.ScriptID == nil || *scene.ScriptID != e.ScriptID {
 				continue
 			}
-			settings, brief := sceneProduction(scene), sceneBrief(scene)
-			speech = brief.ConversationMode
-			switch settings.AudioMode {
+			speech = sceneBrief(scene).ConversationMode
+			switch sceneProduction(scene).AudioMode {
 			case "silent":
 				voice = "silent"
 			default:
 				voice = "video model"
 			}
-			if music = settings.MusicPrompt; music == "" {
-				music = brief.Music
-			}
 		}
-		if music == "" {
-			music = "none"
-		}
-		out = append(out, map[string]any{"episode_number": e.Number, "title": e.Title, "speech": speech, "voice": voice, "music": music})
+		plan, clips := s.storySound(ctx, project, e.ScriptID)
+		out = append(out, map[string]any{"episode_number": e.Number, "title": e.Title, "speech": speech, "voice": voice, "clips": clips,
+			"music": s.musicLine(project, plan), "music_mode": plan.Music.Mode, "clip_audio": plan.ClipAudio, "sound": s.soundLine(ctx, project, e.ScriptID, plan)})
 	}
 	return out
 }
@@ -62,6 +59,27 @@ func (s *Server) chatSetMusic(ctx context.Context, scenes []models.Scene, episod
 		if e.ScriptID == script {
 			number = e.Number
 		}
+	}
+	project := ""
+	for i := range scenes {
+		if scenes[i].ScriptID != nil && *scenes[i].ScriptID == script && scenes[i].ProjectID != nil {
+			project = *scenes[i].ProjectID
+		}
+	}
+	if plan, clips := s.storySound(ctx, project, script); project != "" && clips > 1 {
+		// Several clips: the music is one bed laid under the whole film in the edit, so
+		// no video is made again (sound_plan.go).
+		plan.Music, plan.DecidedBy = soundMusic{Mode: musicBed, Prompt: music}, decidedOwner
+		if music == "" {
+			plan.Music.Mode = musicNone
+		}
+		if _, err := s.saveSoundPlan(ctx, project, script, plan); err != nil {
+			return nil, "I could not set the music: " + err.Error() + ". You can still upload a track in Edit video under Audio."
+		}
+		if music == "" {
+			return nil, fmt.Sprintf("Music is now off for episode %d. Its clips keep their own voices and ambience, so no video is made again; the next time the scenes are joined there is no music bed.", number)
+		}
+		return nil, fmt.Sprintf("Music for episode %d is now “%s”: one track under the whole film, lowered while people speak. Its %d clips keep their own voices and ambience and make no music, so nothing is made again and it costs nothing. Say “finish the video” to join the scenes with it, or upload your own track in Edit video under Audio.", number, music, clips)
 	}
 	batch := []map[string]any{}
 	for i := range scenes {

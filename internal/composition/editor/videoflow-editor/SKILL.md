@@ -87,6 +87,11 @@ Write exactly these, nothing else counts:
    spoken line has `volume` 0.5 or less (about 0.15 for music under dialogue).
 9. Use only the asset ids already in the edit or in `context.json` `sources`, plus your
    own `new:` files. Unique ids for every clip, caption and text layer.
+10. **Keep the one music bed.** When the edit already has a continuous music track
+    (the story's sound plan bed, split into segments that duck under speech), keep it
+    running under the whole film: you may retime its segments to new cuts and adjust
+    its levels within rule 8, but do not remove it, replace it with per-clip music, or
+    leave gaps between its segments. Clips themselves carry no music in a multi-clip story.
 
 ## Tools
 

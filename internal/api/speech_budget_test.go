@@ -92,6 +92,15 @@ func TestSpeechPlanPerClip(t *testing.T) {
 	if !strings.Contains(plan.Clips[1].Summary, "Speech fits: ") || !strings.HasSuffix(plan.Clips[1].Summary, "of 3 s ✓") {
 		t.Fatalf("clip 2 summary = %q", plan.Clips[1].Summary)
 	}
+	// Each clip reports its speech and the room it keeps for music and ambience; the
+	// verdicts are unchanged by it.
+	full, short := plan.Clips[0], plan.Clips[1]
+	if full.SpeechSeconds <= 0 || full.BreathingRoom != speech.MusicRoom(5) || full.RoomForMusic || !strings.HasSuffix(full.Room, "(no moment without speech)") {
+		t.Errorf("an overfull clip: %+v", full)
+	}
+	if short.BreathingRoom != 0.8 || !short.RoomForMusic || short.SpeechSeconds > short.Used || !strings.Contains(short.Room, "of speech + 0.8 s for music and ambience = ") {
+		t.Errorf("a clip with room: %+v", short)
+	}
 	// A scene with no shots yet is fitted as a whole.
 	plan = planSpeech(scene, lines[1:], nil, nil, nil, nil)
 	if len(plan.Shots) != 1 || plan.Shots[0].Lines[0].Placed != placedScene || plan.Clips[0].Seconds != 8 || plan.Verdict != speech.OK {

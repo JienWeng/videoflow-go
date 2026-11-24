@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -8,7 +9,9 @@ import (
 	"videoflow-go/internal/models"
 )
 
-func TestAssistantAddsMusicToAnEpisodeAndOffersToRemakeItsVideos(t *testing.T) {
+// A story made in several clips gets its music as one bed in the edit: setting it
+// remakes no video, and the clips are told to make no music of their own.
+func TestAssistantAddsMusicToAnEpisodeAsOneBedWithoutRemakingVideos(t *testing.T) {
 	s, _ := falServer(t, "done")
 	answer := `{"reply":"ok","action":"set_music","episode_number":1,"music":"slow sparse piano"}`
 	_, prompt := plannerSays(s, &answer)
@@ -21,19 +24,23 @@ func TestAssistantAddsMusicToAnEpisodeAndOffersToRemakeItsVideos(t *testing.T) {
 	two := renderableScene(t, s, &script.ID, "Two", 2, "auto")
 
 	out := sendChat(t, s, "this needs music")
-	if !strings.Contains(*prompt, `"episode_sound":[{"episode_number":1,"music":"none","speech":"","title":"The End","voice":"video model"}]`) {
-		t.Errorf("the planner was not told how the episode's sound is made:\n%.400s", (*prompt)[strings.Index(*prompt, "episode_sound"):])
+	if !strings.Contains(*prompt, `"episode_sound":[{`) {
+		t.Errorf("the planner was not told how the episode's sound is made:\n%.400s", *prompt)
 	}
-	if out.Intent.Action != "render_scenes" || len(out.Intent.SceneIDs) != 2 || !strings.Contains(out.Intent.Reply, "“slow sparse piano”") || !strings.Contains(out.Intent.Reply, "2 scene videos need to be made again") {
+	if out.Intent.Action == "render_scenes" || len(out.Intent.SceneIDs) != 0 || !strings.Contains(out.Intent.Reply, "“slow sparse piano”: one track under the whole film") || !strings.Contains(out.Intent.Reply, "nothing is made again") {
 		t.Fatalf("action %q scenes %v reply %q", out.Intent.Action, out.Intent.SceneIDs, out.Intent.Reply)
+	}
+	plan, clips := s.storySound(context.Background(), project, script.ID)
+	if clips != 2 || plan.Music.Mode != musicBed || plan.Music.Prompt != "slow sparse piano" || plan.ClipAudio != clipDialogueAmbience || plan.DecidedBy != decidedOwner {
+		t.Fatalf("clips %d plan %+v", clips, plan)
 	}
 	for _, id := range []string{one.ID, two.ID} {
 		preview := sceneClipPrompts(t, s, id, false)
 		if len(preview) == 0 {
 			t.Fatal("no clips for ", id)
 		}
-		if !strings.Contains(preview[0].Prompt, "(slow sparse piano plays quietly in the background") {
-			t.Errorf("the next video of %s would not have the music:\n%s", id, preview[0].Prompt)
+		if strings.Contains(preview[0].Prompt, "piano") || !strings.Contains(preview[0].Prompt, "No BGM; generate only voices, environmental sounds and action sounds.") {
+			t.Errorf("the clip of %s would make its own music:\n%s", id, preview[0].Prompt)
 		}
 	}
 
@@ -41,9 +48,8 @@ func TestAssistantAddsMusicToAnEpisodeAndOffersToRemakeItsVideos(t *testing.T) {
 	if out = sendChat(t, s, "actually no music"); !strings.Contains(out.Intent.Reply, "Music is now off for episode 1") {
 		t.Fatalf("reply %q", out.Intent.Reply)
 	}
-	preview := sceneClipPrompts(t, s, one.ID, false)
-	if len(preview) == 0 || !strings.Contains(preview[0].Prompt, "No BGM.") {
-		t.Fatalf("music was not removed: %+v", preview)
+	if plan, _ = s.storySound(context.Background(), project, script.ID); plan.Music.Mode != musicNone {
+		t.Fatalf("music was not removed: %+v", plan)
 	}
 }
 

@@ -102,6 +102,9 @@ type projectStage struct {
 	Next    *stageAction `json:"next,omitempty"`
 	// Findings are the self-check results of the clips (review stage only).
 	Findings []stageFinding `json:"findings,omitempty"`
+	// Sound says who makes the sound and whether the edit has its one music bed,
+	// continuous and lowered under speech (edit stage only).
+	Sound string `json:"sound,omitempty"`
 }
 
 // stageMap is GET /stages.
@@ -151,6 +154,18 @@ type stageInputs struct {
 	Reviewed bool
 	// Clips are the clips each scene's newest video is made of, with their self-check.
 	Clips []stageClip
+	// Sound is who makes the sound and what music the newest edit has; nil without a story.
+	Sound *stageSound
+}
+
+// stageSound is the facts of the edit stage's sound line.
+type stageSound struct {
+	// Line says who makes the sound (soundLine).
+	Line string
+	// WantsBed is set when the story's plan lays one music bed under the film.
+	WantsBed bool
+	// Edit is what music the newest saved edit has; nil before the first edit.
+	Edit *composition.Soundtrack
 }
 
 var stageLabels = map[string]string{
@@ -213,6 +228,7 @@ func (s *Server) stageInputs(ctx context.Context, projectID string, progress pro
 		}
 	}
 	in.LastEditAt = s.lastSavedEdit(projectID)
+	in.Sound = s.stageSoundFacts(ctx, projectID)
 	in.LastExportAt = s.lastExport(projectID)
 	decisions, _ := s.database.ListDecisions(projectID) // an unreadable log reads as empty; stages still come from saved work
 	in.Clips = s.stageClips(in.Scenes, jobs, decisions)
@@ -265,14 +281,21 @@ func (s *Server) stageScene(ctx context.Context, scene *models.Scene, p scenePro
 
 // lastSavedEdit is when the project's newest edit (composition) was saved.
 func (s *Server) lastSavedEdit(projectID string) time.Time {
-	latest := time.Time{}
+	_, latest := s.newestEdit(projectID)
+	return latest
+}
+
+// newestEdit is the folder of the project's newest saved edit and when it was saved;
+// "" when there is none.
+func (s *Server) newestEdit(projectID string) (string, time.Time) {
+	latest, newest := time.Time{}, ""
 	if !composition.ValidID(projectID) {
-		return latest
+		return newest, latest
 	}
 	dir := filepath.Join(s.compositionRoot(), projectID)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return latest
+		return newest, latest
 	}
 	for _, e := range entries {
 		// An AI edit proposal the owner has not accepted is not the project's edit.
@@ -280,10 +303,31 @@ func (s *Server) lastSavedEdit(projectID string) time.Time {
 			continue
 		}
 		if info, err := os.Lstat(filepath.Join(dir, e.Name(), "manifest.json")); err == nil && info.Mode().IsRegular() && info.ModTime().After(latest) {
-			latest = info.ModTime()
+			latest, newest = info.ModTime(), e.Name()
 		}
 	}
-	return latest
+	return newest, latest
+}
+
+// stageSoundFacts is what the edit stage says about sound: who makes it (the newest
+// story's sound plan) and what music the newest saved edit has.
+func (s *Server) stageSoundFacts(ctx context.Context, projectID string) *stageSound {
+	scripts, _ := s.database.ListScripts(projectID) // no readable story: no sound line
+	for _, script := range scripts {
+		if len(s.storyScenes(projectID, script.ID)) == 0 {
+			continue
+		}
+		plan, _ := s.storySound(ctx, projectID, script.ID)
+		out := &stageSound{Line: s.soundLine(ctx, projectID, script.ID, plan), WantsBed: plan.Music.Mode == musicBed}
+		if revision, _ := s.newestEdit(projectID); revision != "" {
+			if m, err := composition.Load(s.compositionRoot(), projectID, revision); err == nil {
+				track := composition.Inspect(m)
+				out.Edit = &track
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 // lastExport is when the project's newest exported video (an edit rendered to a file) was made.
@@ -711,8 +755,41 @@ func stageClipScenes(clips []stageClip) []string {
 	return ids
 }
 
+// soundSummary is the edit stage's sound line: "Sound: the clips' own voices … ; in the
+// edit: one music bed, continuous, lowered under speech 4 times; 3 cuts crossfaded".
+func soundSummary(sound *stageSound) string {
+	if sound == nil {
+		return ""
+	}
+	text := sound.Line
+	e := sound.Edit
+	switch {
+	case e == nil:
+		return text
+	case e.Music:
+		state := "continuous"
+		if !e.Continuous {
+			state = "with gaps"
+		}
+		ducking := "not lowered under speech"
+		if e.Ducks > 0 {
+			ducking = "lowered under speech " + countPhrase(e.Ducks, "time", "times")
+		}
+		text += fmt.Sprintf("; in the edit: one music bed, %s, %s", state, ducking)
+	case sound.WantsBed:
+		text += "; in the edit: no music bed yet (add music: upload a track in Edit video, or join the scenes again once it is made)"
+	default:
+		text += "; in the edit: no music"
+	}
+	if e.CutFades > 0 {
+		text += "; " + countPhrase(e.CutFades, "cut", "cuts") + " crossfaded"
+	}
+	return text
+}
+
 func editStage(in stageInputs) projectStage {
 	st := newStage(stageEdit)
+	st.Sound = soundSummary(in.Sound)
 	switch {
 	case !allClipsDone(in):
 		st.Status = statusNotStarted
@@ -804,6 +881,9 @@ func chatStages(m stageMap) map[string]any {
 		}
 		if len(st.Missing) > 0 {
 			line += " — " + strings.Join(st.Missing, "; ")
+		}
+		if st.Sound != "" {
+			line += " — " + st.Sound
 		}
 		lines = append(lines, line)
 	}

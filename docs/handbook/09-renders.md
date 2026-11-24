@@ -88,6 +88,34 @@ Never retried by itself: **wrong language** and **no speech** (a shorter line ca
 
 Cost: listening is about $0.005–0.006 per minute of video (Google Gemini $0.005, OpenAI $0.006), so under a cent for an 8 s clip and a few cents for a whole episode; it is recorded under Costs as “Listening to a clip”, once per clip. Comparing, caption timing and the keep/replace choice are free. Voice lines cost speech credits as before; a sped-up line reuses the line already made.
 
+## How sound works
+
+Each scene clip is made on its own. If every clip were asked for music, every clip would make a different piece, and the music would break at each cut. So the film's sound has three parts, made in different places.
+
+| Part | Who makes it | Where |
+|---|---|---|
+| Voices | The video model (Gemini Omni or Seedance), in each clip with native audio, or voice lines added in Edit video for silent clips | Each clip |
+| Ambience and action sounds | The video model. Every clip of a scene gets the same ambience words, such as "light rain on a tin roof", so the room does not change at a cut | Each clip |
+| Music | One track, the **music bed**, under the whole film | The edit |
+
+**The sound plan.** Each story keeps a sound plan with its script. The plan sets the music mode (`bed`, `none`, or `clip`), the music direction, the ambience of each scene, and what the clips make. When a story has more than one clip, the clips make dialogue, ambience and action sounds only, and their prompts say there is no music. Omni prompts say "Sound design: … No music: do not add background music …". Seedance prompts use the wording from its own guide, for example "No BGM; generate only voices, environmental sounds and action sounds." A video made as a single clip can still make its own music. In **Full auto**, the AI decides the plan once, before any clip is made. A plan is kept only when it passes the checks: no music in the clips of a multi-clip story, and no music words or quoted speech in the ambience. You can also set the plan yourself (`PUT /scripts/{id}/sound-plan`). Asking the assistant for music sets the bed, and no video is made again.
+
+**The bed in the edit.** When the scenes are joined (**Finish video**, Full auto, or opening the story in Edit video), the bed is laid under the film from the first second to the last. Its source is, in order:
+
+1. The track in the plan: your upload or a library track.
+2. A track made once from the plan's music direction with earshot. This runs on the server's CPU and costs nothing. It needs the Docker image, or a native install with `VIDEOFLOW_EARSHOT_BIN`. The track is 30 s long and loops under longer films.
+3. If neither exists, the edit has no bed, and the Edit stage says "add music".
+
+The bed plays at volume 0.35 while nobody speaks and drops to 0.14 under speech. It starts dropping 0.25 s before a line and comes back up 0.4 s after the line ends, and pauses shorter than 1.2 s stay low. Each change between the two levels is a 0.3 s crossfade. The bed fades in over 0.75 s at the start and out over 1 s at the end. Speech times are the ones the speech check heard, or the script's estimate for clips that were never listened to. Each cut between two clips' own sound gets a 0.1 s fade on both sides, so the ambience dips instead of clicking. The bed keeps playing through the cut. All of this uses the editor's ordinary volume and fade fields, so you can change any of it in Edit video.
+
+**Room for music.** The speech fit shows, for each clip, the seconds of speech and the breathing room the clip keeps for its ambience and the music. That room is about an eighth of the clip, between 0.8 s and 2 s, for example "6.1 s of speech + 1 s for music and ambience = 7.1 of 8 s". Script writers are asked to leave that moment. It is reported, never enforced, and the speech loop's rules are unchanged.
+
+**Where to see it.** The Edit stage line, and the assistant's answer to "what is the sound provider?", say who makes the sound. They also say whether the edit has its one bed, whether it runs without gaps, and whether it is lowered under speech. For example: "Sound: the clips' own voices, ambience and action sounds (Gemini Omni); music: one bed under the whole film from your upload “rain.mp3”, lowered under speech; in the edit: one music bed, continuous, lowered under speech 3 times; 2 cuts crossfaded".
+
+**Costs.** Voices and ambience are part of the clip's video price. The bed costs nothing: an upload is free, and earshot runs locally. Changing the music of a multi-clip story makes no video again. Only a single-clip video that makes its own music has to be made again to change that music.
+
+What could not be verified: no Google or BytePlus page documents audio continuity across separately generated clips, or a "no music" phrase. The wording follows each guide's general advice; see [Provider routing](../PROVIDERS.md#sound-across-clips-music-and-ambience). The mix levels were checked by the tests, not by ear.
+
 ## Retry deliberately
 
 A failed-job **resubmit** reconstructs the saved render spec and sends another provider request. A corrective output retry adds QA feedback. Either can create a new charge. A download failure can happen after the provider already generated and billed a video; inspect that job before paying for another generation.

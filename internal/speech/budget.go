@@ -269,6 +269,15 @@ func FitLines(lines []Line, seconds float64, cal Calibration) Fit {
 	return f
 }
 
+// MusicRoom is how much of a clip is kept free of speech, so its ambience and the film's
+// music bed are heard on their own for a moment: a short intro before the first line, a
+// pause, or a breath at the end. About an eighth of the clip, at least 0.8 s and at
+// most 2 s. It sits inside the 10-30 % a script leaves free (Target), so a clip that
+// fits its speech budget usually has it; it is reported, never enforced.
+func MusicRoom(seconds float64) float64 {
+	return Round(math.Min(2, math.Max(0.8, seconds/8)))
+}
+
 // Round keeps two decimals, enough for display and comparison.
 func Round(v float64) float64 { return math.Round(v*100) / 100 }
 

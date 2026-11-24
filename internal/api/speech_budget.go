@@ -68,6 +68,14 @@ type clipSpeech struct {
 	// ShotsOver counts shots whose own lines run past the shot's end.
 	ShotsOver int    `json:"shots_over"`
 	Summary   string `json:"summary"`
+	// SpeechSeconds is the time the words themselves take (Used adds the pauses);
+	// BreathingRoom is the time the clip keeps without speech for its ambience and the
+	// music bed (speech.MusicRoom), and RoomForMusic whether Free leaves it.
+	SpeechSeconds float64 `json:"speech_seconds"`
+	BreathingRoom float64 `json:"breathing_room"`
+	RoomForMusic  bool    `json:"room_for_music"`
+	// Room says it in words: "6.1 s of speech + 1 s for music and ambience = 7.1 of 8 s".
+	Room string `json:"room,omitempty"`
 }
 
 // sceneSpeech is a scene's speech budget: per shot (for writing) and per clip (what the
@@ -267,6 +275,16 @@ func planSpeech(scene *models.Scene, lines []SpokenLine, shots []models.Shot, un
 		}
 		f := speech.FitLines(fitIn, c.Seconds, cal)
 		c.Used, c.Free, c.Verdict = f.Used, f.Free, f.Verdict
+		for _, l := range f.Lines {
+			c.SpeechSeconds += l.Seconds
+		}
+		c.SpeechSeconds = speech.Round(c.SpeechSeconds)
+		c.BreathingRoom = speech.MusicRoom(c.Seconds)
+		c.RoomForMusic = c.Free+1e-9 >= c.BreathingRoom
+		c.Room = fmt.Sprintf("%s of speech + %s for music and ambience = %s of %s", seconds1(c.Used), seconds1(c.BreathingRoom), seconds1(speech.Round(c.Used+c.BreathingRoom)), seconds1(c.Seconds))
+		if !c.RoomForMusic {
+			c.Room += " (no moment without speech)"
+		}
 		if c.ShotsOver > 0 {
 			c.Verdict = worstVerdict(c.Verdict, speech.Tight)
 		}

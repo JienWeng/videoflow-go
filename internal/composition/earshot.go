@@ -98,3 +98,38 @@ func lastLine(text string) string {
 	lines := strings.Split(strings.TrimSpace(text), "\n")
 	return lines[len(lines)-1]
 }
+
+// MakeLimit is how long making one sound may take.
+var MakeLimit = 10 * time.Minute
+
+// MakeSound has earshot make a sound from words ("slow sparse piano, seamless music
+// loop") into out, a .wav file, seconds long. It runs offline on the CPU and is free;
+// it fails when earshot is not installed.
+func MakeSound(ctx context.Context, words string, seconds int, out string) error {
+	bin, err := Earshot()
+	if err != nil {
+		return err
+	}
+	if !strings.HasSuffix(strings.ToLower(out), ".wav") || seconds < 1 || seconds > 120 || strings.TrimSpace(words) == "" {
+		return fmt.Errorf("a sound needs words, a .wav file and 1-120 seconds")
+	}
+	ctx, cancel := context.WithTimeout(ctx, MakeLimit)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, "make", words, "-o", out, "--dur", fmt.Sprint(seconds))
+	containProcess(cmd)
+	cmd.Dir = filepath.Dir(out)
+	cmd.Env = append(os.Environ(), EarshotEnvironment()...)
+	var output boundedOutput
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	if err = cmd.Run(); err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("making the sound stopped after %s because it took too long", MakeLimit)
+		}
+		return fmt.Errorf("earshot could not make the sound: %s", strings.TrimSpace(lastLine(output.String())))
+	}
+	if info, e := os.Stat(out); e != nil || info.Size() == 0 {
+		return fmt.Errorf("earshot made no sound file")
+	}
+	return nil
+}

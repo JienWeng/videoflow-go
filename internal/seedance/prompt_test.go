@@ -240,3 +240,47 @@ func TestOmniLinesAreTimedAndQuoted(t *testing.T) {
 		t.Fatalf("Seedance writer was given times:\n%s", facts)
 	}
 }
+
+// A clip of a story made in several clips has voices and the scene's ambience, and no
+// music: one bed is laid under the whole film in the edit.
+func TestClipOfAMultiClipStoryAsksForAmbienceAndNoMusic(t *testing.T) {
+	base := Clip{Summary: "Two friends wait out the rain", Audio: Native, MusicInEdit: true, Ambience: "steady rain on a tin roof, distant traffic.",
+		Shots: []Shot{{Seconds: 4, Framing: "wide shot", Move: "fixed camera", Action: "Mia looks out of the window"}},
+		Lines: []Line{{Speaker: "Mia", Text: "It will stop soon.", Language: "English", Shot: 1, At: 1, Until: 2.5}}}
+	for family, want := range map[string][]string{
+		"gemini-omni-1.2-flash": {"Sound design: steady rain on a tin roof, distant traffic, quiet under the voices.", "No music: do not add background music"},
+		"seedance-2.5-flash":    {"Ambient sound: steady rain on a tin roof, distant traffic, steady through every shot", "No music of any kind"},
+		"seedance-2.0":          {"< steady rain on a tin roof, distant traffic can be heard throughout, under the voice >", "No BGM; generate only voices, environmental sounds and action sounds."},
+	} {
+		c := base
+		c.Family = family
+		prompt := Compose(c)
+		for _, w := range want {
+			if !strings.Contains(prompt, w) {
+				t.Errorf("%s: missing %q in\n%s", family, w, prompt)
+			}
+		}
+		if err := Check(c, prompt); err != nil {
+			t.Errorf("%s: %v", family, err)
+		}
+		_, facts := Brief(c)
+		if !strings.Contains(facts, "one music track is laid under the whole film") || !strings.Contains(facts, "steady rain on a tin roof") {
+			t.Errorf("%s: the writer is not told the sound plan:\n%s", family, facts)
+		}
+		// Nobody speaking keeps the ambience too.
+		c.Lines = nil
+		if prompt = Compose(c); !strings.Contains(prompt, "steady rain on a tin roof") || Check(c, prompt) != nil {
+			t.Errorf("%s: a clip without speech lost its ambience or its no-music line:\n%s", family, prompt)
+		}
+	}
+}
+
+// A single clip may still make its own music, as before.
+func TestSingleClipKeepsItsOwnMusic(t *testing.T) {
+	c := Clip{Family: "gemini-omni-1.2-flash", Summary: "A quiet end", Audio: Native, Music: "slow sparse piano",
+		Shots: []Shot{{Seconds: 6, Action: "Robots glide past"}}}
+	prompt := Compose(c)
+	if !strings.Contains(prompt, "Background music: slow sparse piano") || strings.Contains(prompt, "No music") || Check(c, prompt) != nil {
+		t.Fatal(prompt)
+	}
+}

@@ -60,7 +60,7 @@ Known advanced-API limitation: omit `seed` for the current BytePlus Seedance 2.0
 
 ## Current connected video/audio flow
 
-See [Connected video workflow](CONNECTED-VIDEO-WORKFLOW.md). On supported models, scene render plans default to native audio, with optional music direction; saved-voice and silent modes remain explicit. Saved voices are only prerequisites for saved-voice mode. The worker preserves the selected mode and the local unit/plan metadata, and strips local metadata before contacting providers. Automatic grouping minimizes calls and generated seconds, and matching planned clips are reused. The composition editor preserves clip audio and applies uploaded/library music gain/fades to both preview and local export. Existing silent videos do not acquire native sound by changing a setting.
+See [Connected video workflow](CONNECTED-VIDEO-WORKFLOW.md). On supported models, scene render plans default to native audio. A story made in several clips asks its clips for dialogue and ambience only and gets one music bed in the edit (see "Sound across clips" below); a single clip may make its own music; saved-voice and silent modes remain explicit. Saved voices are only prerequisites for saved-voice mode. The worker preserves the selected mode and the local unit/plan metadata, and strips local metadata before contacting providers. Automatic grouping minimizes calls and generated seconds, and matching planned clips are reused. The composition editor preserves clip audio and applies uploaded/library music gain/fades to both preview and local export. Existing silent videos do not acquire native sound by changing a setting.
 
 ### Direct OpenAI image fallback
 
@@ -198,6 +198,63 @@ What VideoFlow does with this:
   than the clip is flagged "Won't fit", and **Fit script to clips** rewrites only
   the spoken lines to fit.
 - Seedance clips keep their own BytePlus notation and are not given start times.
+
+#### Sound across clips (music and ambience)
+
+Each clip is generated separately with its own sound, so music asked of every clip
+restarts at every cut. VideoFlow asks the clips of a multi-clip story for dialogue,
+ambience and action sounds only, and lays one music bed under the film in the edit
+(handbook, "How sound works"). What the providers document, checked on 24 November 2026:
+
+- **Omni prompt guide** (<https://aistudio.google.com/docs/omni>). Sound is described
+  in sentences ("Sound design: Gentle breeze, distant bird chirps. No dialogue.").
+  Negative prompts are not supported: "you can put your negatives in the regular
+  prompt: e.g., 'Do not do X'". The guide lists "No dialogue" and "No extra sound
+  effects" as ways to remove sound. "No music" is not shown as an example. By default,
+  "the model will try to generate an appropriate audio track". Extending a clip by 3–10
+  s per turn (up to 30 s in total) "keeps video, motion, characters and audio
+  coherent". Dialogue can only be extended for clips Omni made itself.
+- **Gemini API video page** (<https://aistudio.google.com/docs/video>; the
+  `ai.google.dev` URL redirects there). Veo 3.1 previews in the Gemini API shut down on
+  22 October 2026. Omni is the replacement.
+- **Vertex AI Veo prompt guide**
+  (<https://docs.cloud.google.com/vertex-ai/generative-ai/docs/video/video-gen-prompt-guide>).
+  "Use separate sentences in your prompt to describe the audio". Dialogue is written
+  as `the man in the red hat says: Where is the rabbit?`. Veo on Vertex has a negative
+  prompt field, and the guide advises naming the unwanted thing there instead of
+  writing "no".
+- **Google Cloud blog, "Ultimate prompting guide for Veo 3.1"**
+  (<https://cloud.google.com/blog/products/ai-machine-learning/ultimate-prompting-guide-for-veo-3-1>).
+  Dialogue goes in quotes. It also shows the labels `SFX:` and `Ambient noise:`. Music
+  is requested in the prompt ("A swelling, gentle orchestral score begins to play").
+- **Vertex "Extend Veo videos"**
+  (<https://docs.cloud.google.com/vertex-ai/generative-ai/docs/video/extend-a-veo-video>).
+  Omni extensions add 3–10 s using the last 10 s as context. Veo extensions add 7 s.
+  The page does not say whether the audio continues.
+- **Replicate, "How to prompt Veo 3"**
+  (<https://replicate.com/blog/using-and-prompting-veo-3>), a community guide. Dialogue
+  should be something "that can be said in just about 8 seconds". Lines that are too
+  short produce "awkward silences". It suggests "(no subtitles)", and describing the
+  background audio, because otherwise the model "needs to work it out". Music appears
+  only when the prompt asks for it.
+- **BytePlus Seedance 2.0 / 2.5 prompt guides**
+  (<https://docs.byteplus.com/en/docs/modelark/seedance-2-0-prompt-guide>,
+  <https://docs.byteplus.com/en/docs/modelark/seedance-2-5-prompt-guide>). The pages
+  loaded only their navigation when fetched for this check. VideoFlow's playbook
+  (`internal/seedance/guide`) keeps the guides' earlier wording: "No BGM; generate only
+  voices, environmental sounds and action sounds." for 2.0, and a full "No music of any
+  kind: …" list for 2.5.
+
+Not documented anywhere checked:
+
+- A "no music" phrase for Omni. VideoFlow follows the "Do not do X" rule: "No music: do
+  not add background music, a score, a song or a melody".
+- Audio continuity between separately generated clips.
+- Keeping ambience the same across shots. VideoFlow repeats the scene's ambience words
+  in every clip.
+- A speaking rate or the most dialogue per clip, for Omni or Seedance. The community
+  figure is about 8 s of speech per 8 s Veo clip. VideoFlow's speech budget aims for
+  70–90 % of each clip and reports the breathing room kept for music.
 
 ### Google Gemini voices
 

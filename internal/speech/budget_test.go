@@ -116,3 +116,17 @@ func TestBudget(t *testing.T) {
 		t.Fatalf("Spanish 3 s budget = %+v", b)
 	}
 }
+
+func TestMusicRoomIsAnEighthOfTheClipWithinBounds(t *testing.T) {
+	for seconds, want := range map[float64]float64{3: 0.8, 8: 1, 10: 1.25, 15: 1.88, 30: 2} {
+		if got := MusicRoom(seconds); got != want {
+			t.Errorf("MusicRoom(%v) = %v, want %v", seconds, got, want)
+		}
+	}
+	// The room sits inside what a script aims to leave free.
+	for _, seconds := range []float64{4, 8, 12, 15} {
+		if MusicRoom(seconds) > seconds*(1-Target[1])+0.5 {
+			t.Errorf("the room for music in %vs is more than a script leaves", seconds)
+		}
+	}
+}

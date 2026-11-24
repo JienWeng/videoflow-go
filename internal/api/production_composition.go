@@ -240,5 +240,8 @@ func (s *Server) handleScriptCompositionDraft(w http.ResponseWriter, r *http.Req
 		http.Error(w, "story has no completed scenes or exceeds the 600-second editor limit", 409)
 		return
 	}
+	// One music bed under the whole story, lowered under speech, and fades at the cuts
+	// (soundtrack.go). Reading a draft makes no music: only a track already there plays.
+	result, _ = s.scoreStory(r.Context(), project, script.ID, result)
 	writeJSON(w, 200, result)
 }
