@@ -536,6 +536,20 @@ func (s *Server) resolveChatServiceActions(turn *chatTurn, res *agents.ChatInten
 // and its picture calls, for the button to show before anything is spent: the ones the
 // planner named (by id or name), or else every character without a usable picture.
 func (s *Server) resolveChatCharacterSheets(turn *chatTurn, res *agents.ChatIntentResponse, action string, intent map[string]interface{}) string {
+	if action == standInAction {
+		// replace_real_people: the named characters, or (none named) every one who could
+		// be read as a real person, which the endpoint decides.
+		ids, list := []string{}, []map[string]string{}
+		for _, want := range res.CharacterIDs {
+			for _, c := range turn.chars {
+				if c.ID == want || strings.EqualFold(strings.TrimSpace(want), strings.TrimSpace(c.Name)) {
+					ids, list = append(ids, c.ID), append(list, map[string]string{"id": c.ID, "name": c.Name})
+				}
+			}
+		}
+		intent["character_ids"], intent["characters"] = ids, list
+		return action
+	}
 	if action != "generate_character_references" {
 		return action
 	}
@@ -711,7 +725,7 @@ func canonicalChatAction(action string) string {
 	switch action {
 	case "create_script", "add_scene":
 		return "generate_script"
-	case "open_editor", "finish_video", "render_scenes", "check_video", "stop_waiting", "switch_video_service", "clear_failed_videos", "set_music", "update_character", "generate_image", "generate_character_reference", "generate_character_references", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets", "fit_script", speechRepairAction, aiEditAction:
+	case "open_editor", "finish_video", "render_scenes", "check_video", "stop_waiting", "switch_video_service", "clear_failed_videos", "set_music", standInAction, "update_character", "generate_image", "generate_character_reference", "generate_character_references", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets", "fit_script", speechRepairAction, aiEditAction:
 		return action
 	default:
 		return "unknown"
@@ -731,7 +745,7 @@ const retiredClipReply = "I can't make a one-off clip straight from a picture an
 
 func chatMode(auto, full bool) string {
 	if full {
-		return "full auto: the user wants the finished video with as few clicks as possible. For a new story they confirm the plan once; the app then makes the pictures, renders every scene, joins them with captions and exports the final video by itself, using image and video credits. Say that confirming is the only click. Free planning steps and check_video start by themselves, and finish_video, render_scenes, generate_character_references, generate_character_reference, generate_scenes, storyboard, audit_storyboard, generate_assets, render_scene, render_shot, retry_render, generate_image and fit_script start by themselves as soon as they are ready (fit_script also saves the fitted lines); repair_clip_speech also starts by itself, but only once per clip: it is the one automatic re-render a clip whose speech the check flagged gets, and after it the clip is asked about; finishing the video also runs ai_edit once and keeps its proposal only when every check passes, and an ai_edit card starts by itself; only delete_scene and edits to a character's details wait for the user; finish_video and render_scenes first make the missing reference pictures of the scenes' characters, all at once, so never offer per-character picture buttons first. Decide every detail yourself and never ask the user to press per-scene buttons. The only questions allowed are the one plan confirmation, a destructive step, a required input that is missing, and about a flagged clip: for its speech only once its one automatic retry is done (say you already shortened the line and re-rendered it once) or when it spoke the wrong language or nothing; any other question is overruled and the step goes ahead."
+		return "full auto: the user wants the finished video with as few clicks as possible. For a new story they confirm the plan once; the app then makes the pictures, renders every scene, joins them with captions and exports the final video by itself, using image and video credits. Say that confirming is the only click. Free planning steps and check_video start by themselves, and finish_video, render_scenes, generate_character_references, generate_character_reference, generate_scenes, storyboard, audit_storyboard, generate_assets, render_scene, render_shot, retry_render, generate_image, replace_real_people and fit_script start by themselves as soon as they are ready (fit_script also saves the fitted lines); repair_clip_speech also starts by itself, but only once per clip: it is the one automatic re-render a clip whose speech the check flagged gets, and after it the clip is asked about; finishing the video also runs ai_edit once and keeps its proposal only when every check passes, and an ai_edit card starts by itself; only delete_scene and edits to a character's details wait for the user; finish_video and render_scenes first make the missing reference pictures of the scenes' characters, all at once, so never offer per-character picture buttons first. Decide every detail yourself and never ask the user to press per-scene buttons. The only questions allowed are the one plan confirmation, a destructive step, a required input that is missing, and about a flagged clip: for its speech only once its one automatic retry is done (say you already shortened the line and re-rendered it once) or when it spoke the wrong language or nothing; any other question is overruled and the step goes ahead."
 	}
 	if auto {
 		return "auto: free steps (refine_scene, refine_shot, generate_shots, plan_assets, check_video) start by themselves right after your reply, so write a complete instruction and say what you are doing now (\"I'm rewriting the scene so that…\"), not \"press the button\". Steps that use credits or delete things still wait for the user's click, and so does fit_script (the user sees the script before and after and chooses), and so does repair_clip_speech (the user sees the shorter lines and the price of the new clip, then chooses), and so does ai_edit (a proposal the user accepts or discards); say so. Decide details yourself and do not ask for confirmation of free steps."

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"sort"
 	"strings"
 
@@ -27,6 +29,9 @@ import (
 
 // errStandInCheck is a cast check that couldn't run (the local session didn't answer).
 var errStandInCheck = errors.New("couldn't check the cast for real people")
+
+// standInAction is the chat action that replaces real people with stand-ins.
+const standInAction = "replace_real_people"
 
 func standInKey(characterID string) string     { return "stand_in:" + characterID }
 func realPeopleRetryKey(sceneID string) string { return "real_people_retry:" + sceneID }
@@ -83,7 +88,29 @@ func (a *autopilotRunner) replaceRealPeople(ctx context.Context, strict bool) ([
 	if err != nil || len(cast) == 0 {
 		return nil, err
 	}
-	decisions, _ := a.s.database.ListDecisions(a.project) // unreadable: nothing replaced yet
+	mode := standInFound
+	if strict {
+		mode = standInStrict
+	}
+	made, err := a.s.makeStandIns(ctx, a.project, cast, a.scenes, mode, a.stage, a.sameProject)
+	if len(made) > 0 {
+		a.reloadScenes()
+	}
+	return made, err
+}
+
+// Which cast members a stand-in check replaces.
+const (
+	standInFound  = "found"  // real, recognizable people only
+	standInStrict = "strict" // anyone who could be read as a real person
+	standInAll    = "all"    // every character given (the owner or the chat chose them)
+)
+
+// makeStandIns asks the local session which of cast are real people (per mode), gives
+// each a fictional stand-in, rewrites the story to the new names, records it in the
+// decision log and draws the new pictures. A character already replaced is skipped.
+func (s *Server) makeStandIns(ctx context.Context, project string, cast []models.Character, scenes []models.Scene, mode string, stage func(string), sameProject func() error) ([]standIn, error) {
+	decisions, _ := s.database.ListDecisions(project) // unreadable: nothing replaced yet
 	done := map[string]bool{}
 	for _, d := range decisions {
 		if id, ok := strings.CutPrefix(d.Key, "stand_in:"); ok {
@@ -103,18 +130,21 @@ func (a *autopilotRunner) replaceRealPeople(ctx context.Context, strict bool) ([
 		return nil, nil
 	}
 	story := []string{}
-	for _, scene := range a.scenes {
+	for _, scene := range scenes {
 		story = append(story, scene.Title+": "+clip(scene.Summary, 800))
 	}
 	castJSON, _ := json.Marshal(facts)
-	a.stage("Checking the cast for real people")
+	stage("Checking the cast for real people")
 	rule := "List only characters who are real, recognizable people (living or historical public figures, celebrities, founders, politicians, named family members of such people). Leave out clearly fictional characters and generic roles."
-	if strict {
+	switch mode {
+	case standInStrict:
 		rule = "The video service refused clips of this story, most likely for showing a real person. List every character who is, is named after, or could be read as a real, recognizable person, including their relatives. When unsure, list them."
+	case standInAll:
+		rule = "The owner asked to replace every character listed in Cast with a fictional stand-in: list every one of them."
 	}
 	system := "You protect a video from being refused for depicting real people. " + rule + " For each one, invent a fictional stand-in who plays the same role in the story: a new full name that fits the story's language and setting and matches no famous person, a new appearance that is clearly different from the real person (different face shape, hair, build and clothing, same age and role), and a one-sentence description with no real names. In replacements, list every form of the real name the story or dialogue uses (full name, first name, surname, nickname, and the same names in other scripts such as Chinese), each with the stand-in's matching form; longest forms first. Keep the real person only in real_person. Return an empty stand_ins list when nobody needs replacing."
 	var plan standInPlan
-	if err = a.s.agentJSON(ctx, "story_agent", system, "Cast: "+string(castJSON)+"\nStory:\n"+strings.Join(story, "\n"), nil, &plan); err != nil {
+	if err := s.agentJSON(ctx, "story_agent", system, "Cast: "+string(castJSON)+"\nStory:\n"+strings.Join(story, "\n"), nil, &plan); err != nil {
 		return nil, fmt.Errorf("%w: %v", errStandInCheck, err)
 	}
 	made := []standIn{}
@@ -128,23 +158,23 @@ func (a *autopilotRunner) replaceRealPeople(ctx context.Context, strict bool) ([
 		if c == nil || strings.TrimSpace(in.NewName) == "" {
 			continue
 		}
-		if err = a.sameProject(); err != nil {
+		if err := sameProject(); err != nil {
 			return made, err
 		}
-		a.stage("Replacing " + c.Name + " with the fictional " + in.NewName)
-		if err = a.s.applyStandIn(a.project, c, in); err != nil {
+		stage("Replacing " + c.Name + " with the fictional " + in.NewName)
+		if err := s.applyStandIn(project, c, in); err != nil {
 			return made, fmt.Errorf("couldn't replace %s with a fictional stand-in: %w", c.Name, err)
 		}
-		if _, err = a.s.database.SetDecision(a.project, standInKey(c.ID), c.Name+" → "+in.NewName+" (video services refuse real people)", db.DecisionByAssistant, false); err != nil {
+		if _, err := s.database.SetDecision(project, standInKey(c.ID), c.Name+" → "+in.NewName+" (video services refuse real people)", db.DecisionByAssistant, false); err != nil {
 			return made, err
 		}
+		done[c.ID] = true
 		made = append(made, in)
 	}
 	if len(made) > 0 {
-		if err = a.redrawStandIns(ctx, made); err != nil {
+		if err := s.redrawStandIns(ctx, made, stage); err != nil {
 			return made, err
 		}
-		a.reloadScenes()
 	}
 	return made, nil
 }
@@ -260,19 +290,19 @@ func replaceJSON(raw json.RawMessage, replace func(string) string) json.RawMessa
 }
 
 // redrawStandIns draws the new characters' pictures, so no lookalike reaches a clip.
-func (a *autopilotRunner) redrawStandIns(ctx context.Context, made []standIn) error {
+func (s *Server) redrawStandIns(ctx context.Context, made []standIn, stage func(string)) error {
 	chars := []models.Character{}
 	for _, in := range made {
-		if c, err := a.s.database.GetCharacter(in.CharacterID); err == nil {
+		if c, err := s.database.GetCharacter(in.CharacterID); err == nil {
 			chars = append(chars, *c)
 		}
 	}
-	if problem := a.s.characterSheetProblem(ctx); problem != "" {
+	if problem := s.characterSheetProblem(ctx); problem != "" {
 		return fmt.Errorf("the real people were replaced with fictional stand-ins, but their new pictures can't be made: %s", problem)
 	}
-	a.stage(fmt.Sprintf("Drawing new pictures for %d fictional stand-ins", len(chars)))
-	batch := a.s.makeCharacterSheets(ctx, chars, false, "", func(done, total int) {
-		a.stage(fmt.Sprintf("Drawing stand-in pictures: %d of %d done", done, total))
+	stage(fmt.Sprintf("Drawing new pictures for %d fictional stand-ins", len(chars)))
+	batch := s.makeCharacterSheets(ctx, chars, false, "", func(done, total int) {
+		stage(fmt.Sprintf("Drawing stand-in pictures: %d of %d done", done, total))
 	})
 	if err := failedSheetsError(batch.Failed); err != nil {
 		return fmt.Errorf("%w. The stand-ins are saved; ask me again to carry on", err)
@@ -372,4 +402,64 @@ func (a *autopilotRunner) retryRefusedScenes(ctx context.Context, waiting map[st
 	// Wait for every clip of the run: the new ones and those still being made.
 	stuck, err := a.waitForSceneVideos(ctx, waiting)
 	return true, stuck, err
+}
+
+// handleStandIns (POST /characters/stand-ins) replaces real people with fictional
+// stand-ins outside Full auto: the chat's replace_real_people action and its button.
+// Body: optional character_ids (those are all replaced); without them, every
+// character of the project who could be read as a real person is. One turn of the
+// local session (free) and one new picture per stand-in (picture credits).
+func (s *Server) handleStandIns(w http.ResponseWriter, r *http.Request) {
+	project, err := s.activeProjectID(r.Context())
+	if err != nil {
+		http.Error(w, "no active project", 400)
+		return
+	}
+	var body struct {
+		CharacterIDs []string `json:"character_ids"`
+	}
+	if err = json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		http.Error(w, "invalid request body", 400)
+		return
+	}
+	mode := standInStrict
+	cast, err := s.database.ListCharacters(project)
+	if len(body.CharacterIDs) > 0 {
+		mode = standInAll
+		cast, err = s.sheetCharacters(project, body.CharacterIDs)
+	}
+	if err != nil {
+		http.Error(w, err.Error(), 404)
+		return
+	}
+	if len(cast) == 0 {
+		http.Error(w, "this project has no characters to replace", 409)
+		return
+	}
+	if problem := s.characterSheetProblem(r.Context()); problem != "" {
+		http.Error(w, "the new characters' pictures can't be made: "+problem, 400)
+		return
+	}
+	scenes, _ := s.database.ListScenes(project) // the story only guides the names
+	op := &models.Op{Kind: "stand_ins", ProjectID: &project}
+	s.operation(w, r, op, func(ctx context.Context) (any, error) {
+		stage := func(text string) {
+			if op.ID != "" {
+				raw, _ := json.Marshal(map[string]any{"stage": text})
+				_ = s.database.UpdateOp(op.ID, models.StatusRunning, raw, nil)
+			}
+		}
+		same := func() error {
+			if active, e := s.database.GetActiveProjectID(); e != nil || active != project {
+				return fmt.Errorf("the open project changed; reopen it and ask again")
+			}
+			return nil
+		}
+		made, err := s.makeStandIns(ctx, project, cast, scenes, mode, stage, same)
+		replaced := []map[string]string{}
+		for _, in := range made {
+			replaced = append(replaced, map[string]string{"character_id": in.CharacterID, "real_person": in.RealPerson, "new_name": in.NewName})
+		}
+		return map[string]any{"replaced": replaced}, err
+	})
 }
