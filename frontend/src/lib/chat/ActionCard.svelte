@@ -1,6 +1,7 @@
 <script lang="ts">
   import { errorMessage } from '$lib/errors';
   import { editHref } from '$lib/editor/links';
+  import AIEditPanel from '$lib/studio/AIEditPanel.svelte';
   import CreativeBriefEditor from '$lib/brief/CreativeBriefEditor.svelte';
   import { normalizeBrief, missingBriefFields, confirmedBriefRequest } from '$lib/brief/brief.mjs';
   let newRenderVersion = $state(false);
@@ -215,7 +216,8 @@
     style_ingest: 'Ingest style from story',
     plan_assets: 'Suggest assets',
     fit_script: 'Fit script to clips',
-    repair_clip_speech: 'Write shorter lines'
+    repair_clip_speech: 'Write shorter lines',
+    ai_edit: 'AI edit'
   };
 
   // generate_character_references: who is drawn, and whether the picture service can do it now.
@@ -651,7 +653,7 @@
 </script>
 
 <Item.Root variant="outline" class="mt-2 w-full items-start"><Item.Content class="min-w-0">
-  {#if intent.action==='open_editor'}<Item.Title>Edit video</Item.Title>{:else if intent.action==='update_character'}<Item.Title>Update character</Item.Title><Item.Description>Check the new wording, then save. Nothing changes until you do.</Item.Description>{:else}<Item.Title>Creation options</Item.Title><Item.Description>Adjust the options, then choose an action to start. Editing fields does not run generation.</Item.Description>{/if}
+  {#if intent.action==='open_editor'}<Item.Title>Edit video</Item.Title>{:else if intent.action==='ai_edit'}<Item.Title>AI edit</Item.Title>{:else if intent.action==='update_character'}<Item.Title>Update character</Item.Title><Item.Description>Check the new wording, then save. Nothing changes until you do.</Item.Description>{:else}<Item.Title>Creation options</Item.Title><Item.Description>Adjust the options, then choose an action to start. Editing fields does not run generation.</Item.Description>{/if}
   <div class="mt-3 space-y-3">
     {#if intent.action === 'update_character'}
       {#if changedCharacter}
@@ -685,6 +687,12 @@
         size="sm"
         class="rounded-full px-4"
         href={editorTarget.panel?`${editHref}&panel=${editorTarget.panel}`:editHref}>{editorTarget.label}</Button></div>
+    {:else if intent.action === 'ai_edit'}
+      <AIEditPanel
+        scriptId={intent.script_id ?? ''}
+        auto={full}
+        onstarted={onautostart}
+        onopen={rev => (window.location.href = `/?view=edit&revision=${encodeURIComponent(rev)}`)} />
     {:else if intent.action === 'unknown'}
       {#if projectState?.next_steps?.length}
         <div class="text-sm space-y-1">
