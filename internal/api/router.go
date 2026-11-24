@@ -327,6 +327,8 @@ func (s *Server) registerSettingsRoutes() {
 func (s *Server) registerPipelineRoutes() {
 	// Chat Assistant
 	s.router.Post("/chat", s.handleChat)
+	// The same chat turn over AG-UI, streamed (agui.go).
+	s.router.Post("/agui", s.handleAGUI)
 
 	// Videos (Guided Pipeline)
 	s.router.Get("/videos/preflight", s.handleVideoPreflight)
@@ -349,8 +351,8 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 }
 
 // exemptFromRequestTimeout names the requests that are allowed to outlast five minutes:
-// the event stream, and running a local export (a render can take far longer on a small
+// the event stream, an AG-UI chat run (it may follow a background op), and running a local export (a render can take far longer on a small
 // machine; composition.Run enforces its own limit).
 func exemptFromRequestTimeout(path string) bool {
-	return path == "/events" || (strings.HasPrefix(path, "/compositions/") && strings.HasSuffix(path, "/run"))
+	return path == "/events" || path == "/agui" || (strings.HasPrefix(path, "/compositions/") && strings.HasSuffix(path, "/run"))
 }
