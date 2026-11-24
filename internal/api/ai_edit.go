@@ -247,7 +247,7 @@ func (s *Server) refineProblem(project, revision string) string {
 	case note.Pass >= 2:
 		return "this proposal is already the one self-correction pass; it is not refined again"
 	case note.RefinedBy != "":
-		return "this proposal was already refined once (" + note.RefinedBy[:min(8, len(note.RefinedBy))] + "); the AI editor never loops"
+		return "this proposal was already refined once; the AI editor never loops"
 	}
 	if _, err := os.Stat(filepath.Join(dir, "listen.json")); err != nil {
 		return "listen to the exported proposal first, so the editor knows how it sounds"
@@ -302,6 +302,12 @@ func (s *Server) runAIEdit(ctx context.Context, project, scriptID, opID string, 
 		}
 		listen, _ = os.ReadFile(filepath.Join(baseDir, "listen.json"))
 		result.Pass = 2
+		// The one pass is used up when it starts, whether or not its proposal is kept.
+		baseNote := readAIEditNote(baseDir)
+		baseNote.RefinedBy = "attempt:" + opID
+		if err = writeAIEditNote(baseDir, baseNote); err != nil {
+			return result, err
+		}
 	}
 	sources, items, err := s.compositionSources(project)
 	if err != nil {
@@ -586,20 +592,23 @@ func (s *Server) aiEditStyle(project, scriptID string) map[string]any {
 // runAIEditSession runs the fresh session under its time and disk budgets and returns
 // the summary it replied with.
 func (s *Server) runAIEditSession(ctx context.Context, engine, model, effort, workspace string, tools aiEditTools) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, aiEditBudget)
+	budget, disk, poll := aiEditBudget, aiEditDiskBudget, aiEditDiskPoll
+	ctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 	var overDisk atomic.Bool
-	watched := make(chan struct{})
-	defer close(watched)
+	watched, stopped := make(chan struct{}), make(chan struct{})
+	// The watcher has stopped before the workspace is removed.
+	defer func() { close(watched); <-stopped }()
 	go func() {
-		ticker := time.NewTicker(aiEditDiskPoll)
+		defer close(stopped)
+		ticker := time.NewTicker(poll)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-watched:
 				return
 			case <-ticker.C:
-				if aiEditWritten(workspace) > aiEditDiskBudget {
+				if aiEditWritten(workspace) > disk {
 					overDisk.Store(true)
 					cancel()
 					return
@@ -613,9 +622,9 @@ func (s *Server) runAIEditSession(ctx context.Context, engine, model, effort, wo
 	raw, err := s.directorRunner.Run(ctx, director.Request{Engine: engine, Workspace: workspace, Prompt: prompt, Model: model, Effort: effort, Tools: true, Env: []string{"PATH=" + path, "TMPDIR=" + filepath.Join(workspace, "work")}, Contain: composition.ContainProcess}, func(string) error { return nil })
 	switch {
 	case overDisk.Load():
-		return "", fmt.Errorf("the AI editor wrote more than %d MB and was stopped; nothing was kept", aiEditDiskBudget>>20)
+		return "", fmt.Errorf("the AI editor wrote more than %d MB and was stopped; nothing was kept", disk>>20)
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return "", fmt.Errorf("the AI editor ran out of its %s and was stopped; nothing was kept", aiEditBudget)
+		return "", fmt.Errorf("the AI editor ran out of its %s and was stopped; nothing was kept", budget)
 	case err != nil:
 		return "", err
 	}

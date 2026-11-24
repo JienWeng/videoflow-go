@@ -3,6 +3,9 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile.backend
+      args:
+        # 1 adds earshot's listening models (about 1.1 GB, fetched at build time); see docs/handbook/10-ai-editor.md
+        EARSHOT_LISTEN: ${EARSHOT_LISTEN:-0}
     environment:
       VIDEOFLOW_DISABLE_CODEX_IMAGES: ${VIDEOFLOW_DISABLE_CODEX_IMAGES:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

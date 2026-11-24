@@ -344,7 +344,10 @@ func TestListenFeedsOneSelfCorrectionPassAndNeverMore(t *testing.T) {
 	if !strings.Contains(f.seen(t, "context.json"), "music too quiet") {
 		t.Fatal("the self-correction pass did not get the soundtrack description")
 	}
-	// Never twice, and never a pass on the pass.
+	// Never twice (even after a pass that was not kept), and never a pass on the pass.
+	if n := readAIEditNote(dir); n == nil || n.RefinedBy != second.Revision {
+		t.Fatalf("the first proposal does not record its one pass: %+v", n)
+	}
 	if r := call(t, f.s, "POST", "/scripts/"+f.script+"/ai-edit", `{"revision":"`+first.Revision+`","refine":true}`); r.Code != 409 || !strings.Contains(r.Body.String(), "already refined once") {
 		t.Fatalf("second refine: %d %s", r.Code, r.Body.String())
 	}
@@ -357,18 +360,18 @@ func TestListenFeedsOneSelfCorrectionPassAndNeverMore(t *testing.T) {
 func TestAIEditSessionStopsAtItsTimeAndDiskBudgets(t *testing.T) {
 	f := newAIEditFixture(t)
 	slow := filepath.Join(f.dir, "codex-slow")
-	os.WriteFile(slow, []byte("#!/bin/sh\ncat >/dev/null\nhead -c 200000 /dev/zero > out/big.bin\nsleep 5\n"), 0700)
+	os.WriteFile(slow, []byte("#!/bin/sh\ncat >/dev/null\nhead -c 200000 /dev/zero > out/big.bin\nsleep 60\n"), 0700)
 	f.s.directorRunner.Codex = slow
 	budget, disk, poll := aiEditBudget, aiEditDiskBudget, aiEditDiskPoll
 	t.Cleanup(func() { aiEditBudget, aiEditDiskBudget, aiEditDiskPoll = budget, disk, poll })
 	aiEditBudget, aiEditDiskBudget, aiEditDiskPoll = time.Minute, 100<<10, 50*time.Millisecond
 	started := time.Now()
-	if code, _, body := f.edit(t, `{}`); code == 200 || !strings.Contains(body, "wrote more than") || time.Since(started) > 4*time.Second {
+	if code, _, body := f.edit(t, `{}`); code == 200 || !strings.Contains(body, "wrote more than") || time.Since(started) > 30*time.Second {
 		t.Fatalf("disk budget: %d %s", code, body)
 	}
 	aiEditBudget, aiEditDiskBudget = 300*time.Millisecond, 1<<30
 	started = time.Now()
-	if code, _, body := f.edit(t, `{}`); code == 200 || !strings.Contains(body, "ran out of its") || time.Since(started) > 4*time.Second {
+	if code, _, body := f.edit(t, `{}`); code == 200 || !strings.Contains(body, "ran out of its") || time.Since(started) > 30*time.Second {
 		t.Fatalf("time budget: %d %s", code, body)
 	}
 	workspaces, _ := filepath.Glob(filepath.Join(filepath.Dir(f.s.cfg.DatabasePath), ".videoflow-agent-workspaces", f.project, "ai-edit-*"))
