@@ -106,6 +106,9 @@ func Brief(c Clip) (system, facts string) {
 		}
 		doc["voice_recordings_sent_name_each_by_its_tag"] = voices
 	}
+	if c.VoiceTrack {
+		doc["dialogue_track"] = VoiceTrackRule + " Say this in the prompt, naming @Audio 1."
+	}
 	if c.Audio == Native && c.Music == "" {
 		doc["music"] = "none"
 		if c.MusicInEdit {
@@ -193,8 +196,15 @@ func Check(c Clip, prompt string) error {
 			return fmt.Errorf("voice recording %s is never named", VoiceTag(i))
 		}
 	}
-	if audioTag(len(c.Voices) + 1).MatchString(prompt) {
-		return fmt.Errorf("prompt names a voice recording past the %d that are sent", len(c.Voices))
+	sent := len(c.Voices)
+	if c.VoiceTrack {
+		sent = 1
+		if !audioTag(1).MatchString(prompt) {
+			return fmt.Errorf("the dialogue track @Audio 1 is never named")
+		}
+	}
+	if audioTag(sent + 1).MatchString(prompt) {
+		return fmt.Errorf("prompt names a voice recording past the %d that are sent", sent)
 	}
 	for _, l := range c.Lines {
 		text := strings.TrimSpace(l.Text)

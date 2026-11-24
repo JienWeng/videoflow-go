@@ -80,12 +80,12 @@ func (s *Server) chatSelectionContext(project string, selected *chatSelection) (
 
 func selectedChatActionAllowed(kind, action string) bool {
 	switch action {
-	case "unknown", "open_editor", "finish_video", "render_scenes", "generate_character_references", "check_video", "stop_waiting", "switch_video_service", "clear_failed_videos", "set_music", standInAction, aiEditAction:
+	case "unknown", "open_editor", "finish_video", "render_scenes", "generate_character_references", "check_video", "stop_waiting", "switch_video_service", "clear_failed_videos", "set_music", standInAction, aiEditAction, setSoundModeAction:
 		return true
 	}
 	switch kind {
 	case "scene":
-		return action == "refine_scene" || action == "render_scene" || action == "audit_storyboard" || action == "storyboard" || action == "generate_shots" || action == "delete_scene" || action == speechRepairAction
+		return action == "refine_scene" || action == "render_scene" || action == "audit_storyboard" || action == "storyboard" || action == "generate_shots" || action == "delete_scene" || action == speechRepairAction || action == makeVoiceTracksAction
 	case "shot":
 		return action == "refine_shot" || action == "render_shot"
 	case "output":

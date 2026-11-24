@@ -14,6 +14,7 @@
   import { del as apiDel, get, patch as apiPatch, post as apiPost, put as apiPut } from '$lib/api';
   import ScriptFitReview from '$lib/scenes/ScriptFitReview.svelte';
   import FullAutoCost from '$lib/costs/FullAutoCost.svelte';
+  import VoiceTrackPlayer from './VoiceTrackPlayer.svelte';
   import { normalizeChatIntent } from './intent.mjs';
   import { runBackgroundOp, type Op } from '$lib/ops';
   import type {
@@ -27,7 +28,7 @@
     SpeechRepair,
     StyleFields
   } from '$lib/api-types';
-  import type { ChatIntent, ChatOptions, ChatProjectState, RunContext } from './types';
+  import type { ChatIntent, ChatOptions, ChatProjectState, RunContext, VoiceTrack } from './types';
 
   import { Badge } from '$lib/components/ui/badge';
   import { Button } from '$lib/components/ui/button';
@@ -203,6 +204,7 @@
     generate_character_reference: 'Generate character reference',
     generate_character_references: 'Make pictures for all characters',
     replace_real_people: 'Replace real people with fictional characters',
+    make_voice_tracks: 'Make voice tracks',
     generate_scenes: 'Expand scene',
     generate_shots: 'Generate shots',
     storyboard: 'Generate storyboard',
@@ -231,6 +233,18 @@
       get<CharacterSheetPlan>(`/characters/reference-sheets?character_ids=${encodeURIComponent(ids)}`)
         .then(plan => (sheetProblem = plan.ready ? '' : (plan.problem ?? '')))
         .catch(() => (sheetProblem = '')); // the button's own request checks again before spending
+    });
+  });
+
+  // make_voice_tracks: the scene's dialogue tracks, read for free when the card opens.
+  let voiceTracks = $state<VoiceTrack[]>([]);
+  $effect(() => {
+    if (intent.action !== 'make_voice_tracks' || !sceneId) return;
+    const id = sceneId;
+    untrack(() => {
+      get<{ tracks: VoiceTrack[] }>(`/scenes/${encodeURIComponent(id)}/voice-tracks`)
+        .then(r => (voiceTracks = r.tracks ?? []))
+        .catch(() => (voiceTracks = [])); // the button's own request reports any problem
     });
   });
 
@@ -279,6 +293,10 @@
         return !!intent.character_ids?.length && !sheetProblem;
       case 'replace_real_people':
         return true;
+      case 'set_sound_mode':
+        return intent.sound_mode === 'together' || intent.sound_mode === 'voice_first';
+      case 'make_voice_tracks':
+        return !!sceneId;
       case 'update_character':
         return !!characterId && Object.values(characterDraft).some(v => v?.trim());
       case 'generate_script':
@@ -379,6 +397,7 @@
   // that the assistant spends image credits without asking again.
   const AUTO_FULL = new Set([
     'replace_real_people',
+    'make_voice_tracks',
     'generate_character_references',
     'generate_character_reference',
     'generate_scenes',
@@ -462,6 +481,33 @@
         onfocus?.(characterId);
         return;
       }
+      case 'set_sound_mode': {
+        busy = true;
+        try {
+          await apiPut('/sound-mode', { sound_mode: intent.sound_mode });
+          // Voice first through a service that takes no voice: the same click moves videos to one that does.
+          if (intent.sound_mode === 'voice_first' && intent.video_switch)
+            await apiPut('/video-services/routing', { mode: intent.video_switch.mode, model: intent.video_switch.model, provider: intent.video_switch.provider });
+          toast.success(intent.sound_mode === 'voice_first' ? 'Voice first: speech is made before each clip' : 'Picture and voices are made together');
+          await onran?.({ sound_mode: intent.sound_mode }, ctx);
+        } catch (e) {
+          toast.error(errorMessage(e));
+        } finally {
+          busy = false;
+        }
+        return;
+      }
+      case 'make_voice_tracks':
+        return runInBackground(
+          `/scenes/${encodeURIComponent(sceneId)}/voice-tracks`,
+          {},
+          'Voice tracks',
+          op => {
+            voiceTracks = ((op.result_json as { tracks?: VoiceTrack[] } | undefined)?.tracks ?? []);
+            return sceneId;
+          },
+          ctx
+        );
       case 'replace_real_people':
         return runInBackground(
           '/characters/stand-ins',
@@ -801,6 +847,21 @@
           value="">Choose a character…</option>{#each options.characters as c(c.id)}<option
           value={c.id}>{c.name}</option>{/each}</select><p
           class="mt-2 text-xs text-muted-foreground">Generates a full-body reference candidate. Review it before use. Provider calls may incur charges.</p></div>{/if}
+      {#if intent.action === 'set_sound_mode'}
+        <p class="text-sm text-muted-foreground">
+          {#if intent.sound_mode === 'voice_first'}
+            Voice first: each clip's lines are spoken first with your characters' voices, so you can listen and change them; the clip is then lip-synced to that exact track, which is its sound in the edit.
+            {#if intent.video_switch}This also switches videos to {intent.video_switch.label} (it takes voice recordings; Google's models don't).{/if}
+          {:else}
+            Together: the video model makes each clip's picture and voices at once.
+          {/if}
+          Free; nothing is made yet.
+        </p>
+      {/if}
+      {#if intent.action === 'make_voice_tracks'}
+        <p class="text-xs text-muted-foreground">Speaks each clip's lines with the characters' voices and joins them into one track per clip (speech credits; unchanged lines are reused). Listen before making the clips.</p>
+        {#if voiceTracks.length}<VoiceTrackPlayer tracks={voiceTracks} />{/if}
+      {/if}
       {#if intent.action === 'replace_real_people'}
         <p class="text-sm text-muted-foreground">
           {intent.characters?.length ? intent.characters.map((c: { name: string }) => c.name).join(', ') : 'Everyone who could pass for a real person'}
@@ -833,7 +894,8 @@
           'refine_shot',
           'delete_scene',
           'plan_assets',
-          'fit_script'
+          'fit_script',
+          'make_voice_tracks'
         ].includes(intent.action)}
         <div>
           <label class={labelClass} for="scene-{intent.action}">Scene</label>
@@ -1026,7 +1088,7 @@
             {:else}
               <Play class="size-4 mr-1" />
             {/if}
-            {busy ? 'Running…' : intent.action==='render_scene'&&renderPlanId&&!renderQuote.storyboards ? 'Render scene' : intent.action==='repair_clip_speech'&&speechRepair ? `Save & re-render (${speechRepair.quote.seconds} s of video)` : (labels[intent.action] ?? 'Run')}
+            {busy ? 'Running…' : intent.action==='render_scene'&&renderPlanId&&!renderQuote.storyboards ? 'Render scene' : intent.action==='repair_clip_speech'&&speechRepair ? `Save & re-render (${speechRepair.quote.seconds} s of video)` : intent.action==='set_sound_mode' ? (intent.sound_mode==='voice_first' ? (intent.video_switch ? `Use voice first with ${intent.video_switch.label}` : 'Use voice first') : 'Make picture and voices together') : (labels[intent.action] ?? 'Run')}
           </Button>
         {/if}
       </div>

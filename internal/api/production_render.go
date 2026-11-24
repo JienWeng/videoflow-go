@@ -94,6 +94,12 @@ func (s *Server) renderProductionPlan(ctx context.Context, scene *models.Scene, 
 			payload["resolution"] = plan.Resolution
 			job.RequestJSON = voiceJSON(payload)
 		}
+		if track := planVoiceTrack(plan, unit.Index); track != "" {
+			var payload map[string]any
+			_ = json.Unmarshal(job.RequestJSON, &payload) // marshalled from a map just above
+			payload["voice_track"] = track
+			job.RequestJSON = voiceJSON(payload)
+		}
 		if err = s.prepareDirectorVideoJob(ctx, job); err != nil {
 			return nil, err
 		}
@@ -181,4 +187,17 @@ func checkProductionSpend(ctx context.Context, plan productionPlan, newVersion b
 		}
 	}
 	return nil
+}
+
+// planVoiceTrack is the dialogue track a voice-first clip is made to, or "".
+func planVoiceTrack(plan productionPlan, index int) string {
+	if plan.SoundMode != soundVoiceFirst {
+		return ""
+	}
+	for _, t := range plan.VoiceTracks {
+		if t.UnitIndex == index {
+			return t.AssetID
+		}
+	}
+	return ""
 }

@@ -385,6 +385,13 @@ func (a *autopilotRunner) startSceneVideos(ctx context.Context, adopted map[stri
 		if err := a.sameProject(); err != nil {
 			return nil, err
 		}
+		if a.s.soundMode(a.project) == soundVoiceFirst && len(adopted[scene.ID]) == 0 {
+			// Voice first: the scene's speech is made before its clips, which lip-sync to it.
+			a.stage(fmt.Sprintf("Making the voice tracks %d of %d: %s", i+1, len(scenes), scene.Title))
+			if _, err := a.s.sceneVoiceTracks(ctx, scene, true); err != nil {
+				return nil, fmt.Errorf("couldn't make the voice tracks for %s: %w", scene.Title, err)
+			}
+		}
 		a.stage(fmt.Sprintf("Making video %d of %d: %s", i+1, len(scenes), scene.Title))
 		plan, e := a.s.sceneProductionPlan(ctx, scene)
 		if e != nil {

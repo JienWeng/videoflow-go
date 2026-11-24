@@ -238,7 +238,7 @@ func (s *Server) chatPlannerContext(ctx context.Context, turn *chatTurn) ([]byte
 		turn.selfChecks = append(s.flaggedPictures(projectID, turn.chars, turn.scenes), markSpeechRetried(flaggedClips(in.Clips), s.speechRetriedScenes(turn.decisions))...)
 	}
 	turn.videoService = s.chatVideoService()
-	contextJSON, _ := json.Marshal(map[string]any{"stages": chatStages(turn.stages), "speech_fit": turn.speechFit, "self_check": chatSelfCheck(turn.selfChecks), "decided_so_far": chatDecidedSoFar(turn.decisions), "production_progress": chatProgress(progress), "recent_activity": s.chatActivity(projectID, turn.jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "video_service": turn.videoService, "episode_sound": s.episodeSound(ctx, projectID), "failed_video_attempts": failedShown, "assistant_mode": chatMode(body.Auto, body.Full), "attached_media": turn.attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": turn.sceneOptions, "characters": turn.charOptions, "outputs": turn.outputs, "selected_item": turn.selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "render_audio_modes": []string{"native", "silent"}, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false}})
+	contextJSON, _ := json.Marshal(map[string]any{"stages": chatStages(turn.stages), "speech_fit": turn.speechFit, "self_check": chatSelfCheck(turn.selfChecks), "decided_so_far": chatDecidedSoFar(turn.decisions), "production_progress": chatProgress(progress), "recent_activity": s.chatActivity(projectID, turn.jobs), "available_visual_styles": availableStyles, "available_storytelling_methods": presets.StorytellingPresets(), "series": map[string]any{"episodes": s.seriesEpisodes(projectID)}, "video_service": turn.videoService, "sound_mode": s.soundModeView(projectID), "episode_sound": s.episodeSound(ctx, projectID), "failed_video_attempts": failedShown, "assistant_mode": chatMode(body.Auto, body.Full), "attached_media": turn.attachments, "current_creation_brief": body.CreationBrief, "style": style, "assets": assetContext, "scenes": turn.sceneOptions, "characters": turn.charOptions, "outputs": turn.outputs, "selected_item": turn.selectedContext, "canvas": graph, "workflow_policy": map[string]any{"image_approval_required": false, "render_audio_modes": []string{"native", "silent"}, "render_strategy": "automatic consecutive shot grouping; explicit paid-call plan", "source_clip_required_before_render": false}})
 	return contextJSON, nil
 }
 
@@ -512,6 +512,9 @@ func (s *Server) resolveChatServiceActions(turn *chatTurn, res *agents.ChatInten
 			intent["cleared"], intent["reply"] = n, clearedFailedReply(n)
 		}
 	}
+	if action == setSoundModeAction {
+		action = s.chatSoundMode(turn.projectID, res, intent)
+	}
 	if action == "switch_video_service" {
 		if choice, why := s.chatVideoSwitch(res.SwitchTo); choice == nil {
 			action = "unknown"
@@ -662,7 +665,7 @@ func (s *Server) pinChatSelection(turn *chatTurn, res *agents.ChatIntentResponse
 			intent["character_id"] = selected.ID
 		}
 	case "scene":
-		if action == "refine_scene" || action == "render_scene" || action == "audit_storyboard" || action == "storyboard" || action == "generate_shots" || action == "delete_scene" {
+		if action == "refine_scene" || action == "render_scene" || action == "audit_storyboard" || action == "storyboard" || action == "generate_shots" || action == "delete_scene" || action == makeVoiceTracksAction {
 			intent["scene_id"] = selected.ID
 		}
 	case "shot":
@@ -725,7 +728,7 @@ func canonicalChatAction(action string) string {
 	switch action {
 	case "create_script", "add_scene":
 		return "generate_script"
-	case "open_editor", "finish_video", "render_scenes", "check_video", "stop_waiting", "switch_video_service", "clear_failed_videos", "set_music", standInAction, "update_character", "generate_image", "generate_character_reference", "generate_character_references", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets", "fit_script", speechRepairAction, aiEditAction:
+	case "open_editor", "finish_video", "render_scenes", "check_video", "stop_waiting", "switch_video_service", "clear_failed_videos", "set_music", standInAction, setSoundModeAction, makeVoiceTracksAction, "update_character", "generate_image", "generate_character_reference", "generate_character_references", "generate_script", "generate_scenes", "generate_shots", "audit_storyboard", "storyboard", "render_scene", "render_shot", "retry_render", "generate_assets", "refine_scene", "refine_shot", "delete_scene", "style_ingest", "plan_assets", "fit_script", speechRepairAction, aiEditAction:
 		return action
 	default:
 		return "unknown"
@@ -734,7 +737,7 @@ func canonicalChatAction(action string) string {
 
 func sceneScopedAction(action string) bool {
 	switch action {
-	case "storyboard", "audit_storyboard", "render_scene", "generate_shots", "refine_scene", "generate_assets", "plan_assets", "fit_script":
+	case "storyboard", "audit_storyboard", "render_scene", "generate_shots", "refine_scene", "generate_assets", "plan_assets", "fit_script", makeVoiceTracksAction:
 		return true
 	}
 	return false
@@ -745,7 +748,7 @@ const retiredClipReply = "I can't make a one-off clip straight from a picture an
 
 func chatMode(auto, full bool) string {
 	if full {
-		return "full auto: the user wants the finished video with as few clicks as possible. For a new story they confirm the plan once; the app then makes the pictures, renders every scene, joins them with captions and exports the final video by itself, using image and video credits. Say that confirming is the only click. Free planning steps and check_video start by themselves, and finish_video, render_scenes, generate_character_references, generate_character_reference, generate_scenes, storyboard, audit_storyboard, generate_assets, render_scene, render_shot, retry_render, generate_image, replace_real_people and fit_script start by themselves as soon as they are ready (fit_script also saves the fitted lines); repair_clip_speech also starts by itself, but only once per clip: it is the one automatic re-render a clip whose speech the check flagged gets, and after it the clip is asked about; finishing the video also runs ai_edit once and keeps its proposal only when every check passes, and an ai_edit card starts by itself; only delete_scene and edits to a character's details wait for the user; finish_video and render_scenes first make the missing reference pictures of the scenes' characters, all at once, so never offer per-character picture buttons first. Decide every detail yourself and never ask the user to press per-scene buttons. The only questions allowed are the one plan confirmation, a destructive step, a required input that is missing, and about a flagged clip: for its speech only once its one automatic retry is done (say you already shortened the line and re-rendered it once) or when it spoke the wrong language or nothing; any other question is overruled and the step goes ahead."
+		return "full auto: the user wants the finished video with as few clicks as possible. For a new story they confirm the plan once; the app then makes the pictures, renders every scene, joins them with captions and exports the final video by itself, using image and video credits. Say that confirming is the only click. Free planning steps and check_video start by themselves, and finish_video, render_scenes, generate_character_references, generate_character_reference, generate_scenes, storyboard, audit_storyboard, generate_assets, render_scene, render_shot, retry_render, generate_image, replace_real_people, make_voice_tracks and fit_script start by themselves as soon as they are ready (fit_script also saves the fitted lines); repair_clip_speech also starts by itself, but only once per clip: it is the one automatic re-render a clip whose speech the check flagged gets, and after it the clip is asked about; finishing the video also runs ai_edit once and keeps its proposal only when every check passes, and an ai_edit card starts by itself; only delete_scene and edits to a character's details wait for the user; finish_video and render_scenes first make the missing reference pictures of the scenes' characters, all at once, so never offer per-character picture buttons first. Decide every detail yourself and never ask the user to press per-scene buttons. The only questions allowed are the one plan confirmation, a destructive step, a required input that is missing, and about a flagged clip: for its speech only once its one automatic retry is done (say you already shortened the line and re-rendered it once) or when it spoke the wrong language or nothing; any other question is overruled and the step goes ahead."
 	}
 	if auto {
 		return "auto: free steps (refine_scene, refine_shot, generate_shots, plan_assets, check_video) start by themselves right after your reply, so write a complete instruction and say what you are doing now (\"I'm rewriting the scene so that…\"), not \"press the button\". Steps that use credits or delete things still wait for the user's click, and so does fit_script (the user sees the script before and after and chooses), and so does repair_clip_speech (the user sees the shorter lines and the price of the new clip, then chooses), and so does ai_edit (a proposal the user accepts or discards); say so. Decide details yourself and do not ask for confirmation of free steps."

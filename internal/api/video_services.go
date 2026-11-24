@@ -143,6 +143,12 @@ func (s *Server) chatVideoSwitch(want string) (map[string]any, string) {
 		}
 		return map[string]any{"mode": mode, "model": family, "provider": v.Provider, "label": v.Label, "per_second": v.PerSecond}, ""
 	}
+	if hostTakesVoice(strings.ToLower(want)) {
+		// A voice service that does not sell the model in use: voice first moves to Seedance there.
+		if choice := s.voiceVideoSwitch(want); choice != nil {
+			return choice, ""
+		}
+	}
 	fix := "No other connected video service can make these videos yet."
 	if provider, _ := s.routes().MediaSelection("video"); s.serviceProblem(provider) != "" {
 		fix = s.serviceProblem(provider) + " " + fix

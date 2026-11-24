@@ -68,6 +68,9 @@ type Reference struct {
 // Tag is how the prompt names the i-th reference picture (counted from 0).
 func Tag(i int) string { return fmt.Sprintf("@Image %d", i+1) }
 
+// VoiceTrackRule is what a voice-first clip is told about its dialogue track.
+const VoiceTrackRule = "@Audio 1 is the finished dialogue track of this clip: every spoken word is in it. Lip-sync the speaking characters to @Audio 1 exactly, word for word and on its timing; nobody says anything else and no other speech or voice is added."
+
 // VoiceTag is how the prompt names the i-th voice recording (counted from 0).
 func VoiceTag(i int) string { return fmt.Sprintf("@Audio %d", i+1) }
 
@@ -90,12 +93,15 @@ type Clip struct {
 	References []Reference
 	// Voices are the characters whose voice recording is sent with the clip, in the order
 	// they are sent: the first is @Audio 1.
-	Voices   []string
-	Shots    []Shot
-	Lines    []Line
-	Language string
-	Audio    string
-	Music    string // music direction; empty means no music
+	Voices []string
+	// VoiceTrack is set when the clip is sent its finished dialogue track as @Audio 1
+	// (voice first): the characters lip-sync to it exactly and say nothing else.
+	VoiceTrack bool
+	Shots      []Shot
+	Lines      []Line
+	Language   string
+	Audio      string
+	Music      string // music direction; empty means no music
 	// Ambience is the scene's steady background sound ("light rain on a tin roof"),
 	// said the same way in every clip of the scene so the cuts do not change the room.
 	// Empty means natural ambient sound that fits each shot.
@@ -138,6 +144,9 @@ func Compose(c Clip) string {
 	}
 	for i, name := range c.Voices {
 		line("%s speaks with the voice in %s; keep exactly this voice, its pitch and its accent, for everything %s says.", name, VoiceTag(i), name)
+	}
+	if c.VoiceTrack {
+		line("%s", VoiceTrackRule)
 	}
 	used := strings.ToLower(c.Summary)
 	for _, shot := range c.Shots {

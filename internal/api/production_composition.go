@@ -113,7 +113,19 @@ func (s *Server) sceneCompositionDraft(ctx context.Context, scene *models.Scene)
 		if duration+0.05 < float64(item.unit.Length) {
 			return m, fmt.Errorf("clip %d is shorter than its planned edit length; trim or replace it manually", item.unit.Index+1)
 		}
-		m.Clips = append(m.Clips, composition.Clip{ID: fmt.Sprintf("clip-%s-%d", scene.ID, item.unit.Index), AssetID: source, Start: float64(item.unit.Start), Duration: float64(item.unit.Length), OriginalDuration: duration, Speed: 1, HasAudio: audio, Width: w, Height: h})
+		clip := composition.Clip{ID: fmt.Sprintf("clip-%s-%d", scene.ID, item.unit.Index), AssetID: source, Start: float64(item.unit.Start), Duration: float64(item.unit.Length), OriginalDuration: duration, Speed: 1, HasAudio: audio, Width: w, Height: h}
+		// A voice-first clip was lip-synced to its dialogue track: the track is its sound and
+		// the clip's own sound is muted, so the voices are never heard twice.
+		if track, seconds := s.voiceTrackOfJob(item.job); track != nil {
+			if full, ok := paths[track.ID]; ok {
+				if seconds <= 0 {
+					seconds, _, _, _, _ = composition.Probe(ctx, full)
+				}
+				clip.Muted = true
+				m.Audio = append(m.Audio, composition.Clip{ID: "voice-" + clip.ID, AssetID: track.ID, Start: clip.Start, Duration: math.Min(seconds, clip.Duration), OriginalDuration: seconds, Speed: 1, HasAudio: true})
+			}
+		}
+		m.Clips = append(m.Clips, clip)
 	}
 	return m, nil
 }

@@ -173,7 +173,11 @@ func (s *Server) attachReferenceVoices(ctx context.Context, job *models.RenderJo
 	_ = json.Unmarshal(raw, &pictures) // marshalled just above; any other shape has no pictures
 	policy, _ := payload["voice_policy"].(map[string]any)
 	scene, err := s.database.GetScene(*job.SceneID)
-	if err != nil || len(pictures) == 0 || policy["mode"] != "native" || sceneBrief(scene).ConversationMode == "narration" {
+	if err != nil || len(pictures) == 0 || policy["mode"] != "native" {
+		return
+	}
+	// A voice-first clip is sent its finished dialogue track, not the voice samples.
+	if s.attachVoiceTrack(payload, *job.ProjectID) || sceneBrief(scene).ConversationMode == "narration" {
 		return
 	}
 	client, _, err := s.routes().Media(job.Provider, job.Model, job.ProviderEndpoint)
