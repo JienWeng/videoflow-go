@@ -8,7 +8,7 @@
   import CircleIcon from '@lucide/svelte/icons/circle';
   import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
   import CircleAlertIcon from '@lucide/svelte/icons/circle-alert';
-  import CircleDotIcon from '@lucide/svelte/icons/circle-dot';
+    import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
   import FileIcon from '@lucide/svelte/icons/file';
   import FolderIcon from '@lucide/svelte/icons/folder';
   import { normalizeActivity, type ActivityEvent, type ActivityStatus, type ActivityFile } from './activity.mjs';
@@ -22,7 +22,7 @@
 {#snippet icon(status?: ActivityStatus)}
   {#if status === 'failed'}<CircleAlertIcon aria-hidden="true" />
   {:else if status === 'done'}<CircleCheckIcon aria-hidden="true" />
-  {:else if status === 'running'}<CircleDotIcon aria-hidden="true" />
+  {:else if status === 'running'}<LoaderCircleIcon class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
   {:else}<CircleIcon aria-hidden="true" />{/if}
 {/snippet}
 
@@ -45,7 +45,7 @@
   <Trace.Line status={traceStatus(event.status)} title={event.title}>
     <Trace.Icon>{@render icon(event.status)}</Trace.Icon>
     <Trace.Title>{event.title}</Trace.Title>
-    {#if event.status}<Trace.Description>{event.status}</Trace.Description>{/if}
+    {#if event.status}<Trace.Description class="sr-only">{event.status}</Trace.Description>{/if}
   </Trace.Line>
 {/snippet}
 
@@ -70,13 +70,13 @@
                     <Trace.Collapsible>
                       <Trace.CollapsibleTrigger><Trace.Line
                         status={traceStatus(item.status)}
-                        title={item.title}><Trace.Icon>{@render icon(item.status)}</Trace.Icon><Trace.Title>{item.title}</Trace.Title>{#if item.status}<Trace.Description>{item.status}</Trace.Description>{/if}</Trace.Line></Trace.CollapsibleTrigger>
+                        title={item.title}><Trace.Icon>{@render icon(item.status)}</Trace.Icon><Trace.Title>{item.title}</Trace.Title>{#if item.status}<Trace.Description class="sr-only">{item.status}</Trace.Description>{/if}</Trace.Line></Trace.CollapsibleTrigger>
                       <Trace.CollapsibleContent class="whitespace-pre-wrap break-words">{item.detail}</Trace.CollapsibleContent>
                     </Trace.Collapsible>
                   {:else}
                     <Trace.Line
                       status={traceStatus(item.status)}
-                      title={item.title}><Trace.Icon>{@render icon(item.status)}</Trace.Icon><Trace.Title>{item.title}</Trace.Title>{#if item.status}<Trace.Description>{item.status}</Trace.Description>{/if}</Trace.Line>
+                      title={item.title}><Trace.Icon>{@render icon(item.status)}</Trace.Icon><Trace.Title>{item.title}</Trace.Title>{#if item.status}<Trace.Description class="sr-only">{item.status}</Trace.Description>{/if}</Trace.Line>
                   {/if}
                 {/each}
               </Trace.Root>

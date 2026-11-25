@@ -38,6 +38,10 @@
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import Play from '@lucide/svelte/icons/play';
   import Trash2 from '@lucide/svelte/icons/trash-2';
+  import Save from '@lucide/svelte/icons/save';
+  import SquarePen from '@lucide/svelte/icons/square-pen';
+  import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+  import IconTip from './IconTip.svelte';
   import { toast } from 'svelte-sonner';
 
   interface IdeaOption {
@@ -735,7 +739,7 @@
           class="rounded-full px-4"
           disabled={busy||!ready}
           onclick={run}>{#if busy}<LoaderCircle
-            class="size-4 mr-1 animate-spin"/>{/if}{busy?'Saving…':remakeReference?'Save & make new picture':'Save changes'}</Button></div>
+            class="size-4 mr-1 animate-spin"/>{:else}<Save class="size-4 mr-1"/>{/if}{busy?'Saving…':remakeReference?'Save & make new picture':'Save changes'}</Button></div>
       {:else}<p class="text-xs text-muted-foreground">Choose the character to change.</p>
         <select class={selectClass} bind:value={characterId}><option
           value="">Choose a character…</option>{#each options.characters as c(c.id)}<option value={c.id}>{c.name}</option>{/each}</select>{/if}
@@ -744,7 +748,7 @@
       <div class="pt-1"><Button
         size="sm"
         class="rounded-full px-4"
-        href={editorTarget.panel?`${editHref}&panel=${editorTarget.panel}`:editHref}>{editorTarget.label}</Button></div>
+        href={editorTarget.panel?`${editHref}&panel=${editorTarget.panel}`:editHref}><SquarePen class="size-4 mr-1"/>{editorTarget.label}</Button></div>
     {:else if intent.action === 'ai_edit'}
       <AIEditPanel
         scriptId={intent.script_id ?? ''}
@@ -1064,15 +1068,13 @@
             {/if}
             {busy ? 'Running…' : 'Create story & references'}
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            class="rounded-full px-3"
+          <IconTip
+            icon={ArrowLeft}
+            label="Back"
+            tip="Back to the idea"
+            class="rounded-full text-muted-foreground"
             disabled={busy}
-            onclick={() => (ideaOptions = null)}
-          >
-            Back
-          </Button>
+            onclick={() => (ideaOptions = null)} />
         {:else}
           <Button
             size="sm"
