@@ -386,6 +386,23 @@
   import X from '@lucide/svelte/icons/x';
   import PenLine from '@lucide/svelte/icons/pen-line';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+  import Crosshair from '@lucide/svelte/icons/crosshair';
+  import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+  import Wrench from '@lucide/svelte/icons/wrench';
+  import ListChecks from '@lucide/svelte/icons/list-checks';
+  import Download from '@lucide/svelte/icons/download';
+  import Pencil from '@lucide/svelte/icons/pencil';
+  import Bookmark from '@lucide/svelte/icons/bookmark';
+  import BookmarkCheck from '@lucide/svelte/icons/bookmark-check';
+  import CornerDownLeft from '@lucide/svelte/icons/corner-down-left';
+  import ArrowRight from '@lucide/svelte/icons/arrow-right';
+  import Sparkles from '@lucide/svelte/icons/sparkles';
+  import Square from '@lucide/svelte/icons/square';
+  import Hand from '@lucide/svelte/icons/hand';
+  import Zap from '@lucide/svelte/icons/zap';
+  import Rocket from '@lucide/svelte/icons/rocket';
+  import SearchCheck from '@lucide/svelte/icons/search-check';
+  import IconTip from './IconTip.svelte';
 
   /**
    * Next-step chip: `send` posts the message immediately, `fill` pre-fills the
@@ -1687,11 +1704,11 @@
         {c.label}
         <ArrowUpRight class="size-3" />
       </Button>
-      {#if c.focusId}<Button
-        variant="ghost"
-        size="sm"
-        aria-label={'Show on canvas: '+c.label}
-        onclick={()=>(onguide??onfocus)?.(c.focusId!)}>Show on canvas</Button>{/if}
+      {#if c.focusId}<IconTip
+        icon={Crosshair}
+        label={'Show on canvas: '+c.label}
+        tip="Show on canvas"
+        onclick={()=>(onguide??onfocus)?.(c.focusId!)} />{/if}
     {:else if c.fill}
       <!-- Pre-fill chip: outline + dashed + pen, so it reads as "edit then send"
            rather than "run now" (the solid send chips below). -->
@@ -1738,26 +1755,11 @@
     {/if}
     <div class="ml-auto flex items-center gap-1">
       {#if !embedded}
-      <Button
-        variant="ghost"
-        size="icon"
-        class="size-7 text-muted-foreground"
-        aria-label={expanded ? 'Restore chat panel size' : 'Expand chat panel'}
-        title={expanded ? 'Restore chat panel size' : 'Expand chat panel'}
-        onclick={onresize}
-      >
-        {#if expanded}<Minimize2 class="size-3.5" />{:else}<Maximize2 class="size-3.5" />{/if}
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        class="size-7 text-muted-foreground"
-        aria-label="Hide chat panel"
-        title="Hide chat panel"
-        onclick={onhide}
-      >
-        <PanelRightClose class="size-3.5" />
-      </Button>
+      <IconTip
+        icon={expanded ? Minimize2 : Maximize2}
+        label={expanded ? 'Restore chat panel size' : 'Expand chat panel'}
+        onclick={onresize} />
+      <IconTip icon={PanelRightClose} label="Hide chat panel" onclick={onhide} />
       {/if}
       <Tooltip.Provider delayDuration={300}>
         <Tooltip.Root>
@@ -1792,11 +1794,12 @@
       {#if historyLoading}<div
         role="status"
         class="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle
-          class="size-4 animate-spin motion-reduce:animate-none" />Loading conversation…</div>
+          aria-hidden="true"
+          class="size-4 animate-spin motion-reduce:animate-none" /><span aria-hidden="true">Loading…</span><span class="sr-only">Loading conversation…</span></div>
       {:else if historyError}<div role="alert" class="space-y-3 py-4"><h3
         class="font-semibold">Could not load conversation</h3><p
         class="text-sm text-muted-foreground">Your saved history has not been replaced. {historyError}</p><Button
-        variant="outline" onclick={initPersistence}>Retry conversation</Button></div>
+        variant="outline" onclick={initPersistence}><RotateCcw class="size-4" />Retry conversation</Button></div>
       {:else if sessionRequired}<div class="space-y-3 py-4"><MessageSquare
         class="size-7 text-muted-foreground" /><h3 class="font-semibold">Connect your story assistant</h3><p
         class="text-sm text-muted-foreground">Choose a session above, or set up Codex or Claude Code to start planning.</p><Button
@@ -1886,25 +1889,26 @@
               size="sm"
               class="mt-2"
               disabled={busy||repairingContext}
-              onclick={()=>repairContext(m)}>{repairingContext?'Repairing…':'Repair chat context'}</Button>{/if}
+              onclick={()=>repairContext(m)}>{#if repairingContext}<LoaderCircle class="size-3.5 animate-spin motion-reduce:animate-none" />{:else}<Wrench class="size-3.5" />{/if}{repairingContext?'Repairing…':'Repair chat context'}</Button>{/if}
             {#if m.storyStage==='awaiting_character_review'}<div class="space-y-2"><p
               class="text-xs text-muted-foreground">{m.storyReady?'References ready. Continue to scene images.':'Replace missing or excluded images before continuing.'}</p><Button
                 size="sm"
                 disabled={!m.storyReady||continuingStory||busy}
-                onclick={()=>continueStory(m)}>{continuingStory?'Creating storyboard images…':'Continue storyboarding'}</Button></div>{/if}
-            {#if m.retry&&!m.repairContext}<Button
+                onclick={()=>continueStory(m)}>{#if continuingStory}<LoaderCircle class="size-3.5 animate-spin motion-reduce:animate-none" />{:else}<ArrowRight class="size-3.5" />{/if}{continuingStory?'Creating storyboard images…':'Continue storyboarding'}</Button></div>{/if}
+            {#if m.retry&&!m.repairContext}<IconTip
+              icon={RotateCcw}
+              label="Edit and retry"
               variant="outline"
-              size="sm"
-              class="mt-2"
+              class="mt-2 self-start"
               disabled={busy}
-              onclick={()=>reusePrompt(m.retry??'')}>Edit and retry</Button>{/if}
+              onclick={()=>reusePrompt(m.retry??'')} />{/if}
             <ActivityView events={messageActivity(m)} />
             {#if normalizeActivity(m.activity).some(e=>e.kind==='subagent'&&e.status==='done')}<Button
               variant="outline"
               size="sm"
               class="self-start"
               disabled={busy}
-              onclick={()=>prepareReviewChanges(m)}>Prepare changes from review</Button>{/if}
+              onclick={()=>prepareReviewChanges(m)}><ListChecks class="size-3.5" />Prepare changes from review</Button>{/if}
             {#if m.thumbs?.length}
               <div class="mt-2 flex flex-wrap gap-1.5">
                 {#each m.thumbs as t (t.src)}
@@ -1955,7 +1959,7 @@
             {#if m.video}
               <!-- svelte-ignore a11y_media_has_caption -->
               <video class="mt-2 max-h-96 w-full rounded-md bg-black" src={mediaUrl(m.video)??''} controls playsinline></video>
-              <Button size="sm" variant="outline" class="self-start rounded-full px-4" href={mediaUrl(m.video)??''} download>Download video</Button>
+              <Button size="sm" variant="outline" class="self-start rounded-full px-4" href={mediaUrl(m.video)??''} download aria-label="Download video"><Download class="size-3.5" />Download</Button>
             {/if}
             {#if m.stuck}
               <StuckVideo jobId={m.stuck.job_id} service={m.stuck.service} onsettled={check=>offerResume(m,check)} />
@@ -1969,7 +1973,7 @@
               <div class="mt-2 flex flex-wrap items-center gap-2"><Button
                 size="sm"
                 class="rounded-full px-4"
-                onclick={()=>{m.dismissed=true;void startAutopilot(m.intent?.script_id ?? '')}}>Finish the video for me</Button><FinishCost
+                onclick={()=>{m.dismissed=true;void startAutopilot(m.intent?.script_id ?? '')}}><Sparkles class="size-3.5" />Finish the video for me</Button><FinishCost
                   scriptId={m.intent.script_id} /><span
                   class="text-xs text-muted-foreground">Makes every missing scene video, joins them with captions and exports. Uses video credits.</span></div>
             {:else if !editing && m.intent?.action === 'render_scenes' && m.intent.scene_ids?.length && !m.dismissed}
@@ -2011,31 +2015,30 @@
                 onop={(label, ctx) => handleOpStart(label, ctx, m)}
                 onsuggest={(text) => { input=text; focusComposer(); }}
               />
-              <Button variant="ghost" size="sm" class="self-start" onclick={()=>dismissProposal(m)}>Dismiss proposal</Button>
+              <IconTip icon={X} label="Dismiss proposal" class="self-start text-muted-foreground" onclick={()=>dismissProposal(m)} />
             {:else if m.dismissed}<p
               class="text-xs text-muted-foreground">{m.briefSuperseded?'Earlier creative brief · updated below':'Proposal dismissed from this view.'}</p>{/if}
             {#if m.role==='user'}<Message.Footer
-              class="opacity-0 transition-opacity group-hover/turn:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100"><Button
-              size="sm"
-              variant="ghost"
-              class="h-7 px-2 text-xs text-muted-foreground"
+              class="opacity-0 transition-opacity group-hover/turn:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100"><IconTip
+              icon={Pencil}
+              label="Edit & resend"
+              tip="Put this message back in the box to edit and send again"
               disabled={busy}
-              title="Put this message back in the box to edit and send again"
-              onclick={()=>reusePrompt(m.text)}>Edit &amp; resend</Button><Button
-              size="sm"
-              variant="ghost"
-              class="h-7 px-2 text-xs text-muted-foreground"
+              onclick={()=>reusePrompt(m.text)} /><IconTip
+              icon={checkpointPrompts.includes(m.text)?BookmarkCheck:Bookmark}
+              label={checkpointPrompts.includes(m.text)?'Unsave':'Save prompt'}
+              tip={checkpointPrompts.includes(m.text)?'Unsave this prompt':'Keep this prompt handy to reuse later'}
               disabled={busy}
               aria-pressed={checkpointPrompts.includes(m.text)}
-              title="Keep this prompt handy to reuse later"
-              onclick={()=>toggleCheckpoint(m)}>{checkpointPrompts.includes(m.text)?'Unsave':'Save prompt'}</Button></Message.Footer>{/if}
+              onclick={()=>toggleCheckpoint(m)} /></Message.Footer>{/if}
           </Message.Content>
         </Message.Root>
         {#if m.role==='user'&&checkpointPrompts.includes(m.text)}<Marker.Root
           variant="separator"><Marker.Content class="flex flex-wrap items-center gap-2">Saved prompt<Button
           variant="outline"
           size="sm"
-          onclick={()=>reusePrompt(m.text)}>Use prompt</Button></Marker.Content></Marker.Root>{/if}
+          aria-label="Use prompt"
+          onclick={()=>reusePrompt(m.text)}><CornerDownLeft class="size-3.5" />Use</Button></Marker.Content></Marker.Root>{/if}
         </MessageScroller.Item>
       {/each}
       {/if}
@@ -2050,7 +2053,8 @@
         <MessageScroller.Item messageId="working"><Message.Root><Message.Content><div
           role="status"
           class="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle
-            class="size-4 animate-spin motion-reduce:animate-none" />Working on your story…</div></Message.Content></Message.Root></MessageScroller.Item>
+            aria-hidden="true"
+            class="size-4 animate-spin motion-reduce:animate-none" /><span aria-hidden="true">Working…</span><span class="sr-only">Working on your story…</span></div></Message.Content></Message.Root></MessageScroller.Item>
       {/if}
     </MessageScroller.Content>
     </MessageScroller.Viewport>
@@ -2067,14 +2071,15 @@
             aria-label="Clear selection"
             class="size-9 shrink-0"
             onclick={onclear}><X class="size-3.5" /></Attachment.Action></Attachment.Actions>{/if}</Attachment.Root>{:else}<span></span>{/if}
-      {#if embedded&&!isEmpty}<Button
-        variant="ghost"
+      {#if embedded&&!isEmpty}<IconTip
+        icon={Eraser}
+        iconClass="size-4"
         size="icon"
         class="size-9 shrink-0 text-muted-foreground"
-        aria-label="Clear chat"
-        title="Clear visible chat; saved session history is kept"
+        label="Clear chat"
+        tip="Clear visible chat; saved session history is kept"
         disabled={busy||historyLoading||isEmpty}
-        onclick={clearChat}><Eraser class="size-4" /></Button>{/if}
+        onclick={clearChat} />{/if}
     </div>{/if}
     {#if !editing&&stageSummary}<p
       class="mb-1 text-[11px] text-muted-foreground"
@@ -2176,13 +2181,13 @@
             aria-label={`Mode: ${MODE_LABEL[mode]}. ${MODE_HELP[mode]} Click to change.`}
             title={MODE_HELP[mode]+' Click to change.'}
             class={mode==='full'?'bg-primary text-primary-foreground hover:bg-primary/90':mode==='auto'?'bg-secondary':''}
-            onclick={nextMode}>{MODE_LABEL[mode]}</InputGroup.Button>{/if}
+            onclick={nextMode}>{#if mode==='full'}<Rocket class="size-3.5" />{:else if mode==='auto'}<Zap class="size-3.5" />{:else}<Hand class="size-3.5" />{/if}<span class="max-[380px]:sr-only">{MODE_LABEL[mode]}</span></InputGroup.Button>{/if}
           <DropdownMenu.Root><DropdownMenu.Trigger>{#snippet child({props})}<InputGroup.Button
             {...props}
             type="button"
             size="sm"
             aria-label="Assistant mode"
-            disabled={busy}>{reviewMode?'Review':'Chat'}<ChevronDown class="size-3.5" /></InputGroup.Button>{/snippet}</DropdownMenu.Trigger>
+            disabled={busy}>{#if reviewMode}<SearchCheck class="size-3.5" />{:else}<MessageSquare class="size-3.5" />{/if}<span class="max-[380px]:sr-only">{reviewMode?'Review':'Chat'}</span><ChevronDown class="size-3.5" /></InputGroup.Button>{/snippet}</DropdownMenu.Trigger>
             <DropdownMenu.Content align="start" side="top" class="w-64 max-w-[calc(100vw-2rem)]">
               <DropdownMenu.RadioGroup value={reviewMode?'specialists':'assistant'} onValueChange={value=>reviewMode=value==='specialists'}>
                 <DropdownMenu.RadioItem value="assistant"><span class="grid"><span>Chat</span><span
@@ -2200,12 +2205,13 @@
           <!-- Stop is offered only when the backend has a concrete local session to cancel. -->
           {#if busy&&activeSessionId}<InputGroup.Button
             type="button"
-            size="sm"
+            size="icon-sm"
             variant="outline"
             class="ml-auto"
-            aria-label="Stop planning"
+            aria-label={cancelling?'Stopping…':'Stop planning'}
+            title={cancelling?'Stopping…':'Stop planning'}
             disabled={cancelling}
-            onclick={stopPlanning}>{cancelling?'Stopping…':'Stop'}</InputGroup.Button>{:else}<InputGroup.Button
+            onclick={stopPlanning}>{#if cancelling}<LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />{:else}<Square class="size-3.5 fill-current" />{/if}</InputGroup.Button>{:else}<InputGroup.Button
             type="submit"
             size="icon-sm"
             variant="default"

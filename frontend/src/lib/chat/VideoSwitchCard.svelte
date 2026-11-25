@@ -3,6 +3,8 @@
   // Switch the service that makes the videos with one click. Free, but it changes the
   // price per second, so it always waits for the owner, even in Full auto.
   import { put } from '$lib/api';
+  import ArrowLeftRight from '@lucide/svelte/icons/arrow-left-right';
+  import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import { Button } from '$lib/components/ui/button';
   import type { VideoServicesState } from '$lib/api-types';
   import type { VideoSwitchChoice as Choice } from './types';
@@ -22,7 +24,8 @@
 
 <div class="mt-2 grid gap-2 rounded-md border border-border p-3 text-sm">
   <div class="flex flex-wrap items-center gap-2">
-    <Button size="sm" class="rounded-full px-4" disabled={busy} onclick={use}>
+    <Button size="sm" class="h-auto min-h-7 max-w-full whitespace-normal rounded-full px-4 text-left" disabled={busy} onclick={use}>
+      {#if busy}<LoaderCircle class="size-4 animate-spin motion-reduce:animate-none" />{:else}<ArrowLeftRight class="size-4" />{/if}
       {choice.mode === 'cheapest' ? 'Always use the cheapest service' : `Use ${choice.label} for videos`} · {usd(choice.per_second)} per second
     </Button>
     <span

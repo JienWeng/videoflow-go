@@ -1,6 +1,9 @@
 <script lang="ts">
   // Voice first: one scene's dialogue tracks, one per clip, to listen to before any clip
   // is paid for. Each line shows when it is spoken in its clip.
+  import MicOff from '@lucide/svelte/icons/mic-off';
+  import Clock from '@lucide/svelte/icons/clock';
+  import AudioLines from '@lucide/svelte/icons/audio-lines';
   import { mediaUrl } from '$lib/api';
   import type { VoiceTrack } from './types';
   let { tracks }: { tracks: VoiceTrack[] } = $props();
@@ -12,8 +15,8 @@
     <div class="grid gap-1 rounded-md border border-border p-2 text-xs">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <span class="font-medium">Clip {t.unit_index + 1}</span>
-        <span class="text-muted-foreground">
-          {#if !t.lines.length}Nobody speaks{:else if t.ready}{secs(t.seconds)} of speech · clip {t.clip_seconds}s{:else}Not made yet{/if}
+        <span class="inline-flex items-center gap-1 text-muted-foreground">
+          {#if !t.lines.length}<MicOff class="size-3" aria-hidden="true" />Nobody speaks{:else if t.ready}<AudioLines class="size-3" aria-hidden="true" />{secs(t.seconds)} of speech · clip {t.clip_seconds}s{:else}<Clock class="size-3" aria-hidden="true" />Not made yet{/if}
         </span>
       </div>
       {#if t.ready && t.url}

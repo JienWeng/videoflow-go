@@ -3,6 +3,7 @@
   // make and the price, read from the same estimate the run will spend against.
   import { onMount } from 'svelte';
   import { get } from '$lib/api';
+  import Clapperboard from '@lucide/svelte/icons/clapperboard';
   import { Button } from '$lib/components/ui/button';
   import type { CostEstimate } from '$lib/api-types';
 
@@ -33,7 +34,7 @@
     {:else}{known ? 'About ' + usd(total) : 'At least ' + usd(total)} for {seconds} seconds of new video.{/if}
   </p>
   <div class="flex flex-wrap items-center gap-2">
-    <Button size="sm" class="rounded-full px-4" onclick={onstart}>Make these videos</Button>
+    <Button size="sm" class="rounded-full px-4" onclick={onstart}><Clapperboard class="size-4" />Make these videos</Button>
     <span class="text-xs text-muted-foreground">The scenes are made side by side. Uses video credits.</span>
   </div>
 </div>
