@@ -12,7 +12,7 @@ import (
 
 // What a planned scene clip asks the video service for: the scene's own
 // shots, cast and lines in the guide's form, and none of the app's internal records.
-func TestSceneClipIsSentAGuideShapedPrompt(t *testing.T) {
+func TestSceneClipIsSentTheGuideShapedPrompt(t *testing.T) {
 	fastAutopilot(t)
 	s, _ := falServer(t, "done")
 	project, _ := s.database.GetActiveProjectID()

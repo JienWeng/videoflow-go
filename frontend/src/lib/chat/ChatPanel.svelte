@@ -357,8 +357,9 @@
   import { storyCreation } from '$lib/create/story-creation.svelte';
   import { onMount, tick } from 'svelte';
   import { API_BASE, APIError, del, get, mediaUrl, post, put } from '$lib/api';
-  import { AguiRunError, AguiUnavailable, runAgent, stepsActivity } from './agui.mjs';
-  import type { AguiView } from './agui.d.mts';
+  import { A2UIRunError, A2UIUnavailable, CARD_RESULT_ACTION, CARD_ID, REPLY_ACTION, actionEvent, localSurface, runA2UI, stepsActivity } from '$lib/a2ui/a2ui.mjs';
+  import type { Surface } from '$lib/a2ui/a2ui.d.mts';
+  import A2UINode from '$lib/a2ui/A2UINode.svelte';
   import ActionCard from '$lib/chat/ActionCard.svelte';
   import Response from '$lib/components/ai-elements/response/response.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -462,8 +463,9 @@
     op?: OpProgress;
     /** Generated-image thumbnails (storyboard / assets results). */
     thumbs?: { src: string; alt: string }[];
-    /** The AG-UI tool call this card is (POST /agui); running the card reports its result. */
-    toolCallId?: string;
+    /** The A2UI surface of this turn (POST /a2ui): the assistant's own interface and
+     * the card; running the card reports its result on this surface. */
+    surface?: Surface;
     toolReported?: boolean;
   }
 
@@ -641,7 +643,7 @@
       storyReady,
       referenceIds,
       castIds,
-      toolCallId
+      surface
     } = m;
     return {
       role,
@@ -663,7 +665,8 @@
       storyReady,
       referenceIds,
       castIds,
-      toolCallId
+      // The surface's layout and card; the shared state and request status are not kept.
+      surface: surface && { ...surface, data: { intent: surface.data?.intent, result: surface.data?.result } }
     };
   }
 
@@ -809,100 +812,106 @@
   // The project's decision log: what the assistant already knows and will not ask again.
   let decisions = $state<ProjectDecision[]>([]);
 
-  // AG-UI (POST /agui, ./agui.mjs): the chat streams its reply, shows each step, and
-  // keeps the stage map and decision log in step as shared state. On by default; set
-  // localStorage videoflow.chat.agui to "off" to use POST /chat only. A run that cannot
-  // start falls back to POST /chat by itself.
-  let aguiOn = true;
+  // A2UI (POST /a2ui, $lib/a2ui): the chat streams its reply into a surface, shows each
+  // phase, keeps the stage map and decision log in step as the surface's /state, and
+  // draws the assistant's own interface and the card. On by default; set localStorage
+  // videoflow.chat.a2ui to "off" to use POST /chat only. A request that cannot start
+  // falls back to POST /chat by itself.
+  let a2uiOn = true;
   try {
-    aguiOn = localStorage.getItem('videoflow.chat.agui') !== 'off';
+    a2uiOn = localStorage.getItem('videoflow.chat.a2ui') !== 'off';
   } catch {}
-  const aguiThread = randomId();
-  /** The shared AG-UI state: { stages, decisions, mode } (internal/api/agui.go). */
-  let aguiState: unknown = null;
   let stageSummary = $state('');
-  /** Open runs that follow a card's background op; aborted when the panel goes. */
+  /** Open requests that follow a card's background op; aborted when the panel goes. */
   const followers = new Set<AbortController>();
   const MAX_FOLLOWERS = 2;
+  /** The last shared state taken, so an unchanged one is not taken again. */
+  let lastState: unknown = null;
 
-  function aguiInput(message: { role: 'user' | 'tool'; content: string; toolCallId?: string }, forwardedProps?: unknown) {
-    return {
-      threadId: aguiThread,
-      runId: randomId(),
-      state: aguiState ?? {},
-      messages: [{ id: randomId(), ...message }],
-      tools: [],
-      context: [],
-      ...(forwardedProps ? { forwardedProps } : {})
-    };
-  }
-
-  /** Takes the run's state as the panel's: the decision list and the stage line. */
-  function takeAguiState(view: AguiView) {
-    const state = view.state as { stages?: { summary?: string } | null; decisions?: ProjectDecision[] | null } | null;
-    if (!state || state === aguiState) return;
-    aguiState = state;
+  /** Takes a surface's shared state as the panel's: the decision list and the stage line. */
+  function takeState(surface: Surface) {
+    const state = surface.data?.state as { stages?: { summary?: string } | null; decisions?: ProjectDecision[] | null } | undefined;
+    if (!state || state === lastState) return;
+    lastState = state;
     if (Array.isArray(state.decisions)) decisions = state.decisions;
     stageSummary = state.stages?.summary ?? '';
   }
 
-  /** Plans a chat message over AG-UI, showing the reply and steps as they stream in;
-   * falls back to POST /chat when the run cannot start. Resolves with the /chat reply. */
-  async function planTurn(body: Record<string, unknown> & { message: string }, generation: number): Promise<ChatReply> {
-    if (!aguiOn) return post<ChatReply>('/chat', body);
-    const { message, ...forwardedProps } = body;
+  /** Plans a chat message over A2UI, showing the reply and phases as they stream in;
+   * falls back to POST /chat when the request cannot start. A choice picked in the
+   * assistant's interface goes as its A2UI action. Resolves with the /chat reply and
+   * the turn's surface. */
+  async function planTurn(
+    body: Record<string, unknown> & { message: string },
+    generation: number,
+    action?: { surfaceId: string; sourceComponentId: string }
+  ): Promise<ChatReply & { surface?: Surface }> {
+    if (!a2uiOn) return post<ChatReply>('/chat', body);
     let live: Msg | null = null;
     const drop = () => {
       const i = live ? messages.indexOf(live) : -1;
       if (i >= 0) messages.splice(i, 1);
       live = null;
     };
-    let steps: AguiView['steps'] = [];
+    const request = action
+      ? { ...body, ...actionEvent({ name: REPLY_ACTION, ...action, context: { reply: body.message } }) }
+      : body;
     try {
-      const result = (await runAgent({
-        url: `${API_BASE}/agui`,
-        input: aguiInput({ role: 'user', content: message }, forwardedProps),
-        onView: view => {
+      const { surface, result } = (await runA2UI({
+        url: `${API_BASE}/a2ui`,
+        body: request,
+        onUpdate: surface => {
           if (generation !== conversationGeneration) return;
-          takeAguiState(view);
-          steps = view.steps;
+          takeState(surface);
           if (!live) {
             messages.push({ role: 'assistant', text: '' });
             live = messages[messages.length - 1];
           }
-          live.text = view.text;
-          live.activity = normalizeActivity(stepsActivity(view.steps));
+          live.text = typeof surface.data?.reply === 'string' ? surface.data.reply : '';
+          live.activity = normalizeActivity(stepsActivity(surface.data?.steps));
         }
-      })) as ChatReply;
+      })) as { surface: Surface; result: ChatReply };
       drop();
-      return { ...result, activity: result.activity ?? stepsActivity(steps) };
+      return { ...result, activity: result.activity ?? stepsActivity(surface.data?.steps), surface };
     } catch (e) {
       drop();
-      if (e instanceof AguiUnavailable) return post<ChatReply>('/chat', body);
-      if (e instanceof AguiRunError) throw new APIError(e.status, e.message, e.code);
+      if (e instanceof A2UIUnavailable) return post<ChatReply>('/chat', body);
+      if (e instanceof A2UIRunError) throw new APIError(e.status, e.message, e.code);
       throw e;
     }
   }
 
-  /** Reports a card the user ran as its AG-UI tool call's result. With a running op the
-   * run follows it and keeps the state in step until it ends; past MAX_FOLLOWERS open
-   * runs, the op is reported once it settles instead. */
+  /** Reports a card the user ran as an A2UI action from the card's component. With a
+   * running op the request follows it and keeps the state in step until it ends; past
+   * MAX_FOLLOWERS open requests, the op is reported once it settles instead. */
   function reportToolResult(m: Msg | undefined, content: { op_id?: string; status?: string; error?: string }, settled = true) {
-    if (!aguiOn || !m?.toolCallId || m.toolReported) return;
+    const surface = m?.surface;
+    if (!a2uiOn || !m || !surface?.components[CARD_ID] || surface.id.startsWith('local-') || m.toolReported) return;
     if (!settled && followers.size >= MAX_FOLLOWERS) return;
     m.toolReported = true;
     const controller = new AbortController();
     followers.add(controller);
-    void runAgent({
-      url: `${API_BASE}/agui`,
-      input: aguiInput({ role: 'tool', toolCallId: m.toolCallId, content: JSON.stringify(content) }),
+    void runA2UI({
+      url: `${API_BASE}/a2ui`,
+      body: actionEvent({ name: CARD_RESULT_ACTION, surfaceId: surface.id, sourceComponentId: CARD_ID, context: content }),
+      surfaces: { [surface.id]: surface },
       signal: controller.signal,
-      onView: takeAguiState
+      onUpdate: next => {
+        takeState(next);
+        m.surface = next;
+      }
     })
       .catch(() => {
         // The card's own progress row shows how the op ended; the state catches up on the next turn.
       })
       .finally(() => followers.delete(controller));
+  }
+
+  /** A choice picked in the assistant's interface: sent as the user's next message. */
+  function surfaceAction(m: Msg, name: string, sourceComponentId: string, context: Record<string, unknown>) {
+    if (name !== REPLY_ACTION || typeof context.reply !== 'string' || !context.reply.trim()) return;
+    const surfaceId = m.surface?.id ?? '';
+    void send(context.reply, undefined, surfaceId && !surfaceId.startsWith('local-') ? { surfaceId, sourceComponentId } : undefined);
   }
   const decisionNames = $derived((graphData?.nodes ?? []).map(n => ({ id: n.id, name: n.label })));
   async function refreshDecisions() {
@@ -1560,7 +1569,7 @@
   function sendAnswer(chip: { send: string; answer: DecisionAnswer }) {
     void send(chip.send, chip.answer);
   }
-  async function send(text?: string, answer?: DecisionAnswer) {
+  async function send(text?: string, answer?: DecisionAnswer, action?: { surfaceId: string; sourceComponentId: string }) {
     const message = (text ?? input).trim();
     if (!message || busy || attaching || pendingOps.length || historyLoading || sessionRequired || historyError) return;
     const sent = editing || (!editing && reviewMode && specialistSupported) ? [] : attachments;
@@ -1622,8 +1631,8 @@
         ...(answer && !useSpecialists ? { answer } : {})
       };
       const r = useSpecialists
-        ? await post<ChatReply & ChatReview>('/chat/review', request)
-        : ((await planTurn(request, generation)) as ChatReply & ChatReview);
+        ? await post<ChatReply & ChatReview & { surface?: Surface }>('/chat/review', request)
+        : ((await planTurn(request, generation, action)) as ChatReply & ChatReview & { surface?: Surface });
       if (generation !== conversationGeneration) return;
       if (useSpecialists) {
         messages[reviewIndex] = { role: 'assistant', text: r.reply, activity: subagentEvents(r.subagents ?? []) };
@@ -1641,19 +1650,19 @@
       // A reply that asks waits for the answer: its button never starts by itself.
       const asking = isAsking(intent.decision);
       if (intent.action === 'finish_video' && intent.script_id && mode === 'full' && !asking) {
-        messages.push({ role: 'assistant', text: intent.reply, dismissed: true, intent });
+        messages.push({ role: 'assistant', text: intent.reply, dismissed: true, intent, surface: r.surface });
         void startAutopilot(intent.script_id);
         return;
       }
       // Already done by the assistant (free, nothing deleted): show what it said and refresh the canvas.
       if (intent.action === 'clear_failed_videos') {
-        messages.push({ role: 'assistant', text: intent.reply, dismissed: true, intent });
+        messages.push({ role: 'assistant', text: intent.reply, dismissed: true, intent, surface: r.surface });
         void onmutate?.();
         void refreshChips();
         return;
       }
       if (intent.action === 'render_scenes' && intent.scene_ids?.length && mode === 'full' && !asking) {
-        messages.push({ role: 'assistant', text: intent.reply, dismissed: true, intent });
+        messages.push({ role: 'assistant', text: intent.reply, dismissed: true, intent, surface: r.surface });
         void startScenes(intent.scene_ids);
         return;
       }
@@ -1666,7 +1675,7 @@
         warnings: r.warnings ?? [],
         state: r.state,
         activity: normalizeActivity(r.activity),
-        ...(r.tool_call_id ? { toolCallId: r.tool_call_id } : {})
+        surface: r.surface ?? localSurface(`local-${randomId()}`, intent)
       });
     } catch (e) {
       if (generation !== conversationGeneration) return;
@@ -1690,6 +1699,58 @@
     }
   }
 </script>
+
+{#snippet actionCard(m: Msg)}
+            {#if !editing && m.intent?.action === 'finish_video' && m.intent.script_id && !m.dismissed}
+              <div class="mt-2 flex flex-wrap items-center gap-2"><Button
+                size="sm"
+                class="rounded-full px-4"
+                onclick={()=>{m.dismissed=true;void startAutopilot(m.intent?.script_id ?? '')}}><Sparkles class="size-3.5" />Finish the video for me</Button><FinishCost
+                  scriptId={m.intent.script_id} /><span
+                  class="text-xs text-muted-foreground">Makes every missing scene video, joins them with captions and exports. Uses video credits.</span></div>
+            {:else if !editing && m.intent?.action === 'render_scenes' && m.intent.scene_ids?.length && !m.dismissed}
+              <ScenesCard scenes={m.intent.scenes ?? []} onstart={()=>{m.dismissed=true;void startScenes(m.intent?.scene_ids ?? [])}} />
+            {:else if !editing && (m.intent?.action === 'check_video' || m.intent?.action === 'stop_waiting') && m.intent.job_id && !m.dismissed}
+              <StuckVideo
+                jobId={m.intent.job_id}
+                service={m.intent.service}
+                reason={m.intent.waiting_reason}
+                autoCheck={m.intent.action==='check_video'&&!!m.autoRun&&autoMode}
+                askStop={m.intent.action==='stop_waiting'}
+                onsettled={check => {
+                  m.autoRun = false;
+                  void onmutate?.();
+                  void refreshChips();
+                  offerMakeAgain(check, m.intent?.scene_title ?? '');
+                }} />
+            {:else if !editing && m.intent?.action === 'switch_video_service' && m.intent.video_switch && !m.dismissed}
+              <VideoSwitchCard
+                choice={m.intent.video_switch}
+                onswitched={text => {
+                  m.dismissed = true;
+                  messages.push({ role: 'assistant', text });
+                  void onmutate?.();
+                  void refreshChips();
+                }} />
+            {:else if !editing && m.intent && m.intent.action !== 'unknown' && !m.dismissed}
+              <ActionCard
+                auto={!!m.autoRun&&autoMode}
+                full={!!m.autoRun&&mode==='full'}
+                onautostart={()=>m.autoRun=false}
+                intent={m.intent}
+ onbriefchange={brief=>{if(m.intent)m.intent={...m.intent,creation_brief:brief,idea:brief.idea}}}
+ onreference={referenceSaved}
+                options={m.options!}
+                projectState={m.state}
+                onfocus={onguide??onfocus}
+                onran={(result, ctx) => handleRan(result, ctx, m)}
+                onop={(label, ctx) => handleOpStart(label, ctx, m)}
+                onsuggest={(text) => { input=text; focusComposer(); }}
+              />
+              <IconTip icon={X} label="Dismiss proposal" class="self-start text-muted-foreground" onclick={()=>dismissProposal(m)} />
+            {:else if m.dismissed}<p
+              class="text-xs text-muted-foreground">{m.briefSuperseded?'Earlier creative brief · updated below':'Proposal dismissed from this view.'}</p>{/if}
+{/snippet}
 
 {#snippet chipRow(list: Chip[])}
   {#each list as c (c.label)}
@@ -1969,55 +2030,12 @@
                 class="text-xs font-medium">{f.label}{#if f.problem}<span class="font-normal text-muted-foreground"> · {f.problem}</span>{/if}</p><SelfCheck
                 kind={f.kind} id={f.id} load onchange={()=>void onmutate?.()} /></div>{/each}</div>
             {/if}
-            {#if !editing && m.intent?.action === 'finish_video' && m.intent.script_id && !m.dismissed}
-              <div class="mt-2 flex flex-wrap items-center gap-2"><Button
-                size="sm"
-                class="rounded-full px-4"
-                onclick={()=>{m.dismissed=true;void startAutopilot(m.intent?.script_id ?? '')}}><Sparkles class="size-3.5" />Finish the video for me</Button><FinishCost
-                  scriptId={m.intent.script_id} /><span
-                  class="text-xs text-muted-foreground">Makes every missing scene video, joins them with captions and exports. Uses video credits.</span></div>
-            {:else if !editing && m.intent?.action === 'render_scenes' && m.intent.scene_ids?.length && !m.dismissed}
-              <ScenesCard scenes={m.intent.scenes ?? []} onstart={()=>{m.dismissed=true;void startScenes(m.intent?.scene_ids ?? [])}} />
-            {:else if !editing && (m.intent?.action === 'check_video' || m.intent?.action === 'stop_waiting') && m.intent.job_id && !m.dismissed}
-              <StuckVideo
-                jobId={m.intent.job_id}
-                service={m.intent.service}
-                reason={m.intent.waiting_reason}
-                autoCheck={m.intent.action==='check_video'&&!!m.autoRun&&autoMode}
-                askStop={m.intent.action==='stop_waiting'}
-                onsettled={check => {
-                  m.autoRun = false;
-                  void onmutate?.();
-                  void refreshChips();
-                  offerMakeAgain(check, m.intent?.scene_title ?? '');
-                }} />
-            {:else if !editing && m.intent?.action === 'switch_video_service' && m.intent.video_switch && !m.dismissed}
-              <VideoSwitchCard
-                choice={m.intent.video_switch}
-                onswitched={text => {
-                  m.dismissed = true;
-                  messages.push({ role: 'assistant', text });
-                  void onmutate?.();
-                  void refreshChips();
-                }} />
-            {:else if !editing && m.intent && m.intent.action !== 'unknown' && !m.dismissed}
-              <ActionCard
-                auto={!!m.autoRun&&autoMode}
-                full={!!m.autoRun&&mode==='full'}
-                onautostart={()=>m.autoRun=false}
-                intent={m.intent}
- onbriefchange={brief=>{if(m.intent)m.intent={...m.intent,creation_brief:brief,idea:brief.idea}}}
- onreference={referenceSaved}
-                options={m.options!}
-                projectState={m.state}
-                onfocus={onguide??onfocus}
-                onran={(result, ctx) => handleRan(result, ctx, m)}
-                onop={(label, ctx) => handleOpStart(label, ctx, m)}
-                onsuggest={(text) => { input=text; focusComposer(); }}
-              />
-              <IconTip icon={X} label="Dismiss proposal" class="self-start text-muted-foreground" onclick={()=>dismissProposal(m)} />
-            {:else if m.dismissed}<p
-              class="text-xs text-muted-foreground">{m.briefSuperseded?'Earlier creative brief · updated below':'Proposal dismissed from this view.'}</p>{/if}
+            {#if m.surface}<A2UINode
+              surface={m.surface}
+              id="body"
+              disabled={busy}
+              onaction={(name, source, context) => surfaceAction(m, name, source, context)}>{#snippet custom()}{@render actionCard(m)}{/snippet}</A2UINode>
+            {:else}{@render actionCard(m)}{/if}
             {#if m.role==='user'}<Message.Footer
               class="opacity-0 transition-opacity group-hover/turn:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100"><IconTip
               icon={Pencil}

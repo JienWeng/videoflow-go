@@ -71,7 +71,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
-// The phases of a chat turn, in order. POST /agui shows each as an AG-UI step.
+// The phases of a chat turn, in order. POST /a2ui shows each in its surface's /steps.
 const (
 	chatStepReadProject = "read_project"
 	chatStepAskSession  = "ask_ai_session"
@@ -103,7 +103,7 @@ func turnFailure(status int, message string) *chatTurnError {
 }
 
 // runChatTurn plans one chat message and returns the /chat response: the action card,
-// the pickable options and the project state. POST /chat and POST /agui both answer
+// the pickable options and the project state. POST /chat and POST /a2ui both answer
 // through it. onStep, when set, hears each phase start (started) and finish.
 func (s *Server) runChatTurn(ctx context.Context, body chatRequest, onStep func(name string, started bool)) (map[string]interface{}, *chatTurnError) {
 	open := ""
@@ -320,6 +320,9 @@ func (s *Server) chatIntent(ctx context.Context, turn *chatTurn, res *agents.Cha
 		"reply":       res.Reply,
 		"idea":        body.Message,
 		"scene_count": 1,
+	}
+	if ui := sanitizeA2UI(res.UI); ui != nil {
+		intent["ui"] = ui
 	}
 
 	if action == "generate_script" {
