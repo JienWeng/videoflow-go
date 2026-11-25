@@ -367,6 +367,7 @@
   import * as Attachment from '$lib/components/ui/attachment';
   import * as Bubble from '$lib/components/ui/bubble';
   import * as MessageScroller from '$lib/components/ui/message-scroller';
+  import ScrollFollow from './ScrollFollow.svelte';
   import * as InputGroup from '$lib/components/ui/input-group';
   import * as Trace from '$lib/components/ui/trace';
   import * as Marker from '$lib/components/ui/marker';
@@ -1784,11 +1785,10 @@
 
   {/if}
   <MessageScroller.Provider autoScroll>
+  <ScrollFollow key={`${activeSessionId}:${messages.length}:${busy}:${pendingOps.length}`} />
   <MessageScroller.Root class="flex-1 min-h-0">
     <MessageScroller.Viewport role="log" aria-label="Story conversation" class="motion-reduce:scroll-auto">
     <MessageScroller.Content class="gap-5 px-4 pt-5 pb-4">
-      {#if pendingOps.length}<ActivityView
-        events={[{kind:'queue',title:'Work in progress',status:'running',items:pendingOps.map(m=>({title:m.op!.label,status:'running'}))}]} />{/if}
       {#if historyLoading}<div
         role="status"
         class="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle
@@ -2044,7 +2044,9 @@
         class="space-y-2 border-t pt-3"><h4 class="text-sm font-medium">Next step</h4><div
           class="flex flex-wrap gap-2">{@render chipRow(guidedSteps)}</div><p
           class="text-xs text-muted-foreground">Suggestions focus the canvas and prepare your request. Review the proposal before running it.</p></section>{/if}
-      {#if busy&&!reviewMode}
+      {#if pendingOps.length}<ActivityView
+        events={[{kind:'queue',title:'Work in progress',status:'running',items:pendingOps.map(m=>({title:m.op!.label,status:'running'}))}]} />{/if}
+      {#if busy&&!(reviewMode&&specialistSupported)}
         <MessageScroller.Item messageId="working"><Message.Root><Message.Content><div
           role="status"
           class="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle
