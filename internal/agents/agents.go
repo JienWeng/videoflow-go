@@ -461,6 +461,9 @@ type ChatIntentResponse struct {
 	Decision *ChatDecision `json:"decision,omitempty"`
 	// Remember is what the planner wants kept in the project's decision log.
 	Remember []RememberItem `json:"remember,omitempty"`
+	// UI is an optional small A2UI interface (basic-catalog components) for a question,
+	// choice or comparison. The server checks it against an allowlist (internal/api/a2ui_catalog.go).
+	UI json.RawMessage `json:"ui,omitempty"`
 }
 
 // ChatDecision is the planner's ask-or-decide choice for one turn.

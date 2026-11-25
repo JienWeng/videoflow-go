@@ -49,27 +49,31 @@ Configuration is read from environment variables (the `environment:` block of `c
 
 Use the running Go backend for request schemas. Posting generation endpoints can incur provider usage. Health and model listing are not substitutes for an end-to-end generation check.
 
-### Chat over AG-UI (`POST /agui`)
+### Chat over A2UI (`POST /a2ui`)
 
-The chat panel talks to the assistant over [AG-UI](https://docs.ag-ui.com) (protocol 1.0), an open event protocol for agent front ends. `POST /agui` takes an AG-UI `RunAgentInput` (`threadId`, `runId`, `messages`, `state`, `tools`, `context`) and answers with a server-sent event stream (`text/event-stream`, one JSON event per `data:` line). It runs the same chat turn as `POST /chat` (`runChatTurn` in `internal/api/chat.go`), sits behind the same login and has no 5-minute request limit, like `/events`. The chat's own fields (`selected`, `attachments`, `auto`, `full`, `answer`, `creation_brief`) go in `forwardedProps`.
+The chat panel talks to the assistant over [A2UI](https://a2ui.org) (protocol v1.0), Google's open protocol for agent-written interfaces. `POST /a2ui` takes the `POST /chat` body (`message`, `selected`, `attachments`, `auto`, `full`, `answer`, `creation_brief`, `history`) and answers with a server-sent event stream (`text/event-stream`), one A2UI message (`{"version":"1.0", …}`) per `data:` line. It runs the same chat turn as `POST /chat` (`runChatTurn` in `internal/api/chat.go`), sits behind the same login and has no 5-minute request limit, like `/events`.
 
-A run whose last message is the user's plans that message:
+Each turn is one surface (`createSurface`, catalog `https://videoflow.app/a2ui/catalog/v1`: the A2UI basic catalog plus `VideoFlowAction`). Its data model, set with `updateDataModel`:
 
-| Event | When |
+| Path | What |
 |---|---|
-| `RUN_STARTED` | at once |
-| `STATE_SNAPSHOT` | the shared state: `{stages, decisions, mode}`, i.e. `GET /stages`, the decision log of `GET /decisions`, and `manual`/`auto`/`full` |
-| `STEP_STARTED` / `STEP_FINISHED` | for each phase: `read_project`, `ask_ai_session`, `check_answer` |
-| `TEXT_MESSAGE_START` / `_CONTENT` / `_END` | the reply. The AI session answers with one JSON object and the server may rewrite its reply, so the final reply is sent in chunks of about 48 bytes after the turn; it is not streamed token by token |
-| `TOOL_CALL_START` / `_ARGS` / `_END` | the prepared button: the tool name is the card's action, the arguments are the card (intent) as JSON, including `decision`. No tool call when there is no button (`unknown`) |
-| `TOOL_CALL_RESULT` | only for `clear_failed_videos`, which is done while planning |
-| `STATE_DELTA` | an RFC 6902 JSON Patch when the turn changed the stage map or the decision log (a quick reply's answer, the assistant's `remember` list) |
-| `RUN_FINISHED` | `result` is exactly the `POST /chat` response, plus `tool_call_id` |
-| `RUN_ERROR` | instead of `RUN_FINISHED`; `code` is `chat_context_invalid` or `http_<status /chat would answer>` |
+| `/steps` | the phases, `[{name, label, status}]`: `read_project`, `ask_ai_session`, `check_answer` |
+| `/reply` | the reply, growing about 48 bytes per update. The AI session answers with one JSON object and the server may rewrite its reply, so it is sent after the turn, not token by token |
+| `/state` | the shared state `{stages, decisions, mode}`: `GET /stages`, the decision log of `GET /decisions`, and `manual`/`auto`/`full`. A part that changes is updated at `/state/stages` or `/state/decisions` |
+| `/intent` | the prepared card (intent, including `decision`), when there is one |
+| `/result` | what became of the card: set at once for `clear_failed_videos`, otherwise after the card ran |
+| `/run` | `{status: "running"}`, then `{status: "finished", result}` (`result` is exactly the `POST /chat` response plus `a2ui_surface`) or `{status: "error", message, code}` (`code` is `chat_context_invalid` or `http_<status /chat would answer>`) |
 
-A run whose last message is a `tool` message reports a card the user ran (`toolCallId` is the tool call; `content` is `{"op_id": "…"}` for a background op, or how the card ended). With an op, the run follows it on the event bus: it sends a `STATE_DELTA` when the project changes, a `TOOL_CALL_RESULT` (`{op_id, kind, status, error, result}`) when the op ends, and `RUN_FINISHED`. It stops following after 30 minutes or when the page leaves. An op of another project is a `RUN_ERROR` with `http_404`.
+`updateComponents` adds a `body` column holding the assistant's own interface (`ui-root`) and the card (`card`, a `VideoFlowAction` bound to `/intent` and `/result`). The app draws `VideoFlowAction` as its own priced cards (`ActionCard`, `ScenesCard`, `VideoSwitchCard`, …).
 
-The panel's client is `frontend/src/lib/chat/agui.mjs`. It is on by default; set `localStorage['videoflow.chat.agui'] = 'off'` to use `POST /chat` only. When a run cannot start (an older backend, a refused request, no stream), the panel sends the same message to `POST /chat` instead. A run that started and then failed is shown as an error, never sent again, so a turn is never planned twice. At most two runs follow ops at a time; a further card reports its op once it ends.
+The assistant may add an optional `ui` to its answer: basic-catalog `Text`, `Image`, `Row`, `Column`, `List`, `Card`, `Button`, `ChoicePicker` and `Divider` only, with literal values, at most 30 components (`internal/api/a2ui_catalog.go`). Every button and choice is rewritten to send the `videoflow.reply` action. Anything else drops the whole `ui`; the reply is still shown. The `ui` also reaches `POST /chat` answers, already checked.
+
+A request may instead be an A2UI action (`{"version":"1.0","action":{name, surfaceId, sourceComponentId, timestamp, context}}`, plus the chat fields):
+
+- `videoflow.reply` (`context.reply`): a choice picked in the assistant's interface, planned as the user's next message. It never runs a card.
+- `videoflow.card_result` from `card`: the user ran the card. `context` is `{"op_id": "…"}` for a background op, or how the card ended. With an op, the request follows it on the event bus, updates `/state` when the project changes, sets `/result` (`{op_id, kind, status, error, result}`) when the op ends, then `/run`. It stops following after 30 minutes or when the page leaves. An op of another project ends with `/run` `{status: "error", code: "http_404"}`.
+
+The panel's client is `frontend/src/lib/a2ui/` (`a2ui.mjs` folds the messages into surfaces; `A2UINode.svelte` draws them). It is on by default; set `localStorage['videoflow.chat.a2ui'] = 'off'` to use `POST /chat` only. When a request cannot start (an older backend, a refused request, no stream), the panel sends the same message to `POST /chat` instead and draws the `ui` and card the same way. A request that started and then failed is shown as an error, never sent again, so a turn is never planned twice. At most two requests follow ops at a time; a further card reports its op once it ends.
 
 ## Maintainer checks
 
