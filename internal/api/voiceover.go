@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+	"videoflow-go/internal/seedance"
 
 	"videoflow-go/internal/composition"
 	"videoflow-go/internal/models"
@@ -481,7 +482,7 @@ func (s *Server) voiceoverLine(ctx context.Context, project string, voice voiceC
 	if err != nil {
 		return item, false, fmt.Errorf("connect %s in Settings first: %w", voice.Provider, err)
 	}
-	audio, err := voiceoverSpeech(ctx, voice.Provider, key, endpoint, model, voice.VoiceID, cue.Text)
+	audio, err := voiceoverSpeech(ctx, voice.Provider, key, endpoint, model, voice.VoiceID, seedance.SpokenText(cue.Text))
 	if err != nil {
 		return item, false, err
 	}

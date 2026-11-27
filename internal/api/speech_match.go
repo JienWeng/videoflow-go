@@ -3,6 +3,7 @@ package api
 import (
 	"strings"
 	"unicode"
+	"videoflow-go/internal/seedance"
 
 	"videoflow-go/internal/providers"
 )
@@ -75,7 +76,7 @@ func speechUnits(text string) []string {
 // speechSimilarity is how alike two texts are, from 0 (nothing shared) to 1 (the same
 // words): one minus the share of units that must be inserted, removed or replaced.
 func speechSimilarity(a, b string) float64 {
-	x, y := speechUnits(a), speechUnits(b)
+	x, y := speechUnits(seedance.SpokenText(a)), speechUnits(seedance.SpokenText(b))
 	if len(x) == 0 && len(y) == 0 {
 		return 1
 	}
