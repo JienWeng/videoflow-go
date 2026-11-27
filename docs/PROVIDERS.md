@@ -199,6 +199,43 @@ What VideoFlow does with this:
   the spoken lines to fit.
 - Seedance clips keep their own BytePlus notation and are not given start times.
 
+#### Keeping the Omni guide current
+
+The Omni prompt writer reads `internal/seedance/guide/speech-omni.md` and
+`internal/seedance/guide/omni-visual.md`. Their rules follow Google's official
+guidance, last checked on 27 November 2026:
+
+- Omni prompt guide: <https://aistudio.google.com/docs/omni> ("Prompt guide",
+  "Limitations", "Technical details"). This is the guide for the model VideoFlow uses.
+- Gemini API video page: <https://aistudio.google.com/docs/video> (the old
+  `ai.google.dev/gemini-api/docs/video` redirects here). It says Veo 3.1 in the
+  Gemini API was shut down on 22 October 2026, so VideoFlow routes no Veo models.
+- Vertex AI Veo prompt guide:
+  <https://docs.cloud.google.com/vertex-ai/generative-ai/docs/video/video-gen-prompt-guide>.
+  Background only: subject, context, action, style, camera, ambiance, and
+  audio in separate sentences. Its advice to avoid "no"/"don't" is for Veo's
+  negative-prompt field. Omni has no such field and asks for "Do not do X" in the
+  prompt.
+
+`TestOmniGuidesFollowGoogle` (`internal/seedance/google_guide_test.go`) checks that
+each file starts with its source URL and the date checked, and that the key rules are
+present. It makes no network calls. When Google updates its pages, check these points
+again, update the files, the dates and the test:
+
+1. Default shots: Omni still cuts between shots unless asked for "a single continuous
+   shot" / "no scene cuts".
+2. Timing: second timecodes (`[0-5s]`) and "After 3 seconds, ..." still work.
+3. Sound: there is still a `Sound design:` sentence, and "No dialogue." still removes
+   speech.
+4. Negatives: there is still no negative-prompt field, and exclusions still go in the
+   prompt.
+5. Dialogue: does Omni's guide now give a dialogue syntax? It currently gives none,
+   and we use quotes after the speaker.
+6. Languages: is English still the only evaluated language?
+7. On-screen text: legible text still needs the exact words.
+8. Limits: duration (3–15 s), reference images (up to 6), the input token limit
+   (`internal/providers/gemini_video.go`), and the model id.
+
 #### Sound across clips (music and ambience)
 
 Each clip is generated separately with its own sound, so music asked of every clip

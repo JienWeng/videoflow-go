@@ -161,6 +161,10 @@ func Compose(c Clip) string {
 		}
 	}
 
+	if c.omni() && len(c.Shots) <= 1 {
+		// Omni cuts between several shots unless told not to (Google's Omni prompt guide).
+		line("In a single continuous shot, no scene cuts.")
+	}
 	at := 0
 	for i, shot := range c.Shots {
 		head := fmt.Sprintf("Shot %d", i+1)
@@ -270,7 +274,7 @@ func (c Clip) speech(line func(string, ...any)) {
 	if spoken == 0 {
 		switch {
 		case c.omni():
-			line("Nobody speaks. Sound design: %s, and the sounds of the action.", c.ambience())
+			line("No dialogue. Sound design: %s, and the sounds of the action.", c.ambience())
 		case c.Ambience != "":
 			line("Nobody speaks. Ambient sound: %s, and the sounds of the action only.", c.ambience())
 		default:

@@ -21,7 +21,15 @@ func section(name string) string {
 	if err != nil {
 		panic("seedance: missing guide section " + name)
 	}
-	return strings.TrimSpace(string(text))
+	body := strings.TrimSpace(string(text))
+	// A leading HTML comment records the section's source and date checked; the
+	// writer does not need it.
+	if strings.HasPrefix(body, "<!--") {
+		if end := strings.Index(body, "-->"); end >= 0 {
+			body = strings.TrimSpace(body[end+3:])
+		}
+	}
+	return body
 }
 
 // Sections names the playbook sections a clip's writer reads, in reading order.
@@ -35,6 +43,9 @@ func Sections(c Clip) []string {
 		frame = "references"
 	}
 	names := []string{"index", "bindings", frame, "shots-" + series, "action", "camera"}
+	if c.omni() {
+		names = append(names, "omni-visual")
+	}
 	if c.Audio == Native {
 		if c.speaks() && c.omni() {
 			names = append(names, "speech-omni")
