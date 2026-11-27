@@ -27,7 +27,7 @@ func (d *DB) SetRenderOutputSelfCheck(id string, record json.RawMessage) error {
 
 // renderOutputNotes are the qa_json keys written one at a time, so a note written by
 // one step (the speech check, caption timing) never erases another's.
-var renderOutputNotes = map[string]bool{"self_check": true, "audio_check": true, "speech_timing": true}
+var renderOutputNotes = map[string]bool{"self_check": true, "audio_check": true, "speech_timing": true, "approval": true}
 
 // SetRenderOutputNote stores one note under qa_json.<key>, keeping every other note
 // and updated_at.

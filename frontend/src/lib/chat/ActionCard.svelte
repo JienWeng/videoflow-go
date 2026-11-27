@@ -208,6 +208,7 @@
     generate_character_reference: 'Generate character reference',
     generate_character_references: 'Make pictures for all characters',
     replace_real_people: 'Replace real people with fictional characters',
+    approve_clips: 'Approve all passed clips',
     make_voice_tracks: 'Make voice tracks',
     generate_scenes: 'Expand scene',
     generate_shots: 'Generate shots',
@@ -242,6 +243,8 @@
 
   // make_voice_tracks: the scene's dialogue tracks, read for free when the card opens.
   let voiceTracks = $state<VoiceTrack[]>([]);
+  // approve_clips: what Approve all did.
+  let approvalResult = $state('');
   $effect(() => {
     if (intent.action !== 'make_voice_tracks' || !sceneId) return;
     const id = sceneId;
@@ -296,6 +299,7 @@
       case 'generate_character_references':
         return !!intent.character_ids?.length && !sheetProblem;
       case 'replace_real_people':
+      case 'approve_clips':
         return true;
       case 'set_sound_mode':
         return intent.sound_mode === 'together' || intent.sound_mode === 'voice_first';
@@ -401,6 +405,7 @@
   // that the assistant spends image credits without asking again.
   const AUTO_FULL = new Set([
     'replace_real_people',
+    'approve_clips',
     'make_voice_tracks',
     'generate_character_references',
     'generate_character_reference',
@@ -483,6 +488,21 @@
           );
         await onran?.({ character_id: characterId }, ctx);
         onfocus?.(characterId);
+        return;
+      }
+      case 'approve_clips': {
+        busy = true;
+        try {
+          const r = await apiPost<{ message: string; skipped: { label: string; reason: string }[] }>('/clips/approve-all', intent.script_id ? { script_id: intent.script_id } : {});
+          approvalResult = r.message;
+          if (r.skipped?.length) toast.warning(r.message);
+          else toast.success(r.message);
+          await onran?.({ approved: true }, ctx);
+        } catch (e) {
+          toast.error(errorMessage(e));
+        } finally {
+          busy = false;
+        }
         return;
       }
       case 'set_sound_mode': {
@@ -865,6 +885,10 @@
       {#if intent.action === 'make_voice_tracks'}
         <p class="text-xs text-muted-foreground">Speaks each clip's lines with the characters' voices and joins them into one track per clip (speech credits; unchanged lines are reused). Listen before making the clips.</p>
         {#if voiceTracks.length}<VoiceTrackPlayer tracks={voiceTracks} />{/if}
+      {/if}
+      {#if intent.action === 'approve_clips'}
+        <p class="text-sm text-muted-foreground">Approves every finished clip whose checks passed, so the final video can be rendered. Flagged or unfinished clips are skipped and listed. Free.</p>
+        {#if approvalResult}<p role="status" class="text-xs">{approvalResult}</p>{/if}
       {/if}
       {#if intent.action === 'replace_real_people'}
         <p class="text-sm text-muted-foreground">

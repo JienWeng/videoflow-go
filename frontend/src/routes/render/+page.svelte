@@ -25,8 +25,10 @@
     Star,
     Loader2,
     ListVideo,
-    Film
+    Film,
+    CheckCheck
   } from '@lucide/svelte';
+  import { clipApproved } from '$lib/production/approval.mjs';
   import type { Asset, RenderJob, RenderJobDetail, RenderOutput, Scene, Script } from '$lib/api-types';
 
   let jobs: RenderJob[] = $state([]);
@@ -105,6 +107,24 @@
       }
     }
     outputs = outputs;
+  }
+
+  // Approve all: every finished clip whose checks passed. The final video renders only
+  // from approved clips; flagged or unfinished ones are listed, never approved.
+  let approving = $state(false);
+  async function approveAll() {
+    approving = true;
+    try {
+      const r = await post<{ message: string; skipped: unknown[] }>('/clips/approve-all', {});
+      if (r.skipped?.length) toast.warning(r.message);
+      else toast.success(r.message);
+      outputs = {};
+      await refresh();
+    } catch (e) {
+      toast.error(`Could not approve the clips. ${errorMessage(e)}`);
+    } finally {
+      approving = false;
+    }
   }
 
   // Failed attempts are records, not queued work: clearing puts them away (free, nothing
@@ -366,6 +386,10 @@
         variant="outline"
         disabled={clearing}
         onclick={clearFailed}>{clearing ? 'Clearing…' : `Clear ${failedCount} failed`}</Button>{/if}<Button
+          variant="outline"
+          disabled={approving}
+          title="Approve every finished clip whose checks passed. The final video renders only from approved clips."
+          onclick={approveAll}><CheckCheck class="size-4" />{approving ? 'Approving…' : 'Approve all passed clips'}</Button><Button
           variant="ghost" href="/voices">Voices</Button><Button href="/?view=edit"><Clapperboard class="size-4" />Edit & combine</Button></div>
     </div>
   </div>
@@ -579,6 +603,9 @@
                         {/if}
                         {#if out.captioned_path}
                           <Badge variant="secondary" class="absolute right-2 top-2">Captions on</Badge>
+                        {/if}
+                        {#if clipApproved(out.qa_json)}
+                          <Badge class="absolute bottom-2 left-2 gap-1"><CheckCheck class="size-3" />Approved</Badge>
                         {/if}
                       </div>
 

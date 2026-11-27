@@ -61,6 +61,7 @@ func (s *Server) storyboardCandidates(ctx context.Context, scene *models.Scene, 
 	if err != nil {
 		return nil, err
 	}
+	refs = withContinuityFrame(ctx, refs)
 	brief := sceneBrief(scene)
 	brief.Style = s.sceneVisualStyle(scene)
 	shotNotes, err := s.storyboardShotNotes(scene.ID)

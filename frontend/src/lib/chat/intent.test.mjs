@@ -7,3 +7,4 @@ test('fit script to clips is a supported action',()=>{assert.equal(normalizeChat
 test('repairing a clip\'s speech is a supported action',()=>{assert.equal(normalizeChatIntent({action:'repair_clip_speech',output_id:'o1'}).action,'repair_clip_speech')});
 test('voice first actions are cards',()=>{assert.equal(normalizeChatIntent({action:'set_sound_mode',sound_mode:'voice_first'}).action,'set_sound_mode');assert.equal(normalizeChatIntent({action:'make_voice_tracks',scene_id:'s1'}).action,'make_voice_tracks')});
 test('the AI edit is a supported action',()=>{assert.equal(normalizeChatIntent({action:'ai_edit',script_id:'s1'}).action,'ai_edit')});
+test('approving all passed clips is a supported action',()=>{assert.equal(normalizeChatIntent({action:'approve_clips',script_id:'s1'}).action,'approve_clips')});

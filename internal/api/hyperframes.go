@@ -182,6 +182,13 @@ func (s *Server) handleCompositionRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "exact source revision required", 409)
 		return
 	}
+	// The final video is made only from approved clips.
+	if body.Operation == "render" {
+		if unapproved := s.compositionUnapproved(project, m); len(unapproved) > 0 {
+			writeJSON(w, 409, map[string]any{"error": unapprovedMessage(unapproved), "code": "clips_not_approved", "unapproved": unapproved})
+			return
+		}
+	}
 	// Exports run one at a time on this server; a second one waits its turn.
 	select {
 	case compositionSlots <- struct{}{}:
