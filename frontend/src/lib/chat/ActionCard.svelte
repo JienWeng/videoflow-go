@@ -401,6 +401,8 @@
   // Free planning steps the assistant may carry out itself in Auto mode. Nothing here
   // spends image, video or voice credits, and each result can be changed again.
   const AUTO_FREE = new Set(['refine_scene', 'refine_shot', 'generate_shots', 'plan_assets']);
+  // Free steps the user asked for in words: they start by themselves in every mode.
+  const AUTO_ASKED = new Set(['approve_clips']);
   // Paid steps that start by themselves only in Full auto, where the user already agreed
   // that the assistant spends image credits without asking again.
   const AUTO_FULL = new Set([
@@ -423,7 +425,7 @@
   ]);
   let autoStarted = false;
   $effect(() => {
-    if (!auto || autoStarted || busy || !ready || !(AUTO_FREE.has(intent.action) || (full && AUTO_FULL.has(intent.action))))
+    if (autoStarted || busy || !ready || !(AUTO_ASKED.has(intent.action) || (auto && (AUTO_FREE.has(intent.action) || (full && AUTO_FULL.has(intent.action))))))
       return;
     if (intent.action === 'render_scene' && speechHold) return;
     autoStarted = true;
