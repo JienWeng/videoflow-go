@@ -1498,6 +1498,21 @@
     reportToolResult(card, { status: 'succeeded' });
     await onmutate?.();
     await refreshChips();
+    // Approving is the last gate before the final video: carry on with the edit,
+    // captions and music (Full auto by itself, otherwise as a one-click offer).
+    const done = _result as { approved?: boolean; script_id?: string; skipped?: number } | undefined;
+    if (done?.approved && done.script_id) {
+      if (mode === 'full') void startAutopilot(done.script_id);
+      else
+        messages.push({
+          role: 'assistant',
+          text: done.skipped
+            ? 'The finished clips are approved. I can make the missing ones, then join everything, add the captions and music, and export the final video.'
+            : 'All clips are approved. I can now join them, add the captions and music, and export the final video.',
+          intent: { action: 'finish_video', script_id: done.script_id }
+        });
+      return;
+    }
     if (!ctx) return;
     if (['generate_script', 'generate_character_reference', 'generate_character_references'].includes(ctx.action)) return;
     const follow = buildFollowUp(ctx);
