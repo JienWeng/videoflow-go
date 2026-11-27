@@ -202,6 +202,8 @@ type autopilotRunner struct {
 	project string
 	body    autopilotRequest
 	scenes  []models.Scene
+	// uncaptioned are script lines the finished film does not speak, so not captioned.
+	uncaptioned []map[string]string
 }
 
 // stage records the step the run is on, for the progress shown to the owner.
@@ -517,6 +519,9 @@ func (a *autopilotRunner) joinAndExport(ctx context.Context) (any, error) {
 	if aiEdit != nil {
 		result["ai_edit"] = aiEdit
 	}
+	if len(a.uncaptioned) > 0 {
+		result["uncaptioned_lines"] = a.uncaptioned
+	}
 	if exported.Asset != nil {
 		result["asset_id"] = exported.Asset.ID
 	}
@@ -571,12 +576,19 @@ func (a *autopilotRunner) saveCaptionedComposition(ctx context.Context) (string,
 	if json.Unmarshal(raw, &manifest) != nil {
 		return "", fmt.Errorf("couldn't read the assembled video plan")
 	}
-	if code, raw = a.s.internalCall(ctx, "POST", "/compositions/captions/from-script", map[string]any{"clips": manifest.Clips, "audio": manifest.Audio}); code == 200 {
+	if code, raw = a.s.internalCall(ctx, "POST", "/compositions/captions/from-script", map[string]any{"clips": manifest.Clips, "audio": manifest.Audio, "spoken_only": true}); code == 200 {
 		var captions struct {
-			Captions []composition.Cue `json:"captions"`
+			Captions []composition.Cue   `json:"captions"`
+			Dropped  []map[string]string `json:"dropped"`
 		}
 		if json.Unmarshal(raw, &captions) == nil && len(captions.Captions) > 0 {
 			manifest.Captions = captions.Captions
+		}
+		// A line not heard in the film is never captioned; say which and why.
+		a.uncaptioned = captions.Dropped
+		if n := len(captions.Dropped); n > 0 {
+			d := captions.Dropped[0]
+			a.stage(fmt.Sprintf("Captioning only what is heard: %d script line%s left without a caption (“%s”: %s)", n, map[bool]string{true: "", false: "s"}[n == 1], clip(d["text"], 60), d["reason"]))
 		}
 		// Captions listened to the clips; the bed ducks at the times they were heard.
 		manifest, _ = a.s.scoreStory(ctx, a.project, a.body.ScriptID, manifest)

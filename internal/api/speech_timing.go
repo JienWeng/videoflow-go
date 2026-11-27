@@ -224,7 +224,16 @@ func (s *Server) heardLines(ctx context.Context, out *models.RenderOutput, job *
 		}
 		return lines
 	}
-	return placeHeardLines(lines, hearing.Words, length)
+	// The clip was listened to: a line not found in it is not spoken there, so it must
+	// not be captioned at its estimated time (scriptCaptions drops it unless a voice
+	// line speaks it).
+	timed := placeHeardLines(lines, hearing.Words, length)
+	for i := range timed {
+		if timed[i].Timing != timingHeard {
+			timed[i].Timing = timingUnheard
+		}
+	}
+	return timed
 }
 
 // placeHeardLines times each line by the words heard for it. A line heard close to
