@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -45,6 +46,9 @@ const (
 	timingHeard     = "heard"     // when the line is spoken in the clip's own sound
 	timingEstimated = "estimated" // spread over the line's shot by its length
 	timingVoice     = "voice"     // when a voice-over line speaks it
+	// timingUnheard marks a line the clip was listened to for but that was not heard in
+	// it. It never becomes a caption on its own: only a voice line can still speak it.
+	timingUnheard = "unheard"
 )
 
 // placeScriptLines spreads each line across its assigned shot (or the whole clip when
@@ -217,8 +221,10 @@ type clipCue struct {
 	SpokenStart, SpokenEnd float64
 	// Native is set when the clip was made with its own sound, so its own voices say it.
 	Native bool
-	// ClipEnd is where the clip that says it ends on the timeline.
-	ClipEnd float64
+	// ClipStart and ClipEnd are where the clip that says it sits on the timeline.
+	ClipStart, ClipEnd float64
+	// SpokenFull is how long the heard words last on the timeline before any trim.
+	SpokenFull float64
 }
 
 // scriptCuesForClip maps a rendered clip's script lines onto the edit timeline.
@@ -256,12 +262,13 @@ func (s *Server) clipCues(ctx context.Context, project string, clip composition.
 		if end-start < 0.3 {
 			continue // Trimmed away in this edit.
 		}
-		c := clipCue{Cue: composition.Cue{ID: "script-" + compositionHash([]byte(clip.ID + ":" + l.ID))[:24], UtteranceID: l.ID, CharacterID: l.CharacterID, Language: l.Language, Start: round3(start), End: round3(end), Text: l.Text, Timing: l.Timing, Scripted: l.Scripted}, SpokenStart: -1, SpokenEnd: -1, Native: nativeSound(plan.Job), ClipEnd: round3(to)}
+		c := clipCue{Cue: composition.Cue{ID: "script-" + compositionHash([]byte(clip.ID + ":" + l.ID))[:24], UtteranceID: l.ID, CharacterID: l.CharacterID, Language: l.Language, Start: round3(start), End: round3(end), Text: l.Text, Timing: l.Timing, Scripted: l.Scripted}, SpokenStart: -1, SpokenEnd: -1, Native: nativeSound(plan.Job), ClipStart: round3(from), ClipEnd: round3(to)}
 		if c.Cue.Timing == "" {
 			c.Cue.Timing = timingEstimated
 		}
 		if l.Timing == timingHeard {
 			c.SpokenStart, c.SpokenEnd = round3(max(from, at(l.SpokenStart))), round3(min(to, at(l.SpokenEnd)))
+			c.SpokenFull = (l.SpokenEnd - l.SpokenStart) / speed
 		}
 		cues = append(cues, c)
 	}
@@ -276,44 +283,170 @@ func (s *Server) handleCompositionScriptCaptions(w http.ResponseWriter, r *http.
 	}
 	var body struct {
 		Clips []composition.Clip `json:"clips"`
-		// Audio lets captions follow narrator voice lines placed by Voice from script.
+		// Audio lets captions follow the voice lines and dialogue tracks placed in the edit.
 		Audio []composition.Clip `json:"audio"`
+		// SpokenOnly (the finished film) also leaves out lines nothing in the edit speaks
+		// (clips without their own sound and no voice line); the editor keeps them as
+		// estimates so a voice-over can still be added.
+		SpokenOnly bool `json:"spoken_only"`
 	}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body) != nil {
 		http.Error(w, "invalid clips", 400)
 		return
 	}
-	captions := []composition.Cue{}
-	skipped := []map[string]string{}
-	for _, clip := range body.Clips {
+	res := s.scriptCaptions(r.Context(), project, body.Clips, body.Audio, body.SpokenOnly)
+	writeJSON(w, 200, map[string]any{"captions": res.Captions, "skipped": res.Skipped, "dropped": res.Dropped, "voice_timed": res.Followed, "timing": res.Timing})
+}
+
+// scriptCaptionResult is the captions of an edit and what was left out and why.
+type scriptCaptionResult struct {
+	Captions []composition.Cue
+	Skipped  []map[string]string
+	// Dropped are script lines given no caption because they are not heard in the edit.
+	Dropped  []map[string]string
+	Followed int
+	Timing   map[string]int
+}
+
+// placedCue is a script caption with the picture clip it comes from.
+type placedCue struct {
+	clipCue
+	clip     composition.Clip
+	silenced bool
+}
+
+// scriptCaptions makes an edit's captions so each shows the words heard, when they are
+// heard: a dialogue track or voice line that speaks a line times it and gives its words;
+// otherwise the clip's own sound where it was heard. A line listened for and not heard,
+// or whose clip is muted with nothing else speaking it, gets no caption and is reported
+// in Dropped.
+func (s *Server) scriptCaptions(ctx context.Context, project string, clips, audio []composition.Clip, spokenOnly bool) scriptCaptionResult {
+	res := scriptCaptionResult{Captions: []composition.Cue{}, Skipped: []map[string]string{}, Dropped: []map[string]string{}}
+	placed := []placedCue{}
+	for _, clip := range clips {
 		if !strings.HasPrefix(clip.AssetID, "output-") {
 			continue // Images and uploaded media have no script.
 		}
-		cues, err := s.scriptCuesForClip(r.Context(), project, clip)
+		cues, err := s.clipCues(ctx, project, clip)
 		if err != nil {
-			skipped = append(skipped, map[string]string{"clip_id": clip.ID, "reason": err.Error()})
+			res.Skipped = append(res.Skipped, map[string]string{"clip_id": clip.ID, "reason": err.Error()})
 			continue
 		}
-		captions = append(captions, cues...)
-	}
-	followed := s.alignCaptionsToVoice(project, captions, body.Audio)
-	sort.SliceStable(captions, func(i, j int) bool { return captions[i].Start < captions[j].Start })
-	timing := map[string]int{timingHeard: 0, timingEstimated: 0, timingVoice: 0, "changed": 0}
-	for _, c := range captions {
-		timing[c.Timing]++
-		if c.Scripted != "" {
-			timing["changed"]++
+		for _, c := range cues {
+			placed = append(placed, placedCue{clipCue: c, clip: clip, silenced: silent(clip)})
 		}
 	}
-	writeJSON(w, 200, map[string]any{"captions": captions, "skipped": skipped, "voice_timed": followed, "timing": timing})
+	res.Followed = s.followVoiceTracks(project, placed, audio) + s.followVoiceLines(project, placed, audio)
+	drop := func(p placedCue, reason string) {
+		text := p.Cue.Text
+		if p.Cue.Scripted != "" {
+			text = p.Cue.Scripted
+		}
+		res.Dropped = append(res.Dropped, map[string]string{"clip_id": p.clip.ID, "utterance_id": p.Cue.UtteranceID, "text": text, "reason": reason})
+	}
+	for _, p := range placed {
+		switch {
+		case p.Cue.Timing == timingVoice:
+		case p.silenced:
+			drop(p, "its clip is muted and no voice line in the edit speaks it")
+			continue
+		case p.Cue.Timing == timingUnheard:
+			drop(p, "it was not heard in the clip's sound")
+			continue
+		case p.Cue.Timing == timingHeard && p.SpokenFull > 0 && p.SpokenEnd-p.SpokenStart < p.SpokenFull/2:
+			drop(p, "most of it is trimmed out of the edit")
+			continue
+		case p.Cue.Timing == timingEstimated && !p.Native && spokenOnly:
+			drop(p, "its clip has no sound of its own and no voice line in the edit speaks it")
+			continue
+		}
+		res.Captions = append(res.Captions, p.Cue)
+	}
+	sort.SliceStable(res.Captions, func(i, j int) bool { return res.Captions[i].Start < res.Captions[j].Start })
+	res.Timing = map[string]int{timingHeard: 0, timingEstimated: 0, timingVoice: 0, "changed": 0, "dropped": len(res.Dropped)}
+	for _, c := range res.Captions {
+		res.Timing[c.Timing]++
+		if c.Scripted != "" {
+			res.Timing["changed"]++
+		}
+	}
+	return res
 }
 
-// alignCaptionsToVoice times each caption to the voice-over clip that speaks the same
-// line, so captions stay with the narrator even after lines were spaced apart.
-func (s *Server) alignCaptionsToVoice(project string, captions []composition.Cue, audio []composition.Clip) int {
-	spoken := map[string][]composition.Clip{}
+// silent says whether a clip's own sound is not heard in the edit.
+func silent(c composition.Clip) bool {
+	return c.Muted || c.Volume != nil && *c.Volume <= 0
+}
+
+// audible is an audio clip heard in the edit.
+func audible(c composition.Clip) bool { return !silent(c) && c.Duration > 0 }
+
+// onTimeline maps a time in a clip's own media to the edit timeline.
+func onTimeline(c composition.Clip, t float64) float64 {
+	speed := c.Speed
+	if speed <= 0 {
+		speed = 1
+	}
+	return c.Start + (t-c.Trim)/speed
+}
+
+// followVoiceTracks times captions to the voice-first dialogue track that plays as a
+// clip's sound: each line sits in the track at a known time, so its caption shows the
+// line the track speaks, exactly then.
+func (s *Server) followVoiceTracks(project string, placed []placedCue, audio []composition.Clip) int {
+	followed := 0
+	for _, a := range audio {
+		if !strings.HasPrefix(a.AssetID, "voicetrack_") || !audible(a) {
+			continue
+		}
+		asset, err := s.database.GetAsset(a.AssetID)
+		if err != nil || asset.ProjectID == nil || *asset.ProjectID != project {
+			continue
+		}
+		var meta struct {
+			Lines []voiceTrackLine `json:"lines"`
+		}
+		if json.Unmarshal(asset.MetadataJSON, &meta) != nil {
+			continue
+		}
+		from, to := a.Start, a.Start+a.Duration
+		for _, line := range meta.Lines {
+			spokenFrom, spokenTo := onTimeline(a, line.Start), onTimeline(a, line.Start+line.Duration)
+			start, end := max(from, spokenFrom), min(to, spokenTo)
+			if end-start <= 0 || end-start < (spokenTo-spokenFrom)/2 {
+				continue // trimmed out of the edit: its caption is left to the drop rules
+			}
+			for i := range placed {
+				p := &placed[i]
+				if p.Cue.Timing == timingVoice || p.Cue.UtteranceID != line.LineID || p.ClipEnd <= from || p.ClipStart >= to {
+					continue
+				}
+				p.Cue.Start = round3(max(from, start-captionLead))
+				p.Cue.End = round3(min(to, max(end+captionHold, start+captionMinimum)))
+				p.Cue.Text, p.Cue.Scripted, p.Cue.Timing = strings.TrimSpace(line.Text), "", timingVoice
+				followed++
+				break
+			}
+		}
+	}
+	return followed
+}
+
+// voiceLineKey is how a voice line and a caption are matched: by their letters and
+// digits, so spacing and punctuation never keep a caption from its voice.
+func voiceLineKey(text string) string { return string(speechLetters(text)) }
+
+// followVoiceLines times each caption to the voice-over clip that speaks the same line
+// (the nearest one when a line is said twice), so captions stay with the narrator even
+// after lines were spaced apart, and show the words the voice says.
+func (s *Server) followVoiceLines(project string, placed []placedCue, audio []composition.Clip) int {
+	type line struct {
+		clip composition.Clip
+		text string
+	}
+	spoken := map[string][]line{}
 	for _, clip := range audio {
-		if !strings.HasPrefix(clip.AssetID, "voiceover_") {
+		if !strings.HasPrefix(clip.AssetID, "voiceover_") || !audible(clip) {
 			continue
 		}
 		a, err := s.database.GetAsset(clip.AssetID)
@@ -323,24 +456,37 @@ func (s *Server) alignCaptionsToVoice(project string, captions []composition.Cue
 		var meta struct {
 			Text string `json:"text"`
 		}
-		if json.Unmarshal(a.MetadataJSON, &meta) == nil && strings.TrimSpace(meta.Text) != "" {
-			key := strings.TrimSpace(meta.Text)
-			spoken[key] = append(spoken[key], clip)
+		if json.Unmarshal(a.MetadataJSON, &meta) == nil && voiceLineKey(meta.Text) != "" {
+			key := voiceLineKey(meta.Text)
+			spoken[key] = append(spoken[key], line{clip, strings.TrimSpace(meta.Text)})
 		}
 	}
 	followed := 0
-	for i := range captions {
+	for i := range placed {
+		c := &placed[i].Cue
+		if c.Timing == timingVoice {
+			continue
+		}
 		// A voice line speaks the script's words, so its caption shows them too.
-		key := strings.TrimSpace(captions[i].Text)
-		if captions[i].Scripted != "" {
-			key = strings.TrimSpace(captions[i].Scripted)
+		key := voiceLineKey(c.Text)
+		if c.Scripted != "" {
+			key = voiceLineKey(c.Scripted)
 		}
-		if clips := spoken[key]; len(clips) > 0 {
-			captions[i].Start, captions[i].End = round3(clips[0].Start), round3(clips[0].Start+clips[0].Duration)
-			captions[i].Text, captions[i].Scripted, captions[i].Timing = key, "", timingVoice
-			spoken[key] = clips[1:]
-			followed++
+		lines := spoken[key]
+		if len(lines) == 0 {
+			continue
 		}
+		best := 0
+		for j := range lines {
+			if math.Abs(lines[j].clip.Start-c.Start) < math.Abs(lines[best].clip.Start-c.Start) {
+				best = j
+			}
+		}
+		v := lines[best]
+		c.Start, c.End = round3(v.clip.Start), round3(v.clip.Start+v.clip.Duration)
+		c.Text, c.Scripted, c.Timing = v.text, "", timingVoice
+		spoken[key] = append(lines[:best:best], lines[best+1:]...)
+		followed++
 	}
 	return followed
 }

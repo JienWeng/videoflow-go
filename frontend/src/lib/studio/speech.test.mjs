@@ -14,6 +14,10 @@ test('the caption note says which timing each caption uses', () => {
   );
   assert.equal(captionTimingNote({ voice: 2 }), 'Timing: 2 follow the voice lines.');
   assert.equal(captionTimingNote(undefined), '');
+  assert.equal(
+    captionTimingNote({ heard: 1, dropped: 1 }),
+    "Timing: 1 follows the speech heard in the clips. 1 script line was left without a caption because it isn't heard in the video."
+  );
 });
 
 test('replacing mutes the speaking clips, keeping restores them, music is lowered only when asked', () => {

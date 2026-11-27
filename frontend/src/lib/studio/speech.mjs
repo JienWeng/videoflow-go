@@ -4,7 +4,7 @@
 
 /** The note after "Captions from script": which captions follow the speech heard in
  * the clips, which keep an estimate, and which show what was said instead of the script.
- * @param {{heard?: number, estimated?: number, voice?: number, changed?: number}|undefined} timing
+ * @param {{heard?: number, estimated?: number, voice?: number, changed?: number, dropped?: number}|undefined} timing
  * @returns {string} */
 export function captionTimingNote(timing) {
   const t = { heard: 0, estimated: 0, voice: 0, changed: 0, ...(timing ?? {}) };
@@ -19,6 +19,8 @@ export function captionTimingNote(timing) {
   let note = parts.length ? 'Timing: ' + parts.join(', ') + '.' : '';
   if (t.changed)
     note += ` ${t.changed} caption${t.changed === 1 ? ' shows' : 's show'} what was actually said, because it differs from the script.`;
+  if (t.dropped)
+    note += ` ${t.dropped} script line${t.dropped === 1 ? ' was' : 's were'} left without a caption because ${t.dropped === 1 ? "it isn't" : "they aren't"} heard in the video.`;
   return note.trim();
 }
 
