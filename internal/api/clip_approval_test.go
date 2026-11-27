@@ -293,3 +293,29 @@ func TestApproveClipsIsAChatAction(t *testing.T) {
 		}
 	}
 }
+
+func TestApproveAllOnTheUsersWordApprovesFlaggedClipsToo(t *testing.T) {
+	s := routerServer(t, nil)
+	project, _ := s.database.GetActiveProjectID()
+	story := "story-1"
+	_, flagged := approvalScene(t, s, project, "Noon", 1, failClip, &story)
+	approvalScene(t, s, project, "Night", 2, "", &story)
+	w := call(t, s, "POST", "/clips/approve-all", `{"include_flagged":true}`)
+	var got struct {
+		Approved   []clipApprovalEntry `json:"approved"`
+		Overridden []clipApprovalEntry `json:"overridden"`
+		Skipped    []clipApprovalEntry `json:"skipped"`
+		ScriptID   string              `json:"script_id"`
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &got) != nil {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if len(got.Overridden) != 1 || got.Overridden[0].OutputID != flagged.ID || got.ScriptID != story {
+		t.Fatal(w.Body.String())
+	}
+	out, _ := s.database.GetRenderOutput(flagged.ID)
+	decisions, _ := s.database.ListDecisions(project)
+	if !clipApproved(out.QAJSON) || !clipKeptInLog(decisions, flagged.ID) {
+		t.Fatal("the flagged clip must be approved and its finding settled")
+	}
+}

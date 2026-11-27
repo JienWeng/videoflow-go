@@ -208,7 +208,7 @@
     generate_character_reference: 'Generate character reference',
     generate_character_references: 'Make pictures for all characters',
     replace_real_people: 'Replace real people with fictional characters',
-    approve_clips: 'Approve all passed clips',
+    approve_clips: 'Approve all finished clips',
     make_voice_tracks: 'Make voice tracks',
     generate_scenes: 'Expand scene',
     generate_shots: 'Generate shots',
@@ -495,11 +495,15 @@
       case 'approve_clips': {
         busy = true;
         try {
-          const r = await apiPost<{ message: string; skipped: { label: string; reason: string }[] }>('/clips/approve-all', intent.script_id ? { script_id: intent.script_id } : {});
+          const r = await apiPost<{ message: string; script_id?: string; skipped: { label: string; reason: string }[] }>('/clips/approve-all', {
+            // The user asked in words to approve the videos: that includes flagged ones.
+            include_flagged: true,
+            ...(intent.script_id ? { script_id: intent.script_id } : {})
+          });
           approvalResult = r.message;
           if (r.skipped?.length) toast.warning(r.message);
           else toast.success(r.message);
-          await onran?.({ approved: true }, ctx);
+          await onran?.({ approved: true, script_id: r.script_id ?? intent.script_id, skipped: r.skipped?.length ?? 0 }, ctx);
         } catch (e) {
           toast.error(errorMessage(e));
         } finally {

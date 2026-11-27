@@ -57,6 +57,11 @@ type clipApprovalReport struct {
 	Skipped         []clipApprovalEntry `json:"skipped"`
 	// Unchecked are approved clips no check has looked at yet (nothing flagged them).
 	Unchecked []clipApprovalEntry `json:"unchecked,omitempty"`
+	// Overridden are approved clips a check had flagged: the user said to approve them
+	// anyway (include_flagged), which also settles the finding as "keep".
+	Overridden []clipApprovalEntry `json:"overridden,omitempty"`
+	// ScriptID is the one story every chosen clip belongs to, or "" when they span stories.
+	ScriptID string `json:"script_id,omitempty"`
 }
 
 // approvedCount is every clip that is now approved.
@@ -70,6 +75,9 @@ func (r clipApprovalReport) message() string {
 		parts = append(parts, "Approved 1 clip.")
 	case n > 1:
 		parts = append(parts, fmt.Sprintf("Approved %d clips.", n))
+	}
+	if n := len(r.Overridden); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d of them had a flagged check and you kept them anyway.", n))
 	}
 	if n := len(r.AlreadyApproved); n > 0 {
 		parts = append(parts, fmt.Sprintf("%d already approved.", n))
@@ -125,6 +133,9 @@ type approveClipsRequest struct {
 	ScriptID  string   `json:"script_id"`
 	SceneIDs  []string `json:"scene_ids"`
 	OutputIDs []string `json:"output_ids"`
+	// IncludeFlagged approves finished clips even when a check flagged them: the user
+	// said to approve everything. Unfinished clips are still skipped.
+	IncludeFlagged bool `json:"include_flagged"`
 }
 
 // approveClips approves every chosen clip that may be approved and reports the rest.
@@ -196,6 +207,19 @@ func (s *Server) approveClips(project string, body approveClipsRequest, by strin
 			}
 		}
 	}
+	stories := map[string]bool{}
+	for _, sc := range all {
+		for _, c := range candidates {
+			if c.job.SceneID != nil && *c.job.SceneID == sc.ID && sc.ScriptID != nil {
+				stories[*sc.ScriptID] = true
+			}
+		}
+	}
+	if len(stories) == 1 {
+		for id := range stories {
+			report.ScriptID = id
+		}
+	}
 	now := time.Now().UTC()
 	for _, c := range candidates {
 		scene := ""
@@ -207,10 +231,20 @@ func (s *Server) approveClips(project string, body approveClipsRequest, by strin
 			report.AlreadyApproved = append(report.AlreadyApproved, entry)
 			continue
 		}
+		overridden := false
 		if reason := clipApprovalBlock(c.job, &c.out, decisions); reason != "" {
-			entry.Reason = reason
-			report.Skipped = append(report.Skipped, entry)
-			continue
+			if !body.IncludeFlagged || c.job.Status != models.StatusSucceeded {
+				entry.Reason = reason
+				report.Skipped = append(report.Skipped, entry)
+				continue
+			}
+			// The user's word settles the finding, so no later check asks about it again.
+			if _, e := s.database.SetDecision(project, selfCheckDecisionKey(c.out.ID), "Keep it: the user approved this clip as it is.", db.DecisionByUser, false); e != nil {
+				entry.Reason = "couldn't save the approval: " + e.Error()
+				report.Skipped = append(report.Skipped, entry)
+				continue
+			}
+			entry.Reason, overridden = reason, true
 		}
 		raw, _ := json.Marshal(clipApproval{Status: "approved", By: by, At: now})
 		if e := s.database.SetRenderOutputNote(c.out.ID, "approval", raw); e != nil {
@@ -219,6 +253,9 @@ func (s *Server) approveClips(project string, body approveClipsRequest, by strin
 			continue
 		}
 		report.Approved = append(report.Approved, entry)
+		if overridden {
+			report.Overridden = append(report.Overridden, entry)
+		}
 		if storedSelfCheck(c.out.QAJSON) == nil {
 			report.Unchecked = append(report.Unchecked, entry)
 		}
@@ -247,7 +284,7 @@ func (s *Server) handleApproveClips(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"approved": report.Approved, "already_approved": report.AlreadyApproved, "skipped": report.Skipped, "unchecked": report.Unchecked, "message": report.message()})
+	writeJSON(w, 200, map[string]any{"approved": report.Approved, "already_approved": report.AlreadyApproved, "skipped": report.Skipped, "unchecked": report.Unchecked, "overridden": report.Overridden, "script_id": report.ScriptID, "message": report.message()})
 }
 
 // compositionUnapproved lists the scene clips an edit uses that are not approved, in
