@@ -26,6 +26,7 @@ import (
 
 func (s *Server) registerAutopilotRoute() {
 	s.router.Post("/autopilot/finish", s.handleAutopilotFinish)
+	s.router.Post("/clips/approve-all", s.handleApproveClips)
 }
 
 // internalCall runs one of this server's own routes in-process.
@@ -204,6 +205,8 @@ type autopilotRunner struct {
 	scenes  []models.Scene
 	// uncaptioned are script lines the finished film does not speak, so not captioned.
 	uncaptioned []map[string]string
+	// notes are what the run did, for its closing summary.
+	notes autopilotNotes
 }
 
 // stage records the step the run is on, for the progress shown to the owner.
@@ -239,6 +242,10 @@ func (a *autopilotRunner) run(ctx context.Context) (any, error) {
 	if err = a.makeCharacterPictures(ctx); err != nil {
 		return nil, err
 	}
+	// Keyframes come before the picture check, so it sees them, and before any clip.
+	if err = a.makeKeyframes(ctx, adopted); err != nil {
+		return nil, err
+	}
 	if flagged, err := a.checkPictures(ctx); err != nil {
 		return flagged, err
 	}
@@ -261,17 +268,34 @@ func (a *autopilotRunner) run(ctx context.Context) (any, error) {
 			return stuck2, err2
 		}
 	}
+	if a.body.FullAuto {
+		a.stage("Checking every clip: its pictures, and its speech when it has its own sound")
+	}
 	if flagged := a.checkClips(ctx); len(flagged) > 0 {
 		flagged, stuck, err := a.retryClipSpeech(ctx, flagged)
 		if err != nil {
 			return stuck, err
 		}
 		if len(flagged) > 0 {
-			return a.clipReviewResult(flagged), nil
+			// The clips that passed are approved now; the flagged ones wait for the user.
+			_, _ = a.approveRunClips() // a failed approval is shown by Approve all later
+			result := a.clipReviewResult(flagged)
+			result["approval"] = a.notes.approval
+			result["summary"] = a.summary(false) + " The final video was not rendered: the clips listed need your review first."
+			return result, nil
 		}
 	}
+	report, err := a.approveRunClips()
+	if err != nil {
+		return nil, fmt.Errorf("couldn't approve the clips: %w", err)
+	}
 	if a.body.VideosOnly {
-		return a.videosOnlyResult(waiting), nil
+		result := a.videosOnlyResult(waiting)
+		result["approval"], result["summary"] = report, a.summary(false)
+		return result, nil
+	}
+	if len(report.Skipped) > 0 {
+		return map[string]any{"stage": "Needs your review", "needs_review": true, "script_id": a.body.ScriptID, "approval": report, "summary": a.summary(false) + " The final video was not rendered."}, fmt.Errorf("the final video was not rendered: %s", report.message())
 	}
 	return a.joinAndExport(ctx)
 }
@@ -491,7 +515,7 @@ func (a *autopilotRunner) joinAndExport(ctx context.Context) (any, error) {
 	if err := a.sameProject(); err != nil {
 		return nil, err
 	}
-	a.stage("Putting the scenes together")
+	a.stage("Putting the scenes together in story order, with captions from the script")
 	revision, err := a.saveCaptionedComposition(ctx)
 	if err != nil {
 		return nil, err
@@ -500,7 +524,7 @@ func (a *autopilotRunner) joinAndExport(ctx context.Context) (any, error) {
 	if a.body.FullAuto {
 		revision, aiEdit = a.aiEditOnce(ctx, revision)
 	}
-	a.stage("Exporting the final video")
+	a.stage("Exporting the final video from the approved clips")
 	code, raw := a.s.internalCall(ctx, "POST", "/compositions/"+revision+"/run", map[string]string{"operation": "render", "revision": revision})
 	var exported struct {
 		AssetURL string        `json:"asset_url"`
@@ -515,7 +539,10 @@ func (a *autopilotRunner) joinAndExport(ctx context.Context) (any, error) {
 		}
 		return nil, fmt.Errorf("the scenes are ready but the export failed (%s). Open Edit video and press Export", detail)
 	}
-	result := map[string]any{"stage": "Done", "script_id": a.body.ScriptID, "revision": revision, "video_url": exported.AssetURL, "scene_count": len(a.scenes)}
+	result := map[string]any{"stage": "Done", "script_id": a.body.ScriptID, "revision": revision, "video_url": exported.AssetURL, "scene_count": len(a.scenes), "summary": a.summary(true)}
+	if a.notes.approval != nil {
+		result["approval"] = a.notes.approval
+	}
 	if aiEdit != nil {
 		result["ai_edit"] = aiEdit
 	}

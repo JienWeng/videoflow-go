@@ -35,7 +35,7 @@
   import { defaults, splitClip, duplicateClip, trimStart, trimEnd, contentEnd } from '$lib/composition/edits.mjs';
   import { protectDraft } from '$lib/protect-draft';
   import { onMount } from 'svelte';
-  import { get, post, upload, API_BASE, mediaUrl } from '$lib/api';
+  import { get, post, upload, API_BASE, mediaUrl, APIError } from '$lib/api';
   import type { Asset, Project, Script } from '$lib/api-types';
   import type {
     Clip,
@@ -65,6 +65,8 @@
   let sourcesLoaded = false;
   let runtime: CompositionRuntime | null = null;
   let error = '';
+  // Set when the export was refused because a clip in the edit is not approved.
+  let needsApproval = false;
   let log = '';
   let busy = false;
   let revision = '';
@@ -488,6 +490,7 @@
   async function run(operation: string, retry = true): Promise<void> {
     busy = true;
     error = '';
+    needsApproval = false;
     try {
       const result = await post<{ log: string; asset_url?: string; snapshots?: string[] }>(`/compositions/${revision}/run`, {
         operation,
@@ -505,6 +508,27 @@
         if (again) return await run(operation, false);
         return;
       }
+      needsApproval = e instanceof APIError && e.code === 'clips_not_approved';
+      error = plainError(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  /** Approve every clip in this edit that passed its checks, then render again. */
+  async function approvePassedAndRender(): Promise<void> {
+    busy = true;
+    try {
+      const outputIds = [...new Set(draft.clips.map(c => c.asset_id).filter(id => id?.startsWith('output-')).map(id => id.slice(7)))];
+      const r = await post<{ message: string; skipped: unknown[] }>('/clips/approve-all', { output_ids: outputIds });
+      busy = false;
+      if (r.skipped?.length) {
+        error = r.message;
+        return;
+      }
+      notice = r.message;
+      await run('render');
+    } catch (e) {
       error = plainError(e);
     } finally {
       busy = false;
@@ -788,7 +812,7 @@
  {#if error}<div
    role="alert"
    class="flex items-start gap-3 border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-destructive"><p
-     class="flex-1">{error}</p><button class="underline" onclick={()=>error=''}>Dismiss</button></div>{/if}
+     class="flex-1">{error}</p>{#if needsApproval}<button class="font-medium underline" disabled={busy} onclick={approvePassedAndRender}>Approve all passed clips</button>{/if}<button class="underline" onclick={()=>{error='';needsApproval=false;}}>Dismiss</button></div>{/if}
 
  <div class="workspace min-h-0 flex-1">
   <!-- Left: media you can add. Drag onto the timeline or press +. -->

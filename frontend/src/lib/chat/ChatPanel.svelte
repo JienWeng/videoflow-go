@@ -88,7 +88,7 @@
       if (op.status === 'succeeded' && rj.needs_review) {
         // Full auto's clip check flagged something: nothing is re-made by itself; ask.
         if (m.op) m.op.status = 'done';
-        m.text = 'The videos are made. The check found something worth a look before going on.';
+        m.text = rj.summary ?? 'The videos are made. The check found something worth a look before going on.';
         messages.push({
           role: 'assistant',
           text: 'Here is what the check saw. Re-rendering uses video credits, so it is your call.',
@@ -102,7 +102,7 @@
       if (op.status === 'succeeded' && rj.videos_only) {
         if (m.op) m.op.status = 'done';
         const titles = (rj.scene_titles ?? []).map(t => `“${t}”`).join(', ');
-        m.text = `The videos are ready for ${titles}. Say “finish the video” when you want them joined and exported.`;
+        m.text = `The videos are ready for ${titles}. ${rj.summary ? rj.summary + ' ' : ''}Say “finish the video” when you want them joined and exported.`;
         m.chips = [
           { label: 'Edit video', href: '/?view=edit' },
           { label: 'All videos', href: '/render' }
@@ -114,7 +114,7 @@
       if (op.status === 'succeeded') {
         if (m.op) m.op.status = 'done';
         m.video = rj.video_url;
-        m.text = 'Your video is ready. Watch it here, download it, or open it in the editor to change anything.';
+        m.text = `Your video is ready. ${rj.summary ? rj.summary + ' ' : ''}Watch it here, download it, or open it in the editor to change anything.`;
         m.chips = [
           { label: 'Edit this video', href: `/?view=edit&script_id=${encodeURIComponent(rj.script_id ?? '')}` },
           { label: 'All videos', href: '/render' }
@@ -128,7 +128,7 @@
           m.op.status = 'failed';
           m.op.detail = op.error ?? 'stopped';
         }
-        m.text = (op.error ?? 'The video could not be finished.') + ' Everything made so far is kept.';
+        m.text = (op.error ?? 'The video could not be finished.') + ' Everything made so far is kept.' + (rj.summary ? ' ' + rj.summary : '');
         if (rj.stuck?.job_id) m.stuck = rj.stuck;
         if (rj.self_check?.length) {
           // The picture check stopped the run before any video: show what it saw, then offer to carry on.

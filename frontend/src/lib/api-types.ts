@@ -257,6 +257,9 @@ export type OpResult = {
   self_check?: SelfCheckFlag[];
   needs_review?: boolean;
   decision?: unknown;
+  /** Autopilot: what the run did, in words, and which clips it approved or left. */
+  summary?: string;
+  approval?: { approved: { label: string }[]; skipped: { label: string; reason: string }[] };
 };
 
 /** A picture or clip the self-check flagged (kind clip_audio: the speech check). */
