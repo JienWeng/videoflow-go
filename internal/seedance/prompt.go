@@ -203,6 +203,7 @@ func (c Clip) say(line func(string, ...any), shot int) {
 		if pinned := l.Shot >= 1 && l.Shot <= len(c.Shots); text == "" || strings.Contains(shown, text) || (pinned && l.Shot != shot) || (!pinned && shot != 0) {
 			continue
 		}
+		text = SpokenText(text)
 		language := l.Language
 		if language == "" {
 			language = c.Language

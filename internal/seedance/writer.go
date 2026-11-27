@@ -130,7 +130,7 @@ func Brief(c Clip) (system, facts string) {
 		if who == "" {
 			who = "Narrator"
 		}
-		said := line{Speaker: who, Text: l.Text}
+		said := line{Speaker: who, Text: SpokenText(l.Text)}
 		if c.omni() && l.Until > l.At {
 			said.At = fmt.Sprintf("%s-%ss", seconds(l.At), seconds(l.Until))
 		}
@@ -207,7 +207,7 @@ func Check(c Clip, prompt string) error {
 		return fmt.Errorf("prompt names a voice recording past the %d that are sent", sent)
 	}
 	for _, l := range c.Lines {
-		text := strings.TrimSpace(l.Text)
+		text := SpokenText(strings.TrimSpace(l.Text))
 		if text == "" {
 			continue
 		}

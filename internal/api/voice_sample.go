@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"videoflow-go/internal/seedance"
 
 	"github.com/go-chi/chi/v5"
 
@@ -172,7 +173,7 @@ func (s *Server) speakVoiceSample(ctx context.Context, project string, character
 	if len(strings.Fields(text)) < 8 {
 		text = strings.TrimSpace(text + " Hello, my name is " + character.Name + ". This is how I sound when I speak.")
 	}
-	return voiceoverSpeech(ctx, profile.Provider, key, endpoint, model, profile.VoiceID, text)
+	return voiceoverSpeech(ctx, profile.Provider, key, endpoint, model, profile.VoiceID, seedance.SpokenText(text))
 }
 
 func (s *Server) handleDeleteVoiceSample(w http.ResponseWriter, r *http.Request) {
